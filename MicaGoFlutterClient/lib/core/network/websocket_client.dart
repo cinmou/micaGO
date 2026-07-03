@@ -4,6 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'ws_channel_factory_io.dart'
+    if (dart.library.html) 'ws_channel_factory_web.dart';
+
 /// Lifecycle of the realtime WebSocket connection.
 enum WsStatus { idle, connecting, connected, failed, disconnected }
 
@@ -51,12 +54,12 @@ class WebSocketClient extends ChangeNotifier {
   /// `send:match`). Multiple listeners (thread, chat list) may subscribe.
   Stream<WsEvent> get events => _events.stream;
 
-  /// Opens a connection to [wsUrl], attaching [token] as `?token=`.
+  /// Opens a connection to [wsUrl].
   ///
-  // TODO(security): prefer the `Authorization: Bearer` header over `?token=` on
-  // platforms that allow custom WebSocket headers (Android/iOS via
-  // IOWebSocketChannel). MicaGo accepts both; the header keeps the token out of
-  // the URL (logs/proxies). Keep `?token=` only as the web fallback.
+  /// Security (C55): on native platforms the token is sent in the
+  /// `Authorization: Bearer` header (via `connectAuthedWebSocket`), so it never
+  /// appears in the URL/logs. Web can't set WS headers, so it falls back to
+  /// `?token=`. MicaGo's server accepts both.
   void connect(
     String wsUrl,
     String token, {
@@ -69,19 +72,12 @@ class WebSocketClient extends ChangeNotifier {
       _fail('Invalid WebSocket URL: $wsUrl');
       return;
     }
-    final uri = base.replace(
-      queryParameters: {
-        ...base.queryParameters,
-        if (token.isNotEmpty) 'token': token,
-        ...metadata,
-      },
-    );
 
     _setStatus(WsStatus.connecting);
     _append('connecting…');
 
     try {
-      final channel = WebSocketChannel.connect(uri);
+      final channel = connectAuthedWebSocket(base, token, metadata);
       _channel = channel;
       _sub = channel.stream.listen(
         _onData,

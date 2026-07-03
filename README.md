@@ -10,9 +10,15 @@
 
 **Your iMessage, your Mac, your phone — nothing in between.**
 
-*A self-hosted iMessage bridge. No MicaGo cloud, no account, no relay.*
+*A self-hosted iMessage bridge.*
 
-[Documentation](docs/index.md) · [Getting started](docs/getting-started.md) · [Security model](#-security-model) · [Remote access](docs/remote-access-cloudflare.md) · [CHANGELOG](MicaGoServer/docs/CHANGELOG.md)
+*Built with ♥️ for everyone.*
+
+[![Documentation](https://img.shields.io/badge/Documentation-0064E0?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/index.md)
+[![Getting started](https://img.shields.io/badge/Getting_started-0A1317?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/getting-started.md)
+[![Security model](https://img.shields.io/badge/Security_model-31A24C?style=for-the-badge)](https://github.com/cinmou/micaGo#-security-model)
+[![Remote access](https://img.shields.io/badge/Remote_access-5D6C7B?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/remote-access-cloudflare.md)
+[![CHANGELOG](https://img.shields.io/badge/CHANGELOG-B89B5E?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/MicaGoServer/docs/CHANGELOG.md)
 
 </div>
 
@@ -27,10 +33,20 @@ manages it; and a **Flutter Android app** pairs with it over your Wi‑Fi (or an
 optional public URL you control). Your data only ever travels between **your** Mac
 and **your** devices.
 
-> ⚠️ **Project status:** functional and self‑hostable, but young. It reads macOS
-> Messages internals and needs Full Disk Access. Read the
-> [security model](#-security-model) and [limitations](#-limitations) before
-> relying on it. Not affiliated with Apple.
+MicaGo is still in testing. It reads macOS Messages internals and needs Full Disk
+Access, so read the [security model](#-security-model) and
+[limitations](#-limitations) before relying on it. Not affiliated with Apple.
+
+---
+
+## ✅ Requirements
+
+- **Mac Companion:** macOS 13 or newer, signed in to iMessage, with Full Disk
+  Access granted for Messages data.
+- **Android client:** Android 6.0 or newer (API 23+). The client includes layouts
+  for phones, tablets, and large screens.
+- **Network:** LAN is recommended for first setup. Remote access is optional and
+  requires your own public URL or tunnel.
 
 ---
 
@@ -101,10 +117,9 @@ MicaGo is **local‑first** and built so your data stays yours.
 | **Push** | If you enable FCM, payloads carry only a small wake/preview — never your message history or tokens. |
 | **Private APIs** | The optional IMCore helper (edit/unsend/delete) is gated behind capability checks; it never fakes success. |
 
-> **What MicaGo does** — bridge *your* iMessage to *your* devices over a connection
-> *you* control.
-> **What MicaGo does _not_ do** — run a cloud, hold an account, store your messages
-> anywhere but your own Mac, or upload your contacts.
+In short, MicaGo bridges your iMessage to your devices over a connection you
+control; it does not run a cloud, hold an account, upload contacts, or store your
+messages outside your Mac.
 
 ---
 
@@ -198,17 +213,6 @@ MicaGo/
 
 > `Ref/` (if present locally) holds third‑party reference projects used during
 > development. It is **not** part of MicaGo and is git‑ignored.
-
----
-
-## 🌐 Localization
-
-The Android client ships **English / 简体中文 / 繁體中文** (chosen in Settings, or
-follow the system language). The Companion menu/sidebar and these docs are
-localized too; this README has [简体中文](README.zh-Hans.md) and
-[繁體中文](README.zh-Hant.md) editions.
-
----
 
 ## ⚠️ Limitations
 

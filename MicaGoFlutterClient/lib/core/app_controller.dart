@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -20,6 +21,7 @@ import 'network/websocket_client.dart';
 import 'storage/local_cache_store.dart';
 import 'storage/secure_store.dart';
 import '../features/chats/message_render.dart';
+import '../features/chats/models/chat_summary.dart';
 import '../features/chats/models/message_model.dart';
 import '../features/chats/realtime_event_helpers.dart';
 
@@ -39,6 +41,28 @@ class BackfillDiagnostics {
       'chats=$chatsFetched/$chatsWritten messages=$messagesFetched/$messagesWritten '
       'attachments=$attachmentsMetadataWritten hidden=$hiddenDebugRowsIgnored '
       'failed=$failedChats error=${lastError ?? ""}';
+}
+
+class _CandidateProbeResult {
+  final ConnectionCandidate candidate;
+  final bool ok;
+  final Duration elapsed;
+
+  const _CandidateProbeResult({
+    required this.candidate,
+    required this.ok,
+    required this.elapsed,
+  });
+
+  factory _CandidateProbeResult.ok(
+    ConnectionCandidate candidate,
+    Duration elapsed,
+  ) => _CandidateProbeResult(candidate: candidate, ok: true, elapsed: elapsed);
+
+  factory _CandidateProbeResult.failed(
+    ConnectionCandidate candidate,
+    Duration elapsed,
+  ) => _CandidateProbeResult(candidate: candidate, ok: false, elapsed: elapsed);
 }
 
 class RealtimeRefreshDiagnostics {
@@ -467,23 +491,34 @@ class AppController extends ChangeNotifier {
         (profile.lanRoutes.isNotEmpty || profile.publicBaseUrl != null)) {
       return;
     }
-    // C26: keep EVERY advertised LAN route, not just the first interface, so the
-    // user can switch between them.
+    final currentLanBases = {
+      for (final r in profile.lanRoutes) normalizeBaseUrl(r.baseUrl),
+    };
+    final serverUsesVisibilityFlags = urls.lan.any(
+      (e) => e.hidden || !e.enabled,
+    );
+    // C26: keep every visible LAN route. Older servers do not expose the
+    // Companion's "hidden LAN" list, so once a client has a filtered LAN set
+    // from pairing, do not re-add extra LAN endpoints from /api/server/urls.
     final lanRoutes = [
       for (final e in urls.lan)
-        if (e.baseUrl.trim().isNotEmpty)
-          EndpointRef(baseUrl: e.baseUrl, wsUrl: e.wsUrl),
+        if (e.baseUrl.trim().isNotEmpty &&
+            e.isVisible &&
+            (serverUsesVisibilityFlags ||
+                currentLanBases.isEmpty ||
+                currentLanBases.contains(normalizeBaseUrl(e.baseUrl))))
+          EndpointRef(baseUrl: normalizeBaseUrl(e.baseUrl), wsUrl: e.wsUrl),
     ];
     final pub = urls.public?.enabled == true ? urls.public : null;
     // C26: a manual route pin must survive refresh. Keep the selection if its
     // URL still exists in the new candidate set; otherwise drop it (auto).
     final usableUrls = {
-      for (final r in lanRoutes) r.baseUrl,
-      if (pub != null) pub.baseUrl,
+      for (final r in lanRoutes) normalizeBaseUrl(r.baseUrl),
+      if (pub != null) normalizeBaseUrl(pub.baseUrl),
     };
     final keptSelection =
         (profile.selectedBaseUrl != null &&
-            usableUrls.contains(profile.selectedBaseUrl))
+            usableUrls.contains(normalizeBaseUrl(profile.selectedBaseUrl!)))
         ? profile.selectedBaseUrl
         : null;
     final next = ConnectionProfile(
@@ -501,7 +536,8 @@ class AppController extends ChangeNotifier {
     // Keep the active candidate if it still exists; only reset when it's gone so
     // the displayed/used endpoint doesn't silently jump on a routine refresh.
     final active = _activeCandidate;
-    if (active != null && !usableUrls.contains(active.baseUrl)) {
+    if (active != null &&
+        !usableUrls.contains(normalizeBaseUrl(active.baseUrl))) {
       _activeCandidate = null;
     }
     await store.saveProfile(next);
@@ -608,53 +644,46 @@ class AppController extends ChangeNotifier {
     final profile = _profile;
     if (profile == null) return false;
     final allCandidates = connectionCandidatesForProfile(profile);
-    final candidates = allCandidates
+    final filtered = allCandidates
         .where((c) => c.kind != skipKind)
         .toList(growable: false);
+    final candidates = await _orderedCandidatesForCurrentNetwork(
+      profile,
+      filtered,
+    );
     _logConnectionSelection(
       'select candidate reason=$reason mode=${profile.mode.name}',
     );
     _logConnectionSelection('all candidates: ${allCandidates.join(' | ')}');
-    if (skipKind != null) {
+    if (skipKind != null || !_sameCandidateOrder(filtered, candidates)) {
       _logConnectionSelection('trying candidates: ${candidates.join(' | ')}');
     }
-    for (final candidate in candidates) {
-      _logConnectionSelection(
-        'checking ${candidate.label}: ${candidate.baseUrl}',
-      );
-      final client = ApiClient(
-        baseUrl: candidate.baseUrl,
-        token: profile.token,
-      );
-      try {
-        final healthy = await client.health();
-        if (healthy) {
-          await client.authCheck();
-          _activeCandidate = candidate;
-          _serverReachable = true;
-          _hasCompletedFirstConnectAttempt = true;
-          _connectionNoticeGraceUntil = null;
-          _logConnectionSelection('${candidate.label} health=true auth=true');
-          _logConnectionSelection('selected ${candidate.label}');
-          _rebuildApi();
-          // C29b: reached the server → clear any pending cannot-connect error.
-          _clearInitialConnectWatchdog();
-          // C29: register this device as soon as the server is reachable over
-          // REST — not only when the WebSocket connects. A flaky/slow WS must not
-          // keep a working device out of the Companion's Paired Devices list.
-          unawaited(_registerDeviceIfPossible());
-          // Surface a LAN↔Public fallback switch before the WS reconnects.
-          _emitConnectionNotice();
-          notifyListeners();
-          connectWebSocket();
-          unawaited(catchUp(reason: reason, minInterval: Duration.zero));
+
+    var i = 0;
+    while (i < candidates.length) {
+      final candidate = candidates[i];
+      if (candidate.kind == ConnectionCandidateKind.lan) {
+        final lanRun = <ConnectionCandidate>[];
+        while (i < candidates.length &&
+            candidates[i].kind == ConnectionCandidateKind.lan) {
+          lanRun.add(candidates[i]);
+          i++;
+        }
+        final result = lanRun.length > 1
+            ? await _probeLanRun(profile, lanRun)
+            : await _probeCandidate(profile, lanRun.single);
+        if (result.ok) {
+          _activateReachableCandidate(result.candidate, reason);
           return true;
         }
-        _logConnectionSelection('${candidate.label} health=false');
-      } catch (error) {
-        _logConnectionSelection('${candidate.label} failed: $error');
-      } finally {
-        client.close();
+        continue;
+      }
+
+      final result = await _probeCandidate(profile, candidate);
+      i++;
+      if (result.ok) {
+        _activateReachableCandidate(result.candidate, reason);
+        return true;
       }
     }
     _logConnectionSelection('no reachable candidate');
@@ -664,6 +693,132 @@ class AppController extends ChangeNotifier {
     _emitConnectionNotice();
     notifyListeners();
     return false;
+  }
+
+  Future<List<ConnectionCandidate>> _orderedCandidatesForCurrentNetwork(
+    ConnectionProfile profile,
+    List<ConnectionCandidate> candidates,
+  ) async {
+    if (profile.selectedBaseUrl?.trim().isNotEmpty == true ||
+        (profile.mode != ConnectionMode.auto &&
+            profile.mode != ConnectionMode.lanFirst)) {
+      return candidates;
+    }
+    final public = candidates
+        .where((c) => c.kind == ConnectionCandidateKind.public)
+        .toList(growable: false);
+    if (public.isEmpty) return candidates;
+    if (!await _isLikelyCellularNetwork()) return candidates;
+    final lan = candidates
+        .where((c) => c.kind == ConnectionCandidateKind.lan)
+        .toList(growable: false);
+    _logConnectionSelection('cellular network detected: preferring Public');
+    return [...public, ...lan];
+  }
+
+  Future<bool> _isLikelyCellularNetwork() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.contains(ConnectivityResult.mobile) &&
+          !results.contains(ConnectivityResult.wifi) &&
+          !results.contains(ConnectivityResult.ethernet);
+    } catch (error) {
+      _logConnectionSelection('connectivity check failed: $error');
+      return false;
+    }
+  }
+
+  bool _sameCandidateOrder(
+    List<ConnectionCandidate> a,
+    List<ConnectionCandidate> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].baseUrl != b[i].baseUrl || a[i].kind != b[i].kind) return false;
+    }
+    return true;
+  }
+
+  Future<_CandidateProbeResult> _probeLanRun(
+    ConnectionProfile profile,
+    List<ConnectionCandidate> candidates,
+  ) async {
+    _logConnectionSelection(
+      'checking ${candidates.length} LAN candidates in parallel',
+    );
+    final results = await Future.wait([
+      for (final candidate in candidates) _probeCandidate(profile, candidate),
+    ]);
+    final reachable = results.where((r) => r.ok).toList()
+      ..sort((a, b) => a.elapsed.compareTo(b.elapsed));
+    if (reachable.isNotEmpty) {
+      final fastest = reachable.first;
+      _logConnectionSelection(
+        'fastest LAN ${fastest.candidate.baseUrl} '
+        '${fastest.elapsed.inMilliseconds}ms',
+      );
+      return fastest;
+    }
+    return results.isEmpty
+        ? _CandidateProbeResult.failed(candidates.first, Duration.zero)
+        : results.first;
+  }
+
+  Future<_CandidateProbeResult> _probeCandidate(
+    ConnectionProfile profile,
+    ConnectionCandidate candidate,
+  ) async {
+    _logConnectionSelection(
+      'checking ${candidate.label}: ${candidate.baseUrl}',
+    );
+    final elapsed = Stopwatch()..start();
+    final client = ApiClient(
+      baseUrl: candidate.baseUrl,
+      token: profile.token,
+      timeout: const Duration(seconds: 4),
+    );
+    try {
+      final healthy = await client.health();
+      if (healthy) {
+        await client.authCheck();
+        elapsed.stop();
+        _logConnectionSelection(
+          '${candidate.label} health=true auth=true '
+          '${elapsed.elapsedMilliseconds}ms',
+        );
+        return _CandidateProbeResult.ok(candidate, elapsed.elapsed);
+      }
+      elapsed.stop();
+      _logConnectionSelection('${candidate.label} health=false');
+      return _CandidateProbeResult.failed(candidate, elapsed.elapsed);
+    } catch (error) {
+      elapsed.stop();
+      _logConnectionSelection('${candidate.label} failed: $error');
+      return _CandidateProbeResult.failed(candidate, elapsed.elapsed);
+    } finally {
+      client.close();
+    }
+  }
+
+  void _activateReachableCandidate(
+    ConnectionCandidate candidate,
+    String reason,
+  ) {
+    _activeCandidate = candidate;
+    _serverReachable = true;
+    _hasCompletedFirstConnectAttempt = true;
+    _connectionNoticeGraceUntil = null;
+    _logConnectionSelection('selected ${candidate.label}');
+    _rebuildApi();
+    // C29b: reached the server → clear any pending cannot-connect error.
+    _clearInitialConnectWatchdog();
+    // C29: register this device as soon as the server is reachable over REST —
+    // not only when the WebSocket connects.
+    unawaited(_registerDeviceIfPossible());
+    _emitConnectionNotice();
+    notifyListeners();
+    connectWebSocket();
+    unawaited(catchUp(reason: reason, minInterval: Duration.zero));
   }
 
   Future<void> catchUp({
@@ -977,16 +1132,17 @@ class AppController extends ChangeNotifier {
 
   Future<int> hiddenChatCount() => cache.hiddenChatCount();
   Future<int> hiddenMessageCount() => cache.hiddenMessageCount();
+  Future<List<ChatSummary>> hiddenChats() => cache.hiddenChats();
+  Future<List<HiddenMessageRecord>> hiddenMessages() => cache.hiddenMessages();
 
-  /// Un-hides every hidden chat and nudges the list to reload. Returns the count.
-  Future<int> releaseHiddenChats() async {
-    final n = await cache.releaseAllHiddenChats();
+  Future<int> releaseHiddenChats(Iterable<String> guids) async {
+    final n = await cache.releaseHiddenChats(guids);
     if (!_chatReloadController.isClosed) _chatReloadController.add(null);
     return n;
   }
 
-  /// Restores every client-hidden message. Returns the count.
-  Future<int> releaseHiddenMessages() => cache.releaseAllHiddenMessages();
+  Future<int> releaseHiddenMessages(Iterable<String> guids) =>
+      cache.releaseHiddenMessages(guids);
 
   /// C19/C21u: register this client so the Companion shows a connected device.
   /// Best-effort and idempotent — sends a **stable, client-generated** device id

@@ -231,10 +231,37 @@ ON CONFLICT(guid) DO UPDATE SET
     return (r.first['n'] as int?) ?? 0;
   }
 
-  /// Un-hides every hidden chat. Returns how many were restored.
-  Future<int> releaseAllHiddenChats() async {
+  Future<List<ChatSummary>> hiddenChats() async {
     final db = await _ready();
-    return db.update('chats', {'hidden': 0}, where: 'hidden = 1');
+    final rows = await db.query(
+      'chats',
+      where: 'hidden = 1 AND always_visible = 0',
+      orderBy:
+          'COALESCE(latest_renderable_at, 0) DESC, updated_at DESC, guid ASC',
+    );
+    return rows.map(_chatFromRow).toList(growable: false);
+  }
+
+  Future<int> releaseHiddenChats(Iterable<String> guids) async {
+    final ids = guids.where((g) => g.trim().isNotEmpty).toSet();
+    if (ids.isEmpty) return 0;
+    final db = await _ready();
+    final batch = db.batch();
+    for (final guid in ids) {
+      batch.update(
+        'chats',
+        {'hidden': 0},
+        where: 'guid = ?',
+        whereArgs: [guid],
+      );
+    }
+    final results = await batch.commit();
+    return results.whereType<int>().fold<int>(0, (sum, value) => sum + value);
+  }
+
+  Future<int> releaseAllHiddenChats() async {
+    final chats = await hiddenChats();
+    return releaseHiddenChats(chats.map((chat) => chat.guid));
   }
 
   /// Hides a single message on the client only (a tombstone; the server copy is
@@ -257,6 +284,52 @@ ON CONFLICT(guid) DO UPDATE SET
     return (r.first['n'] as int?) ?? 0;
   }
 
+  Future<List<HiddenMessageRecord>> hiddenMessages() async {
+    final db = await _ready();
+    final rows = await db.rawQuery('''
+SELECT
+  hm.guid AS hidden_guid,
+  m.json AS message_json,
+  m.chat_guid AS chat_guid,
+  c.json AS chat_json
+FROM hidden_messages hm
+LEFT JOIN messages m ON m.guid = hm.guid
+LEFT JOIN chats c ON c.guid = m.chat_guid
+ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
+''');
+    return rows
+        .map((row) {
+          MessageModel? message;
+          ChatSummary? chat;
+          final messageJson = row['message_json'] as String?;
+          if (messageJson != null && messageJson.isNotEmpty) {
+            try {
+              message = MessageModel.fromJson(
+                (jsonDecode(messageJson) as Map).cast<String, dynamic>(),
+              );
+            } catch (_) {
+              message = null;
+            }
+          }
+          final chatJson = row['chat_json'] as String?;
+          if (chatJson != null && chatJson.isNotEmpty) {
+            try {
+              chat = ChatSummary.fromJson(
+                (jsonDecode(chatJson) as Map).cast<String, dynamic>(),
+              );
+            } catch (_) {
+              chat = null;
+            }
+          }
+          return HiddenMessageRecord(
+            guid: row['hidden_guid'] as String,
+            message: message,
+            chat: chat,
+          );
+        })
+        .toList(growable: false);
+  }
+
   /// The set of client-hidden message guids, to filter server-fetched pages that
   /// bypass the cache read.
   Future<Set<String>> hiddenMessageGuids() async {
@@ -265,10 +338,21 @@ ON CONFLICT(guid) DO UPDATE SET
     return {for (final r in rows) r['guid'] as String};
   }
 
-  /// Restores every client-hidden message. Returns how many were released.
-  Future<int> releaseAllHiddenMessages() async {
+  Future<int> releaseHiddenMessages(Iterable<String> guids) async {
+    final ids = guids.where((g) => g.trim().isNotEmpty).toSet();
+    if (ids.isEmpty) return 0;
     final db = await _ready();
-    return db.delete('hidden_messages');
+    final batch = db.batch();
+    for (final guid in ids) {
+      batch.delete('hidden_messages', where: 'guid = ?', whereArgs: [guid]);
+    }
+    final results = await batch.commit();
+    return results.whereType<int>().fold<int>(0, (sum, value) => sum + value);
+  }
+
+  Future<int> releaseAllHiddenMessages() async {
+    final messages = await hiddenMessages();
+    return releaseHiddenMessages(messages.map((message) => message.guid));
   }
 
   Future<List<MessageModel>> listMessages(
@@ -608,7 +692,8 @@ ON CONFLICT(guid) DO UPDATE SET
     final remaining = <String, dynamic>{};
     for (final entry in pending.entries) {
       if (!existing.contains(entry.key)) {
-        remaining[entry.key] = entry.value; // chat not synced yet — keep waiting
+        remaining[entry.key] =
+            entry.value; // chat not synced yet — keep waiting
         continue;
       }
       final flags = (entry.value as Map).cast<String, dynamic>();
@@ -791,4 +876,16 @@ ON CONFLICT(guid) DO UPDATE SET
       _ => 'custom',
     };
   }
+}
+
+class HiddenMessageRecord {
+  final String guid;
+  final MessageModel? message;
+  final ChatSummary? chat;
+
+  const HiddenMessageRecord({
+    required this.guid,
+    required this.message,
+    required this.chat,
+  });
 }

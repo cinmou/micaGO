@@ -20,6 +20,14 @@ ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
 BACKEND_DIR="$ARTIFACT_DIR/backend"
 APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/MicaGoCompanion.app"
 DMG_PATH="$ARTIFACT_DIR/micaGO-$VERSION-mac.dmg"
+DMG_STAGING_DIR="$ARTIFACT_DIR/dmg-staging"
+DMG_BACKGROUND_PATH="$ARTIFACT_DIR/dmg-background.png"
+SWIFT_MODULE_CACHE_DIR="$ARTIFACT_DIR/swift-module-cache"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-micaGO}"
+DMG_APP_NAME="${DMG_APP_NAME:-MicaGoCompanion.app}"
+DMG_WINDOW_WIDTH="${DMG_WINDOW_WIDTH:-}"
+DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-}"
+DMG_WINDOW_SCALE="${DMG_WINDOW_SCALE:-100}"
 
 mkdir -p "$BACKEND_DIR" "$ARTIFACT_DIR"
 
@@ -80,8 +88,55 @@ else
 fi
 
 echo "==> Creating DMG"
+if ! command -v create-dmg >/dev/null 2>&1; then
+  echo "error: create-dmg is required. Install it with: brew install create-dmg" >&2
+  exit 1
+fi
+
 rm -f "$DMG_PATH"
-hdiutil create -volname "micaGO" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"
+rm -rf "$DMG_STAGING_DIR"
+mkdir -p "$DMG_STAGING_DIR"
+
+ditto "$APP_PATH" "$DMG_STAGING_DIR/$DMG_APP_NAME"
+if [ ! -f "$DMG_BACKGROUND_PATH" ]; then
+  mkdir -p "$SWIFT_MODULE_CACHE_DIR"
+  CLANG_MODULE_CACHE_PATH="$SWIFT_MODULE_CACHE_DIR" \
+    swift "$SCRIPT_DIR/make-dmg-background.swift" "$DMG_BACKGROUND_PATH"
+fi
+
+if [ -z "$DMG_WINDOW_WIDTH" ]; then
+  DMG_WINDOW_WIDTH="$(sips -g pixelWidth "$DMG_BACKGROUND_PATH" 2>/dev/null | awk '/pixelWidth/ {print $2}')"
+fi
+if [ -z "$DMG_WINDOW_HEIGHT" ]; then
+  DMG_WINDOW_HEIGHT="$(sips -g pixelHeight "$DMG_BACKGROUND_PATH" 2>/dev/null | awk '/pixelHeight/ {print $2}')"
+fi
+DMG_WINDOW_WIDTH="${DMG_WINDOW_WIDTH:-660}"
+DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-420}"
+if [ "$DMG_WINDOW_SCALE" -gt 0 ] && [ "$DMG_WINDOW_SCALE" -ne 100 ]; then
+  DMG_WINDOW_WIDTH=$((DMG_WINDOW_WIDTH * DMG_WINDOW_SCALE / 100))
+  DMG_WINDOW_HEIGHT=$((DMG_WINDOW_HEIGHT * DMG_WINDOW_SCALE / 100))
+fi
+APP_ICON_X=$((DMG_WINDOW_WIDTH * 27 / 100))
+APP_ICON_Y=$((DMG_WINDOW_HEIGHT * 49 / 100))
+APPLICATIONS_ICON_X=$((DMG_WINDOW_WIDTH * 73 / 100))
+APPLICATIONS_ICON_Y="$APP_ICON_Y"
+
+create-dmg \
+  --volname "$DMG_VOLUME_NAME" \
+  --background "$DMG_BACKGROUND_PATH" \
+  --window-pos 100 100 \
+  --window-size "$DMG_WINDOW_WIDTH" "$DMG_WINDOW_HEIGHT" \
+  --icon-size 96 \
+  --icon "$DMG_APP_NAME" "$APP_ICON_X" "$APP_ICON_Y" \
+  --hide-extension "$DMG_APP_NAME" \
+  --app-drop-link "$APPLICATIONS_ICON_X" "$APPLICATIONS_ICON_Y" \
+  --no-internet-enable \
+  --hdiutil-quiet \
+  --overwrite \
+  "$DMG_PATH" \
+  "$DMG_STAGING_DIR"
+
+rm -rf "$DMG_STAGING_DIR"
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
   codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"

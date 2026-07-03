@@ -33,12 +33,14 @@ class PairingEndpoint {
   final String baseUrl;
   final String? wsUrl;
   final int priority; // lower = tried first
+  final bool hidden;
 
   const PairingEndpoint({
     required this.kind,
     required this.baseUrl,
     this.wsUrl,
     this.priority = 1,
+    this.hidden = false,
   });
 
   String get effectiveWsUrl => (wsUrl?.trim().isNotEmpty ?? false)
@@ -181,13 +183,19 @@ PairingPayload _parseV3(Map<String, dynamic> decoded, String token) {
         baseUrl: baseUrl,
         wsUrl: (ws?.isNotEmpty ?? false) ? ws : null,
         priority: (e['priority'] as num?)?.toInt() ?? 1,
+        hidden:
+            _boolFlag(e['hidden']) ||
+            _boolFlag(e['isHidden']) ||
+            _boolFlag(e['disabled']) ||
+            (e.containsKey('enabled') && !_boolFlag(e['enabled'])),
       ),
     );
   }
 
   // Drop loopback/local; the client always tries LAN first then Public.
-  final usable = parsed.where((e) => e.kind != EndpointKind.local).toList()
-    ..sort((a, b) => a.priority.compareTo(b.priority));
+  final usable =
+      parsed.where((e) => e.kind != EndpointKind.local && !e.hidden).toList()
+        ..sort((a, b) => a.priority.compareTo(b.priority));
   if (usable.isEmpty) {
     throw const PairingParseException(
       'The connection has no usable LAN or public endpoint.',
@@ -250,13 +258,19 @@ PairingPayload _parseV2(Map<String, dynamic> decoded, String token) {
         baseUrl: baseUrl,
         wsUrl: (ws?.isNotEmpty ?? false) ? ws : null,
         priority: (e['priority'] as num?)?.toInt() ?? 1,
+        hidden:
+            _boolFlag(e['hidden']) ||
+            _boolFlag(e['isHidden']) ||
+            _boolFlag(e['disabled']) ||
+            (e.containsKey('enabled') && !_boolFlag(e['enabled'])),
       ),
     );
   }
 
   // Drop loopback/local from the user-facing candidate set; sort by priority.
-  final usable = parsed.where((e) => e.kind != EndpointKind.local).toList()
-    ..sort((a, b) => a.priority.compareTo(b.priority));
+  final usable =
+      parsed.where((e) => e.kind != EndpointKind.local && !e.hidden).toList()
+        ..sort((a, b) => a.priority.compareTo(b.priority));
   if (usable.isEmpty) {
     throw const PairingParseException(
       'The pairing code has no usable LAN or public endpoint.',
@@ -280,6 +294,16 @@ PairingPayload _parseV2(Map<String, dynamic> decoded, String token) {
     serverName: (decoded['serverName'] as String?)?.trim(),
     endpoints: endpoints,
   );
+}
+
+bool _boolFlag(Object? raw) {
+  if (raw is bool) return raw;
+  if (raw is num) return raw != 0;
+  if (raw is String) {
+    final v = raw.toLowerCase().trim();
+    return v == 'true' || v == '1' || v == 'yes';
+  }
+  return false;
 }
 
 void _validateWs(String? wsRaw) {

@@ -9,9 +9,15 @@
 [English](README.md) · **简体中文** · [繁體中文](README.zh-Hant.md)
 
 **你的 iMessage、你的 Mac、你的手机 —— 中间什么都没有。**
-*一个自托管的 iMessage 桥接工具。没有 MicaGo 云、没有账号、没有中继。*
+*一个自托管的 iMessage 桥接工具。*
 
-[文档](docs/index.zh-Hans.md) · [快速上手](docs/getting-started.zh-Hans.md) · [安全模型](#-安全模型) · [远程访问](docs/remote-access-cloudflare.md) · [CHANGELOG](MicaGoServer/docs/CHANGELOG.md)
+*Built with ♥️ for everyone.*
+
+[![文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-0064E0?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/index.zh-Hans.md)
+[![快速上手](https://img.shields.io/badge/%E5%BF%AB%E9%80%9F%E4%B8%8A%E6%89%8B-0A1317?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/getting-started.zh-Hans.md)
+[![安全模型](https://img.shields.io/badge/%E5%AE%89%E5%85%A8%E6%A8%A1%E5%9E%8B-31A24C?style=for-the-badge)](https://github.com/cinmou/micaGo#-%E5%AE%89%E5%85%A8%E6%A8%A1%E5%9E%8B)
+[![远程访问](https://img.shields.io/badge/%E8%BF%9C%E7%A8%8B%E8%AE%BF%E9%97%AE-5D6C7B?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/remote-access-cloudflare.md)
+[![CHANGELOG](https://img.shields.io/badge/CHANGELOG-B89B5E?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/MicaGoServer/docs/CHANGELOG.md)
 
 </div>
 
@@ -25,9 +31,17 @@ MicaGo 让你 **自己的** 安卓手机,通过你 **自己的** Mac,收发你�
 Wi‑Fi(或你自行控制的可选公网地址)与之配对。你的数据始终只在 **你的** Mac 和 **你的**
 设备之间传输。
 
-> ⚠️ **项目状态:** 可用、可自托管,但仍较年轻。它读取 macOS「信息」的内部机制,并需要
-> 「完全磁盘访问权限」。在依赖它之前,请先阅读 [安全模型](#-安全模型) 与
-> [局限性](#-局限性)。与 Apple 无任何关联。
+MicaGo 仍处在测试阶段。它会读取 macOS「信息」的内部数据,并需要「完全磁盘访问权限」。
+在依赖它之前,请先阅读 [安全模型](#-安全模型) 与 [局限性](#-局限性)。与 Apple 无任何关联。
+
+---
+
+## ✅ 系统要求
+
+- **Mac Companion:** macOS 13 或更新版本,需要已登录 iMessage,并授予「完全磁盘访问权限」
+  以读取「信息」数据。
+- **安卓客户端:** Android 6.0 或更新版本(API 23+)。客户端包含手机、平板和大屏布局。
+- **网络:** 首次设置推荐使用局域网。远程访问是可选功能,需要你自己的公网地址或隧道。
 
 ---
 
@@ -92,8 +106,8 @@ MicaGo 是 **本地优先** 的,设计上让你的数据始终属于你。
 | **推送** | 若你启用 FCM,负载只携带很小的唤醒/预览 —— 绝不包含你的消息历史或令牌。 |
 | **私有 API** | 可选的 IMCore 助手(编辑/撤回/删除)受能力检测限制;绝不伪造成功。 |
 
-> **MicaGo 做的** —— 把 *你的* iMessage 桥接到 *你的* 设备,走 *你* 掌控的连接。
-> **MicaGo **不** 做的** —— 运行云、持有账号、把你的消息存到你 Mac 以外的任何地方,或上传你的通讯录。
+简单说,MicaGo 只把你的 iMessage 通过你掌控的连接桥接到你的设备;它不运行云服务、不持有账号、
+不上传通讯录,也不会把消息存到你的 Mac 以外。
 
 ---
 
@@ -180,16 +194,6 @@ MicaGo/
 
 > `Ref/`（若本地存在）存放开发期间使用的第三方参考项目。它 **不属于** MicaGo,且已被
 > git 忽略。
-
----
-
-## 🌐 本地化
-
-安卓客户端内置 **English / 简体中文 / 繁體中文**(在设置中选择,或跟随系统语言)。Companion
-的菜单/侧边栏与这些文档也已本地化;本 README 提供 [简体中文](README.zh-Hans.md) 与
-[繁體中文](README.zh-Hant.md) 版本。
-
----
 
 ## ⚠️ 局限性
 

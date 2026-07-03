@@ -63,7 +63,8 @@ void main() {
   );
 
   test(
-    'system color choice falls back when dynamic colors disappear',
+    'system color choice is preserved but derives a fallback when dynamic '
+    'colors disappear',
     () async {
       final store = _MemoryStore()..values['micago.theme.color'] = 'system';
       final theme = ThemeController(store: store);
@@ -71,8 +72,12 @@ void main() {
       await theme.bootstrap();
       theme.setSystemColorsAvailable(false);
 
-      expect(theme.colorChoice, ThemeColorChoice.micago);
-      expect(store.values['micago.theme.color'], ThemeColorChoice.micago.name);
+      // The saved 'system' preference is kept (so it's honoured again when
+      // dynamic colors return); the effective color falls back via the derived
+      // useSystemColors getter without overwriting the stored choice.
+      expect(theme.colorChoice, ThemeColorChoice.system);
+      expect(theme.useSystemColors, isFalse);
+      expect(store.values['micago.theme.color'], 'system');
     },
   );
 }

@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 
 /// App version embedded in the device label so the Companion can show which
 /// client build is connected (C19). Bump alongside pubspec `version`.
-const String kAppVersion = '0.55.0';
+const String kAppVersion = '0.56.0';
 
 /// Generates a stable, client-side device id (C21u). Persisted locally and sent
 /// on **every** registration so the server upserts the same device row instead

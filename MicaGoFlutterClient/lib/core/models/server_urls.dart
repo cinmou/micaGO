@@ -18,6 +18,8 @@ class ServerEndpoint {
   final String label;
   final String baseUrl;
   final String wsUrl;
+  final bool hidden;
+  final bool enabled;
 
   /// `reachable` is `true` / `false` / `"unknown"` on the wire; kept as the
   /// raw dynamic and exposed via [reachableLabel].
@@ -28,10 +30,13 @@ class ServerEndpoint {
     required this.label,
     required this.baseUrl,
     required this.wsUrl,
+    this.hidden = false,
+    this.enabled = true,
     required this.reachable,
   });
 
   String get reachableLabel => _reachableLabel(reachable);
+  bool get isVisible => enabled && !hidden;
 
   factory ServerEndpoint.fromJson(Map<String, dynamic> json) {
     return ServerEndpoint(
@@ -39,6 +44,13 @@ class ServerEndpoint {
       label: (json['label'] as String?) ?? '',
       baseUrl: (json['baseUrl'] as String?) ?? '',
       wsUrl: (json['wsUrl'] as String?) ?? '',
+      hidden:
+          _boolFlag(json['hidden']) ||
+          _boolFlag(json['isHidden']) ||
+          _boolFlag(json['disabled']),
+      enabled: json.containsKey('enabled')
+          ? _boolFlag(json['enabled'])
+          : !_boolFlag(json['disabled']),
       reachable: json['reachable'],
     );
   }
@@ -126,4 +138,14 @@ class ServerUrls {
 String _reachableLabel(Object? reachable) {
   if (reachable is bool) return reachable ? 'reachable' : 'unreachable';
   return 'unknown';
+}
+
+bool _boolFlag(Object? raw) {
+  if (raw is bool) return raw;
+  if (raw is num) return raw != 0;
+  if (raw is String) {
+    final v = raw.toLowerCase().trim();
+    return v == 'true' || v == '1' || v == 'yes';
+  }
+  return false;
 }

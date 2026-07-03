@@ -3,13 +3,21 @@ package com.micago.message.mica_go
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import kotlin.math.roundToInt
 
 class MainActivity : FlutterActivity() {
     private val channelName = "micago/keepalive"
@@ -123,7 +131,7 @@ class MainActivity : FlutterActivity() {
             val avatarPath = map["avatarPath"] as? String
             val shortcutIcon = avatarPath
                 ?.let { BitmapFactory.decodeFile(it) }
-                ?.let { Icon.createWithBitmap(it) }
+                ?.let { Icon.createWithBitmap(circularShortcutBitmap(it)) }
                 ?: Icon.createWithResource(this, R.mipmap.ic_launcher)
             val intent = Intent(this, MainActivity::class.java).apply {
                 action = Intent.ACTION_SEND
@@ -141,5 +149,28 @@ class MainActivity : FlutterActivity() {
         }
         manager.dynamicShortcuts = shortcuts
         return true
+    }
+
+    private fun circularShortcutBitmap(source: Bitmap): Bitmap {
+        val iconSize = (96f * resources.displayMetrics.density)
+            .roundToInt()
+            .coerceAtLeast(96)
+        val output = Bitmap.createBitmap(iconSize, iconSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).also {
+                val srcSize = minOf(source.width, source.height).toFloat()
+                val left = (source.width - srcSize) / 2f
+                val top = (source.height - srcSize) / 2f
+                val src = RectF(left, top, left + srcSize, top + srcSize)
+                val dst = RectF(0f, 0f, iconSize.toFloat(), iconSize.toFloat())
+                val matrix = Matrix()
+                matrix.setRectToRect(src, dst, Matrix.ScaleToFit.FILL)
+                it.setLocalMatrix(matrix)
+            }
+        }
+        val radius = iconSize / 2f
+        canvas.drawCircle(radius, radius, radius, paint)
+        return output
     }
 }

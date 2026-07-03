@@ -13,9 +13,14 @@ import '../../core/network/notification_display.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/models/connection_profile.dart';
 import '../../core/network/connection_candidate.dart';
+import '../../core/storage/local_cache_store.dart';
 import '../../core/theme_controller.dart';
 import '../../core/ui/glass_theme_widgets.dart';
 import '../../core/ui/top_banner.dart';
+import '../chats/chat_service.dart';
+import '../chats/message_render.dart';
+import '../chats/models/chat_summary.dart';
+import '../chats/models/message_model.dart';
 import '../contacts/people_screen.dart';
 import '../debug/debug_log_panel.dart';
 import '../home/connection_status_view.dart';
@@ -165,19 +170,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (profile != null)
                     _RouteSwitcher(app: app, profile: profile),
                   const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () => context.go(Routes.connection),
-                    icon: const Icon(Icons.edit_outlined),
-                    label: Text(strings.t('settings.editConnection')),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.error,
+                  _TwoActionRow(
+                    primary: OutlinedButton.icon(
+                      onPressed: () => context.go(Routes.connection),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: Text(strings.t('settings.editConnection')),
                     ),
-                    onPressed: () => _confirmDisconnect(context, app),
-                    icon: const Icon(Icons.logout),
-                    label: Text(strings.t('settings.disconnect')),
+                    secondary: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                      onPressed: () => _confirmDisconnect(context, app),
+                      icon: const Icon(Icons.logout),
+                      label: Text(strings.t('settings.disconnect')),
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Center(
@@ -240,6 +246,24 @@ Widget _leadingIcon(IconData icon, {Color? color}) => SizedBox(
   width: 40,
   child: Center(child: Icon(icon, color: color)),
 );
+
+class _TwoActionRow extends StatelessWidget {
+  final Widget primary;
+  final Widget secondary;
+
+  const _TwoActionRow({required this.primary, required this.secondary});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: primary),
+        const SizedBox(width: 8),
+        Expanded(child: secondary),
+      ],
+    );
+  }
+}
 
 /// C26: when the server advertises more than one route (multiple LAN interfaces,
 /// or LAN + Public), let the user pick which one to use. "Automatic" keeps the
@@ -346,26 +370,23 @@ class _DeviceRegisterDebugState extends State<_DeviceRegisterDebug> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Row(
-          children: [
-            FilledButton.icon(
-              onPressed: _busy ? null : _registerNow,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.cloud_upload_outlined),
-              label: const Text('Register device now'),
-            ),
-            const SizedBox(width: 12),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _refresh,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
-            ),
-          ],
+        _TwoActionRow(
+          primary: FilledButton.icon(
+            onPressed: _busy ? null : _registerNow,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_upload_outlined),
+            label: const Text('Register device now'),
+          ),
+          secondary: OutlinedButton.icon(
+            onPressed: _busy ? null : _refresh,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refresh'),
+          ),
         ),
         const SizedBox(height: 16),
         Card(
@@ -848,8 +869,8 @@ Color _settingsAccent1_100(ColorScheme scheme) => Color.alphaBlend(
   scheme.surfaceContainerLowest,
 );
 
-/// Restores client-hidden messages and contacts (the "delete" on this device is
-/// reversible). Two buttons, per the two hide granularities.
+/// Entry points for client-hidden messages and contacts. The actual restore
+/// actions live in native-feeling list subpages so users can review items first.
 class _HiddenItemsCard extends StatefulWidget {
   final AppController app;
   const _HiddenItemsCard({required this.app});
@@ -878,28 +899,28 @@ class _HiddenItemsCardState extends State<_HiddenItemsCard> {
     });
   }
 
-  Future<void> _releaseMessages() async {
-    final n = await widget.app.releaseHiddenMessages();
-    await _refresh();
-    if (!mounted) return;
-    _toast(n, 'settings.releasedMessages');
+  Future<void> _openMessages() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _SettingsSubPage(
+          title: MicaLocalizations.of(context).t('settings.hiddenMessages'),
+          child: HiddenMessagesPage(app: widget.app),
+        ),
+      ),
+    );
+    if (mounted) await _refresh();
   }
 
-  Future<void> _releaseContacts() async {
-    final n = await widget.app.releaseHiddenChats();
-    await _refresh();
-    if (!mounted) return;
-    _toast(n, 'settings.releasedContacts');
-  }
-
-  void _toast(int n, String key) {
-    final strings = MicaLocalizations.of(context);
-    final msg = n == 0
-        ? strings.t('settings.nothingHidden')
-        : strings.t(key).replaceAll('{n}', '$n');
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(msg)));
+  Future<void> _openContacts() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _SettingsSubPage(
+          title: MicaLocalizations.of(context).t('settings.hiddenContacts'),
+          child: HiddenContactsPage(app: widget.app),
+        ),
+      ),
+    );
+    if (mounted) await _refresh();
   }
 
   @override
@@ -915,40 +936,390 @@ class _HiddenItemsCardState extends State<_HiddenItemsCard> {
               children: [
                 _leadingIcon(Icons.visibility_off_outlined),
                 const SizedBox(width: 12),
-                Text(
-                  strings.t('settings.hiddenItems'),
-                  style: Theme.of(context).textTheme.titleSmall,
+                Expanded(
+                  child: Text(
+                    strings.t('settings.hiddenItems'),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+            Text(
+              strings.t('settings.hiddenItemsBody'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _releaseMessages,
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: Text(
-                    '${strings.t('settings.releaseHiddenMessages')}'
-                    '${_hiddenMessages > 0 ? ' ($_hiddenMessages)' : ''}',
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _releaseContacts,
-                  icon: const Icon(Icons.contacts_outlined),
-                  label: Text(
-                    '${strings.t('settings.releaseHiddenContacts')}'
-                    '${_hiddenContacts > 0 ? ' ($_hiddenContacts)' : ''}',
-                  ),
-                ),
-              ],
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _leadingIcon(Icons.chat_bubble_outline),
+              title: Text(strings.t('settings.hiddenMessages')),
+              subtitle: Text(
+                strings
+                    .t('settings.hiddenMessagesCount')
+                    .replaceAll('{n}', '$_hiddenMessages'),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _openMessages,
+            ),
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _leadingIcon(Icons.contacts_outlined),
+              title: Text(strings.t('settings.hiddenContacts')),
+              subtitle: Text(
+                strings
+                    .t('settings.hiddenContactsCount')
+                    .replaceAll('{n}', '$_hiddenContacts'),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _openContacts,
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class HiddenMessagesPage extends StatefulWidget {
+  final AppController app;
+  const HiddenMessagesPage({super.key, required this.app});
+
+  @override
+  State<HiddenMessagesPage> createState() => _HiddenMessagesPageState();
+}
+
+class _HiddenMessagesPageState extends State<HiddenMessagesPage> {
+  var _items = const <HiddenMessageRecord>[];
+  final _selected = <String>{};
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final items = await widget.app.hiddenMessages();
+    if (!mounted) return;
+    setState(() {
+      _items = items;
+      _selected.removeWhere((guid) => !items.any((e) => e.guid == guid));
+      _loading = false;
+    });
+  }
+
+  Future<void> _restore(Iterable<String> guids) async {
+    final ids = guids.where((g) => g.isNotEmpty).toSet();
+    if (ids.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    final n = await widget.app.releaseHiddenMessages(ids);
+    await _load();
+    if (!mounted) return;
+    setState(() {
+      _selected.clear();
+      _busy = false;
+    });
+    _toastRestore(context, n, 'settings.releasedMessages');
+  }
+
+  void _toggle(String guid, bool selected) {
+    setState(() {
+      if (selected) {
+        _selected.add(guid);
+      } else {
+        _selected.remove(guid);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_items.isEmpty) {
+      return _HiddenEmptyState(
+        icon: Icons.chat_bubble_outline,
+        label: strings.t('settings.noHiddenMessages'),
+      );
+    }
+    return Column(
+      children: [
+        _HiddenSelectionBar(
+          selectedCount: _selected.length,
+          busy: _busy,
+          onRestore: _selected.isEmpty ? null : () => _restore(_selected),
+          onClear: _selected.isEmpty ? null : () => setState(_selected.clear),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: EdgeInsets.only(
+              bottom: 12 + MediaQuery.paddingOf(context).bottom,
+            ),
+            itemCount: _items.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final item = _items[i];
+              final selected = _selected.contains(item.guid);
+              final message = item.message;
+              final chat = item.chat;
+              final title = _hiddenMessageTitle(message);
+              final subtitle = [
+                if (chat != null) chat.title,
+                _hiddenMessageTime(context, message),
+              ].where((s) => s.isNotEmpty).join(' · ');
+              return CheckboxListTile(
+                value: selected,
+                onChanged: _busy ? null : (v) => _toggle(item.guid, v ?? false),
+                secondary: _leadingIcon(Icons.chat_bubble_outline),
+                title: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: subtitle.isEmpty
+                    ? Text(
+                        item.guid,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                controlAffinity: ListTileControlAffinity.trailing,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class HiddenContactsPage extends StatefulWidget {
+  final AppController app;
+  const HiddenContactsPage({super.key, required this.app});
+
+  @override
+  State<HiddenContactsPage> createState() => _HiddenContactsPageState();
+}
+
+class _HiddenContactsPageState extends State<HiddenContactsPage> {
+  var _items = const <ChatSummary>[];
+  final _selected = <String>{};
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final items = await widget.app.hiddenChats();
+    if (!mounted) return;
+    setState(() {
+      _items = items;
+      _selected.removeWhere((guid) => !items.any((e) => e.guid == guid));
+      _loading = false;
+    });
+  }
+
+  Future<void> _restore(Iterable<String> guids) async {
+    final ids = guids.where((g) => g.isNotEmpty).toSet();
+    if (ids.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    final n = await widget.app.releaseHiddenChats(ids);
+    await _load();
+    if (!mounted) return;
+    setState(() {
+      _selected.clear();
+      _busy = false;
+    });
+    _toastRestore(context, n, 'settings.releasedContacts');
+  }
+
+  void _toggle(String guid, bool selected) {
+    setState(() {
+      if (selected) {
+        _selected.add(guid);
+      } else {
+        _selected.remove(guid);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_items.isEmpty) {
+      return _HiddenEmptyState(
+        icon: Icons.contacts_outlined,
+        label: strings.t('settings.noHiddenContacts'),
+      );
+    }
+    return Column(
+      children: [
+        _HiddenSelectionBar(
+          selectedCount: _selected.length,
+          busy: _busy,
+          onRestore: _selected.isEmpty ? null : () => _restore(_selected),
+          onClear: _selected.isEmpty ? null : () => setState(_selected.clear),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: EdgeInsets.only(
+              bottom: 12 + MediaQuery.paddingOf(context).bottom,
+            ),
+            itemCount: _items.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final chat = _items[i];
+              final selected = _selected.contains(chat.guid);
+              return CheckboxListTile(
+                value: selected,
+                onChanged: _busy ? null : (v) => _toggle(chat.guid, v ?? false),
+                secondary: _leadingIcon(
+                  chat.isGroup ? Icons.groups_outlined : Icons.person_outline,
+                ),
+                title: Text(
+                  chat.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  chat.service.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                controlAffinity: ListTileControlAffinity.trailing,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HiddenSelectionBar extends StatelessWidget {
+  final int selectedCount;
+  final bool busy;
+  final VoidCallback? onRestore;
+  final VoidCallback? onClear;
+
+  const _HiddenSelectionBar({
+    required this.selectedCount,
+    required this.busy,
+    required this.onRestore,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                strings
+                    .t('settings.selectedCount')
+                    .replaceAll('{n}', '$selectedCount'),
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            TextButton(
+              onPressed: busy ? null : onClear,
+              child: Text(strings.t('settings.clearSelection')),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: busy ? null : onRestore,
+              icon: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.restore),
+              label: Text(strings.t('settings.restoreSelected')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HiddenEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _HiddenEmptyState({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 42, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _hiddenMessageTitle(MessageModel? message) {
+  if (message == null) return 'Message';
+  return displayText(message) ?? messagePreviewText(message);
+}
+
+String _hiddenMessageTime(BuildContext context, MessageModel? message) {
+  final ts = message?.dateCreated;
+  if (ts == null) return '';
+  return threadTimestampLabel(
+    DateTime.fromMillisecondsSinceEpoch(ts),
+    now: DateTime.now(),
+    use24h: MediaQuery.alwaysUse24HourFormatOf(context),
+    locale: Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'en',
+  );
+}
+
+void _toastRestore(BuildContext context, int n, String key) {
+  final strings = MicaLocalizations.of(context);
+  final msg = n == 0
+      ? strings.t('settings.nothingHidden')
+      : strings.t(key).replaceAll('{n}', '$n');
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(SnackBar(content: Text(msg)));
 }
 
 /// C54: export/import a `.micagobak` settings backup.
@@ -982,21 +1353,17 @@ class _BackupRestoreCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.tonalIcon(
-                  onPressed: () => exportSettingsBackup(context),
-                  icon: const Icon(Icons.ios_share),
-                  label: Text(strings.t('settings.exportBackup')),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => importSettingsBackup(context),
-                  icon: const Icon(Icons.restore),
-                  label: Text(strings.t('settings.importBackup')),
-                ),
-              ],
+            _TwoActionRow(
+              primary: FilledButton.tonalIcon(
+                onPressed: () => exportSettingsBackup(context),
+                icon: const Icon(Icons.ios_share),
+                label: Text(strings.t('settings.exportBackup')),
+              ),
+              secondary: OutlinedButton.icon(
+                onPressed: () => importSettingsBackup(context),
+                icon: const Icon(Icons.restore),
+                label: Text(strings.t('settings.importBackup')),
+              ),
             ),
           ],
         ),
@@ -1058,23 +1425,28 @@ class _ChatBackgroundPicker extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton.icon(
+        if (exists)
+          _TwoActionRow(
+            primary: FilledButton.icon(
               onPressed: () => _pick(context),
               icon: const Icon(Icons.photo_library_outlined),
-              label: Text(exists ? 'Change image' : 'Choose image'),
+              label: const Text('Change image'),
             ),
-            if (exists)
-              OutlinedButton.icon(
-                onPressed: () => theme.clearChatBackground(),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Remove'),
-              ),
-          ],
-        ),
+            secondary: OutlinedButton.icon(
+              onPressed: () => theme.clearChatBackground(),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Remove'),
+            ),
+          )
+        else
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => _pick(context),
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Choose image'),
+            ),
+          ),
       ],
     );
   }

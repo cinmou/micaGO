@@ -4,6 +4,12 @@ Current release version: `0.54.0`.
 
 ## Mac Companion DMG
 
+The styled DMG depends on [`create-dmg`](https://github.com/create-dmg/create-dmg):
+
+```sh
+brew install create-dmg
+```
+
 The Companion app bundles the Go backend at:
 
 ```text
@@ -29,6 +35,9 @@ APPLE_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx" \
 VERSION=0.54.0 \
 scripts/package-dmg.sh
 ```
+
+The DMG is styled as a standard drag-to-install disk image: it contains the
+Companion app, an `Applications` shortcut, and a Finder background image.
 
 The output is:
 

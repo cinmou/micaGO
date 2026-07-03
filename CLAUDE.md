@@ -73,6 +73,28 @@ Three components:
   `GestureDetector`) opens details; the top-right info button is removed (both the
   embedded pane header and the phone `AppBar`).
 
+## Connection security review + WS token in header (C55, v0.56.0)
+
+- **Reviewed the client→server path**: REST + WS both bearer-auth'd. Server auth
+  is constant-time (`crypto/subtle`), token is 256-bit `crypto/rand` hex, HTTP
+  endpoints accept the token **only** in the `Authorization` header (never a query
+  param); `--disable-auth` is refused off-localhost. AppleScript send escapes `\`
+  and `"` and passes the script as a single `osascript -e` argv (no shell) → no
+  injection. Attachment serving resolves symlinks and requires the path be under
+  Attachments/StickerCache. SQL is parameterised (the two `Sprintf` cases are
+  constant schema identifiers). All sound.
+- **Fixed: the WebSocket sent the token as `?token=` in the URL** (leaks into
+  access/proxy/tunnel logs). Native platforms now send it in the `Authorization`
+  header via a conditional-import factory (`ws_channel_factory_io.dart` /
+  `_web.dart`, imported with `if (dart.library.html)`); web keeps `?token=` since
+  browsers can't set WS handshake headers. Server already accepts both.
+- **Accepted tradeoffs (documented, not changed)**: LAN default is `http://` so
+  the token/content are plaintext on-LAN (inherent to a self-hosted LAN app; the
+  Cloudflare tunnel is HTTPS); the WS `InsecureSkipVerify:true` skips the Origin
+  check but the token gates the upgrade so CSWSH isn't exploitable; first-run
+  prints the token to stdout for headless pairing (the Companion redacts captured
+  stdout, and it's also in the config file + pairing QR).
+
 ## Settings backup/restore + reaction/emoji polish (C54, v0.55.0)
 
 - **`.micagobak` settings backup** (`core/backup/backup_service.dart`) — a plain

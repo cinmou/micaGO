@@ -2490,7 +2490,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             child: bubbleWithOverlays,
           );
 
-    final messageColumn = Column(
+    final messageColumnBody = Column(
       crossAxisAlignment: fromMe
           ? CrossAxisAlignment.end
           : CrossAxisAlignment.start,
@@ -2527,6 +2527,14 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ),
       ],
     );
+    final messageColumn = hasMedia
+        ? messageColumnBody
+        : GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onLongPressStart: (details) =>
+                widget.onActions(details.globalPosition),
+            child: messageColumnBody,
+          );
 
     final row = showGroupSender
         ? Row(
@@ -2554,21 +2562,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
               MediaQuery.of(context).size.width *
               (showGroupSender ? 0.86 : 0.78),
         ),
-        child: GestureDetector(
-          onLongPressStart: (details) =>
-              widget.onActions(details.globalPosition),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            padding: EdgeInsets.fromLTRB(3, rowTopPadding, 3, rowBottomPadding),
-            decoration: BoxDecoration(
-              color: widget.highlighted
-                  ? scheme.tertiary.withValues(alpha: 0.24)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: row,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.fromLTRB(3, rowTopPadding, 3, rowBottomPadding),
+          decoration: BoxDecoration(
+            color: widget.highlighted
+                ? scheme.tertiary.withValues(alpha: 0.24)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
           ),
+          child: row,
         ),
       ),
     );
@@ -3031,7 +3035,7 @@ class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final small = Theme.of(context).textTheme.labelSmall;
+    final footerStyle = _footerTextStyle(context);
     final state = deliveryStateFor(message);
 
     // Failed is always actionable, regardless of position.
@@ -3047,7 +3051,7 @@ class _Footer extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 'Failed — tap to retry',
-                style: small?.copyWith(color: scheme.error),
+                style: footerStyle.copyWith(color: scheme.error),
               ),
             ],
           ),
@@ -3092,12 +3096,21 @@ class _Footer extends StatelessWidget {
     if (parts.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 2, left: 10, right: 10),
-      child: Text(
-        parts.join(' · '),
-        style: small?.copyWith(color: scheme.onSurfaceVariant),
-      ),
+      child: Text(parts.join(' · '), style: footerStyle),
     );
   }
+}
+
+TextStyle _footerTextStyle(BuildContext context) {
+  final scheme = Theme.of(context).colorScheme;
+  final base =
+      Theme.of(context).textTheme.labelSmall ?? const TextStyle(fontSize: 11);
+  return base.copyWith(
+    color: scheme.onSurfaceVariant,
+    fontWeight: FontWeight.w600,
+    height: 1.15,
+    letterSpacing: 0,
+  );
 }
 
 class _RevealTimestampLabel extends StatelessWidget {

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>micaGO - iMessage, from anywhere</title>
+    <meta
+      name="description"
+      content="micaGO lets your Android phone read and send iMessage and SMS through your own Mac, without routing conversations through a hosted message cloud."
+    />
+    <link rel="icon" href="assets/Client.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="micaGO home">
+        <img class="brand-logo" src="assets/Client.png" alt="" />
+        <span>micaGO</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#downloads">Downloads</a>
+        <a href="index.md">Docs</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero section">
+        <div class="hero-copy">
+          <h1><span>iMessage,</span> <span>from</span> <span>anywhere.</span></h1>
+          <p class="hero-subtitle">
+            micaGO lets you read and send iMessage and SMS through your own Mac, without routing
+            your conversations through a hosted message cloud.
+          </p>
+          <div class="hero-actions" aria-label="Download and documentation links">
+            <a class="button button-primary" href="https://github.com/cinmou/MicaGo/releases/latest">Download beta</a>
+            <a class="button button-secondary" href="getting-started.md">Setup guide</a>
+            <a class="button button-ghost" href="https://github.com/cinmou/MicaGo">View source</a>
+          </div>
+        </div>
+        <div class="hero-visual logo-hero" aria-label="micaGO client and server apps">
+          <img class="hero-logo hero-logo-client" src="assets/Client.png" alt="micaGO client app logo" />
+          <img class="hero-logo hero-logo-server" src="assets/Server.png" alt="micaGO Mac Companion logo" />
+        </div>
+      </section>
+
+      <section class="trust-row" aria-label="Project principles">
+        <div>
+          <strong>No hosted message server</strong>
+          <span>Your conversations stay between your devices and your Mac.</span>
+        </div>
+        <div>
+          <strong>Your Mac stays in control</strong>
+          <span>The companion app runs the bridge and shows connection status.</span>
+        </div>
+        <div>
+          <strong>Open source</strong>
+          <span>Client, server, and companion code are available on GitHub.</span>
+        </div>
+      </section>
+
+      <section id="features" class="section split-section">
+        <div class="section-copy">
+          <p class="eyebrow">What it does</p>
+          <h2>Use your Mac as the bridge.</h2>
+          <p>
+            Install the Mac Companion, pair the client, and keep messaging through the accounts
+            already configured on your Mac.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>iMessage through your Mac</h3>
+            <p>Read and send iMessage from your client through your own Mac.</p>
+          </article>
+          <article class="feature-card">
+            <h3>SMS through Mac</h3>
+            <p>Use SMS relay when your Mac and Messages setup support it.</p>
+          </article>
+          <article class="feature-card">
+            <h3>Rich messaging support</h3>
+            <p>
+              Send media and use modern chat features such as replies, reactions, link previews,
+              voice messages, and group chats where supported.
+            </p>
+          </article>
+          <article class="feature-card">
+            <h3>Local-first bridge</h3>
+            <p>Connect over LAN first, with optional remote access through your own public URL.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="showcase section">
+        <div class="showcase-card client-card">
+          <div>
+            <p class="eyebrow">Client</p>
+            <h2>Built for daily chats.</h2>
+            <p>
+              The client focuses on a familiar chat list, message threads, attachments, reactions,
+              and notification controls.
+            </p>
+          </div>
+          <img src="assets/Client%201.png" alt="micaGO client home screen" />
+        </div>
+        <div class="showcase-card server-card">
+          <div>
+            <p class="eyebrow">Mac Companion</p>
+            <h2>Manage the bridge from your Mac.</h2>
+            <p>
+              Start the server, pair devices, check sync status, configure notifications, and view
+              diagnostics from one Mac app.
+            </p>
+          </div>
+          <img src="assets/Server%201.png" alt="micaGO Mac Companion dashboard" />
+        </div>
+      </section>
+
+      <section class="section steps-section">
+        <div class="section-copy centered">
+          <p class="eyebrow">How it works</p>
+          <h2>Three steps to start messaging.</h2>
+        </div>
+        <div class="steps">
+          <article>
+            <span>1</span>
+            <h3>Run Mac Companion</h3>
+            <p>Launch the companion app on the Mac that already has Messages configured.</p>
+          </article>
+          <article>
+            <span>2</span>
+            <h3>Pair Android</h3>
+            <p>Connect on the same network, or use your own public URL for remote access.</p>
+          </article>
+          <article>
+            <span>3</span>
+            <h3>Start messaging</h3>
+            <p>Use your Android phone while the Mac keeps the bridge under your control.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="privacy" class="privacy-section section">
+        <div>
+          <p class="eyebrow">Privacy model</p>
+          <h2>Your messages do not pass through a micaGO hosted message cloud.</h2>
+        </div>
+        <div class="privacy-list">
+          <p>
+            micaGO is designed around your Mac. The companion app reads from your local Messages
+            setup and serves the devices you pair.
+          </p>
+          <p>
+            Remote access is optional. If you use it, you bring your own tunnel or public URL and
+            protect it with your token.
+          </p>
+          <p>
+            Push notifications are optional and can be self-hosted through your own Firebase setup.
+          </p>
+        </div>
+      </section>
+
+      <section id="downloads" class="section downloads-section">
+        <div class="section-copy centered">
+          <p class="eyebrow">Downloads</p>
+          <h2>Install the beta builds.</h2>
+          <p>Start with the Mac Companion, then install the client and pair it.</p>
+        </div>
+        <div class="download-grid">
+          <article class="download-card">
+            <div class="download-card-header">
+              <img class="download-icon" src="assets/Server.png" alt="" />
+              <span class="platform">macOS</span>
+            </div>
+            <h3>Mac Companion</h3>
+            <p>Requires macOS 13 or newer. Runs the local server, pairs devices, and manages sync.</p>
+            <a class="button button-buy" href="https://github.com/cinmou/MicaGo/releases/latest">Download DMG</a>
+          </article>
+          <article class="download-card">
+            <div class="download-card-header">
+              <img class="download-icon" src="assets/Client.png" alt="" />
+              <span class="platform">Android</span>
+            </div>
+            <h3>Android APK</h3>
+            <p>
+              Requires Android 6.0 or newer. Includes layouts for phones, tablets, and large
+              screens.
+            </p>
+            <a class="button button-buy" href="https://github.com/cinmou/MicaGo/releases/latest">Download APK</a>
+          </article>
+        </div>
+        <aside class="platform-note">
+          <h3>Platform notes</h3>
+          <p>
+            micaGO's client is built with Flutter, so additional platforms may be possible. The
+            Android build is the primary tested release right now. Other builds are experimental
+            until they are tested and documented.
+          </p>
+        </aside>
+      </section>
+
+      <section class="section faq-section">
+        <div class="section-copy">
+          <p class="eyebrow">FAQ</p>
+          <h2>Common questions.</h2>
+        </div>
+        <div class="faq-list">
+          <details>
+            <summary>Is micaGO made by Apple?</summary>
+            <p>No. micaGO is an independent open source project and is not affiliated with Apple.</p>
+          </details>
+          <details>
+            <summary>Do I need a Mac?</summary>
+            <p>Yes. micaGO uses your Mac as the bridge for iMessage and SMS.</p>
+          </details>
+          <details>
+            <summary>Are my messages stored in a micaGO cloud?</summary>
+            <p>No. micaGO does not provide a hosted message cloud for your conversations.</p>
+          </details>
+          <details>
+            <summary>Can I use it away from home?</summary>
+            <p>Yes, if you configure a public URL or tunnel that points to your Mac Companion.</p>
+          </details>
+          <details>
+            <summary>Is it stable?</summary>
+            <p>micaGO is beta software. Expect some rough edges while the project moves toward a stable release.</p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>micaGO</span>
+      <span>Built with ♥️ for everyone.</span>
+      <a href="https://github.com/cinmou/MicaGo">GitHub</a>
+    </footer>
+  </body>
+</html>
