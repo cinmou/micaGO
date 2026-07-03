@@ -282,6 +282,12 @@ func IsPreviewableImage(kind string, mimeType, uti, transferName, filename *stri
 	return !NeedsPreviewConversion(false, mimeType, uti, transferName, filename)
 }
 
+// IsVideoAttachment reports whether an attachment is a video, so the server can
+// serve a Quick Look poster frame as its preview thumbnail (C53).
+func IsVideoAttachment(mimeType, uti, transferName, filename *string) bool {
+	return AttachmentKind(false, mimeType, uti, transferName, filename) == AttachmentKindVideo
+}
+
 func DisplayKind(kind string, isVoice bool, needsPreviewConversion bool) string {
 	if isVoice {
 		return DisplayKindVoice

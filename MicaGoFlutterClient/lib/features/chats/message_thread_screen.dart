@@ -74,7 +74,7 @@ class MessageThreadScreen extends StatefulWidget {
 }
 
 class _MessageThreadScreenState extends State<MessageThreadScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late ThreadController _controller;
   final _scroll = ScrollController();
   final _composer = TextEditingController();
@@ -85,6 +85,12 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   bool _showJumpToBottom = false;
   String? _flashGuid;
   bool _composerFocused = false;
+  bool _hasOtherUnreadChats = false;
+  late final AnimationController _timestampRevealController;
+  double _timestampRevealProgress = 0;
+  bool _timestampRevealDragging = false;
+  double _timestampRevealDragX = 0;
+  double _timestampRevealDragY = 0;
 
   // C47: the open thread is the single authority on "the user has seen this
   // conversation". It advances the read watermark for every route on open, on
@@ -105,10 +111,21 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _confettiController = ConfettiController(
       duration: const Duration(milliseconds: 1400),
     );
+    _timestampRevealController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 220),
+        )..addListener(() {
+          if (mounted) {
+            setState(() {
+              _timestampRevealProgress = _timestampRevealController.value;
+            });
+          }
+        });
     _active = widget.merged.primary;
     _routeGuids = widget.merged.routes.map((r) => r.guid).toSet();
     final app = context.read<AppController>();
-    app.setActiveChatGuid(_active.guid);
+    app.setActiveChatGuids(_routeGuids);
     WidgetsBinding.instance.addObserver(this);
     // C43/C47: opening a thread is the authoritative read event — advance the
     // read watermark for every route so the unread dot clears, and keep it
@@ -118,17 +135,24 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       if (m.chatGuid != null && _routeGuids.contains(m.chatGuid)) {
         _markViewedIfForeground(upTo: m.dateCreated);
       }
+      unawaited(_refreshOtherUnreadChats());
     });
     _seenWsSub = app.ws.events.listen((e) {
       final guid = rt.chatGuidFromWsEvent(e);
       if (guid != null && _routeGuids.contains(guid)) {
         _markViewedIfForeground(upTo: rt.messageFromWsEvent(e)?.dateCreated);
       }
+      if (e.type == 'message:new' || e.type == 'message:update') {
+        unawaited(_refreshOtherUnreadChats());
+      }
     });
     _controller = ThreadController(app: app, chatGuid: _active.guid)..start();
     _composer.addListener(() => setState(() {}));
     _scroll.addListener(_onScroll);
     _controller.addListener(_publishDiagnostics);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshOtherUnreadChats());
+    });
   }
 
   /// Advance the read watermark for this contact's routes, but only while the
@@ -138,7 +162,26 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     if (!mounted) return;
     final app = context.read<AppController>();
     if (!app.isForeground) return;
-    unawaited(app.markChatsViewed(_routeGuids, upTo: upTo));
+    unawaited(
+      app
+          .markChatsViewed(_routeGuids, upTo: upTo)
+          .then((_) => _refreshOtherUnreadChats()),
+    );
+  }
+
+  Future<void> _refreshOtherUnreadChats() async {
+    if (!mounted) return;
+    final app = context.read<AppController>();
+    final contacts = context.read<ContactsService>();
+    final chats = await app.cache.listChats();
+    final merged = mergeChatsByContact(chats, contacts.contactIdFor);
+    final hasOtherUnread = merged.any(
+      (m) =>
+          m.hasUnread &&
+          !m.routes.any((route) => _routeGuids.contains(route.guid)),
+    );
+    if (!mounted || hasOtherUnread == _hasOtherUnreadChats) return;
+    setState(() => _hasOtherUnreadChats = hasOtherUnread);
   }
 
   @override
@@ -181,7 +224,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _controller.removeListener(_publishDiagnostics);
     _controller.dispose();
     final app = context.read<AppController>();
-    app.setActiveChatGuid(route.guid);
+    app.setActiveChatGuids(_routeGuids);
     unawaited(app.markChatsViewed([route.guid]));
     setState(() {
       _active = route;
@@ -201,10 +244,11 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _scroll.dispose();
     _composer.dispose();
     _confettiController.dispose();
+    _timestampRevealController.dispose();
     _sendEffects.dispose();
     _recorder.dispose();
     final app = context.read<AppController>();
-    if (app.isChatActive(_active.guid)) {
+    if (_routeGuids.any(app.isChatActive)) {
       app.setActiveChatGuid(null);
     }
     super.dispose();
@@ -554,6 +598,11 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     final customAvatarPath = app.customAvatarPathFor(
       widget.merged.localCustomizationKey,
     );
+    final muted = app.areChatsMuted(_routeGuids);
+    final testAvatarAsset =
+        widget.merged.routes.any((route) => app.isTestContactChat(route.guid))
+        ? AppController.testContactAvatarAsset
+        : null;
 
     final bottomOverlay = Column(
       mainAxisSize: MainAxisSize.min,
@@ -686,9 +735,12 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       ],
     );
     final glass = _isLiquidGlassTheme(context);
+    final inkWash = context.watch<ThemeController>().useBlackWhite;
     final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
         ? glassBg
+        : inkWash
+        ? Theme.of(context).colorScheme.surface
         : _accent1_100(Theme.of(context).colorScheme);
     final themedContent = DecoratedBox(
       decoration: BoxDecoration(color: headerBg),
@@ -700,31 +752,56 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       ),
     );
 
-    final titleRow = Row(
-      children: [
-        HandleAvatar(
-          title: title,
-          handle: _active.isGroup ? null : _active.chatIdentifier,
-          participantHandles: _active.participants,
-          isGroup: _active.isGroup,
-          radius: 19,
-          localAvatarPath: customAvatarPath,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text(
-                _lastActivityLabel(context),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+    // Tapping the name/avatar area opens chat details (C53) — there's no
+    // separate details button any more.
+    final titleRow = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openDetailsSearch,
+      child: Row(
+        children: [
+          HandleAvatar(
+            title: title,
+            handle: _active.isGroup ? null : _active.chatIdentifier,
+            participantHandles: _active.participants,
+            isGroup: _active.isGroup,
+            radius: 19,
+            localAvatarPath: customAvatarPath,
+            assetAvatarPath: testAvatarAsset,
           ),
-        ),
-      ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (muted) ...[
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.notifications_off_outlined,
+                        size: 15,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ],
+                ),
+                Text(
+                  _lastActivityLabel(context),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
 
     if (widget.embedded) {
@@ -745,11 +822,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
                     const SizedBox(width: 12),
                     Expanded(child: titleRow),
                     ?_routeSelector(context),
-                    IconButton(
-                      tooltip: 'Details',
-                      icon: const Icon(Icons.info_outline),
-                      onPressed: _openDetailsSearch,
-                    ),
                     const SizedBox(width: 8),
                   ],
                 ),
@@ -771,16 +843,10 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         appBar: AppBar(
           backgroundColor: headerBg,
           surfaceTintColor: Colors.transparent,
+          leading: _ThreadBackButton(hasOtherUnread: _hasOtherUnreadChats),
           titleSpacing: 0,
           title: titleRow,
-          actions: [
-            ?_routeSelector(context),
-            IconButton(
-              tooltip: 'Details',
-              icon: const Icon(Icons.info_outline),
-              onPressed: _openDetailsSearch,
-            ),
-          ],
+          actions: [?_routeSelector(context), const SizedBox(width: 8)],
         ),
         body: themedContent,
       ),
@@ -935,18 +1001,25 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
             .toList(growable: false);
         // Reversed list: newest at the bottom; prepending older history (top)
         // does not shift the viewport, so scroll position is preserved.
-        return ListView.builder(
-          controller: _scroll,
-          reverse: true,
-          padding: EdgeInsets.fromLTRB(8, 8, 8, _bottomInset(context)),
-          itemCount: items.length,
-          itemBuilder: (context, i) {
-            final item = items[items.length - 1 - i];
-            return KeyedSubtree(
-              key: ValueKey(item.key),
-              child: _buildRow(context, item, api, threadImages),
-            );
-          },
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: _startTimestampRevealDrag,
+          onHorizontalDragUpdate: _updateTimestampReveal,
+          onHorizontalDragEnd: _releaseTimestampReveal,
+          onHorizontalDragCancel: _releaseTimestampReveal,
+          child: ListView.builder(
+            controller: _scroll,
+            reverse: true,
+            padding: EdgeInsets.fromLTRB(8, 8, 8, _bottomInset(context)),
+            itemCount: items.length,
+            itemBuilder: (context, i) {
+              final item = items[items.length - 1 - i];
+              return KeyedSubtree(
+                key: ValueKey(item.key),
+                child: _buildRow(context, item, api, threadImages),
+              );
+            },
+          ),
         );
     }
   }
@@ -967,6 +1040,46 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   double _keyboardInset(BuildContext context) {
     if (!_composerFocused || _attachOpen || _emojiOpen) return 0;
     return MediaQuery.viewInsetsOf(context).bottom;
+  }
+
+  void _startTimestampRevealDrag(DragStartDetails _) {
+    _timestampRevealDragging = false;
+    _timestampRevealDragX = 0;
+    _timestampRevealDragY = 0;
+  }
+
+  void _updateTimestampReveal(DragUpdateDetails details) {
+    if (_attachOpen || _emojiOpen) return;
+    _timestampRevealDragX += details.delta.dx;
+    _timestampRevealDragY += details.delta.dy;
+    if (!_timestampRevealDragging) {
+      final absX = _timestampRevealDragX.abs();
+      final absY = _timestampRevealDragY.abs();
+      final horizontalEnough = absX >= 18 && absX > absY * 1.35;
+      final revealingDirection = _timestampRevealDragX < 0;
+      if (!horizontalEnough || !revealingDirection) return;
+      _timestampRevealDragging = true;
+    }
+    final delta = -details.delta.dx / 72;
+    final next = (_timestampRevealProgress + delta).clamp(0.0, 1.0);
+    if (next == _timestampRevealProgress) return;
+    _timestampRevealController.stop();
+    setState(() {
+      _timestampRevealProgress = next;
+      _timestampRevealController.value = next;
+    });
+  }
+
+  void _releaseTimestampReveal([DragEndDetails? _]) {
+    _timestampRevealDragging = false;
+    _timestampRevealDragX = 0;
+    _timestampRevealDragY = 0;
+    if (_timestampRevealProgress == 0) return;
+    _timestampRevealController.animateTo(
+      0,
+      curve: Curves.easeOutCubic,
+      duration: const Duration(milliseconds: 240),
+    );
   }
 
   Widget _buildRow(
@@ -1024,8 +1137,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       onPlayEffect: m.sendEffect == MessageSendEffect.none
           ? null
           : () => _playMessageEffect(m.sendEffect, effectKey),
-      showStatus: m.showStatus,
-      showTimestamp: m.showTimestamp,
+      showStatus: !_active.isGroup && m.showStatus,
+      showTimestamp: !_active.isGroup && m.showTimestamp,
+      timestampRevealProgress: _timestampRevealProgress,
       showBubbleTail: m.showBubbleTail,
       compactWithPrevious: m.compactWithPrevious,
       compactWithNext: m.compactWithNext,
@@ -1095,6 +1209,46 @@ class _JumpToBottomButton extends StatelessWidget {
   }
 }
 
+class _ThreadBackButton extends StatelessWidget {
+  final bool hasOtherUnread;
+
+  const _ThreadBackButton({required this.hasOtherUnread});
+
+  @override
+  Widget build(BuildContext context) {
+    final route = ModalRoute.of(context);
+    final canPop = route?.canPop ?? Navigator.of(context).canPop();
+    if (!canPop) return const SizedBox.shrink();
+    return IconButton(
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      onPressed: () => Navigator.maybePop(context),
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Icon(Icons.arrow_back),
+          if (hasOtherUnread)
+            Positioned(
+              right: -3,
+              top: -3,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF3B30),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.surface,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChatBackground extends StatelessWidget {
   final Widget child;
   const _ChatBackground({required this.child});
@@ -1111,6 +1265,12 @@ class _ChatBackground extends StatelessWidget {
           child: child,
         );
       }
+      if (theme.useBlackWhite) {
+        return DecoratedBox(
+          decoration: BoxDecoration(color: scheme.surface),
+          child: child,
+        );
+      }
       return DecoratedBox(
         decoration: BoxDecoration(color: _accent1_50(scheme)),
         child: child,
@@ -1119,6 +1279,12 @@ class _ChatBackground extends StatelessWidget {
 
     final file = File(path);
     if (!file.existsSync()) {
+      if (theme.useBlackWhite) {
+        return DecoratedBox(
+          decoration: BoxDecoration(color: scheme.surface),
+          child: child,
+        );
+      }
       return DecoratedBox(
         decoration: BoxDecoration(color: _accent1_50(scheme)),
         child: child,
@@ -1142,14 +1308,16 @@ class _ChatBackground extends StatelessWidget {
   }
 }
 
-Color _accent1_10(ColorScheme scheme) =>
-    Color.alphaBlend(scheme.primary.withValues(alpha: 0.06), scheme.surface);
+Color _accent1_10(ColorScheme scheme) => _isInkWashScheme(scheme)
+    ? scheme.surfaceContainerHigh
+    : Color.alphaBlend(scheme.primary.withValues(alpha: 0.06), scheme.surface);
 
-Color _accent1_50(ColorScheme scheme) =>
-    Color.alphaBlend(scheme.primary.withValues(alpha: 0.10), scheme.surface);
+Color _accent1_50(ColorScheme scheme) => _isInkWashScheme(scheme)
+    ? scheme.surface
+    : Color.alphaBlend(scheme.primary.withValues(alpha: 0.10), scheme.surface);
 
 Color _accent1_100(ColorScheme scheme) => Color.alphaBlend(
-  scheme.primary.withValues(alpha: 0.18),
+  scheme.primary.withValues(alpha: _isInkWashScheme(scheme) ? 0.0 : 0.18),
   scheme.surfaceContainerLowest,
 );
 
@@ -1162,7 +1330,7 @@ Color _accent1_800(ColorScheme scheme) => scheme.primary;
 Color _accent2_600(ColorScheme scheme) => scheme.secondary;
 
 Color _accent2_800(ColorScheme scheme) => Color.alphaBlend(
-  scheme.secondary.withValues(alpha: 0.94),
+  scheme.secondary.withValues(alpha: _isInkWashScheme(scheme) ? 1.0 : 0.94),
   scheme.surfaceContainerHighest,
 );
 
@@ -1174,6 +1342,12 @@ bool _isLiquidGlassTheme(BuildContext context) =>
     context.watch<ThemeController>().useLiquidGlass;
 
 Color _glassBlue(ColorScheme scheme) => const Color(0xFF007AFF);
+
+bool _isInkWashScheme(ColorScheme scheme) =>
+    (scheme.brightness == Brightness.light &&
+        scheme.primary == const Color(0xFF111111)) ||
+    (scheme.brightness == Brightness.dark &&
+        scheme.primary == const Color(0xFFFFFFFF));
 
 Color _glassIncomingBubble(BuildContext context) {
   final dark = Theme.of(context).brightness == Brightness.dark;
@@ -1195,7 +1369,7 @@ LiquidGlassSettings _glassSettings(Color color, {double blur = 7}) =>
       standardOpacityMultiplier: 1.0,
     );
 
-enum MessageAction { copy, hide, edit, retract, delete, deletePending }
+enum MessageAction { copy, forward, hide, edit, retract, delete, deletePending }
 
 Future<void> showMessageActionMenu(
   BuildContext context,
@@ -1220,6 +1394,10 @@ Future<void> showMessageActionMenu(
   }
   if (!context.mounted) return;
   final scheme = Theme.of(context).colorScheme;
+  final canForward =
+      api != null &&
+      !message.isRetracted &&
+      ((text?.trim().isNotEmpty ?? false) || message.attachments.isNotEmpty);
   final canMutate =
       api != null &&
       chatGuid != null &&
@@ -1237,6 +1415,15 @@ Future<void> showMessageActionMenu(
           dense: true,
           leading: Icon(Icons.copy),
           title: Text('Copy'),
+        ),
+      ),
+    if (canForward)
+      const PopupMenuItem<MessageAction>(
+        value: MessageAction.forward,
+        child: ListTile(
+          dense: true,
+          leading: Icon(Icons.forward_outlined),
+          title: Text('Forward'),
         ),
       ),
     if (onHide != null && message.guid.isNotEmpty)
@@ -1307,6 +1494,10 @@ Future<void> showMessageActionMenu(
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Message copied')));
+      break;
+    case MessageAction.forward:
+      if (api == null) return;
+      await _forwardMessage(context, api, message);
       break;
     case MessageAction.hide:
       await onHide?.call();
@@ -1401,6 +1592,164 @@ Future<String?> _promptForEditedMessage(
   controller.dispose();
   if (result == null || result.isEmpty || result == initialText) return null;
   return result;
+}
+
+Future<void> _forwardMessage(
+  BuildContext context,
+  ApiClient api,
+  MessageModel message,
+) async {
+  final text = displayText(message)?.trim();
+  final attachments = message.attachments
+      .where((a) => a.guid.trim().isNotEmpty)
+      .toList(growable: false);
+  if ((text == null || text.isEmpty) && attachments.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('This message cannot be forwarded yet')),
+    );
+    return;
+  }
+
+  final target = await _pickForwardTarget(
+    context,
+    needsText: text != null && text.isNotEmpty,
+    needsAttachments: attachments.isNotEmpty,
+  );
+  if (!context.mounted || target == null) return;
+
+  await _runMessageAction(context, () async {
+    if (text != null && text.isNotEmpty) {
+      await api.sendText(
+        chatGuid: target.guid,
+        tempGuid: _forwardTempGuid('txt'),
+        message: text,
+      );
+    }
+    for (final attachment in attachments) {
+      final bytes = await api.getAttachmentBytes(attachment.guid);
+      await api.sendAttachment(
+        chatGuid: target.guid,
+        tempGuid: _forwardTempGuid('att'),
+        bytes: bytes,
+        filename: attachment.displayName,
+        isAudioMessage: attachment.isVoiceMessage,
+      );
+    }
+  }, success: 'Message forwarded');
+}
+
+String _forwardTempGuid(String kind) =>
+    'tmp-fwd-$kind-${DateTime.now().microsecondsSinceEpoch}-${math.Random().nextInt(1 << 20)}';
+
+Future<ChatSummary?> _pickForwardTarget(
+  BuildContext context, {
+  required bool needsText,
+  required bool needsAttachments,
+}) async {
+  final app = context.read<AppController>();
+  final contacts = context.read<ContactsService>();
+  final chats = await app.cache.listChats();
+  if (!context.mounted) return null;
+  final targets = mergeChatsByContact(chats, contacts.contactIdFor)
+      .map((m) {
+        final route = _forwardRouteFor(
+          m,
+          allowSmsSend: app.allowSmsSend,
+          needsText: needsText,
+          needsAttachments: needsAttachments,
+        );
+        return route == null ? null : (merged: m, route: route);
+      })
+      .whereType<({MergedChat merged, ChatSummary route})>()
+      .toList(growable: false);
+  if (targets.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('No available chat can receive this message'),
+      ),
+    );
+    return null;
+  }
+
+  return showModalBottomSheet<ChatSummary>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      final scheme = Theme.of(ctx).colorScheme;
+      return SafeArea(
+        child: ListView.separated(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          itemCount: targets.length + 1,
+          separatorBuilder: (_, i) => i == 0
+              ? const SizedBox(height: 8)
+              : Divider(height: 1, color: scheme.outlineVariant),
+          itemBuilder: (ctx, i) {
+            if (i == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'Forward to',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              );
+            }
+            final item = targets[i - 1];
+            final chat = item.merged.primary;
+            final title = chat.displayTitle(
+              resolveName: contacts.displayNameFor,
+            );
+            final customAvatarPath = app.customAvatarPathFor(
+              item.merged.localCustomizationKey,
+            );
+            final testAvatarAsset =
+                item.merged.routes.any(
+                  (route) => app.isTestContactChat(route.guid),
+                )
+                ? AppController.testContactAvatarAsset
+                : null;
+            return ListTile(
+              leading: HandleAvatar(
+                title: title,
+                handle: chat.isGroup ? null : chat.chatIdentifier,
+                participantHandles: chat.participants,
+                isGroup: chat.isGroup,
+                radius: 21,
+                localAvatarPath: customAvatarPath,
+                assetAvatarPath: testAvatarAsset,
+              ),
+              title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(
+                item.route.service.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () => Navigator.of(ctx).pop(item.route),
+            );
+          },
+        ),
+      );
+    },
+  );
+}
+
+ChatSummary? _forwardRouteFor(
+  MergedChat merged, {
+  required bool allowSmsSend,
+  required bool needsText,
+  required bool needsAttachments,
+}) {
+  for (final route in merged.routes) {
+    if (needsText && !route.canSendText(allowSmsSend: allowSmsSend)) continue;
+    if (needsAttachments &&
+        !route.canSendAttachments(allowSmsSend: allowSmsSend)) {
+      continue;
+    }
+    return route;
+  }
+  return null;
 }
 
 Future<bool> _confirmMessageAction(
@@ -1807,9 +2156,10 @@ class _MessageBubble extends StatefulWidget {
   /// Part I: whether to render the delivery-status line.
   final bool showStatus;
 
-  /// C21u: whether the footer shows the time by default (the newest message).
-  /// Other bubbles reveal their time on tap.
+  /// Whether the footer shows the time by default (currently the newest row).
+  /// Other bubbles expose their time through the horizontal reveal overlay.
   final bool showTimestamp;
+  final double timestampRevealProgress;
   final bool showBubbleTail;
   final bool compactWithPrevious;
   final bool compactWithNext;
@@ -1838,6 +2188,7 @@ class _MessageBubble extends StatefulWidget {
     required this.body,
     required this.showStatus,
     required this.showTimestamp,
+    required this.timestampRevealProgress,
     required this.showBubbleTail,
     required this.compactWithPrevious,
     required this.compactWithNext,
@@ -1859,10 +2210,6 @@ class _MessageBubble extends StatefulWidget {
 }
 
 class _MessageBubbleState extends State<_MessageBubble> {
-  // C21u: tap-to-reveal this bubble's timestamp (BlueBubbles-style). Long-press
-  // is reserved for the Message Inspector and is untouched.
-  bool _revealed = false;
-
   int _imageGalleryIndex(
     AttachmentModel attachment,
     List<AttachmentModel> galleryImages,
@@ -1979,12 +2326,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final textWidgets = <Widget>[
       if (interactiveOnly) _InteractiveAppCard(message: message),
       if (bodyText != null)
-        _LinkedMessageText(
-          text: bodyText,
-          style: bigEmoji
-              ? TextStyle(fontSize: bigEmojiFontSize(bodyText), height: 1.1)
-              : TextStyle(color: textColor),
-          linkColor: textColor,
+        // Big-emoji messages (≤3 emoji) render bubble-less and were too vertically
+        // cramped — give them a little breathing room top and bottom (C54).
+        Padding(
+          padding: bigEmoji
+              ? const EdgeInsets.symmetric(vertical: 6)
+              : EdgeInsets.zero,
+          child: _LinkedMessageText(
+            text: bodyText,
+            style: bigEmoji
+                ? TextStyle(fontSize: bigEmojiFontSize(bodyText), height: 1.1)
+                : TextStyle(color: textColor),
+            linkColor: textColor,
+          ),
         ),
     ];
 
@@ -2168,7 +2522,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
         _Footer(
           message: message,
           showStatus: widget.showStatus,
-          showTime: widget.showTimestamp || _revealed,
+          showTime: widget.showTimestamp,
           onRetry: widget.onRetry,
         ),
       ],
@@ -2192,7 +2546,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
           )
         : messageColumn;
 
-    return Align(
+    final bubbleContent = Align(
       alignment: fromMe ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -2201,7 +2555,6 @@ class _MessageBubbleState extends State<_MessageBubble> {
               (showGroupSender ? 0.86 : 0.78),
         ),
         child: GestureDetector(
-          onTap: () => setState(() => _revealed = !_revealed),
           onLongPressStart: (details) =>
               widget.onActions(details.globalPosition),
           child: AnimatedContainer(
@@ -2217,6 +2570,47 @@ class _MessageBubbleState extends State<_MessageBubble> {
             child: row,
           ),
         ),
+      ),
+    );
+
+    final timestamp = message.dateCreated == null
+        ? null
+        : _timeOnlyTimestampLabel(
+            context,
+            DateTime.fromMillisecondsSinceEpoch(message.dateCreated!),
+          );
+
+    return SizedBox(
+      width: double.infinity,
+      child: Stack(
+        alignment: Alignment.centerRight,
+        children: [
+          if (timestamp != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Opacity(
+                    opacity: widget.timestampRevealProgress,
+                    child: Transform.translate(
+                      offset: Offset(
+                        18 * (1 - widget.timestampRevealProgress),
+                        0,
+                      ),
+                      child: _RevealTimestampLabel(label: timestamp),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Transform.translate(
+            offset: Offset(
+              fromMe ? -56 * widget.timestampRevealProgress : 0,
+              0,
+            ),
+            child: bubbleContent,
+          ),
+        ],
       ),
     );
   }
@@ -2315,16 +2709,27 @@ class _ReactionChips extends StatelessWidget {
       }
     }
     if (byHandle.isEmpty) return const SizedBox.shrink();
+    // The chip floats over the bubble corner. On stripped/transparent bubbles
+    // (emoji, files, media) it sits directly on the chat background, so give it a
+    // shadow + solid surface + border so it stays visible on any background (C54)
+    // — previously it blended into light backgrounds and looked absent.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Text(
         byHandle.values.map((k) => tapbackEmoji(k)).join(' '),
-        style: const TextStyle(fontSize: 11),
+        style: const TextStyle(fontSize: 12),
       ),
     );
   }
@@ -2612,8 +3017,8 @@ class _Footer extends StatelessWidget {
   /// Whether to render a delivery-status word (latest outgoing only, Part I).
   final bool showStatus;
 
-  /// C21u: whether to render the timestamp. The thread no longer shows a time
-  /// under every bubble — only the newest message and tap-revealed bubbles do.
+  /// Whether to render the timestamp in the footer. Most per-message times now
+  /// appear through the iMessage-style horizontal reveal instead.
   final bool showTime;
   final VoidCallback onRetry;
   const _Footer({
@@ -2652,10 +3057,13 @@ class _Footer extends StatelessWidget {
 
     final parts = <String>[];
     final ts = message.dateCreated;
-    // Only show the time when grouping/tap asks for it (BlueBubbles-style).
+    // Footer uses the same compact date buckets as the chat list.
     if (ts != null && (showTime || showStatus)) {
       parts.add(
-        _threadTimestampLabel(context, DateTime.fromMillisecondsSinceEpoch(ts)),
+        _chatListTimestampLabel(
+          context,
+          DateTime.fromMillisecondsSinceEpoch(ts),
+        ),
       );
     }
     final edited = editedMarker(message);
@@ -2692,6 +3100,34 @@ class _Footer extends StatelessWidget {
   }
 }
 
+class _RevealTimestampLabel extends StatelessWidget {
+  final String label;
+
+  const _RevealTimestampLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 2),
+      child: Text(
+        label,
+        maxLines: 1,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: scheme.onSurface.withValues(alpha: 0.76),
+          fontWeight: FontWeight.w800,
+          shadows: [
+            Shadow(
+              color: scheme.surface.withValues(alpha: 0.64),
+              blurRadius: 6,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 String _threadTimestampLabel(BuildContext context, DateTime dt) {
   final localeTag =
       Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'en';
@@ -2702,6 +3138,25 @@ String _threadTimestampLabel(BuildContext context, DateTime dt) {
     use24h: use24HourFormat,
     locale: localeTag,
   );
+}
+
+String _chatListTimestampLabel(BuildContext context, DateTime dt) {
+  final localeTag =
+      Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'en';
+  final use24HourFormat = MediaQuery.alwaysUse24HourFormatOf(context);
+  return chatTimestampLabel(
+    dt,
+    now: DateTime.now(),
+    use24h: use24HourFormat,
+    locale: localeTag,
+  );
+}
+
+String _timeOnlyTimestampLabel(BuildContext context, DateTime dt) {
+  final localeTag =
+      Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'en';
+  final use24HourFormat = MediaQuery.alwaysUse24HourFormatOf(context);
+  return timeOnlyTimestampLabel(dt, use24h: use24HourFormat, locale: localeTag);
 }
 
 class _LinkedMessageText extends StatefulWidget {
@@ -4070,10 +4525,12 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
         for (final a in m.attachments)
           if (!a.isOpaquePreviewPayload) a,
     ];
-    final media = allAttachments
-        .where((a) => a.canRenderInlineImage || a.isVideo)
-        .take(9)
+    // Recent photos/videos only — stickers are excluded from the media grid,
+    // which shows 11 with a "show all" tile when there are more (C53).
+    final mediaAll = allAttachments
+        .where((a) => (a.canRenderInlineImage || a.isVideo) && !a.isStickerLike)
         .toList(growable: false);
+    final media = mediaAll.take(11).toList(growable: false);
     final images = media
         .where((a) => a.canRenderInlineImage)
         .toList(growable: false);
@@ -4092,10 +4549,20 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
     }
     final linkUrls = linkSet.take(4).toList(growable: false);
     final insets = MediaQuery.of(context).viewInsets.bottom;
-    final glass = _isLiquidGlassTheme(context);
+    final theme = context.watch<ThemeController>();
+    final glass = theme.useLiquidGlass;
+    final inkWash = theme.useBlackWhite;
     final glassBg = liquidGlassPageColor(context);
-    final headerBg = glass ? glassBg : _accent1_100(scheme);
-    final pageBg = glass ? glassBg : _accent1_50(scheme);
+    final headerBg = glass
+        ? glassBg
+        : inkWash
+        ? scheme.surface
+        : _accent1_100(scheme);
+    final pageBg = glass
+        ? glassBg
+        : inkWash
+        ? scheme.surface
+        : _accent1_50(scheme);
     final isGroup = widget.active.isGroup;
     final detailSubtitle = isGroup
         ? 'iMessage 群聊'
@@ -4297,7 +4764,21 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                     const SizedBox(height: 8),
-                    _DetailsMediaGrid(api: api, media: media, images: images),
+                    _DetailsMediaGrid(
+                      api: api,
+                      media: media,
+                      images: images,
+                      extraCount: mediaAll.length - media.length,
+                      onShowAll: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => _AllMediaScreen(
+                            api: api,
+                            title: widget.title,
+                            media: mediaAll,
+                          ),
+                        ),
+                      ),
+                    ),
                     const Divider(height: 24),
                   ],
                   if (linkUrls.isNotEmpty) ...[
@@ -4594,31 +5075,133 @@ class _DetailsMediaGrid extends StatelessWidget {
   final List<AttachmentModel> media;
   final List<AttachmentModel> images;
 
+  /// How many more media items exist beyond [media]; when > 0 a final
+  /// "show all" tile is appended (C53).
+  final int extraCount;
+  final VoidCallback onShowAll;
+
   const _DetailsMediaGrid({
     required this.api,
     required this.media,
     required this.images,
+    required this.extraCount,
+    required this.onShowAll,
   });
 
   @override
   Widget build(BuildContext context) {
+    final showAll = extraCount > 0;
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: media.length,
+      itemCount: media.length + (showAll ? 1 : 0),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 150,
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
         childAspectRatio: 1,
       ),
-      itemBuilder: (context, i) => _DetailsMediaTile(
-        api: api,
-        attachment: media[i],
-        images: images,
-        imageIndex: media[i].canRenderInlineImage
-            ? images.indexOf(media[i])
-            : 0,
+      itemBuilder: (context, i) {
+        if (showAll && i == media.length) {
+          return _ShowAllMediaTile(extra: extraCount, onTap: onShowAll);
+        }
+        return _DetailsMediaTile(
+          api: api,
+          attachment: media[i],
+          images: images,
+          imageIndex: media[i].canRenderInlineImage
+              ? images.indexOf(media[i])
+              : 0,
+        );
+      },
+    );
+  }
+}
+
+/// The final "+N / show all" tile in the details media grid (C53).
+class _ShowAllMediaTile extends StatelessWidget {
+  final int extra;
+  final VoidCallback onTap;
+  const _ShowAllMediaTile({required this.extra, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.grid_view_rounded, color: scheme.primary),
+            const SizedBox(height: 6),
+            Text(
+              '+$extra',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              MicaLocalizations.of(context).t('chat.showAllMedia'),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-screen view of every photo/video shared in the thread (C53).
+class _AllMediaScreen extends StatelessWidget {
+  final ApiClient api;
+  final String title;
+  final List<AttachmentModel> media;
+  const _AllMediaScreen({
+    required this.api,
+    required this.title,
+    required this.media,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final images = media
+        .where((a) => a.canRenderInlineImage)
+        .toList(growable: false);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          '$title · ${MicaLocalizations.of(context).t('chat.media')}',
+        ),
+      ),
+      body: GridView.builder(
+        padding: EdgeInsets.fromLTRB(
+          8,
+          8,
+          8,
+          MediaQuery.paddingOf(context).bottom + 8,
+        ),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 130,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+          childAspectRatio: 1,
+        ),
+        itemCount: media.length,
+        itemBuilder: (context, i) => _DetailsMediaTile(
+          api: api,
+          attachment: media[i],
+          images: images,
+          imageIndex: media[i].canRenderInlineImage
+              ? images.indexOf(media[i])
+              : 0,
+        ),
       ),
     );
   }

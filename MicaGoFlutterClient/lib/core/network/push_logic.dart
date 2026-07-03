@@ -37,6 +37,41 @@ String? notificationBody(Map<String, dynamic> data) {
   return body.isEmpty ? null : body;
 }
 
+int? notificationTimestampMs(Map<String, dynamic> data) {
+  final value = data['createdAt'];
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+bool notificationIsGroup(Map<String, dynamic> data) {
+  final value = data['isGroup'];
+  if (value is bool) return value;
+  if (value is String) return value.toLowerCase() == 'true';
+  final guid = (data['chatGuid'] as String?)?.trim() ?? '';
+  return guid.contains(';+;');
+}
+
+String notificationSenderName(Map<String, dynamic> data) {
+  return messageNotificationTitle(
+    serverTitle: data['senderName'] as String? ?? data['title'] as String?,
+    handle: data['handle'] as String?,
+  );
+}
+
+String notificationConversationTitle(Map<String, dynamic> data) {
+  final explicit = (data['conversationTitle'] as String?)?.trim() ?? '';
+  if (explicit.isNotEmpty) return explicit;
+  if (notificationIsGroup(data)) {
+    final title = (data['title'] as String?)?.trim() ?? '';
+    if (title.isNotEmpty && !_genericNotificationTitles.contains(title)) {
+      return title;
+    }
+    return 'Group chat';
+  }
+  return notificationSenderName(data);
+}
+
 /// C30: validates a direct-reply text from the notification's inline input.
 /// Returns the trimmed text, or null when there's nothing to send.
 String? cleanReplyText(String? input) {

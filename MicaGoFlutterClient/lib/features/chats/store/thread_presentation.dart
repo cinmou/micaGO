@@ -192,7 +192,18 @@ class ThreadPresentationBuilder {
         final dt = DateTime.fromMillisecondsSinceEpoch(ts);
         final day = DateTime(dt.year, dt.month, dt.day);
         if (lastDay == null || day != lastDay) {
-          items.add(DateSeparatorItem(dayLabel(day)));
+          // A day boundary shows the first message's local timestamp: today is
+          // just the time, while older days keep their localized day/date label.
+          items.add(
+            DateSeparatorItem(
+              threadTimestampLabel(
+                dt,
+                now: DateTime.now(),
+                use24h: use24HourFormat,
+                locale: localeTag ?? 'en',
+              ),
+            ),
+          );
           lastDay = day;
         } else if (shouldShowTimeSeparator(lastTs, ts)) {
           // Same day but a large gap since the previous message: a time chip.
@@ -410,19 +421,4 @@ String timeOfDayLabel(
       .format(dt)
       .replaceAll('\u202f', ' ')
       .replaceAll('\u00a0', ' ');
-}
-
-/// Human day-separator label ("Today" / "Yesterday" / "Jan 5" / "Jan 5, 2024").
-String dayLabel(DateTime day) {
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final diff = today.difference(day).inDays;
-  if (diff == 0) return 'Today';
-  if (diff == 1) return 'Yesterday';
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  final base = '${months[day.month - 1]} ${day.day}';
-  return day.year == now.year ? base : '$base, ${day.year}';
 }

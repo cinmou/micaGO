@@ -104,15 +104,18 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 		body = body[:fcmMaxBodyChars]
 	}
 	data := map[string]string{
-		"type":        n.Type,
-		"messageGuid": n.MessageGUID,
-		"chatGuid":    n.ChatGUID,
-		"sourceRowId": strconv.FormatInt(n.SourceRowID, 10),
-		"title":       n.Title,
-		"body":        body,
-		"handle":      n.Handle,
-		"previewMode": n.PreviewMode,
-		"createdAt":   strconv.FormatInt(n.CreatedAt, 10),
+		"type":              n.Type,
+		"messageGuid":       n.MessageGUID,
+		"chatGuid":          n.ChatGUID,
+		"sourceRowId":       strconv.FormatInt(n.SourceRowID, 10),
+		"title":             n.Title,
+		"body":              body,
+		"senderName":        n.SenderName,
+		"conversationTitle": n.ConversationTitle,
+		"isGroup":           strconv.FormatBool(n.IsGroup),
+		"handle":            n.Handle,
+		"previewMode":       n.PreviewMode,
+		"createdAt":         strconv.FormatInt(n.CreatedAt, 10),
 	}
 	return map[string]any{
 		"message": map[string]any{

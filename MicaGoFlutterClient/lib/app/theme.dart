@@ -19,10 +19,25 @@ class MicaGoTheme {
   /// Builds a theme from a ready-made [ColorScheme] (used for Android 12+
   /// dynamic / Material You colors).
   static ThemeData fromScheme(ColorScheme scheme) {
+    final inkWash =
+        (scheme.primary == const Color(0xFF111111) &&
+            scheme.brightness == Brightness.light) ||
+        (scheme.primary == const Color(0xFFFFFFFF) &&
+            scheme.brightness == Brightness.dark);
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       appBarTheme: const AppBarTheme(centerTitle: false),
+      iconButtonTheme: inkWash
+          ? IconButtonThemeData(
+              style: IconButton.styleFrom(
+                foregroundColor: scheme.onSurface,
+                disabledForegroundColor: scheme.onSurface.withValues(
+                  alpha: 0.34,
+                ),
+              ),
+            )
+          : null,
       cardTheme: CardThemeData(
         clipBehavior: Clip.antiAlias,
         elevation: 0,
@@ -47,7 +62,17 @@ class MicaGoTheme {
         border: OutlineInputBorder(),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          backgroundColor: inkWash ? scheme.primary : null,
+          foregroundColor: inkWash ? scheme.onPrimary : null,
+          disabledBackgroundColor: inkWash
+              ? scheme.surfaceContainerHighest
+              : null,
+          disabledForegroundColor: inkWash
+              ? scheme.onSurface.withValues(alpha: 0.42)
+              : null,
+        ),
       ),
     );
   }
@@ -56,56 +81,56 @@ class MicaGoTheme {
     final dark = brightness == Brightness.dark;
     return (dark ? const ColorScheme.dark() : const ColorScheme.light())
         .copyWith(
-          primary: dark ? const Color(0xFFEDEDED) : const Color(0xFF111111),
+          primary: dark ? const Color(0xFFFFFFFF) : const Color(0xFF111111),
           onPrimary: dark ? const Color(0xFF111111) : const Color(0xFFFFFFFF),
           primaryContainer: dark
-              ? const Color(0xFF333333)
-              : const Color(0xFFEDEDED),
+              ? const Color(0xFF3A3A3A)
+              : const Color(0xFFEAEAEA),
           onPrimaryContainer: dark
-              ? const Color(0xFFF2F2F2)
+              ? const Color(0xFFFFFFFF)
               : const Color(0xFF111111),
-          secondary: dark ? const Color(0xFFC7C7C7) : const Color(0xFF444444),
+          secondary: dark ? const Color(0xFFE6E6E6) : const Color(0xFF3A3A3A),
           onSecondary: dark ? const Color(0xFF111111) : const Color(0xFFFFFFFF),
           secondaryContainer: dark
-              ? const Color(0xFF2A2A2A)
-              : const Color(0xFFF4F4F4),
+              ? const Color(0xFF303030)
+              : const Color(0xFFEDEDED),
           onSecondaryContainer: dark
-              ? const Color(0xFFF2F2F2)
+              ? const Color(0xFFFFFFFF)
               : const Color(0xFF111111),
-          tertiary: dark ? const Color(0xFFDADADA) : const Color(0xFF5A5A5A),
+          tertiary: dark ? const Color(0xFFFFFFFF) : const Color(0xFF555555),
           onTertiary: dark ? const Color(0xFF111111) : const Color(0xFFFFFFFF),
           tertiaryContainer: dark
-              ? const Color(0xFF262626)
+              ? const Color(0xFF3A3A3A)
               : const Color(0xFFE0E0E0),
           onTertiaryContainer: dark
-              ? const Color(0xFFF2F2F2)
+              ? const Color(0xFFFFFFFF)
               : const Color(0xFF111111),
           error: dark ? const Color(0xFFFFB4AB) : const Color(0xFFB3261E),
           onError: dark ? const Color(0xFF690005) : const Color(0xFFFFFFFF),
-          surface: dark ? const Color(0xFF101010) : const Color(0xFFFFFFFF),
-          onSurface: dark ? const Color(0xFFF2F2F2) : const Color(0xFF111111),
+          surface: dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF),
+          onSurface: dark ? const Color(0xFFFFFFFF) : const Color(0xFF111111),
           surfaceContainerLowest: dark
-              ? const Color(0xFF0B0B0B)
+              ? const Color(0xFF000000)
               : const Color(0xFFFFFFFF),
           surfaceContainerLow: dark
-              ? const Color(0xFF161616)
+              ? const Color(0xFF0A0A0A)
               : const Color(0xFFF7F7F7),
           surfaceContainer: dark
-              ? const Color(0xFF1A1A1A)
+              ? const Color(0xFF101010)
               : const Color(0xFFF4F4F4),
           surfaceContainerHigh: dark
-              ? const Color(0xFF202020)
+              ? const Color(0xFF181818)
               : const Color(0xFFEDEDED),
           surfaceContainerHighest: dark
-              ? const Color(0xFF252525)
-              : const Color(0xFFE8E8E8),
-          onSurfaceVariant: dark
-              ? const Color(0xFFC7C7C7)
-              : const Color(0xFF444444),
-          outline: dark ? const Color(0xFF6A6A6A) : const Color(0xFFBDBDBD),
-          outlineVariant: dark
-              ? const Color(0xFF333333)
+              ? const Color(0xFF242424)
               : const Color(0xFFE0E0E0),
+          onSurfaceVariant: dark
+              ? const Color(0xFFE0E0E0)
+              : const Color(0xFF444444),
+          outline: dark ? const Color(0xFF8A8A8A) : const Color(0xFF9A9A9A),
+          outlineVariant: dark
+              ? const Color(0xFF444444)
+              : const Color(0xFFD0D0D0),
           inverseSurface: dark
               ? const Color(0xFFF2F2F2)
               : const Color(0xFF202020),

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.54.0+54
+version: 0.55.0+55
 
 environment:
   sdk: ^3.12.1
@@ -59,6 +59,10 @@ dependencies:
   share_plus: ^10.0.2
   image_picker: ^1.1.2
   photo_manager: ^3.6.4
+  # C53: read the real device name (iOS: user-set name; Android: brand + model)
+  # so the Companion's Paired Devices list shows the device instead of a generic
+  # "micaGO on android" label.
+  device_info_plus: ^11.3.0
   # C22: BlueBubbles-style FCM wake + local notifications. Firebase is initialized
   # at runtime from server-provided client config (no google-services.json baked
   # in) and is fully optional — absent config degrades to WebSocket + delta sync.
@@ -70,6 +74,8 @@ dependencies:
   video_player: ^2.9.2
   liquid_glass_widgets: ^0.19.5
   confetti: ^0.8.0
+  # C54: settings backup/restore — the .micagobak file is a plain zip.
+  archive: ^4.0.0
   shared_preferences: ^2.5.5
 
 # C19: file_picker pulls a flutter_plugin_android_lifecycle that demands its
@@ -104,9 +110,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - lib/Assets/Server.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

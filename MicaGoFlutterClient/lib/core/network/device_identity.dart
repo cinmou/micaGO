@@ -1,10 +1,11 @@
 import 'dart:math';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 
 /// App version embedded in the device label so the Companion can show which
 /// client build is connected (C19). Bump alongside pubspec `version`.
-const String kAppVersion = '0.54.0';
+const String kAppVersion = '0.55.0';
 
 /// Generates a stable, client-side device id (C21u). Persisted locally and sent
 /// on **every** registration so the server upserts the same device row instead
@@ -15,6 +16,38 @@ String generateStableDeviceId() {
   final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
   final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   return 'flutter-$hex';
+}
+
+/// The device's real name for the Companion's Paired Devices list (C53).
+///   • iOS → the user-set device name ("Alex's iPhone").
+///   • Android → "{manufacturer} {model}" (the OS doesn't expose the user-set
+///     name without a special permission), e.g. "Google Pixel 7".
+/// Falls back to the old generic label if the platform lookup fails.
+Future<String> resolveDeviceName() async {
+  final fallback = 'micaGO on ${defaultTargetPlatform.name}';
+  if (kIsWeb) return 'micaGO Web';
+  try {
+    final info = DeviceInfoPlugin();
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        final name = (await info.iosInfo).name.trim();
+        return name.isEmpty ? fallback : name;
+      case TargetPlatform.android:
+        final a = await info.androidInfo;
+        final model = a.model.trim();
+        final brand = (a.manufacturer).trim();
+        if (model.isEmpty) return brand.isEmpty ? 'Android device' : brand;
+        if (brand.isNotEmpty &&
+            !model.toLowerCase().startsWith(brand.toLowerCase())) {
+          return '$brand $model';
+        }
+        return model;
+      default:
+        return fallback;
+    }
+  } catch (_) {
+    return fallback;
+  }
 }
 
 /// Maps the Flutter runtime platform to the server's accepted device platform

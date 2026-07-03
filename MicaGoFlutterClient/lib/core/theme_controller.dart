@@ -133,10 +133,6 @@ class ThemeController extends ChangeNotifier {
       return;
     }
     systemColorsAvailable = available;
-    if (!available && colorChoice == ThemeColorChoice.system) {
-      colorChoice = ThemeColorChoice.micago;
-      store.writeValue(_kColor, colorChoice.name).ignore();
-    }
     notifyListeners();
   }
 

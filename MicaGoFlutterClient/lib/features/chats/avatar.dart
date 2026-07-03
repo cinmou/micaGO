@@ -97,6 +97,7 @@ class HandleAvatar extends StatelessWidget {
   final bool isGroup;
   final double radius;
   final String? localAvatarPath;
+  final String? assetAvatarPath;
 
   const HandleAvatar({
     super.key,
@@ -106,6 +107,7 @@ class HandleAvatar extends StatelessWidget {
     this.isGroup = false,
     this.radius = 20,
     this.localAvatarPath,
+    this.assetAvatarPath,
   });
 
   @override
@@ -116,6 +118,10 @@ class HandleAvatar extends StatelessWidget {
       if (file.existsSync()) {
         return CircleAvatar(radius: radius, backgroundImage: FileImage(file));
       }
+    }
+    final asset = assetAvatarPath?.trim() ?? '';
+    if (asset.isNotEmpty) {
+      return CircleAvatar(radius: radius, backgroundImage: AssetImage(asset));
     }
     final fallback = ContactAvatar(
       title: title,

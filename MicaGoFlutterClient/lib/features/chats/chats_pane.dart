@@ -106,10 +106,20 @@ class _ChatsPaneState extends State<ChatsPane> {
         }
 
         final scheme = Theme.of(context).colorScheme;
-        final glass = context.watch<ThemeController>().useLiquidGlass;
+        final theme = context.watch<ThemeController>();
+        final glass = theme.useLiquidGlass;
+        final inkWash = theme.useBlackWhite;
         final glassBg = liquidGlassPageColor(context);
-        final headerBg = glass ? glassBg : _chatsAccent1_100(scheme);
-        final pageBg = glass ? glassBg : _chatsAccent1_50(scheme);
+        final headerBg = glass
+            ? glassBg
+            : inkWash
+            ? scheme.surface
+            : _chatsAccent1_100(scheme);
+        final pageBg = glass
+            ? glassBg
+            : inkWash
+            ? scheme.surface
+            : _chatsAccent1_50(scheme);
         final compact = _compactSidebar;
         return Row(
           children: [

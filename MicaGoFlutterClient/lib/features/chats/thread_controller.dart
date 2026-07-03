@@ -234,11 +234,13 @@ class ThreadController extends ChangeNotifier {
     required String filename,
   }) => sendAttachments([StagedAttachment(bytes: bytes, filename: filename)]);
 
-  /// C21c: BlueBubbles-style multi-send — send each staged attachment to the
-  /// chat GUID sequentially (our server endpoint is one-file-per-request). No
-  /// optimistic bubbles (the server can't reconcile attachments by content, so
-  /// a bubble would duplicate the real row); a single catch-up after the batch
-  /// pulls the real rows. Stops on the first failure and surfaces the error.
+  /// C21c: BlueBubbles-style multi-select, conservative send path — each staged
+  /// attachment is sent as its own request. The grouped AppleScript send path is
+  /// fragile on some Messages setups, so the UI may stage several files while the
+  /// transport stays one-file-at-a-time. No optimistic bubbles (the server can't
+  /// reconcile attachments by content, so a bubble would duplicate the real row);
+  /// one catch-up after the sequence pulls the real rows. Stops on the first
+  /// failure and surfaces the error.
   Future<void> sendAttachments(List<StagedAttachment> items) async {
     final api = app.api;
     if (api == null || attachmentSending || items.isEmpty) return;
@@ -247,34 +249,8 @@ class ThreadController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final canBatch = items.length > 1 && !items.any((i) => i.isAudioMessage);
-      if (canBatch) {
-        final tempId = 'tmp-att-${DateTime.now().microsecondsSinceEpoch}';
-        try {
-          await api.sendAttachmentBatch(
-            chatGuid: chatGuid,
-            tempGuid: tempId,
-            files: [
-              for (final item in items)
-                (bytes: item.bytes, filename: item.filename),
-            ],
-          );
-        } on ApiException catch (e) {
-          // Older paired backends do not know the batch endpoint yet; keep the
-          // previous one-file-per-request behavior as a compatibility fallback.
-          if (e.statusCode == 404 ||
-              e.statusCode == 405 ||
-              e.code == 'not_found' ||
-              e.code == 'method_not_allowed') {
-            await _sendAttachmentsIndividually(api, items);
-          } else {
-            rethrow;
-          }
-        }
-      } else {
-        await _sendAttachmentsIndividually(api, items);
-      }
-      // One catch-up after the batch; the rows also arrive via message:new.
+      await _sendAttachmentsIndividually(api, items);
+      // One catch-up after the sequence; the rows also arrive via message:new.
       await app.catchUp(reason: 'attachment_sent', minInterval: Duration.zero);
     } on ApiException catch (e) {
       attachmentError = e.friendly;

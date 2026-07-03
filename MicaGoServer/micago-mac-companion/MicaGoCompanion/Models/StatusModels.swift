@@ -185,8 +185,8 @@ struct ActiveConnectionInfo: Codable, Identifiable {
     }
 
     var subtitle: String {
+        // The client runtime ("flutter") isn't useful to the user — omit it.
         var parts: [String] = []
-        if let clientType, !clientType.isEmpty { parts.append(clientType) }
         if let platform, !platform.isEmpty { parts.append(platform) }
         if let appVersion, !appVersion.isEmpty { parts.append("micaGO \(appVersion)") }
         if let remoteAddress, !remoteAddress.isEmpty { parts.append(remoteAddress) }

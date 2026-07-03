@@ -150,19 +150,41 @@ class _ChatListScreenState extends State<ChatListScreen> {
     List<MergedChat> merged,
     ContactsService contacts,
   ) {
+    final app = context.read<AppController>();
     final targets = merged
         .take(8)
         .map((m) {
           return (
             guid: m.primary.guid,
             title: m.primary.displayTitle(resolveName: contacts.displayNameFor),
+            avatarKey: m.localCustomizationKey,
+            customAvatarPath: app.customAvatarPathFor(m.localCustomizationKey),
+            handle: m.primary.isGroup ? null : m.primary.chatIdentifier,
           );
         })
         .toList(growable: false);
-    final key = targets.map((t) => '${t.guid}\u0000${t.title}').join('\u0001');
+    final key = targets
+        .map(
+          (t) => '${t.guid}\u0000${t.title}\u0000${t.customAvatarPath ?? ''}',
+        )
+        .join('\u0001');
     if (key == _registeredShareTargetsKey) return;
     _registeredShareTargetsKey = key;
-    unawaited(IncomingShareService.registerShareTargets(targets));
+    unawaited(() async {
+      final enriched = <({String guid, String title, String? avatarPath})>[];
+      for (final target in targets) {
+        enriched.add((
+          guid: target.guid,
+          title: target.title,
+          avatarPath: await app.shareTargetAvatarPath(
+            customizationKey: target.avatarKey,
+            handle: target.handle,
+            title: target.title,
+          ),
+        ));
+      }
+      await IncomingShareService.registerShareTargets(enriched);
+    }());
   }
 
   void _openMerged(MergedChat merged) {
@@ -474,8 +496,12 @@ class _ChatRailRow extends StatelessWidget {
     final customAvatarPath = app.customAvatarPathFor(
       merged.localCustomizationKey,
     );
+    final testAvatarAsset = app.isTestContactChat(chat.guid)
+        ? AppController.testContactAvatarAsset
+        : null;
     final unreadCount = merged.unreadCount;
     final hasUnread = merged.hasUnread;
+    final muted = app.areChatsMuted(merged.routes.map((r) => r.guid));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Material(
@@ -499,14 +525,14 @@ class _ChatRailRow extends StatelessWidget {
                   isGroup: chat.isGroup,
                   radius: 22,
                   localAvatarPath: customAvatarPath,
+                  assetAvatarPath: testAvatarAsset,
                 ),
                 if (hasUnread)
                   Positioned(
                     top: 9,
                     right: 11,
-                    child: unreadCount > 9
-                        ? _UnreadCountPill(count: unreadCount)
-                        : Container(
+                    child: muted || unreadCount <= 9
+                        ? Container(
                             width: 12,
                             height: 12,
                             decoration: BoxDecoration(
@@ -517,7 +543,8 @@ class _ChatRailRow extends StatelessWidget {
                                 width: 2,
                               ),
                             ),
-                          ),
+                          )
+                        : _UnreadCountPill(count: unreadCount),
                   ),
               ],
             ),
@@ -576,14 +603,23 @@ class _ChatRow extends StatelessWidget {
     final customAvatarPath = app.customAvatarPathFor(
       merged.localCustomizationKey,
     );
+    final testAvatarAsset = app.isTestContactChat(chat.guid)
+        ? AppController.testContactAvatarAsset
+        : null;
+    final muted = app.areChatsMuted(merged.routes.map((r) => r.guid));
+    final loudUnread = hasUnread && !muted;
     final rowColor = hasUnread
-        ? scheme.primary
+        ? loudUnread
+              ? scheme.primary
+              : selected
+              ? scheme.primaryContainer.withValues(alpha: 0.52)
+              : Colors.transparent
         : selected
         ? scheme.primaryContainer.withValues(alpha: 0.52)
         : Colors.transparent;
     final onUnread = scheme.onPrimary;
-    final primaryTextColor = hasUnread ? onUnread : scheme.onSurface;
-    final secondaryTextColor = hasUnread
+    final primaryTextColor = loudUnread ? onUnread : scheme.onSurface;
+    final secondaryTextColor = loudUnread
         ? onUnread.withValues(alpha: 0.78)
         : scheme.onSurfaceVariant;
     final horizontalMargin = 0.0;
@@ -622,6 +658,7 @@ class _ChatRow extends StatelessWidget {
                     isGroup: chat.isGroup,
                     radius: avatarRadius,
                     localAvatarPath: customAvatarPath,
+                    assetAvatarPath: testAvatarAsset,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -650,6 +687,14 @@ class _ChatRow extends StatelessWidget {
                               Icon(
                                 Icons.merge_type,
                                 size: 13,
+                                color: secondaryTextColor,
+                              ),
+                            ],
+                            if (muted) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.notifications_off_outlined,
+                                size: 14,
                                 color: secondaryTextColor,
                               ),
                             ],
@@ -688,6 +733,7 @@ class _ChatRow extends StatelessWidget {
                     hasUnread,
                     unreadCount,
                     unreadForeground: onUnread,
+                    muted: muted,
                   ),
                 ],
               ),
@@ -729,6 +775,7 @@ class _ChatRow extends StatelessWidget {
     bool hasUnread,
     int unreadCount, {
     required Color unreadForeground,
+    required bool muted,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final time = merged.lastMessageAt;
@@ -738,7 +785,9 @@ class _ChatRow extends StatelessWidget {
     final badge = hasUnread
         ? _DraggableUnreadBadge(
             onDismiss: onDismissUnread ?? () {},
-            child: unreadCount > 0
+            child: muted
+                ? const _UnreadDot()
+                : unreadCount > 0
                 ? _UnreadCountPill(count: unreadCount)
                 : const _UnreadDot(),
           )
@@ -754,7 +803,9 @@ class _ChatRow extends StatelessWidget {
           Text(
             _formatTime(context, time),
             style: textTheme.bodySmall?.copyWith(
-              color: hasUnread ? unreadForeground : scheme.onSurfaceVariant,
+              color: hasUnread && !muted
+                  ? unreadForeground
+                  : scheme.onSurfaceVariant,
               fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
             ),
           ),

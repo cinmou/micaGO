@@ -47,15 +47,20 @@ void main() {
     });
 
     test('routes a tap to the chat GUID in the payload', () {
-      expect(pushChatGuid({'chatGuid': 'iMessage;-;+15550001'}),
-          'iMessage;-;+15550001');
+      expect(
+        pushChatGuid({'chatGuid': 'iMessage;-;+15550001'}),
+        'iMessage;-;+15550001',
+      );
       expect(pushChatGuid({'chatGuid': ''}), isNull);
       expect(pushChatGuid({'type': 'message:new'}), isNull);
     });
 
     test('only shows a notification when there is something to show', () {
       expect(pushShouldNotify({'title': 'Jane', 'body': 'hi'}), isTrue);
-      expect(pushShouldNotify({'title': '', 'body': ''}), isFalse); // preview off
+      expect(
+        pushShouldNotify({'title': '', 'body': ''}),
+        isFalse,
+      ); // preview off
       expect(pushShouldNotify({'type': 'test', 'title': 'x'}), isFalse);
     });
   });
@@ -71,6 +76,15 @@ void main() {
       expect(notificationBody({'body': 'hello'}), 'hello');
       expect(notificationBody({'body': ''}), isNull);
       expect(notificationBody({}), isNull);
+    });
+
+    test('timestamp accepts FCM string data', () {
+      expect(
+        notificationTimestampMs({'createdAt': '1782861203813'}),
+        1782861203813,
+      );
+      expect(notificationTimestampMs({'createdAt': 123}), 123);
+      expect(notificationTimestampMs({'createdAt': 'bad'}), isNull);
     });
 
     test('reply text is trimmed and empty input rejected', () {
@@ -93,27 +107,30 @@ void main() {
       );
     });
 
-    test('uses the server sender name when it is not a generic placeholder', () {
-      expect(
-        messageNotificationTitle(serverTitle: 'Jane', handle: '+15550001'),
-        'Jane',
-      );
-      // Generic server titles fall through to the handle.
-      expect(
-        messageNotificationTitle(
-          serverTitle: 'New message',
-          handle: '+15550001',
-        ),
-        '+15550001',
-      );
-      expect(
-        messageNotificationTitle(
-          serverTitle: 'New iMessage',
-          handle: 'a@b.com',
-        ),
-        'a@b.com',
-      );
-    });
+    test(
+      'uses the server sender name when it is not a generic placeholder',
+      () {
+        expect(
+          messageNotificationTitle(serverTitle: 'Jane', handle: '+15550001'),
+          'Jane',
+        );
+        // Generic server titles fall through to the handle.
+        expect(
+          messageNotificationTitle(
+            serverTitle: 'New message',
+            handle: '+15550001',
+          ),
+          '+15550001',
+        );
+        expect(
+          messageNotificationTitle(
+            serverTitle: 'New iMessage',
+            handle: 'a@b.com',
+          ),
+          'a@b.com',
+        );
+      },
+    );
 
     test('falls back to the handle, then a generic label — never empty', () {
       expect(messageNotificationTitle(handle: '+15550001'), '+15550001');
@@ -133,17 +150,39 @@ void main() {
       expect(localNotificationBody(null, 'sender_and_text'), isNull);
     });
 
-    test('dedup id is deterministic and positive (cross-isolate FCM/keep-alive)',
-        () {
-      // Same GUID → same id (so FCM + keep-alive collapse into one), different
-      // GUID → different id. Must not depend on String.hashCode (per-isolate).
-      final a = notificationIdForMessage('iMessage;-;+15550001/abc');
-      final b = notificationIdForMessage('iMessage;-;+15550001/abc');
-      final c = notificationIdForMessage('iMessage;-;+15550002/xyz');
-      expect(a, b);
-      expect(a, isNot(c));
-      expect(a, greaterThanOrEqualTo(0));
-      expect(notificationIdForMessage(null), notificationIdForMessage(''));
+    test('group notifications separate conversation title from sender', () {
+      final data = {
+        'chatGuid': 'any;+;group-guid',
+        'title': 'Family',
+        'conversationTitle': 'Family',
+        'senderName': 'Alice',
+        'handle': '+15550001',
+        'isGroup': 'true',
+      };
+      expect(notificationIsGroup(data), isTrue);
+      expect(notificationConversationTitle(data), 'Family');
+      expect(notificationSenderName(data), 'Alice');
     });
+
+    test('old group push payloads fall back from the chat GUID', () {
+      final data = {'chatGuid': 'any;+;group-guid', 'title': 'New message'};
+      expect(notificationIsGroup(data), isTrue);
+      expect(notificationConversationTitle(data), 'Group chat');
+    });
+
+    test(
+      'dedup id is deterministic and positive (cross-isolate FCM/keep-alive)',
+      () {
+        // Same GUID → same id (so FCM + keep-alive collapse into one), different
+        // GUID → different id. Must not depend on String.hashCode (per-isolate).
+        final a = notificationIdForMessage('iMessage;-;+15550001/abc');
+        final b = notificationIdForMessage('iMessage;-;+15550001/abc');
+        final c = notificationIdForMessage('iMessage;-;+15550002/xyz');
+        expect(a, b);
+        expect(a, isNot(c));
+        expect(a, greaterThanOrEqualTo(0));
+        expect(notificationIdForMessage(null), notificationIdForMessage(''));
+      },
+    );
   });
 }

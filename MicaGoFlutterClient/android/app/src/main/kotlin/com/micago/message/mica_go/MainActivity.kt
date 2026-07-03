@@ -3,6 +3,7 @@ package com.micago.message.mica_go
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
+import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
@@ -119,6 +120,11 @@ class MainActivity : FlutterActivity() {
             val map = item as? Map<*, *> ?: return@mapIndexedNotNull null
             val guid = map["guid"] as? String ?: return@mapIndexedNotNull null
             val title = (map["title"] as? String)?.takeIf { it.isNotBlank() } ?: "micaGO"
+            val avatarPath = map["avatarPath"] as? String
+            val shortcutIcon = avatarPath
+                ?.let { BitmapFactory.decodeFile(it) }
+                ?.let { Icon.createWithBitmap(it) }
+                ?: Icon.createWithResource(this, R.mipmap.ic_launcher)
             val intent = Intent(this, MainActivity::class.java).apply {
                 action = Intent.ACTION_SEND
                 type = "text/plain"
@@ -127,7 +133,7 @@ class MainActivity : FlutterActivity() {
             ShortcutInfo.Builder(this, "share_${guid.hashCode().toUInt().toString(16)}")
                 .setShortLabel(title.take(24))
                 .setLongLabel(title)
-                .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+                .setIcon(shortcutIcon)
                 .setIntent(intent)
                 .setCategories(setOf(shareTargetCategory))
                 .setRank(index)

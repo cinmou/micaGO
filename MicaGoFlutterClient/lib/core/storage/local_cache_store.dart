@@ -563,6 +563,81 @@ ON CONFLICT(guid) DO UPDATE SET
     await db.delete('metadata', where: 'key = ?', whereArgs: [key]);
   }
 
+  /// Per-chat local UI flags (pinned / hidden / always-visible) for chats that
+  /// have any set, keyed by guid — used by settings backup (C54).
+  Future<Map<String, Map<String, int>>> exportChatFlags() async {
+    final db = await _ready();
+    final rows = await db.query(
+      'chats',
+      columns: const ['guid', 'pinned', 'hidden', 'always_visible'],
+      where: 'pinned = 1 OR hidden = 1 OR always_visible = 1',
+    );
+    return {
+      for (final r in rows)
+        (r['guid'] as String): {
+          'pinned': (r['pinned'] as int?) ?? 0,
+          'hidden': (r['hidden'] as int?) ?? 0,
+          'always_visible': (r['always_visible'] as int?) ?? 0,
+        },
+    };
+  }
+
+  /// Applies restored per-chat flags to whichever chat rows already exist,
+  /// removing each from the pending set once applied (C54). Safe to call after
+  /// every chat sync — flags land as the chats appear, then the pending set
+  /// empties so a later user change is never overwritten.
+  Future<void> applyPendingChatFlags() async {
+    final raw = await readMetadata(_pendingChatFlagsKey);
+    if (raw == null || raw.isEmpty) return;
+    Map<String, dynamic> pending;
+    try {
+      pending = (jsonDecode(raw) as Map).cast<String, dynamic>();
+    } catch (_) {
+      await deleteMetadata(_pendingChatFlagsKey);
+      return;
+    }
+    if (pending.isEmpty) {
+      await deleteMetadata(_pendingChatFlagsKey);
+      return;
+    }
+    final db = await _ready();
+    final existing = <String>{
+      for (final r in await db.query('chats', columns: const ['guid']))
+        r['guid'] as String,
+    };
+    final remaining = <String, dynamic>{};
+    for (final entry in pending.entries) {
+      if (!existing.contains(entry.key)) {
+        remaining[entry.key] = entry.value; // chat not synced yet — keep waiting
+        continue;
+      }
+      final flags = (entry.value as Map).cast<String, dynamic>();
+      await db.update(
+        'chats',
+        {
+          'pinned': (flags['pinned'] as int?) ?? 0,
+          'hidden': (flags['hidden'] as int?) ?? 0,
+          'always_visible': (flags['always_visible'] as int?) ?? 0,
+        },
+        where: 'guid = ?',
+        whereArgs: [entry.key],
+      );
+    }
+    if (remaining.isEmpty) {
+      await deleteMetadata(_pendingChatFlagsKey);
+    } else {
+      await writeMetadata(_pendingChatFlagsKey, jsonEncode(remaining));
+    }
+  }
+
+  static const _pendingChatFlagsKey = 'pending_restore_chat_flags';
+
+  /// Stores restored chat flags to be applied as the chats sync in (C54).
+  Future<void> setPendingChatFlags(Map<String, Map<String, int>> flags) async {
+    if (flags.isEmpty) return;
+    await writeMetadata(_pendingChatFlagsKey, jsonEncode(flags));
+  }
+
   Future<Map<String, Object?>> diagnostics() async {
     final db = await _ready();
     Future<int> count(String table) async =>

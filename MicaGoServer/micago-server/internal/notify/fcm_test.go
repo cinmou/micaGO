@@ -74,7 +74,8 @@ func TestSignedAssertionHasThreeSegments(t *testing.T) {
 func TestFCMMessagePayloadIsMinimalStringData(t *testing.T) {
 	n := Notification{
 		Type: "message:new", MessageGUID: "g1", ChatGUID: "c1",
-		Title: "Jane", Body: "hi", Handle: "+15550001",
+		Title: "Jane", Body: "hi", SenderName: "Jane",
+		ConversationTitle: "Jane", Handle: "+15550001",
 		PreviewMode: "sender_and_text", CreatedAt: 123,
 	}
 	msg := fcmMessage("dev-token", n, 24*time.Hour)
@@ -91,6 +92,9 @@ func TestFCMMessagePayloadIsMinimalStringData(t *testing.T) {
 	if data["handle"] != "+15550001" {
 		t.Fatalf("expected handle in payload, got %q", data["handle"])
 	}
+	if data["senderName"] != "Jane" || data["conversationTitle"] != "Jane" || data["isGroup"] != "false" {
+		t.Fatalf("unexpected conversation fields: %+v", data)
+	}
 	android := inner["android"].(map[string]any)
 	if android["ttl"] != "86400s" {
 		t.Fatalf("expected 24h ttl, got %v", android["ttl"])
@@ -99,7 +103,7 @@ func TestFCMMessagePayloadIsMinimalStringData(t *testing.T) {
 	// contact book, no message history.
 	for k := range data {
 		switch k {
-		case "type", "messageGuid", "chatGuid", "sourceRowId", "title", "body", "handle", "previewMode", "createdAt":
+		case "type", "messageGuid", "chatGuid", "sourceRowId", "title", "body", "senderName", "conversationTitle", "isGroup", "handle", "previewMode", "createdAt":
 		default:
 			t.Fatalf("unexpected data key %q", k)
 		}

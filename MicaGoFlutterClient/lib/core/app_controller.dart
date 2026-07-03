@@ -57,6 +57,35 @@ class RealtimeRefreshDiagnostics {
   String? lastReconnectReason;
 }
 
+class _NotificationAvatarPaths {
+  final String? sender;
+  final String? conversation;
+
+  const _NotificationAvatarPaths({this.sender, this.conversation});
+}
+
+class ForegroundMessageAlert {
+  final String chatGuid;
+  final String messageGuid;
+  final String title;
+  final String? body;
+  final String? handle;
+  final String? avatarFilePath;
+  final bool isGroup;
+  final int? timestampMs;
+
+  const ForegroundMessageAlert({
+    required this.chatGuid,
+    required this.messageGuid,
+    required this.title,
+    this.body,
+    this.handle,
+    this.avatarFilePath,
+    this.isGroup = false,
+    this.timestampMs,
+  });
+}
+
 /// App-wide state: the active connection profile, the REST client built from
 /// it, the realtime WebSocket client, and the last-fetched server endpoints.
 ///
@@ -66,6 +95,9 @@ class AppController extends ChangeNotifier {
   final SecureStore store;
   final LocalCacheStore cache = LocalCacheStore();
   static const _customAvatarPrefix = 'custom_avatar:';
+  static const mutedChatsStorageKey = 'micago.muted_chats.v1';
+  static const inAppNotificationsStorageKey =
+      'micago.in_app_notifications_enabled.v1';
   final Map<String, String> _customAvatarPaths = {};
 
   /// The realtime client is long-lived; home screen listens to it directly.
@@ -129,6 +161,7 @@ class AppController extends ChangeNotifier {
         unawaited(refreshServerUrls());
       } else if (e.type == 'message:new') {
         // C31: keep-alive local-notification path (no Firebase required).
+        unawaited(_maybeEmitForegroundAlert(e));
         unawaited(_maybeNotifyBackgroundMessage(e));
       }
     });
@@ -143,14 +176,21 @@ class AppController extends ChangeNotifier {
   bool get isForeground => _foreground;
   void setForeground(bool value) => _foreground = value;
 
-  String? _activeChatGuid;
-  bool isChatActive(String chatGuid) => _activeChatGuid == chatGuid;
+  final Set<String> _activeChatGuids = <String>{};
+  bool isChatActive(String chatGuid) => _activeChatGuids.contains(chatGuid);
 
   void setActiveChatGuid(String? chatGuid) {
-    _activeChatGuid = chatGuid;
+    _activeChatGuids
+      ..clear()
+      ..addAll([if (chatGuid != null && chatGuid.trim().isNotEmpty) chatGuid]);
   }
 
-  static const _mutedChatsKey = 'micago.muted_chats.v1';
+  void setActiveChatGuids(Iterable<String> chatGuids) {
+    _activeChatGuids
+      ..clear()
+      ..addAll(chatGuids.where((g) => g.trim().isNotEmpty));
+  }
+
   final Set<String> _mutedChats = <String>{};
   bool isChatMuted(String chatGuid) => _mutedChats.contains(chatGuid);
   bool areChatsMuted(Iterable<String> chatGuids) {
@@ -164,9 +204,31 @@ class AppController extends ChangeNotifier {
     } else {
       _mutedChats.remove(chatGuid);
     }
-    await store.writeValue(_mutedChatsKey, jsonEncode(_mutedChats.toList()));
+    await store.writeValue(
+      mutedChatsStorageKey,
+      jsonEncode(_mutedChats.toList()),
+    );
     notifyListeners();
   }
+
+  bool _inAppNotificationsEnabled = false;
+  bool get inAppNotificationsEnabled => _inAppNotificationsEnabled;
+
+  Future<void> setInAppNotificationsEnabled(bool enabled) async {
+    if (_inAppNotificationsEnabled == enabled) return;
+    _inAppNotificationsEnabled = enabled;
+    await store.writeValue(inAppNotificationsStorageKey, enabled ? '1' : '0');
+    notifyListeners();
+  }
+
+  final StreamController<ForegroundMessageAlert> _foregroundAlertController =
+      StreamController<ForegroundMessageAlert>.broadcast();
+
+  Stream<ForegroundMessageAlert> get foregroundMessageAlerts =>
+      _foregroundAlertController.stream;
+
+  final Set<String> _foregroundAlertGuids = <String>{};
+  final List<String> _foregroundAlertGuidOrder = <String>[];
 
   Future<void> setChatsMuted(Iterable<String> chatGuids, bool muted) async {
     var changed = false;
@@ -178,7 +240,10 @@ class AppController extends ChangeNotifier {
       }
     }
     if (!changed) return;
-    await store.writeValue(_mutedChatsKey, jsonEncode(_mutedChats.toList()));
+    await store.writeValue(
+      mutedChatsStorageKey,
+      jsonEncode(_mutedChats.toList()),
+    );
     notifyListeners();
   }
 
@@ -209,6 +274,27 @@ class AppController extends ChangeNotifier {
   bool get realtimeCatchingUp => _realtimeCatchingUp;
   String? customAvatarPathFor(String key) => _customAvatarPaths[key];
 
+  Future<String?> shareTargetAvatarPath({
+    required String customizationKey,
+    String? handle,
+    String? title,
+  }) async {
+    final custom = await _existingCustomAvatarPath(customizationKey);
+    if (custom != null) return custom;
+    try {
+      final bytes = await contactAvatarResolver?.call(handle);
+      if (bytes != null && bytes.isNotEmpty) {
+        return await _writeAvatarFile(
+          handle ?? title ?? customizationKey,
+          bytes,
+        );
+      }
+    } catch (_) {
+      // Best-effort enhancement; share targets can fall back to the app icon.
+    }
+    return null;
+  }
+
   /// Loads any persisted profile at startup.
   Future<void> bootstrap() async {
     try {
@@ -225,6 +311,11 @@ class AppController extends ChangeNotifier {
       await _bootstrapStep(
         'load muted chats',
         _loadMutedChats,
+        timeout: const Duration(seconds: 2),
+      );
+      await _bootstrapStep(
+        'load notification preferences',
+        _loadNotificationPreferences,
         timeout: const Duration(seconds: 2),
       );
       await _bootstrapStep(
@@ -267,6 +358,26 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// C54: after a settings restore, reload the storage-backed state and
+  /// reconnect. The device id metadata was dropped by the restore, so the next
+  /// registration mints a fresh id (a new row in the server's Paired Devices).
+  Future<void> reloadAfterRestore() async {
+    await _loadMutedChats();
+    await _loadNotificationPreferences();
+    await _loadCustomAvatars();
+    await _loadKeepAlive();
+    _deviceIdFuture = null;
+    _profile = await store.loadProfile();
+    _activeCandidate = _profile == null
+        ? null
+        : connectionCandidatesForProfile(_profile!).firstOrNull;
+    _rebuildApi();
+    notifyListeners();
+    if (_profile != null) {
+      unawaited(selectReachableCandidate(reason: 'restore'));
+    }
+  }
+
   Future<void> _bootstrapStep(
     String name,
     Future<void> Function() run, {
@@ -283,7 +394,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _loadMutedChats() async {
-    final raw = await store.readValue(_mutedChatsKey);
+    final raw = await store.readValue(mutedChatsStorageKey);
     if (raw == null || raw.isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
@@ -295,6 +406,11 @@ class AppController extends ChangeNotifier {
     } catch (_) {
       // Corrupt preference: keep notifications enabled.
     }
+  }
+
+  Future<void> _loadNotificationPreferences() async {
+    _inAppNotificationsEnabled =
+        await store.readValue(inAppNotificationsStorageKey) == '1';
   }
 
   /// Builds a throwaway [ApiClient] for the connection-test screen without
@@ -659,6 +775,9 @@ class AppController extends ChangeNotifier {
             if (!knownChat && !_chatReloadController.isClosed) {
               _chatReloadController.add(null);
             }
+            if (isNew) {
+              unawaited(_maybeEmitForegroundMessage(msg, chatGuid));
+            }
           }
           _deltaController.add(msg);
         }
@@ -824,6 +943,9 @@ class AppController extends ChangeNotifier {
     'iMessage;-;test@micago.cinmou',
     'iMessage;-;micago-test-group@micago.cinmou',
   ];
+  static const testContactAvatarAsset = 'lib/Assets/Server.png';
+
+  bool isTestContactChat(String guid) => _testChatGuids.contains(guid);
 
   /// Fetches the current test-contact state from the server. Best-effort.
   Future<void> refreshTestContact() async {
@@ -888,6 +1010,11 @@ class AppController extends ChangeNotifier {
   /// Registers this device (C29c: fully instrumented + hardened). Returns a
   /// result summary; never throws and never swallows a failure silently.
   /// [force] bypasses the in-flight guard (used by the debug "Register now").
+  // The real device name, resolved once (C53) and reused for every register.
+  String? _deviceName;
+  Future<String> _resolveDeviceName() async =>
+      _deviceName ??= await resolveDeviceName();
+
   Future<String> _registerDeviceIfPossible({bool force = false}) async {
     if (_registerInFlight && !force) {
       return _lastRegisterResult ?? 'in flight';
@@ -918,7 +1045,7 @@ class AppController extends ChangeNotifier {
       final mode = hasPublic ? 'lan_public' : 'lan';
       final background = _pushEnabled || _keepAliveEnabled;
       final body = buildDeviceRegistration(
-        name: 'micaGO on ${defaultTargetPlatform.name}',
+        name: await _resolveDeviceName(),
         platform: serverPlatformFor(defaultTargetPlatform, isWeb: kIsWeb),
         id: id,
         mode: mode,
@@ -1039,6 +1166,7 @@ class AppController extends ChangeNotifier {
   /// Resolves a raw handle to the contact's avatar bytes (set from
   /// ContactsService). Used to show the sender's photo in the notification (C32).
   Future<Uint8List?> Function(String? handle)? contactAvatarResolver;
+  String? Function(String? handle)? contactIdResolver;
 
   /// Shows a native MessagingStyle local notification through the shared,
   /// already-initialized plugin (set by [PushService] once local notifications
@@ -1048,9 +1176,12 @@ class AppController extends ChangeNotifier {
     required String messageGuid,
     required String senderName,
     required String conversationTitle,
+    String? senderKey,
     String? body,
     String? avatarFilePath,
+    String? conversationAvatarFilePath,
     bool isGroup,
+    int? timestampMs,
   })?
   showLocalNotification;
 
@@ -1088,6 +1219,63 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _maybeEmitForegroundAlert(WsEvent e) async {
+    final msg = messageFromWsEvent(e);
+    if (msg == null) return;
+    await _maybeEmitForegroundMessage(msg, chatGuidFromWsEvent(e));
+  }
+
+  Future<void> _maybeEmitForegroundMessage(
+    MessageModel msg,
+    String? chatGuid,
+  ) async {
+    final guid = (chatGuid ?? msg.chatGuid ?? '').trim();
+    if (!_foreground || guid.isEmpty || msg.isFromMe) return;
+    if (isChatActive(guid) || isChatMuted(guid)) return;
+    if (isReactionMessage(msg)) return;
+    final messageGuid = msg.guid.trim();
+    if (messageGuid.isNotEmpty && !_rememberForegroundAlertGuid(messageGuid)) {
+      return;
+    }
+    if (_foregroundAlertController.isClosed) return;
+    final isGroup = _isGroupChatGuid(guid);
+    final contactName = contactNameResolver?.call(msg.handleId);
+    final senderName = messageNotificationTitle(
+      contactName: contactName,
+      handle: msg.handleId,
+    );
+    final conversationTitle = isGroup
+        ? await _groupConversationTitle(msg, guid)
+        : senderName;
+    final avatars = await _notificationAvatarPaths(
+      chatGuid: guid,
+      handle: msg.handleId,
+      senderName: senderName,
+      isGroup: isGroup,
+    );
+    _foregroundAlertController.add(
+      ForegroundMessageAlert(
+        chatGuid: guid,
+        messageGuid: messageGuid,
+        title: conversationTitle,
+        body: messagePreviewText(msg),
+        handle: msg.handleId,
+        avatarFilePath: avatars.conversation ?? avatars.sender,
+        isGroup: isGroup,
+        timestampMs: msg.dateCreated,
+      ),
+    );
+  }
+
+  bool _rememberForegroundAlertGuid(String guid) {
+    if (!_foregroundAlertGuids.add(guid)) return false;
+    _foregroundAlertGuidOrder.add(guid);
+    while (_foregroundAlertGuidOrder.length > 96) {
+      _foregroundAlertGuids.remove(_foregroundAlertGuidOrder.removeAt(0));
+    }
+    return true;
+  }
+
   /// C31/C32: when the app is backgrounded and the keep-alive service is holding
   /// the socket open (no Firebase needed), turn an incoming realtime message into
   /// a native MessagingStyle notification — contact name + avatar, stacked per
@@ -1104,34 +1292,149 @@ class AppController extends ChangeNotifier {
       return; // tapbacks shouldn't raise a notification
     }
     final chatGuid = chatGuidFromWsEvent(e);
+    if (chatGuid != null && isChatMuted(chatGuid)) return;
+    final isGroup = _isGroupChatGuid(chatGuid);
     final contactName = contactNameResolver?.call(msg.handleId);
     final senderName = messageNotificationTitle(
       contactName: contactName,
       handle: msg.handleId,
     );
+    final conversationTitle = isGroup
+        ? await _groupConversationTitle(msg, chatGuid)
+        : senderName;
     final body = localNotificationBody(
       messagePreviewText(msg),
       _notificationPreview,
     );
-    // Contact avatar (best-effort): written to a temp file the plugin can read.
-    String? avatarPath;
-    try {
-      final bytes = await contactAvatarResolver?.call(msg.handleId);
-      if (bytes != null && bytes.isNotEmpty) {
-        avatarPath = await _writeAvatarFile(msg.handleId ?? senderName, bytes);
-      }
-    } catch (_) {
-      avatarPath = null; // fall back to the default monogram avatar
-    }
+    final avatars = await _notificationAvatarPaths(
+      chatGuid: chatGuid,
+      handle: msg.handleId,
+      senderName: senderName,
+      isGroup: isGroup,
+    );
     await show(
       chatGuid: chatGuid,
       messageGuid: msg.guid,
       senderName: senderName,
-      conversationTitle: senderName,
+      senderKey: msg.handleId ?? senderName,
+      conversationTitle: conversationTitle,
       body: body,
-      avatarFilePath: avatarPath,
+      avatarFilePath: avatars.sender,
+      conversationAvatarFilePath: avatars.conversation,
+      isGroup: isGroup,
+      timestampMs: msg.dateCreated,
     );
     noteNotificationSource('keep-alive');
+  }
+
+  bool _isGroupChatGuid(String? chatGuid) => (chatGuid ?? '').contains(';+;');
+
+  Future<String> _groupConversationTitle(
+    MessageModel msg,
+    String? chatGuid,
+  ) async {
+    final rawTitle = msg.raw?['chatDisplayName'];
+    final title = rawTitle is String ? rawTitle.trim() : '';
+    if (title.isNotEmpty) return title;
+    final groupTitle = msg.groupTitle?.trim() ?? '';
+    if (groupTitle.isNotEmpty) return groupTitle;
+    final cached = await _cachedChatTitle(chatGuid);
+    if (cached != null) return cached;
+    final guid = chatGuid?.trim() ?? '';
+    if (guid.isNotEmpty && !guid.contains(';+;')) return guid;
+    return 'Group chat';
+  }
+
+  Future<String?> _cachedChatTitle(String? chatGuid) async {
+    final guid = chatGuid?.trim() ?? '';
+    if (guid.isEmpty) return null;
+    try {
+      final chats = await cache.listChats(
+        includeDebug: true,
+        includeHidden: true,
+      );
+      for (final chat in chats) {
+        if (chat.guid == guid) {
+          final title = chat
+              .displayTitle(resolveName: contactNameResolver)
+              .trim();
+          return title.isNotEmpty ? title : null;
+        }
+      }
+    } catch (_) {
+      // Cache lookup is best-effort; notification should still be shown.
+    }
+    return null;
+  }
+
+  Future<_NotificationAvatarPaths> _notificationAvatarPaths({
+    required String? chatGuid,
+    required String? handle,
+    required String senderName,
+    required bool isGroup,
+  }) async {
+    final senderCustom = await _customSenderAvatarPath(
+      chatGuid: chatGuid,
+      handle: handle,
+      isGroup: isGroup,
+    );
+    var sender = senderCustom;
+    if (sender == null) {
+      try {
+        final bytes = await contactAvatarResolver?.call(handle);
+        if (bytes != null && bytes.isNotEmpty) {
+          sender = await _writeAvatarFile(handle ?? senderName, bytes);
+        }
+      } catch (_) {
+        sender = null;
+      }
+    }
+
+    final groupAvatar = isGroup
+        ? await _existingCustomAvatarPath(_groupAvatarKey(chatGuid))
+        : null;
+    return _NotificationAvatarPaths(
+      sender: sender,
+      conversation: groupAvatar ?? (isGroup ? null : sender),
+    );
+  }
+
+  Future<String?> _customSenderAvatarPath({
+    required String? chatGuid,
+    required String? handle,
+    required bool isGroup,
+  }) async {
+    final contactId = contactIdResolver?.call(handle)?.trim() ?? '';
+    if (contactId.isNotEmpty) {
+      final path = await _existingCustomAvatarPath('contact:$contactId');
+      if (path != null) return path;
+    }
+    if (!isGroup) {
+      final path = await _existingCustomAvatarPath(_chatAvatarKey(chatGuid));
+      if (path != null) return path;
+    }
+    return null;
+  }
+
+  String? _groupAvatarKey(String? chatGuid) {
+    final guid = chatGuid?.trim() ?? '';
+    return guid.isEmpty ? null : 'group:$guid';
+  }
+
+  String? _chatAvatarKey(String? chatGuid) {
+    final guid = chatGuid?.trim() ?? '';
+    return guid.isEmpty ? null : 'chat:$guid';
+  }
+
+  Future<String?> _existingCustomAvatarPath(String? key) async {
+    if (key == null || key.isEmpty) return null;
+    final path = _customAvatarPaths[key]?.trim() ?? '';
+    if (path.isEmpty) return null;
+    try {
+      return await File(path).exists() ? path : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Writes contact-avatar bytes to a stable temp file (one per contact key) so
@@ -1592,6 +1895,7 @@ class AppController extends ChangeNotifier {
     unawaited(_deltaController.close());
     unawaited(_chatReloadController.close());
     unawaited(_chatSeenController.close());
+    unawaited(_foregroundAlertController.close());
     ws.removeListener(_onWebSocketStatusChanged);
     ws.dispose();
     _api?.close();

@@ -49,6 +49,58 @@ Three components:
   guides (android-client-connection / remote-access-cloudflare / notifications-setup /
   manual-test-flow) are still English-only — the localized index marks them "(英文)".
 
+## Video posters, device name, details media (C53)
+
+- **Video thumbnails ("Invalid image data").** The client fetches a video's
+  `getAttachmentPreviewBytes`, but the server was serving the raw mp4 → `Image.memory`
+  failed. Now the server serves a **Quick Look poster frame**: `GetAttachmentPreview`
+  routes videos through `renderOrientedPreview` (verified `qlmanage -t` extracts a
+  real frame from .mov/.mp4), and `loadAttachmentsByMessageGUID` sets a `previewUrl`
+  for videos (`store.IsVideoAttachment`). Needs the **backend rebuilt**; the client
+  already renders the preview + play overlay. Test:
+  `TestListChatMessagesVideoGetsPosterPreviewURL`.
+- **Companion Paired Devices.** `ActiveConnectionInfo.subtitle` no longer shows the
+  client runtime ("flutter"). The row title is the client's registered `name`, which
+  the client now sets to the **real device name** via `device_info_plus`
+  (`resolveDeviceName`: iOS `iosInfo.name` — note iOS 16+ returns a generic "iPhone"
+  without a special entitlement; Android `"{manufacturer} {model}"`). Cached once in
+  `AppController._resolveDeviceName`.
+- **Chat details media grid.** Shows **11 recent photos/videos, stickers excluded**
+  (`!isStickerLike`); a 12th **"+N / Show all"** tile appears when there are more and
+  opens `_AllMediaScreen` (full-screen grid of every shared photo/video). New l10n
+  `chat.media` / `chat.showAllMedia`.
+- **Details entry.** Tapping the header **name/avatar** (`titleRow` wrapped in a
+  `GestureDetector`) opens details; the top-right info button is removed (both the
+  embedded pane header and the phone `AppBar`).
+
+## Settings backup/restore + reaction/emoji polish (C54, v0.55.0)
+
+- **`.micagobak` settings backup** (`core/backup/backup_service.dart`) — a plain
+  zip (`archive` pkg): `manifest.json` + `settings.json` + `assets/` (chat
+  background, custom avatars). Backs up **settings only** — the connection profile
+  (baseUrl/routes/selected/**token**), appearance (theme/color/lang/chat bg),
+  message-display prefs, contacts-match flag, muted list, keep-alive, custom
+  avatars, sidebar width, and pin/hide + hidden-message tombstones. Never chat
+  history, media caches, notif buffer, diagnostics, FCM token, or the **device id**
+  (dropped on restore so the install re-registers as a *new* Paired Device).
+  `inspect()` is static (validates manifest/version → summary); `applyBackup()`
+  writes SecureStore keys, restores asset files (rewriting the chat-bg path),
+  seeds `hidden_messages`, and stores pin/hide as **pending flags** the chat-list
+  applies as chats sync (`applyPendingChatFlags`). Export warns that the file holds
+  the token (v1 is unencrypted). Tests: `backup_service_test.dart` (inspect),
+  `local_cache_store_test.dart` (flags round-trip).
+- **Entry points**: Settings → *Backup & Restore* card (Export/Import), and the
+  connection/pairing screen shows *Import settings backup* so a reinstall can get
+  straight back in. Shared flow in `settings/backup_restore_ui.dart`; after restore
+  it re-`bootstrap()`s Theme/MessageDisplay/Contacts controllers +
+  `AppController.reloadAfterRestore()` (reload + reconnect + fresh device id).
+- **Reaction chips visible on every bubble type** — on stripped/transparent
+  bubbles (emoji, files, media) the chip sat on the chat background and its light
+  surface colour blended in; added a shadow + kept the border/solid surface so it
+  shows on any background (`_ReactionChips`).
+- **Emoji bubbles** (≤3 emoji, bubble-less) get a little vertical padding — they
+  were too cramped.
+
 ## Send effects — tap "Sent with …" to play (C52)
 
 - **Effects never auto-play**; tapping a message's "Sent with …" label triggers

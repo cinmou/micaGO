@@ -73,12 +73,16 @@ class IncomingShareService {
   }
 
   static Future<void> registerShareTargets(
-    Iterable<({String guid, String title})> targets,
+    Iterable<({String guid, String title, String? avatarPath})> targets,
   ) async {
     try {
       await _channel.invokeMethod<bool>('setShareTargets', [
         for (final target in targets)
-          {'guid': target.guid, 'title': target.title},
+          {
+            'guid': target.guid,
+            'title': target.title,
+            if (target.avatarPath != null) 'avatarPath': target.avatarPath,
+          },
       ]);
     } catch (_) {
       // Android-only enhancement; unsupported platforms can ignore it.

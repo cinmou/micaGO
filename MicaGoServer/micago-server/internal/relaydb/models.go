@@ -52,6 +52,7 @@ type NotificationEvent struct {
 	ChatGUID       string
 	ChatIdentifier *string
 	ChatDisplay    *string
+	IsGroup        bool
 	Message        store.MessageJSON
 }
 

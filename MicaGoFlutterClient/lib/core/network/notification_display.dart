@@ -26,11 +26,11 @@ const String notificationReplyInputId = 'micago_reply_text';
 /// surface as heads-up notifications.
 const AndroidNotificationChannel messageNotificationChannel =
     AndroidNotificationChannel(
-  messageChannelId,
-  messageChannelName,
-  description: messageChannelDescription,
-  importance: Importance.high,
-);
+      messageChannelId,
+      messageChannelName,
+      description: messageChannelDescription,
+      importance: Importance.high,
+    );
 
 /// Deterministic FNV-1a 32-bit hash (masked positive). MUST be stable across
 /// isolates/processes — the FCM notification is shown from a separate background
@@ -47,7 +47,8 @@ int _stableId(String s) {
 }
 
 /// Stable id for a single message GUID (kept for the cross-isolate dedup test).
-int notificationIdForMessage(String? messageGuid) => _stableId(messageGuid ?? '');
+int notificationIdForMessage(String? messageGuid) =>
+    _stableId(messageGuid ?? '');
 
 /// C32: stable id keyed by **chat** — every message in a chat updates the same
 /// notification, so new messages stack into one MessagingStyle conversation
@@ -60,7 +61,8 @@ int notificationIdForChat(String chatKey) => _stableId(chatKey);
 Future<bool?> systemNotificationsEnabled() async {
   return FlutterLocalNotificationsPlugin()
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.areNotificationsEnabled();
 }
 
@@ -69,7 +71,8 @@ Future<bool?> systemNotificationsEnabled() async {
 Future<bool?> requestSystemNotificationPermission() async {
   return FlutterLocalNotificationsPlugin()
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.requestNotificationsPermission();
 }
 
@@ -88,14 +91,18 @@ Future<void> showMessageNotification(
   required String messageGuid,
   required String senderName,
   required String conversationTitle,
+  String? senderKey,
   String? body,
   String? avatarFilePath,
+  String? conversationAvatarFilePath,
   bool isGroup = false,
   int? timestampMs,
 }) async {
   // For a chat-less message (shouldn't normally happen) fall back to the message
   // guid so it still shows as its own notification.
-  final chatKey = (chatGuid == null || chatGuid.isEmpty) ? messageGuid : chatGuid;
+  final chatKey = (chatGuid == null || chatGuid.isEmpty)
+      ? messageGuid
+      : chatGuid;
   final ts = timestampMs ?? DateTime.now().millisecondsSinceEpoch;
   final preview = (body == null || body.trim().isEmpty) ? 'New message' : body;
 
@@ -104,13 +111,20 @@ Future<void> showMessageNotification(
     BufferedNotifMessage(
       guid: messageGuid,
       sender: senderName,
+      senderKey: (senderKey == null || senderKey.trim().isEmpty)
+          ? senderName
+          : senderKey.trim(),
       text: preview,
       ts: ts,
     ),
   );
 
-  final BitmapFilePathAndroidIcon? avatar =
-      avatarFilePath != null ? BitmapFilePathAndroidIcon(avatarFilePath) : null;
+  final BitmapFilePathAndroidIcon? avatar = avatarFilePath != null
+      ? BitmapFilePathAndroidIcon(avatarFilePath)
+      : null;
+  final FilePathAndroidBitmap? largeIcon = conversationAvatarFilePath != null
+      ? FilePathAndroidBitmap(conversationAvatarFilePath)
+      : null;
   final messages = <Message>[
     for (final m in buffer)
       Message(
@@ -118,8 +132,10 @@ Future<void> showMessageNotification(
         DateTime.fromMillisecondsSinceEpoch(m.ts),
         Person(
           name: m.sender,
-          key: chatKey,
-          icon: m.sender == senderName ? avatar : null,
+          key: m.senderKey.isEmpty ? m.sender : m.senderKey,
+          icon: m.senderKey == senderKey || m.sender == senderName
+              ? avatar
+              : null,
         ),
       ),
   ];
@@ -141,6 +157,7 @@ Future<void> showMessageNotification(
     category: AndroidNotificationCategory.message,
     groupKey: messageGroupKey,
     styleInformation: style,
+    largeIcon: largeIcon,
     when: ts,
   );
 

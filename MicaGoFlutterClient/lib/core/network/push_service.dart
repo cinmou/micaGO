@@ -73,6 +73,10 @@ class PushService {
     //    so background WebSocket/delta messages can notify even with no FCM.
     await _ensureLocalNotifications();
 
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
     if (available) {
       // FCM already running: just make sure the latest token is registered.
       await _registerToken();
@@ -191,9 +195,12 @@ class PushService {
           required String messageGuid,
           required String senderName,
           required String conversationTitle,
+          String? senderKey,
           String? body,
           String? avatarFilePath,
+          String? conversationAvatarFilePath,
           bool isGroup = false,
+          int? timestampMs,
         }) => app.isChatMuted(chatGuid ?? '')
         ? Future<void>.value()
         : showMessageNotification(
@@ -201,10 +208,13 @@ class PushService {
             chatGuid: chatGuid,
             messageGuid: messageGuid,
             senderName: senderName,
+            senderKey: senderKey,
             conversationTitle: conversationTitle,
             body: body,
             avatarFilePath: avatarFilePath,
+            conversationAvatarFilePath: conversationAvatarFilePath,
             isGroup: isGroup,
+            timestampMs: timestampMs,
           );
     // Opening a chat clears its stacked conversation notification.
     app.clearChatNotification = (chatGuid) =>
@@ -307,6 +317,8 @@ Future<void> showPushNotification(RemoteMessage message) async {
   // Single source of truth for "is there anything to show" (test pushes and
   // preview-disabled empty pushes are skipped) — shared with the pure logic test.
   if (!pushShouldNotify(data)) return;
+  final chatGuid = data['chatGuid'] as String?;
+  if (await _isBackgroundChatMuted(chatGuid)) return;
 
   final plugin = FlutterLocalNotificationsPlugin();
   await plugin.initialize(
@@ -316,22 +328,38 @@ Future<void> showPushNotification(RemoteMessage message) async {
       ),
     ),
   );
-  final chatGuid = data['chatGuid'] as String?;
-  // C31: "who it's from" — server-resolved sender/title, else the raw handle,
-  // never a GUID or empty. (On-device contact resolution happens in the
-  // keep-alive main-isolate path; the FCM isolate uses the server's name.)
-  final sender = messageNotificationTitle(
-    serverTitle: data['title'] as String?,
-    handle: data['handle'] as String?,
-  );
+  // C31/C32: group conversations use the group as conversation title and the
+  // message author as Person. The FCM isolate cannot read contacts, so it uses
+  // server-provided names/handles and falls back defensively for older servers.
+  final sender = notificationSenderName(data);
+  final conversationTitle = notificationConversationTitle(data);
+  final isGroup = notificationIsGroup(data);
   await showMessageNotification(
     plugin,
     chatGuid: chatGuid,
     messageGuid: (data['messageGuid'] as String?) ?? '',
     senderName: sender,
-    conversationTitle: sender,
+    senderKey: data['handle'] as String? ?? sender,
+    conversationTitle: conversationTitle,
     body: notificationBody(data),
+    isGroup: isGroup,
+    timestampMs: notificationTimestampMs(data),
   );
+}
+
+Future<bool> _isBackgroundChatMuted(String? chatGuid) async {
+  final guid = chatGuid?.trim() ?? '';
+  if (guid.isEmpty) return false;
+  try {
+    final raw = await SecureStore().readValue(
+      AppController.mutedChatsStorageKey,
+    );
+    if (raw == null || raw.isEmpty) return false;
+    final decoded = jsonDecode(raw);
+    return decoded is List && decoded.whereType<String>().contains(guid);
+  } catch (_) {
+    return false;
+  }
 }
 
 /// C30: top-level handler for a notification action triggered while the app is

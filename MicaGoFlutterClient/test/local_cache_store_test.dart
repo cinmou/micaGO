@@ -594,4 +594,48 @@ void main() {
     await store.setChatHidden('noise', true);
     expect(await store.listChats(), hasLength(1));
   });
+
+  test('chat flags export + pending-restore round trip (C54)', () async {
+    await store.upsertChats([
+      const ChatSummary(guid: 'c1', lastMessageAt: 10, lastMessagePreview: 'x'),
+      const ChatSummary(guid: 'c2', lastMessageAt: 20, lastMessagePreview: 'y'),
+      const ChatSummary(guid: 'plain', lastMessageAt: 5, lastMessagePreview: 'z'),
+    ]);
+    await store.setChatPinned('c1', true);
+    await store.setChatHidden('c2', true);
+
+    final exported = await store.exportChatFlags();
+    expect(exported.keys, containsAll(<String>['c1', 'c2']));
+    expect(exported.containsKey('plain'), isFalse);
+    expect(exported['c1']!['pinned'], 1);
+    expect(exported['c2']!['hidden'], 1);
+
+    // Simulate a restore onto a fresh cache: pending flags applied as chats sync.
+    await store.clearAll();
+    await store.setPendingChatFlags(exported);
+    // c1 not synced yet → its flag stays pending; c2 synced → its flag applies.
+    await store.upsertChats([
+      const ChatSummary(guid: 'c2', lastMessageAt: 20, lastMessagePreview: 'y'),
+    ]);
+    await store.applyPendingChatFlags();
+    // c2 is now hidden: excluded by default, present with includeHidden.
+    expect(
+      (await store.listChats()).where((c) => c.guid == 'c2'),
+      isEmpty,
+    );
+    expect(
+      (await store.listChats(includeHidden: true)).where((c) => c.guid == 'c2'),
+      isNotEmpty,
+    );
+
+    // c1 syncs later → its pending pin now applies.
+    await store.upsertChats([
+      const ChatSummary(guid: 'c1', lastMessageAt: 10, lastMessagePreview: 'x'),
+    ]);
+    await store.applyPendingChatFlags();
+    expect(
+      (await store.listChats()).firstWhere((c) => c.guid == 'c1').isPinned,
+      isTrue,
+    );
+  });
 }

@@ -16,11 +16,13 @@ const int _maxPerChat = 6;
 class BufferedNotifMessage {
   final String guid;
   final String sender;
+  final String senderKey;
   final String text;
   final int ts;
   const BufferedNotifMessage({
     required this.guid,
     required this.sender,
+    required this.senderKey,
     required this.text,
     required this.ts,
   });
@@ -28,6 +30,7 @@ class BufferedNotifMessage {
   Map<String, dynamic> toJson() => {
     'g': guid,
     's': sender,
+    'sk': senderKey,
     't': text,
     'ts': ts,
   };
@@ -36,6 +39,7 @@ class BufferedNotifMessage {
       BufferedNotifMessage(
         guid: j['g'] as String? ?? '',
         sender: j['s'] as String? ?? '',
+        senderKey: j['sk'] as String? ?? j['s'] as String? ?? '',
         text: j['t'] as String? ?? '',
         ts: (j['ts'] as num?)?.toInt() ?? 0,
       );

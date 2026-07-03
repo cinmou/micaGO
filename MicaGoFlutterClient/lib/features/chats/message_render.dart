@@ -76,6 +76,16 @@ String chatTimestampLabel(
 String _yesterdayLabel(String locale) =>
     locale.toLowerCase().startsWith('zh') ? '昨天' : 'Yesterday';
 
+/// Clock-only label for message timestamp reveal affordances. Unlike
+/// [threadTimestampLabel], this intentionally ignores the day bucket.
+String timeOnlyTimestampLabel(
+  DateTime dt, {
+  required bool use24h,
+  required String locale,
+}) {
+  return _timeLabel(dt, use24h: use24h, locale: locale);
+}
+
 /// Full timestamp label for in-thread message footers / chat headers. It uses
 /// the same day buckets as [chatTimestampLabel], but keeps the concrete time:
 /// today -> time, yesterday -> Yesterday 09:30, recent -> Monday 09:30.

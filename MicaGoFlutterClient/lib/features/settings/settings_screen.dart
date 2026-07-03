@@ -19,6 +19,7 @@ import '../../core/ui/top_banner.dart';
 import '../contacts/people_screen.dart';
 import '../debug/debug_log_panel.dart';
 import '../home/connection_status_view.dart';
+import 'backup_restore_ui.dart';
 import 'message_display_page.dart';
 
 /// Settings tab: shows the current connection (token masked), and lets the user
@@ -89,6 +90,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _TestContactCard(app: app),
                   const SizedBox(height: 12),
                   _HiddenItemsCard(app: app),
+                  const SizedBox(height: 20),
+                  Text(
+                    strings.t('settings.backupRestore'),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  const _BackupRestoreCard(),
                   const SizedBox(height: 20),
                   Text(
                     strings.t('settings.notifications'),
@@ -541,6 +549,15 @@ class _NotificationsCardState extends State<_NotificationsCard> {
               onTap: _busy ? null : _sendTest,
             ),
           ],
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: _leadingIcon(Icons.web_asset_outlined),
+            title: Text(strings.t('notif.inApp')),
+            subtitle: Text(strings.t('notif.inAppBody')),
+            isThreeLine: true,
+            value: app.inAppNotificationsEnabled,
+            onChanged: (v) => app.setInAppNotificationsEnabled(v),
+          ),
           // Android 13+ permission warning — a denied POST_NOTIFICATIONS means
           // no pushes OR keep-alive notifications can appear, however configured.
           if (defaultTargetPlatform == TargetPlatform.android &&
@@ -924,6 +941,60 @@ class _HiddenItemsCardState extends State<_HiddenItemsCard> {
                     '${strings.t('settings.releaseHiddenContacts')}'
                     '${_hiddenContacts > 0 ? ' ($_hiddenContacts)' : ''}',
                   ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// C54: export/import a `.micagobak` settings backup.
+class _BackupRestoreCard extends StatelessWidget {
+  const _BackupRestoreCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _leadingIcon(Icons.backup_outlined),
+                const SizedBox(width: 12),
+                Text(
+                  strings.t('settings.backupRestore'),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              strings.t('settings.backupSubtitle'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: () => exportSettingsBackup(context),
+                  icon: const Icon(Icons.ios_share),
+                  label: Text(strings.t('settings.exportBackup')),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => importSettingsBackup(context),
+                  icon: const Icon(Icons.restore),
+                  label: Text(strings.t('settings.importBackup')),
                 ),
               ],
             ),

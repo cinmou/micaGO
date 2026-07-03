@@ -1,15 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/push_service.dart';
 import '../../core/platform/incoming_share_service.dart';
+import '../../core/theme_controller.dart';
 import '../../core/ui/top_banner.dart';
 import '../../core/ui/glass_theme_widgets.dart';
 import '../chats/chats_pane.dart';
+import '../chats/avatar.dart';
 import '../settings/settings_screen.dart';
 import 'connection_notice_host.dart';
 
@@ -24,6 +27,9 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   PushService? _push;
   AppController? _app;
+  StreamSubscription<ForegroundMessageAlert>? _foregroundAlertSub;
+  OverlayEntry? _foregroundAlertEntry;
+  Timer? _foregroundAlertTimer;
   final ValueNotifier<int> _searchRequests = ValueNotifier<int>(0);
   static const double _tabletBreakpoint = 840;
 
@@ -42,6 +48,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       unawaited(_push!.start());
       // A notification tap routes here: jump to the Chats tab so the chat opens.
       app.pendingOpenChat.addListener(_onOpenChatRequested);
+      _foregroundAlertSub = app.foregroundMessageAlerts.listen(
+        _onForegroundMessageAlert,
+      );
       IncomingShareService.latest.addListener(_onIncomingShare);
       unawaited(IncomingShareService.start());
     });
@@ -58,6 +67,43 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (!mounted || payload == null) return;
     TopBanner.show(context, 'Shared to micaGO: ${payload.summary}');
     IncomingShareService.clear();
+  }
+
+  void _onForegroundMessageAlert(ForegroundMessageAlert alert) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    final app = _app ?? context.read<AppController>();
+    if (!app.inAppNotificationsEnabled) return;
+    _showForegroundAlert(alert);
+  }
+
+  void _showForegroundAlert(ForegroundMessageAlert alert) {
+    _foregroundAlertTimer?.cancel();
+    _foregroundAlertEntry?.remove();
+    _foregroundAlertEntry = OverlayEntry(
+      builder: (ctx) => _InAppMessageNotification(
+        alert: alert,
+        onTap: () {
+          _dismissForegroundAlert();
+          final app = _app ?? context.read<AppController>();
+          app.requestOpenChat(alert.chatGuid);
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+        onDismiss: _dismissForegroundAlert,
+      ),
+    );
+    Overlay.of(context).insert(_foregroundAlertEntry!);
+    _foregroundAlertTimer = Timer(
+      const Duration(seconds: 4),
+      _dismissForegroundAlert,
+    );
+  }
+
+  void _dismissForegroundAlert() {
+    _foregroundAlertTimer?.cancel();
+    _foregroundAlertTimer = null;
+    _foregroundAlertEntry?.remove();
+    _foregroundAlertEntry = null;
   }
 
   @override
@@ -79,6 +125,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     _app?.pendingOpenChat.removeListener(_onOpenChatRequested);
+    unawaited(_foregroundAlertSub?.cancel());
+    _dismissForegroundAlert();
     IncomingShareService.latest.removeListener(_onIncomingShare);
     WidgetsBinding.instance.removeObserver(this);
     _searchRequests.dispose();
@@ -96,10 +144,20 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final strings = MicaLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final tablet = MediaQuery.sizeOf(context).width >= _tabletBreakpoint;
-    final glass = isGlassTheme(context);
+    final theme = context.watch<ThemeController>();
+    final glass = theme.useLiquidGlass;
+    final inkWash = theme.useBlackWhite;
     final glassBg = liquidGlassPageColor(context);
-    final headerBg = glass ? glassBg : _homeAccent1_100(scheme);
-    final pageBg = glass ? glassBg : _homeAccent1_50(scheme);
+    final headerBg = glass
+        ? glassBg
+        : inkWash
+        ? scheme.surface
+        : _homeAccent1_100(scheme);
+    final pageBg = glass
+        ? glassBg
+        : inkWash
+        ? scheme.surface
+        : _homeAccent1_50(scheme);
     final chats = ConnectionNoticeHost(
       child: ChatsPane(
         searchRequests: _searchRequests,
@@ -143,6 +201,111 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 ),
               ),
             ),
+    );
+  }
+}
+
+class _InAppMessageNotification extends StatelessWidget {
+  final ForegroundMessageAlert alert;
+  final VoidCallback onTap;
+  final VoidCallback onDismiss;
+
+  const _InAppMessageNotification({
+    required this.alert,
+    required this.onTap,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final top = MediaQuery.paddingOf(context).top + 10;
+    final body = (alert.body ?? '').trim();
+    return Positioned(
+      top: top,
+      left: 12,
+      right: 12,
+      child: SafeArea(
+        bottom: false,
+        child: Material(
+          color: Colors.transparent,
+          child: Dismissible(
+            key: ValueKey(
+              'in-app-alert-${alert.messageGuid}-${alert.chatGuid}',
+            ),
+            direction: DismissDirection.up,
+            onDismissed: (_) => onDismiss(),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: -18, end: 0),
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              builder: (context, dy, child) => Transform.translate(
+                offset: Offset(0, dy),
+                child: Opacity(opacity: (18 + dy) / 18, child: child),
+              ),
+              child: Card(
+                elevation: 8,
+                shadowColor: Colors.black.withValues(alpha: 0.18),
+                color: scheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        HandleAvatar(
+                          title: alert.title,
+                          handle: alert.isGroup ? null : alert.handle,
+                          isGroup: alert.isGroup,
+                          radius: 22,
+                          localAvatarPath: alert.avatarFilePath,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                alert.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                body.isEmpty ? 'New message' : body,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Dismiss',
+                          onPressed: onDismiss,
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

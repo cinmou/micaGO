@@ -246,6 +246,35 @@ func TestListChatMessagesDedupesDuplicateAttachmentFiles(t *testing.T) {
 	}
 }
 
+func TestListChatMessagesVideoGetsPosterPreviewURL(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	stmts := []string{
+		`INSERT INTO chats (guid, chat_identifier, service_name, display_name, is_archived, updated_at) VALUES ('chat-V','cV','iMessage','Vids',0,100)`,
+		`INSERT INTO messages (guid, chat_guid, source_rowid, text, service, date_created, is_from_me, is_read, is_delivered, cache_has_attachments, created_at) VALUES ('m-v','chat-V',40,NULL,'iMessage',4000,0,1,1,1,100)`,
+		`INSERT INTO attachments (guid, message_guid, filename, mime_type, transfer_name, total_bytes, is_outgoing, hide_attachment, created_at) VALUES
+			('a-vid','m-v','clip.mp4','video/mp4','clip.mp4',999999,0,0,100)`,
+	}
+	for _, s := range stmts {
+		if _, err := db.sqlDB.Exec(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs, err := db.ListChatMessages(ctx, "chat-V", 10, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || len(msgs[0].Attachments) != 1 {
+		t.Fatalf("expected 1 message with 1 attachment, got %d msgs", len(msgs))
+	}
+	got := msgs[0].Attachments[0]
+	// C53: videos expose a Quick Look poster frame via /preview so the client
+	// renders a thumbnail instead of trying to decode raw mp4 bytes as an image.
+	if got.PreviewURL != "/api/attachments/a-vid/preview" {
+		t.Fatalf("video previewUrl = %q, want the /preview poster route", got.PreviewURL)
+	}
+}
+
 func seedRelayData(t *testing.T, db *DB) {
 	t.Helper()
 	tx, err := db.sqlDB.Begin()

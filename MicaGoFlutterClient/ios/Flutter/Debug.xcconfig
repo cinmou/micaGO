@@ -1,2 +1,6 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// Xcode 26/iOS 26 Simulator can abort during launch when Flutter debug builds
+// are split into Runner + Runner.debug.dylib. Keep Debug as a single executable.
+ENABLE_DEBUG_DYLIB=NO

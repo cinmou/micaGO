@@ -698,7 +698,11 @@ ORDER BY created_at ASC, guid ASC;
 		if store.IsAttachmentPreviewPayload(attachment) {
 			continue
 		}
-		if attachment.NeedsPreviewConversion || attachment.IsSticker {
+		// Images that need conversion, stickers, and videos (poster frame) all
+		// expose a /preview thumbnail the client renders instead of raw bytes.
+		if attachment.NeedsPreviewConversion ||
+			attachment.IsSticker ||
+			attachment.AttachmentKind == store.AttachmentKindVideo {
 			attachment.PreviewURL = "/api/attachments/" + attachment.GUID + "/preview"
 		}
 		if key := attachmentIdentityKey(attachment); key != "" {

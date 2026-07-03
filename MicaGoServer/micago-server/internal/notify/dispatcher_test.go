@@ -78,6 +78,33 @@ func TestDispatcherBuildsNotificationPreview(t *testing.T) {
 	if notification.Handle != "+15550001" {
 		t.Fatalf("expected handle, got %q", notification.Handle)
 	}
+	if notification.SenderName != "chat@example.com" || notification.ConversationTitle != "chat@example.com" || notification.IsGroup {
+		t.Fatalf("unexpected one-to-one conversation fields: %+v", notification)
+	}
+}
+
+func TestDispatcherBuildsGroupConversationNotification(t *testing.T) {
+	text := "see you there"
+	event := relaydb.NotificationEvent{
+		ChatGUID:    "any;+;group",
+		ChatDisplay: ptr("Family"),
+		IsGroup:     true,
+		Message: store.MessageJSON{
+			GUID:   "msg-1",
+			Text:   &text,
+			Handle: &store.HandleJSON{ID: "+15550001"},
+		},
+	}
+	notification := buildNotification(event, "sender_and_text")
+	if notification.Title != "Family" || notification.ConversationTitle != "Family" {
+		t.Fatalf("expected group title as conversation title, got %+v", notification)
+	}
+	if notification.SenderName != "+15550001" || !notification.IsGroup {
+		t.Fatalf("expected sender person for group notification, got %+v", notification)
+	}
+	if notification.Body != "see you there" {
+		t.Fatalf("expected body preview, got %q", notification.Body)
+	}
 }
 
 func TestBuildNotificationPreviewModes(t *testing.T) {

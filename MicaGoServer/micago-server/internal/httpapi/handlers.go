@@ -1354,7 +1354,11 @@ func (h *Handlers) GetAttachmentPreview(w http.ResponseWriter, r *http.Request) 
 		writeNotFound(w, "attachment not found")
 		return
 	}
-	if !attachmentNeedsPreviewConversion(meta) {
+	// Videos serve a Quick Look poster frame as their thumbnail; images that
+	// aren't web-renderable (HEIC/TIFF) or need orientation baked (JPEG) convert
+	// too. Everything else is served as-is.
+	isVideo := store.IsVideoAttachment(meta.MimeType, meta.Uti, meta.TransferName, meta.Filename)
+	if !attachmentNeedsPreviewConversion(meta) && !isVideo {
 		http.ServeFile(w, r, source)
 		return
 	}

@@ -255,10 +255,18 @@ func buildNotificationEvents(messages []store.MessageJSON, rows []store.SyncMess
 			ChatGUID:       row.ChatGUID,
 			ChatIdentifier: chat.ChatIdentifier,
 			ChatDisplay:    chat.DisplayName,
+			IsGroup:        isGroupChat(chat.GUID, syncChatStyle(chat.Style), chat.ParticipantCount),
 			Message:        message,
 		})
 	}
 	return events
+}
+
+func syncChatStyle(v *int64) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *v, Valid: true}
 }
 
 func upsertChatsTx(tx *sql.Tx, chats []store.SyncChatRow, updatedAt int64) error {

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/router.dart';
+import '../settings/backup_restore_ui.dart';
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/models/connection_profile.dart';
@@ -152,6 +153,17 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     onPressed: _pasteConnectionJson,
                     icon: const Icon(Icons.content_paste),
                     label: Text(strings.t('pair.pasteJson')),
+                  ),
+                  const SizedBox(height: 12),
+                  // C54: restore a settings backup (server + token + prefs) to get
+                  // straight back in after a reinstall / new device.
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final ok = await importSettingsBackup(context);
+                      if (ok && context.mounted) context.go(Routes.home);
+                    },
+                    icon: const Icon(Icons.restore),
+                    label: Text(strings.t('settings.importBackup')),
                   ),
                   if (_pasteError != null) ...[
                     const SizedBox(height: 12),
