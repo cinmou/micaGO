@@ -1,6 +1,6 @@
 # Notifications: setup & how it works
 
-MicaGo delivers new-message alerts to the Android client through **three layers**,
+micaGO delivers new-message alerts to the Android client through **three layers**,
 each optional and each a fallback for the one before it:
 
 1. **Firebase / FCM push (optional, recommended).** A thin *wake* signal using
@@ -47,18 +47,18 @@ turned off still results in a correct, complete thread once the app syncs.
 
 On-device resolution in the FCM background isolate is deliberately **not** done:
 it would require either loading the whole address book per push or persisting a
-contacts cache to disk, and MicaGo never persists your address book. The handle
+contacts cache to disk, and micaGO never persists your address book. The handle
 fallback keeps the FCM title meaningful.
 
 ## Set up Firebase push (optional)
 
-Push uses a Firebase project **you own**; MicaGo ships no credentials.
+Push uses a Firebase project **you own**; micaGO ships no credentials.
 
 1. In the Firebase console, create a project and add an **Android app**.
 2. In the **Companion → Notifications**, enable Firebase, set the project id, and
    point it at your service-account JSON (kept locally on the Mac; never
    committed or sent to the device).
-3. On the phone, open **Settings → Notifications** in MicaGo. When the client
+3. On the phone, open **Settings → Notifications** in micaGO. When the client
    fetches the config it initializes Firebase at runtime and registers its token
    as an optional **Push Device**.
 4. Use **Send test notification** from the push-device card to verify end-to-end
@@ -132,13 +132,13 @@ to a real notification on the phone.
 
 ## Use keep-alive instead of (or alongside) Firebase
 
-Turn on **Settings → Notifications → "Keep MicaGo running in background"**. A
+Turn on **Settings → Notifications → "Keep micaGO running in background"**. A
 persistent notification appears and the connection is held open in the
 background, so incoming messages raise local notifications with the same
 formatting, contact name, tap routing and reply action as push — **no Firebase
 required**. Expect higher battery use, and note that aggressive OEM battery
 managers may still suspend the service; if alerts stop arriving in the
-background, exempt MicaGo from battery optimization in Android settings.
+background, exempt micaGO from battery optimization in Android settings.
 
 ## Android 13+ notification permission
 
@@ -146,7 +146,7 @@ Android 13+ requires the `POST_NOTIFICATIONS` runtime permission. If it is
 denied, **no** notifications appear regardless of Firebase/keep-alive. The
 Notifications card detects this and shows a **"Notifications are turned off"**
 warning with a **Turn on** action; if the system dialog no longer appears,
-enable it under Android **Settings → Apps → MicaGo → Notifications**.
+enable it under Android **Settings → Apps → micaGO → Notifications**.
 
 ## How to test
 

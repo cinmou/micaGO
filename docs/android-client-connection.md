@@ -34,7 +34,7 @@ If you have a debug build (APK):
    Flutter installed).
 2. On the device, allow installing from your file manager / browser if prompted
    ("Install unknown apps").
-3. Open the APK and install it, then launch **MicaGo**.
+3. Open the APK and install it, then launch **micaGO**.
 
 > A debug build is for testing only. Treat it like any pre‑release app.
 

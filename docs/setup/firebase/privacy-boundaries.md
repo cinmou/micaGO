@@ -1,6 +1,6 @@
 # Firebase privacy boundaries
 
-MicaGo is local-first. Firebase is used **only** for Android FCM push and the
+micaGO is local-first. Firebase is used **only** for Android FCM push and the
 optional public-URL discovery. These boundaries are enforced in the server.
 
 ## Never stored in Firebase (Firestore or anywhere in your project)

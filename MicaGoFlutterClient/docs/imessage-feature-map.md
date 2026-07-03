@@ -1,13 +1,13 @@
 # iMessage feature map (client roadmap)
 
-Internal planning doc for the MicaGo Android client. **Not** a user guide.
+Internal planning doc for the micaGO Android client. **Not** a user guide.
 It maps iMessage-class features (inspired by **BlueBubbles** for capability
-coverage and **FluffyChat** for native-messenger UX) to where MicaGo stands
+coverage and **FluffyChat** for native-messenger UX) to where micaGO stands
 today, so we know what to build next and what needs server support first.
 
 Legend:
 - ✅ **Supported now** — works in the current client build.
-- 🟡 **Server exists, client missing** — the MicaGo server already exposes this; the client just needs UI/logic.
+- 🟡 **Server exists, client missing** — the micaGO server already exposes this; the client just needs UI/logic.
 - 🔴 **Server missing** — the server does not expose this yet; needs server work first.
 - ⏳ **Later** — planned, not scheduled for the current phases.
 
@@ -74,13 +74,13 @@ no timestamp/unread when absent).
 ## Personalization / localization status (C2.5)
 
 - **Theming:** ✅ Material 3 with Android 12+ **dynamic color** (Material You) by
-  default (`dynamic_color`), plus a seed-color picker (MicaGo + presets) and
+  default (`dynamic_color`), plus a seed-color picker (micaGO + presets) and
   light/dark/system theme mode. Persisted locally.
 - **Localization:** 🟡 **architecture only.** The Settings UI offers System /
   English / 简体中文 and the app sets `locale` + `flutter_localizations`
   delegates, so **built-in Material/Cupertino widgets** localize. **App-specific
   strings are not yet translated** — there are no ARB/intl message catalogs yet.
-  Switching to Chinese will not translate MicaGo's own labels until that work is
+  Switching to Chinese will not translate micaGO's own labels until that work is
   done. (Do not fake translations.)
 
 ## C2.6 UX additions
@@ -100,5 +100,5 @@ no timestamp/unread when absent).
 ## Non-goals (carried from the server's guardrails)
 
 No private-API writes: the client will **not** send tapbacks, edits, unsends,
-typing, read receipts, or effects. MicaGo mirrors and sends plain text/media via
+typing, read receipts, or effects. micaGO mirrors and sends plain text/media via
 the supported server endpoints only.

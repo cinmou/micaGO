@@ -25,7 +25,7 @@ following are out of scope and will not be added:
   read-receipt writes, group renames, etc.).
 - No Electron/Server admin UI endpoints.
 
-A MicaGo client targets **this** contract directly. Compatibility shims for
+A micaGO client targets **this** contract directly. Compatibility shims for
 other servers are explicitly rejected (see
 [`micago-feature-decision-matrix.md`](micago-feature-decision-matrix.md)).
 

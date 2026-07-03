@@ -28,7 +28,7 @@ Files inspected (under
 `+!`/`+$` are **not** anything BlueBubbles strips — BlueBubbles never has them,
 because it decodes the typedstream *structurally* (via `node-typedstream`) and
 reads the string's declared length. The prefixes are an artifact of a **naive
-byte-scan** extractor (which MicaGo used). In Apple's typedstream encoding an
+byte-scan** extractor (which micaGO used). In Apple's typedstream encoding an
 `NSString`'s bytes are written as:
 
 ```
@@ -46,7 +46,7 @@ for those because `0x81` is non-printable).
 
 ---
 
-## 2. MicaGo current state (before this patch)
+## 2. micaGO current state (before this patch)
 
 - **chat.db read** (`internal/store/queries.go`, `attachmentBaseSelect`) selected
   `guid, mime_type, transfer_name, total_bytes, filename(local_path), is_outgoing,
@@ -139,7 +139,7 @@ clearly justified" pass and are documented here instead.
    The message-level boolean is the BlueBubbles-authoritative signal but needs a
    `messages` column + message-SELECT change.
 3. **Server-side HEIC→JPEG / CAF→MP3 conversion.** BlueBubbles converts on
-   serialize. MicaGo deliberately serves the **original** bytes with correct
+   serialize. micaGO deliberately serves the **original** bytes with correct
    metadata (`uti`/`mimeType`/`attachmentKind`) and lets the client decide. This
    keeps the server dependency-free; revisit only if a target client can't decode
    HEIC/CAF.

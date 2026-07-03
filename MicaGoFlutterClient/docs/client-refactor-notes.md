@@ -81,7 +81,7 @@ URL balloons); `associatedMessageGuid` + `associatedMessageType` +
 `handle` → sender; `attachments` + `hasAttachments`; `bigEmoji`.
 `sanitizeString` = strip `U+FFFC` only.
 
-### Fields MicaGo server exposes today
+### Fields micaGO server exposes today
 `guid, text, subject, service, dateCreated, dateRead, dateDelivered, isFromMe,
 isRead, isDelivered, handle{id,service}, cacheHasAttachments, attachments[]`
 (attachment: `guid, filename, mimeType, transferName, totalBytes, downloadUrl,
@@ -90,8 +90,8 @@ uti, isSticker, attachmentKind, isVoiceMessage`).
 ### Missing fields ⇒ why messages look "Unsupported"
 BlueBubbles distinguishes reactions / interactive balloons / group events /
 effects using `associatedMessageType`, `balloonBundleId`, `itemType`,
-`groupActionType`, `payloadData`, `expressiveSendStyleId`. **MicaGo exposes none
-of these.** So when iMessage stores one of those rows, MicaGo returns a message
+`groupActionType`, `payloadData`, `expressiveSendStyleId`. **micaGO exposes none
+of these.** So when iMessage stores one of those rows, micaGO returns a message
 with empty/odd `text` and no attachments → our client can only see "no text + no
 attachment" and must show a generic placeholder. The **debug inspector (Part A)**
 captures the raw payload so we can confirm which case each is and prioritise the

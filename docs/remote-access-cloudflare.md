@@ -3,10 +3,10 @@
 This guide shows how to reach your Mac from **outside your home network** using
 your **own domain** and **Cloudflare Tunnel**.
 
-> ℹ️ **Cloudflare Tunnel is external and optional.** MicaGo does **not** bundle,
+> ℹ️ **Cloudflare Tunnel is external and optional.** micaGO does **not** bundle,
 > install, or manage Cloudflare. You set up and run the tunnel yourself with
 > your own Cloudflare account and domain. If you prefer a different reverse
-> proxy or tunnel, the same idea applies — MicaGo just needs a public HTTPS URL
+> proxy or tunnel, the same idea applies — micaGO just needs a public HTTPS URL
 > that forwards to the local server.
 
 ## Why a tunnel?
@@ -23,7 +23,7 @@ Android client
   -> https://micago.example.com            (your domain, HTTPS)
   -> Cloudflare Tunnel                 (Cloudflare's edge)
   -> cloudflared on your Mac           (the tunnel client you run)
-  -> http://127.0.0.1:<PORT>           (the MicaGo server on your Mac)
+  -> http://127.0.0.1:<PORT>           (the micaGO server on your Mac)
 ```
 
 Your token still protects every request, end to end. The tunnel only moves
@@ -81,7 +81,7 @@ This creates the DNS record that points `micago.example.com` at your tunnel.
 ## Step 7 — Write the config file
 
 Create `~/.cloudflared/config.yml`. Replace `<you>`, `<tunnel-id>`, and
-`<PORT>` with your values (the default MicaGo port is `3000`, but use whatever
+`<PORT>` with your values (the default micaGO port is `3000`, but use whatever
 the Mac app shows):
 
 ```yaml
@@ -94,7 +94,7 @@ ingress:
   - service: http_status:404
 ```
 
-The first `ingress` rule forwards your hostname to the local MicaGo server. The
+The first `ingress` rule forwards your hostname to the local micaGO server. The
 final `http_status:404` rule is required as a catch‑all.
 
 ## Step 8 — Run the tunnel
@@ -116,7 +116,7 @@ testing:
 cloudflared service install
 ```
 
-## Step 9 — Enter the public URL in the MicaGo Mac app
+## Step 9 — Enter the public URL in the micaGO Mac app
 
 1. Open the Mac app → **Connections** → **Connection Endpoints** →
    **Public / remote**.
@@ -134,7 +134,7 @@ cloudflared service install
 
 ## Step 10 — Validate the public URL
 
-Click **Validate Public URL**. MicaGo asks its own server to confirm that the
+Click **Validate Public URL**. micaGO asks its own server to confirm that the
 public URL loops back to **this** Mac and that the bearer token is accepted. The
 result is shown in plain language (the token is never displayed):
 
@@ -142,7 +142,7 @@ result is shown in plain language (the token is never displayed):
 - *Couldn't reach the public URL…* → tunnel not running / wrong port.
 - *Reached a server, but it rejected the token (401)…* → the URL points at a
   different server.
-- *…no server answered behind it (502)…* → the tunnel is up but MicaGo isn't
+- *…no server answered behind it (502)…* → the tunnel is up but micaGO isn't
   running on the forwarded port.
 
 ### What success looks like
@@ -205,7 +205,7 @@ reachable already embeds the URL.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Validate fails, but local works | Tunnel not forwarding to the right place | Check `service:` in `config.yml` points to `http://127.0.0.1:<PORT>` with the **correct port** shown in the Mac app. |
-| Connection refused / 502 from the tunnel | Server bound to the wrong address, or not running | Make sure the MicaGo server is running and listening on the port your `config.yml` forwards to. |
+| Connection refused / 502 from the tunnel | Server bound to the wrong address, or not running | Make sure the micaGO server is running and listening on the port your `config.yml` forwards to. |
 | `micago.example.com` does not resolve | Hostname not routed in Cloudflare | Re‑run `cloudflared tunnel route dns micago-server micago.example.com` and confirm the DNS record exists. |
 | Everything 401 (Unauthorized) | Wrong or stale token | Re‑copy the token from the Mac app; make sure devices use the same token. |
 | Validate fails right after starting | Tunnel not running | Run `cloudflared tunnel run micago-server` and try again. |

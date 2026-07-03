@@ -22,7 +22,7 @@ The service-account JSON couldn't be loaded as a valid RSA service account.
 - **403 / PERMISSION_DENIED**: the service account lacks FCM permission, or
   Cloud Messaging API is disabled. Enable "Firebase Cloud Messaging API (V1)" in
   the Google Cloud console for the project.
-- **404 / UNREGISTERED**: the device token is stale. MicaGo prunes it
+- **404 / UNREGISTERED**: the device token is stale. micaGO prunes it
   automatically (clears the token + disables push); re-register from the client.
 - **401 / invalid_grant** when minting the token: the Mac clock may be skewed
   (JWT `iat/exp`), or the key was revoked. Fix the clock or re-issue the key.

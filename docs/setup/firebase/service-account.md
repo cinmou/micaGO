@@ -1,6 +1,6 @@
 # Create a service account (server side)
 
-The MicaGo server authenticates to FCM (and optional Firestore) using a Google
+The micaGO server authenticates to FCM (and optional Firestore) using a Google
 **service account** from *your* Firebase project. This file stays on your Mac.
 
 1. Firebase Console → **Project settings** → **Service accounts**.
@@ -14,7 +14,7 @@ The MicaGo server authenticates to FCM (and optional Firestore) using a Google
 4. In the companion: **Notifications** → Provider **FCM** → **Choose
    service-account JSON…** → select that file → **Enable FCM delivery** → **Save**.
 
-## How MicaGo uses it
+## How micaGO uses it
 
 - The server builds a short-lived **OAuth2 access token** from the service
   account (RS256-signed JWT → `token_uri`), scoped to

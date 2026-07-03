@@ -35,7 +35,7 @@ network.
 
 ### Contacts permission request & onboarding
 
-- Add `NSContactsUsageDescription` to the companion Info.plist (e.g. "MicaGo
+- Add `NSContactsUsageDescription` to the companion Info.plist (e.g. "micaGO
   uses Contacts only on this Mac to show names for message handles and to help
   you set sync rules. Contacts are never uploaded.").
 - A **Contacts** affordance (in Sync Control or a small Contacts panel): shows

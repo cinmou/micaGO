@@ -6,7 +6,7 @@ focused UI/product-surface read of the BlueBubbles server app.
 
 ## Goal
 
-Reorganize the MicaGo macOS companion from a single scrolling window into a
+Reorganize the micaGO macOS companion from a single scrolling window into a
 **native SwiftUI sidebar app** with clear product surfaces, using BlueBubbles'
 server-management app **only as a reference for feature coverage and information
 architecture** — not its implementation.
@@ -91,13 +91,13 @@ Adopt these **concepts** (rebuilt natively, not copied):
 - **Private API** feature toggles (typing/reactions/edit/unsend send, dylib).
 - **Scheduled Messages, Contacts management, FindMy, API & Webhooks** as product
   surfaces.
-- **Firebase auto-bootstrap / OAuth project creation** — MicaGo is self-host
+- **Firebase auto-bootstrap / OAuth project creation** — micaGO is self-host
   only, later.
 - "**Best friend / top group**" and other message-content analytics.
 - **Auto-update service**, encrypt-communications field, **in-app management of
   ngrok/cloudflare/zrok** binaries.
 
-## Proposed MicaGo Companion structure
+## Proposed micaGO Companion structure
 
 A `NavigationSplitView` with a sidebar of eight destinations and a detail pane.
 A persistent header/footer chip shows reachability (green/grey dot), server

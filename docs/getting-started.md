@@ -1,13 +1,13 @@
-# Getting Started with MicaGo
+# Getting Started with micaGO
 
 **English** · [简体中文](getting-started.zh-Hans.md) · [繁體中文](getting-started.zh-Hant.md)
 
-This guide walks you through your first MicaGo setup and the recommended order
+This guide walks you through your first micaGO setup and the recommended order
 to test each connection.
 
-## What MicaGo does (at this stage)
+## What micaGO does (at this stage)
 
-MicaGo runs a small server on your Mac that exposes your Messages data to your
+micaGO runs a small server on your Mac that exposes your Messages data to your
 **own** devices over a private, token‑protected connection. A companion app on
 the Mac starts/stops the server and shows you how to connect.
 
@@ -19,12 +19,12 @@ You can reach the Mac in three ways:
    set up yourself (see
    [Remote Access with Cloudflare Tunnel](remote-access-cloudflare.md)).
 
-There is no MicaGo cloud. Your data stays between your Mac and your devices.
+There is no micaGO cloud. Your data stays between your Mac and your devices.
 
 ## What you need
 
 - A **Mac signed in to Messages** (iMessage working in the Messages app).
-- The **MicaGo Mac app** (companion/server) installed and running.
+- The **micaGO Mac app** (companion/server) installed and running.
 - Required **macOS permissions** for the Mac app. If a permission is missing,
   the Mac app will tell you and link to the right Settings panel. In general the
   app needs permission to read the Messages database (Full Disk Access) and to
@@ -34,7 +34,7 @@ There is no MicaGo cloud. Your data stays between your Mac and your devices.
 
 ## The Mac app, card by card
 
-Open the MicaGo Mac app. The **Server** and **Connections** screens are
+Open the micaGO Mac app. The **Server** and **Connections** screens are
 organized into a few cards:
 
 - **Server Runtime** — Start / Stop / Restart, the running status, the address

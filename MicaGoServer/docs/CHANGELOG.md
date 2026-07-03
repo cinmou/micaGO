@@ -1,6 +1,6 @@
-# MicaGo — version history
+# micaGO — version history
 
-A consolidated, chronological record of MicaGo's development. Each entry is a
+A consolidated, chronological record of micaGO's development. Each entry is a
 development cycle (internally tracked as **C-numbers**). This file replaces the
 ~45 per-cycle notes that previously lived in `docs/`.
 
@@ -76,7 +76,7 @@ that runs/manages the server), **Client** (Flutter Android app).
 - **C28 (notifications) — Background delivery fix.** Audited the FCM chain vs
   BlueBubbles and produced a gap table. Fixed the core background bug: the FCM
   background isolate called `Firebase.initializeApp()` with **no options**, which
-  throws on a fresh (killed-app) process since MicaGo bakes no
+  throws on a fresh (killed-app) process since micaGO bakes no
   `google-services.json`. Now the foreground **persists the runtime options** and
   the background handler re-initializes Firebase with them. Firebase stays
   optional throughout.
@@ -196,5 +196,5 @@ migration (C12–C13); network-privacy/traffic review; client-refresh reference
 
 ---
 
-For the design rationale of what MicaGo intentionally does and does **not** do,
+For the design rationale of what micaGO intentionally does and does **not** do,
 see `MicaGoServer/docs/micago-feature-decision-matrix.md`.

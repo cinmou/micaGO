@@ -1,6 +1,6 @@
 # Manual Test Flow
 
-A from‑zero checklist to confirm MicaGo works at each layer: local, LAN, public,
+A from‑zero checklist to confirm micaGO works at each layer: local, LAN, public,
 and the Android client. Run the sections in order — each builds on the previous.
 
 **Placeholders used throughout:**
@@ -17,7 +17,7 @@ and the Android client. Run the sections in order — each builds on the previou
 
 ## A. Mac server check (local)
 
-1. Start the **MicaGo Mac app** (companion/server).
+1. Start the **micaGO Mac app** (companion/server).
 2. Confirm the status shows **Running**.
 3. Copy the **local URL** and the **bearer token** from the app.
 4. From a Terminal **on the Mac**, test the no‑auth health check:
@@ -151,7 +151,7 @@ See [Android Client Connection](android-client-connection.md) for details.
    curl -X POST \
      -H "Authorization: Bearer <TOKEN>" \
      -H "Content-Type: application/json" \
-     -d '{"tempGuid":"test-001","message":"Hello from MicaGo"}' \
+     -d '{"tempGuid":"test-001","message":"Hello from micaGO"}' \
      "http://127.0.0.1:<PORT>/api/chats/<CHAT_GUID>/send"
    ```
 

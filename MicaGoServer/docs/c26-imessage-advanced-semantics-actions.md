@@ -4,7 +4,7 @@ Backend version: `v0.26.0`
 
 ## Summary
 
-C26 aligns MicaGo's message semantics with the iMessage/BlueBubbles model without adding a third-party runtime dependency:
+C26 aligns micaGO's message semantics with the iMessage/BlueBubbles model without adding a third-party runtime dependency:
 
 - sticker attachments (`attachment.is_sticker`) and associated sticker messages (`associated_message_type = 1000`) are exposed as sticker/media semantics instead of generic broken files;
 - edited text/attachment messages remain normal renderable messages with `isEdited`/`dateEdited` state;
@@ -22,9 +22,9 @@ The server now exposes:
 - `POST /api/chats/{chatGuid}/messages/{messageGuid}/retract`
 - `DELETE /api/chats/{chatGuid}/messages/{messageGuid}`
 
-These actions must be executed through Messages.app/IMCore. MicaGo does not write `chat.db` to fake edit, undo-send, or delete, because that would not propagate a real iMessage change.
+These actions must be executed through Messages.app/IMCore. micaGO does not write `chat.db` to fake edit, undo-send, or delete, because that would not propagate a real iMessage change.
 
-The Go backend calls a bundled MicaGo IMCore helper when present next to the backend executable or in the app bundle Resources directory. Development builds may point `MICAGO_IMCORE_HELPER` at a local helper binary. Users are not required to install `imsg` or `imsgbridge`; missing helper support is reported as `unsupported`.
+The Go backend calls a bundled micaGO IMCore helper when present next to the backend executable or in the app bundle Resources directory. Development builds may point `MICAGO_IMCORE_HELPER` at a local helper binary. Users are not required to install `imsg` or `imsgbridge`; missing helper support is reported as `unsupported`.
 
 Action errors are normalized:
 
@@ -48,4 +48,4 @@ Public/remote endpoints remain optional and are not required for LAN pairing.
 
 ## Limitations
 
-Edit, undo-send, and delete are limited by Apple's Messages.app behavior and macOS private selector availability. If Messages.app cannot perform an action, MicaGo returns a clear error and does not mutate local database rows as a substitute.
+Edit, undo-send, and delete are limited by Apple's Messages.app behavior and macOS private selector availability. If Messages.app cannot perform an action, micaGO returns a clear error and does not mutate local database rows as a substitute.

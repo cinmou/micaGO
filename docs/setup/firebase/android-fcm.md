@@ -1,18 +1,18 @@
 # Add Android / FCM
 
 This enables your **Android client** to obtain an FCM registration token and
-receive push from MicaGo. (The server side only needs the
+receive push from micaGO. (The server side only needs the
 [service account](service-account.md).)
 
 1. Firebase Console → **Project settings** → **General** → **Your apps** → **Add
    app** → **Android**.
 2. Enter your Android app's **package name**, register, and download the
    generated **`google-services.json`**. This file is for the **Android client
-   app**, not the MicaGo server.
+   app**, not the micaGO server.
 3. Build the Android client with that `google-services.json` so it can call
    `FirebaseMessaging.getToken()`.
 
-## Registering the token with MicaGo
+## Registering the token with micaGO
 
 The Android client registers its FCM token with the relay using the existing
 device registry (see `docs/spec-v0.7.0-device-registry.md`):
@@ -26,12 +26,12 @@ POST /api/devices/register
 - The push token is stored only in the local `relay.db` and is sent to **Google
   FCM** as the delivery address — it is never published in any Firestore
   document. The companion only ever shows `token set`, never the token itself.
-- If FCM later reports the token as `UNREGISTERED`, MicaGo prunes it (clears the
+- If FCM later reports the token as `UNREGISTERED`, micaGO prunes it (clears the
   token and disables push for that device) so dead tokens don't accumulate.
 
 ## What the push looks like
 
-MicaGo sends an FCM **HTTP v1 `data` message** (high priority, 24h TTL):
+micaGO sends an FCM **HTTP v1 `data` message** (high priority, 24h TTL):
 
 ```json
 { "message": { "token": "<device token>",

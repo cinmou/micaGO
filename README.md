@@ -4,7 +4,7 @@
 
 <div align="center">
 
-# MicaGo
+# micaGO
 
 **English** · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
 
@@ -27,14 +27,14 @@
 
 ## Overview
 
-MicaGo lets your **own** Android phone read and send your iMessages through your
+micaGO lets your **own** Android phone read and send your iMessages through your
 **own** Mac. A small Go server on the Mac reads its local Messages database and
 exposes a private, token‑protected API; a macOS menu‑bar **Companion** runs and
 manages it; and a **Flutter Android app** pairs with it over your Wi‑Fi (or an
 optional public URL you control). Your data only ever travels between **your** Mac
 and **your** devices.
 
-MicaGo is still in testing. It reads macOS Messages internals and needs Full Disk
+micaGO is still in testing. It reads macOS Messages internals and needs Full Disk
 Access, so read the [security model](#-security-model) and
 [limitations](#-limitations) before relying on it. Not affiliated with Apple.
 
@@ -53,7 +53,7 @@ Access, so read the [security model](#-security-model) and
 
 ## ✨ What you get
 
-- 🔐 **Self‑hosted.** No MicaGo account or hosted relay. Optional push and remote
+- 🔐 **Self‑hosted.** No micaGO account or hosted relay. Optional push and remote
   access use services **you** own and configure.
 - 💬 **Chats & messages.** Conversation list, threads, reactions/tapbacks, replies,
   send effects, stickers, **location / handwriting / Digital Touch**, and inline
@@ -108,17 +108,17 @@ Access, so read the [security model](#-security-model) and
 
 ## 🔐 Security model
 
-MicaGo is **local‑first** and built so your data stays yours.
+micaGO is **local‑first** and built so your data stays yours.
 
-| Concern | How MicaGo handles it |
+| Concern | How micaGO handles it |
 | --- | --- |
 | **Auth** | Every API call needs a server‑generated **bearer token** (`~/.micago/config.yaml`). Anyone with your URL **and** token can reach your Mac — treat it like a password. |
 | **Network** | Default bind is your **LAN**. Public exposure is opt‑in and your responsibility; prefer HTTPS for anything leaving your network. |
-| **Your data** | **No MicaGo cloud relay.** Contacts are matched on‑device and never uploaded. |
+| **Your data** | **No micaGO cloud relay.** Contacts are matched on‑device and never uploaded. |
 | **Push** | If you enable FCM, payloads carry only a small wake/preview — never your message history or tokens. |
 | **Private APIs** | The optional IMCore helper (edit/unsend/delete) is gated behind capability checks; it never fakes success. |
 
-In short, MicaGo bridges your iMessage to your devices over a connection you
+In short, micaGO bridges your iMessage to your devices over a connection you
 control; it does not run a cloud, hold an account, upload contacts, or store your
 messages outside your Mac.
 
@@ -177,7 +177,7 @@ flutter build apk --debug      # or: flutter run
 
 ## 🧰 Optional features
 
-All optional and **off by default** — MicaGo works fully without any of them.
+All optional and **off by default** — micaGO works fully without any of them.
 
 - 🔋 **Keep‑alive service (Android).** The simple path, and how most people will run
   it: a foreground service holds the connection open and raises a local notification
@@ -193,7 +193,7 @@ All optional and **off by default** — MicaGo works fully without any of them.
   - *What it does **not** do* — fake success. If your Mac doesn't grant IMCore
     access, it reports *unsupported* and the actions stay hidden.
 - 🌍 **Remote access.** Put your own reverse proxy / tunnel (e.g. Cloudflare Tunnel)
-  in front of the server and set the **Public URL** in the Companion. MicaGo does
+  in front of the server and set the **Public URL** in the Companion. micaGO does
   not provide or manage a tunnel. See
   [`docs/remote-access-cloudflare.md`](docs/remote-access-cloudflare.md).
 
@@ -213,7 +213,7 @@ MicaGo/
 ```
 
 > `Ref/` (if present locally) holds third‑party reference projects used during
-> development. It is **not** part of MicaGo and is git‑ignored.
+> development. It is **not** part of micaGO and is git‑ignored.
 
 ## ⚠️ Limitations
 
@@ -245,7 +245,7 @@ bearer tokens or push tokens.
 
 ## 🙏 Acknowledgments
 
-MicaGo owes a lot to two open-source projects that already mapped the hard parts of
+micaGO owes a lot to two open-source projects that already mapped the hard parts of
 iMessage. We are grateful for their work.
 
 - **[BlueBubbles](https://github.com/BlueBubblesApp)** — a mature iMessage bridge.
@@ -255,4 +255,4 @@ iMessage. We are grateful for their work.
   clean read of `chat.db` and the attachment / StickerCache layout, which guided our
   server's read path.
 
-Both are independent projects and are not affiliated with MicaGo.
+Both are independent projects and are not affiliated with micaGO.

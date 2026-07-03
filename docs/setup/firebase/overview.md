@@ -1,10 +1,10 @@
-# MicaGo Firebase Setup (self-host)
+# micaGO Firebase Setup (self-host)
 
-MicaGo can deliver **Android push notifications** through **Firebase Cloud
+micaGO can deliver **Android push notifications** through **Firebase Cloud
 Messaging (FCM)** and, optionally, publish your **public server URL** to your own
 **Firestore** so remote clients can rediscover a changed tunnel URL.
 
-> **MicaGo does not run a cloud server.** There is no Mica-operated relay or
+> **micaGO does not run a cloud server.** There is no Mica-operated relay or
 > Mica-operated Firebase. **You bring your own Firebase project.** Your service
 > account and data stay in *your* Google project and on *your* Mac.
 
@@ -28,7 +28,7 @@ Messaging (FCM)** and, optionally, publish your **public server URL** to your ow
 1. [Create a Firebase project](create-firebase-project.md)
 2. [Add Android / FCM to the project](android-fcm.md)
 3. [Create a service account for the server](service-account.md)
-4. Point MicaGo at it: Companion → **Notifications** → provider **FCM**, choose
+4. Point micaGO at it: Companion → **Notifications** → provider **FCM**, choose
    the service-account JSON, set **Preview**, enable, **Save**. (Or edit
    `~/.micago/config.yaml`, see below.)
 5. (Optional) [Enable Firestore public-URL sync](firestore-server-url-sync.md)

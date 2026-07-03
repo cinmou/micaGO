@@ -1,4 +1,4 @@
-# MicaGo — User Documentation
+# micaGO — User Documentation
 
 **English** · [简体中文](index.zh-Hans.md) · [繁體中文](index.zh-Hant.md)
 
@@ -7,8 +7,8 @@
 ---
 
 Welcome 👋 These guides help you set up the Mac app, connect from your phone, and
-(optionally) reach your Mac from anywhere. MicaGo lets your **own** devices talk to
-**your own** Mac — there is no MicaGo cloud, and your messages stay between your
+(optionally) reach your Mac from anywhere. micaGO lets your **own** devices talk to
+**your own** Mac — there is no micaGO cloud, and your messages stay between your
 Mac and the devices you connect.
 
 ---
@@ -22,7 +22,7 @@ Mac and the devices you connect.
   Android app over LAN or a public URL, and what it supports.
 - 🌍 **[Remote Access with Cloudflare Tunnel](remote-access-cloudflare.md)** — reach
   your Mac from outside your home with your own domain. The tunnel is **external and
-  optional**; MicaGo does not bundle or manage it.
+  optional**; micaGO does not bundle or manage it.
 - 🔔 **[Push Notifications](notifications-setup.md)** — optional self‑hosted
   Firebase / FCM setup and troubleshooting for Android notifications.
 - 🔥 **[Firebase Setup Reference](setup/firebase/README.md)** — the same optional
@@ -52,11 +52,11 @@ Mac and the devices you connect.
   chats, sends text + attachments + voice (and SMS when you enable it), renders
   reactions/replies/effects/media/stickers/location, and optionally receives push.
 - **Remote access** uses your own domain + Cloudflare Tunnel (or another tunnel you
-  choose). MicaGo does not provide a tunnel for you.
+  choose). micaGO does not provide a tunnel for you.
 
 > Software/design docs and the development history live in
 > [`MicaGoServer/docs/`](../MicaGoServer/docs/README.md) — these `/docs` guides are
-> for **using** MicaGo.
+> for **using** micaGO.
 
 See each guide for details, and the [root README](../README.md) for build
 instructions and the full feature list.

@@ -139,7 +139,7 @@ no BlueBubbles Electron/WebUI; no Socket.IO; no bundled tunnel management
 - Detection (companion-side, no new API required): when the process exits
   quickly with stderr containing `operation not permitted` / `unable to open
   database file` for the chat.db path, classify as **`fda_denied`** and show a
-  prominent banner: "Full Disk Access is required. Grant it to MicaGo Companion
+  prominent banner: "Full Disk Access is required. Grant it to micaGO Companion
   in System Settings → Privacy & Security → Full Disk Access, then start the
   server." with a button that opens that pane
   (`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`).
@@ -210,7 +210,7 @@ it lives here rather than in v0.11.3 Sync Control.
 
 ### Goal
 
-Let the user run MicaGo Companion as a **menu-bar-only** app with **no Dock
+Let the user run micaGO Companion as a **menu-bar-only** app with **no Dock
 icon**, while keeping the full Dashboard reachable on demand. Distinct from
 **Launch hidden** (which only controls whether a window opens *at launch*): this
 setting controls the **Dock presence while running**.

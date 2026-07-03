@@ -33,10 +33,10 @@ additions this cycle are the (debug-guarded) `debugPrint`s already present.
 ## 2. BlueBubbles notification gap table
 
 BlueBubbles builds notifications **natively in Kotlin**
-(`CreateIncomingMessageNotification.kt`); MicaGo builds them in Dart via
+(`CreateIncomingMessageNotification.kt`); micaGO builds them in Dart via
 `flutter_local_notifications`. Behavior compared:
 
-| Behavior | BlueBubbles | MicaGo (now) | Decision |
+| Behavior | BlueBubbles | micaGO (now) | Decision |
 | --- | --- | --- | --- |
 | When to send push | Server pushes on new message; client treats it as a wake | Same (server FCM provider; wake-only) | — |
 | Foreground vs background | FG handled by socket; BG shows a notification | Same (FG = socket dedup, BG = local notification) | — |
@@ -47,7 +47,7 @@ BlueBubbles builds notifications **natively in Kotlin**
 | Tap → open chat | Opens the conversation | Same | — |
 | Direct / inline reply | `RemoteInput` "Reply" action → native send | **Added (C30):** RemoteInput action → backend `sendText` via persisted profile (works from the background isolate) | **Ported (lightweight).** |
 | Contact avatar in notification | `Person` + `contact_avatar` bitmap (MessagingStyle) | App icon only | **Defer.** Needs the contact photo plumbed into the (background) isolate; heavier and permission-dependent. |
-| Mark read from notification | "Mark read" action → marks read on the Mac | Not supported | **Defer.** MicaGo's read path is one-directional; there is no server "mark read" endpoint (would need IMCore mark-read). |
+| Mark read from notification | "Mark read" action → marks read on the Mac | Not supported | **Defer.** micaGO's read path is one-directional; there is no server "mark read" endpoint (would need IMCore mark-read). |
 | Conversation bubbles | `BubbleMetadata` | Not supported | **Defer.** Niche; heavier. |
 | Foreground-service keep-alive | Opt-in `keepAlive` socket service | Opt-in `KeepAliveService` | Parity (already present). |
 
@@ -224,7 +224,7 @@ Three user-visible fixes (app renamed **micaGO**). Lightweight; no chat redesign
 - Current source audit note: BlueBubbles separates `realAttachments`
   (`mimeType != null`) from URL `previewAttachments` (`mimeType == null`), which
   explains why Apple URLBalloon payload records should not appear as ordinary
-  blank file cards. MicaGo mirrors that boundary by not promoting untyped opaque
+  blank file cards. micaGO mirrors that boundary by not promoting untyped opaque
   rows (for example UUID-only URLBalloon resources) to ordinary file attachments;
   typed files/media and stickers still render normally.
 

@@ -2,7 +2,7 @@
 
 Semantic-compatibility audit and porting plan. We **read** BlueBubbles (BB) as
 the reference for iMessage message semantics and **port the concepts** into
-MicaGo's own Go server + Flutter client — we do not copy code.
+micaGO's own Go server + Flutter client — we do not copy code.
 
 ## 1. BlueBubbles server files inspected
 
@@ -50,7 +50,7 @@ MicaGo's own Go server + Flutter client — we do not copy code.
 ## 3. Field mapping table
 
 `bb` = BlueBubbles `MessageResponse` field · `chat.db` = source column ·
-`micago(before)` = field on MicaGo `MessageJSON` before this phase ·
+`micago(before)` = field on micaGO `MessageJSON` before this phase ·
 `micago(now)` = field after this phase · `client` = Flutter rendering behavior.
 
 | bb | chat.db | micago(before) | micago(now) | client rendering |

@@ -30,7 +30,7 @@ BlueBubbles also:
 - sends edit/unsend with a `partIndex` and updates the visible message after a
   successful response.
 
-## MicaGo Behavior
+## micaGO Behavior
 
 - Sticker rows keep `attachmentKind=sticker` and `displayKind=sticker`.
 - Sticker rows expose `/api/attachments/{guid}/preview`.

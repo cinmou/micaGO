@@ -1,7 +1,7 @@
 # Optional: Firestore public-URL sync
 
 If you reach the server remotely through a tunnel/reverse proxy whose URL can
-change (Cloudflare Tunnel, Ngrok, DDNS, etc.), MicaGo can publish **only the
+change (Cloudflare Tunnel, Ngrok, DDNS, etc.), micaGO can publish **only the
 current public URL** to a single Firestore document so your clients can
 rediscover it. This is **optional and off by default**.
 

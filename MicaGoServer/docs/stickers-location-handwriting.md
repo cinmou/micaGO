@@ -1,6 +1,6 @@
 # Stickers, location, handwriting & voice (C37)
 
-How MicaGo classifies and renders the iMessage message types that used to show as
+How micaGO classifies and renders the iMessage message types that used to show as
 broken/empty cards. Detection follows Apple's interop formats (the same signals
 BlueBubbles reads); the logic is reimplemented in our server + Flutter client.
 
