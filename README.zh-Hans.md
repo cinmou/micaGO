@@ -14,6 +14,7 @@
 *Built with ♥️ for everyone.*
 
 [![文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-0064E0?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/index.zh-Hans.md)
+[![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-007AFF?style=for-the-badge)](https://micago.cinmou.uk)
 [![快速上手](https://img.shields.io/badge/%E5%BF%AB%E9%80%9F%E4%B8%8A%E6%89%8B-0A1317?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/getting-started.zh-Hans.md)
 [![安全模型](https://img.shields.io/badge/%E5%AE%89%E5%85%A8%E6%A8%A1%E5%9E%8B-31A24C?style=for-the-badge)](https://github.com/cinmou/micaGo#-%E5%AE%89%E5%85%A8%E6%A8%A1%E5%9E%8B)
 [![远程访问](https://img.shields.io/badge/%E8%BF%9C%E7%A8%8B%E8%AE%BF%E9%97%AE-5D6C7B?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/remote-access-cloudflare.md)

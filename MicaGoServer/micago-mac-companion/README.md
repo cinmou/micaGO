@@ -1,4 +1,4 @@
-# MicaGo Mac Companion
+# micaGO Mac Companion
 
 A native **macOS SwiftUI controller** for the MicaGoServer Go relay. It launches
 and monitors the local `micago` server binary and talks to its local control
@@ -33,7 +33,7 @@ scripts/update-backend.sh
 ```
 
 The script builds the backend with version/commit/build-time stamps, installs it
-to `~/.micago/bin/micago`, and sets the Companion backend-path override so local
+to `~/.micago/bin/micago`, and sets the micaGO Companion backend-path override so local
 development runs the newly built binary instead of an older bundled copy. The
 path is still editable in-app and persisted. The first server run creates
 `~/.micago/config.yaml` with the bearer token the companion reads.
@@ -51,7 +51,7 @@ not a mode. See [`../docs/spec-v0.11.0-connection-endpoints.md`](../docs/spec-v0
 
 ## Not included (by design)
 
-No chat UI, no WebUI, no Socket.IO, no MicaGo cloud bootstrap, and no
+No chat UI, no WebUI, no Socket.IO, no micaGO cloud bootstrap, and no
 BlueBubbles compatibility. Firebase/FCM is optional and user-owned. The IMCore
 helper is optional, private-API based, and only enabled when the helper and macOS
 environment report support. Not sandboxed and not intended for the App Store —

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build MicaGo Companion.app with a bundled universal Go backend, then create a DMG.
+# Build micaGO Companion.app with a bundled universal Go backend, then create a DMG.
 #
 # Unsigned local build:
 #   ./scripts/package-dmg.sh
@@ -13,7 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.54.0}"
+VERSION="${VERSION:-0.59.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED_DATA="${DERIVED_DATA:-$COMPANION_DIR/build/DerivedData}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
@@ -24,7 +24,7 @@ DMG_STAGING_DIR="$ARTIFACT_DIR/dmg-staging"
 DMG_BACKGROUND_PATH="$ARTIFACT_DIR/dmg-background.png"
 SWIFT_MODULE_CACHE_DIR="$ARTIFACT_DIR/swift-module-cache"
 DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-micaGO}"
-DMG_APP_NAME="${DMG_APP_NAME:-MicaGoCompanion.app}"
+DMG_APP_NAME="${DMG_APP_NAME:-micaGO Companion.app}"
 DMG_WINDOW_WIDTH="${DMG_WINDOW_WIDTH:-}"
 DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-}"
 DMG_WINDOW_SCALE="${DMG_WINDOW_SCALE:-100}"
@@ -49,7 +49,7 @@ lipo -create -output "$BACKEND_DIR/micago" "$BACKEND_DIR/micago-arm64" "$BACKEND
 chmod +x "$BACKEND_DIR/micago"
 "$BACKEND_DIR/micago" --version
 
-echo "==> Building MicaGoCompanion.app"
+echo "==> Building micaGO Companion.app"
 XCODE_SIGNING_ARGS=()
 if [ -z "${SIGN_IDENTITY:-}" ]; then
   XCODE_SIGNING_ARGS=(

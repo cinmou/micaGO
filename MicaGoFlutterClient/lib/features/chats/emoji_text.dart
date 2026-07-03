@@ -16,7 +16,10 @@ final RegExp _emojiGlue = RegExp(
 // The analyzer's static regex check doesn't understand Unicode property escapes,
 // but Dart's runtime does (covered by emoji_text_test.dart).
 // ignore: valid_regexps
-final RegExp _pictographic = RegExp(r'\p{Extended_Pictographic}', unicode: true);
+final RegExp _pictographic = RegExp(
+  r'\p{Extended_Pictographic}',
+  unicode: true,
+);
 
 /// True when [text] is only emoji (plus whitespace) — no other visible text.
 bool isEmojiOnly(String text) {
@@ -46,10 +49,10 @@ bool isBigEmoji(String text) {
 double bigEmojiFontSize(String text) {
   switch (emojiCount(text)) {
     case 1:
-      return 48;
+      return 96;
     case 2:
-      return 40;
+      return 72;
     default:
-      return 34;
+      return 58;
   }
 }

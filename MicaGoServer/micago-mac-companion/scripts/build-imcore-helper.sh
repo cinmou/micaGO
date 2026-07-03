@@ -1,5 +1,5 @@
 #!/bin/sh
-# Compile the MicaGo IMCore helper (edit / unsend / delete) to a standalone
+# Compile the micaGO IMCore helper (edit / unsend / delete) to a standalone
 # binary. The Companion's Xcode build phase calls this to bundle it into the app
 # Resources; you can also run it directly to test the compile.
 #

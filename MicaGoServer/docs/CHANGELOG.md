@@ -9,6 +9,24 @@ that runs/manages the server), **Client** (Flutter Android app).
 
 ---
 
+## 0.59.0 Beta — release polish, settings backup, and Companion lifecycle
+
+- **Client.** Settings backup now includes the current connection profile, theme,
+  language, chat background, custom avatars, muted chats, in-app notification
+  preference, keep-alive preference, message display options, tablet sidebar
+  width, pinned/hidden chat flags, hidden message tombstones, and user-owned FCM
+  client options. It still excludes chat history, media, notification buffers,
+  FCM tokens, realtime diagnostics, and the device id.
+- **Client.** Chat and settings UI received final beta polish: safer keyboard
+  inset recovery, larger emoji/sticker display, cleaner group footer spacing,
+  input support for inserted images/GIFs where the platform provides them, and
+  settings/about cleanup.
+- **Companion.** Added an About page, localized settings via String Catalog, a
+  Developer Mode gate for Debug/Log, and a lifecycle setting that starts and
+  stops the bundled server with micaGO Companion.
+- **Packaging.** Version numbers are aligned at **0.59.0** across the Flutter
+  client, Go backend, macOS Companion, release docs, and DMG packaging script.
+
 ## C42 — Pin/hide + a two-way test-contact Debug card (backend v0.34)
 
 - **Server.** `POST /api/test-contact/inbound` injects a message *from* the offline

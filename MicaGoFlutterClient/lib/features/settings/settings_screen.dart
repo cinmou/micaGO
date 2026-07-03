@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/router.dart';
 import '../../core/app_controller.dart';
@@ -13,6 +14,7 @@ import '../../core/network/notification_display.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/models/connection_profile.dart';
 import '../../core/network/connection_candidate.dart';
+import '../../core/network/device_identity.dart';
 import '../../core/storage/local_cache_store.dart';
 import '../../core/theme_controller.dart';
 import '../../core/ui/glass_theme_widgets.dart';
@@ -23,7 +25,6 @@ import '../chats/models/chat_summary.dart';
 import '../chats/models/message_model.dart';
 import '../contacts/people_screen.dart';
 import '../debug/debug_log_panel.dart';
-import '../home/connection_status_view.dart';
 import 'backup_restore_ui.dart';
 import 'message_display_page.dart';
 
@@ -37,6 +38,8 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  bool _testingAndDebugUnlocked = false;
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
@@ -74,34 +77,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 children: [
                   Text(
-                    strings.t('settings.appearance'),
+                    strings.t('settings.connection'),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 8),
-                  _AppearanceCard(theme: theme),
+                  if (profile != null)
+                    _RouteSwitcher(app: app, profile: profile)
+                  else
+                    Card(
+                      child: ListTile(
+                        leading: _leadingIcon(Icons.link_off_outlined),
+                        title: Text(strings.t('settings.connection')),
+                        subtitle: Text(
+                          strings.t('settings.testContactUnreachable'),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.push(Routes.connection),
+                      ),
+                    ),
                   const SizedBox(height: 20),
                   Text(
-                    strings.t('settings.messaging'),
+                    strings.t('settings.general'),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 8),
-                  _SmsSendingCard(app: app),
-                  const SizedBox(height: 20),
-                  Text(
-                    strings.t('settings.testing'),
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  _TestContactCard(app: app),
-                  const SizedBox(height: 12),
-                  _HiddenItemsCard(app: app),
-                  const SizedBox(height: 20),
-                  Text(
-                    strings.t('settings.backupRestore'),
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  const _BackupRestoreCard(),
+                  _GeneralSettingsCard(app: app, push: _push),
                   const SizedBox(height: 20),
                   Text(
                     strings.t('settings.notifications'),
@@ -111,6 +111,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _NotificationsCard(app: app),
                   const SizedBox(height: 20),
                   Text(
+                    strings.t('settings.backupRestore'),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  const _BackupRestoreCard(),
+                  const SizedBox(height: 20),
+                  Text(
+                    strings.t('settings.hiddenItems'),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  _HiddenItemsCard(app: app),
+                  const SizedBox(height: 20),
+                  Text(
                     strings.t('settings.more'),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
@@ -118,41 +132,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Card(
                     child: Column(
                       children: [
-                        ListTile(
-                          leading: _leadingIcon(Icons.contacts_outlined),
-                          title: Text(strings.t('settings.contacts')),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _push(
-                            context,
-                            strings.t('settings.contacts'),
-                            const PeopleScreen(),
-                          ),
-                        ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: _leadingIcon(Icons.chat_bubble_outline),
-                          title: Text(strings.t('settings.messageDisplay')),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _push(
-                            context,
-                            strings.t('settings.messageDisplay'),
-                            const MessageDisplayPage(),
-                          ),
-                        ),
-                        if (kDebugMode) ...[
-                          const Divider(height: 1),
+                        if (_testingAndDebugUnlocked) ...[
                           ListTile(
-                            leading: _leadingIcon(Icons.bug_report_outlined),
-                            title: Text(strings.t('settings.debugTools')),
+                            leading: _leadingIcon(Icons.developer_mode),
+                            title: Text(strings.t('settings.developerMode')),
                             trailing: const Icon(Icons.chevron_right),
                             onTap: () => _push(
                               context,
-                              strings.t('settings.debugTools'),
-                              const _DebugToolsBody(),
+                              strings.t('settings.developerMode'),
+                              _DeveloperModeBody(app: app),
                             ),
                           ),
+                          const Divider(height: 1),
                         ],
-                        const Divider(height: 1),
                         ListTile(
                           leading: _leadingIcon(Icons.info_outline),
                           title: Text(strings.t('settings.about')),
@@ -160,36 +152,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onTap: () => _push(
                             context,
                             strings.t('settings.about'),
-                            const _AboutBody(),
+                            _AboutBody(
+                              debugUnlocked: _testingAndDebugUnlocked,
+                              onDebugModeChanged: (enabled) => setState(
+                                () => _testingAndDebugUnlocked = enabled,
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  if (profile != null)
-                    _RouteSwitcher(app: app, profile: profile),
-                  const SizedBox(height: 16),
-                  _TwoActionRow(
-                    primary: OutlinedButton.icon(
-                      onPressed: () => context.go(Routes.connection),
-                      icon: const Icon(Icons.edit_outlined),
-                      label: Text(strings.t('settings.editConnection')),
-                    ),
-                    secondary: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Theme.of(context).colorScheme.error,
+                  if (profile != null) ...[
+                    const SizedBox(height: 20),
+                    _TwoActionRow(
+                      primary: OutlinedButton.icon(
+                        onPressed: () => context.push(Routes.connection),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: Text(strings.t('settings.editConnection')),
                       ),
-                      onPressed: () => _confirmDisconnect(context, app),
-                      icon: const Icon(Icons.logout),
-                      label: Text(strings.t('settings.disconnect')),
+                      secondary: OutlinedButton.icon(
+                        onPressed: () => _confirmDisconnect(context, app),
+                        icon: const Icon(Icons.logout),
+                        label: Text(strings.t('settings.disconnect')),
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 24),
                   Center(
-                    child: Text(
-                      'micaGO · C1 foundation',
-                      style: Theme.of(context).textTheme.bodySmall,
+                    child: Column(
+                      children: [
+                        Text(
+                          strings
+                              .t('settings.versionFooter')
+                              .replaceAll('{version}', kAppVersion),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Built with ♥️ for everyone.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -224,13 +233,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
           MicaLocalizations.of(context).t('settings.disconnectBody'),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(MicaLocalizations.of(context).t('settings.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(MicaLocalizations.of(context).t('settings.disconnect')),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(
+                    MicaLocalizations.of(context).t('settings.cancel'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(
+                    MicaLocalizations.of(context).t('settings.disconnect'),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -268,7 +290,7 @@ class _TwoActionRow extends StatelessWidget {
 /// C26: when the server advertises more than one route (multiple LAN interfaces,
 /// or LAN + Public), let the user pick which one to use. "Automatic" keeps the
 /// LAN-first behaviour; picking a specific route pins it (persisted) and the app
-/// reconnects through it. Hidden when there is only one candidate.
+/// reconnects through it.
 class _RouteSwitcher extends StatelessWidget {
   final AppController app;
   final ConnectionProfile profile;
@@ -276,8 +298,8 @@ class _RouteSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
     final candidates = app.connectionCandidates;
-    if (candidates.length < 2) return const SizedBox.shrink();
     final activeBase = app.activeCandidate?.baseUrl;
     final pinned = profile.selectedBaseUrl;
     final scheme = Theme.of(context).colorScheme;
@@ -297,14 +319,14 @@ class _RouteSwitcher extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text(
-                'Server route',
+                strings.t('settings.route'),
                 style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
-            const RadioListTile<String?>(
+            RadioListTile<String?>(
               value: null,
-              title: Text('Automatic (LAN-first)'),
-              subtitle: Text('Pick the best reachable route'),
+              title: Text(strings.t('settings.autoRoute')),
+              subtitle: Text(strings.t('settings.autoRouteBody')),
               dense: true,
             ),
             for (final c in candidates)
@@ -312,7 +334,10 @@ class _RouteSwitcher extends StatelessWidget {
                 value: c.baseUrl,
                 title: Text(labelFor(c)),
                 subtitle: c.baseUrl == activeBase
-                    ? Text('Connected', style: TextStyle(color: scheme.primary))
+                    ? Text(
+                        strings.t('settings.connected'),
+                        style: TextStyle(color: scheme.primary),
+                      )
                     : Text(c.baseUrl),
                 secondary: c.baseUrl == activeBase
                     ? Icon(Icons.check_circle, color: scheme.primary, size: 20)
@@ -414,37 +439,22 @@ class _DeviceRegisterDebugState extends State<_DeviceRegisterDebug> {
   }
 }
 
-class _DebugToolsBody extends StatelessWidget {
-  const _DebugToolsBody();
+class _DeveloperModeBody extends StatelessWidget {
+  final AppController app;
+
+  const _DeveloperModeBody({required this.app});
 
   @override
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
-    final app = context.read<AppController>();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        _TestContactCard(app: app),
+        const SizedBox(height: 12),
         Card(
           child: Column(
             children: [
-              ListTile(
-                leading: _leadingIcon(Icons.lan_outlined),
-                title: Text(strings.t('settings.connectionDiagnostics')),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => Scaffold(
-                      appBar: AppBar(
-                        title: Text(
-                          strings.t('settings.connectionDiagnostics'),
-                        ),
-                      ),
-                      body: const SafeArea(child: ConnectionStatusView()),
-                    ),
-                  ),
-                ),
-              ),
-              const Divider(height: 1),
               ListTile(
                 leading: _leadingIcon(Icons.terminal),
                 title: Text(strings.t('settings.realtimeEvents')),
@@ -481,6 +491,8 @@ class _DebugToolsBody extends StatelessWidget {
                   ),
                 ),
               ),
+              const Divider(height: 1),
+              _NotificationDiagnosticsTile(app: app),
             ],
           ),
         ),
@@ -542,24 +554,16 @@ class _NotificationsCardState extends State<_NotificationsCard> {
                   : Icons.notifications_off_outlined,
               color: configured ? scheme.primary : scheme.onSurfaceVariant,
             ),
-            title: Text(
-              configured
-                  ? strings.t('notif.enabled')
-                  : strings.t('notif.notConfigured'),
-            ),
-            subtitle: Text(
-              configured
-                  ? '${strings.t('notif.enabledBody')} (${app.pushProvider.toUpperCase()}).'
-                  : strings.t('notif.notConfiguredBody'),
-            ),
-            isThreeLine: true,
+            title: Text(strings.t('notif.fcmBeta')),
+            subtitle: configured
+                ? null
+                : Text(strings.t('notif.notConfiguredBody')),
           ),
           if (configured) ...[
             const Divider(height: 1),
             ListTile(
               leading: _leadingIcon(Icons.send_outlined),
               title: Text(strings.t('notif.sendTest')),
-              subtitle: Text(strings.t('notif.sendTestBody')),
               trailing: _busy
                   ? const SizedBox(
                       width: 18,
@@ -574,8 +578,6 @@ class _NotificationsCardState extends State<_NotificationsCard> {
           SwitchListTile(
             secondary: _leadingIcon(Icons.web_asset_outlined),
             title: Text(strings.t('notif.inApp')),
-            subtitle: Text(strings.t('notif.inAppBody')),
-            isThreeLine: true,
             value: app.inAppNotificationsEnabled,
             onChanged: (v) => app.setInAppNotificationsEnabled(v),
           ),
@@ -591,8 +593,6 @@ class _NotificationsCardState extends State<_NotificationsCard> {
                 color: scheme.error,
               ),
               title: Text(strings.t('notif.permOff')),
-              subtitle: Text(strings.t('notif.permOffBody')),
-              isThreeLine: true,
               trailing: TextButton(
                 onPressed: _enableNotifications,
                 child: Text(strings.t('notif.turnOn')),
@@ -606,14 +606,10 @@ class _NotificationsCardState extends State<_NotificationsCard> {
             SwitchListTile(
               secondary: _leadingIcon(Icons.bolt_outlined),
               title: Text(strings.t('notif.keepAlive')),
-              subtitle: Text(strings.t('notif.keepAliveBody')),
-              isThreeLine: true,
               value: app.keepAliveEnabled,
               onChanged: (v) => app.setKeepAliveEnabled(v),
             ),
           ],
-          const Divider(height: 1),
-          _NotificationDiagnosticsTile(app: app),
         ],
       ),
     );
@@ -702,15 +698,67 @@ class _NotificationDiagnosticsTile extends StatelessWidget {
 /// writes the server's sync settings — the client never guesses. Default off:
 /// SMS chats stay read-only until the user turns this on (and the server's
 /// Messages can actually send SMS).
-class _SmsSendingCard extends StatefulWidget {
+class _GeneralSettingsCard extends StatelessWidget {
   final AppController app;
-  const _SmsSendingCard({required this.app});
+  final void Function(BuildContext context, String title, Widget body) push;
+
+  const _GeneralSettingsCard({required this.app, required this.push});
 
   @override
-  State<_SmsSendingCard> createState() => _SmsSendingCardState();
+  Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
+    return Card(
+      child: Column(
+        children: [
+          ListTile(
+            leading: _leadingIcon(Icons.palette_outlined),
+            title: Text(strings.t('settings.appearance')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => push(
+              context,
+              strings.t('settings.appearance'),
+              const _AppearanceSettingsBody(),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: _leadingIcon(Icons.contacts_outlined),
+            title: Text(strings.t('settings.contacts')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => push(
+              context,
+              strings.t('settings.contacts'),
+              const PeopleScreen(),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: _leadingIcon(Icons.chat_bubble_outline),
+            title: Text(strings.t('settings.messageDisplay')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => push(
+              context,
+              strings.t('settings.messageDisplay'),
+              const MessageDisplayPage(),
+            ),
+          ),
+          const Divider(height: 1),
+          _SmsSendingTile(app: app),
+        ],
+      ),
+    );
+  }
 }
 
-class _SmsSendingCardState extends State<_SmsSendingCard> {
+class _SmsSendingTile extends StatefulWidget {
+  final AppController app;
+  const _SmsSendingTile({required this.app});
+
+  @override
+  State<_SmsSendingTile> createState() => _SmsSendingTileState();
+}
+
+class _SmsSendingTileState extends State<_SmsSendingTile> {
   bool _busy = false;
 
   @override
@@ -733,7 +781,7 @@ class _SmsSendingCardState extends State<_SmsSendingCard> {
     if (!ok) {
       TopBanner.show(
         context,
-        'Could not update the SMS setting',
+        MicaLocalizations.of(context).t('settings.smsUpdateFailed'),
         kind: TopBannerKind.error,
       );
     }
@@ -742,21 +790,18 @@ class _SmsSendingCardState extends State<_SmsSendingCard> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
+    final strings = MicaLocalizations.of(context);
     final unreachable = app.syncSettings == null;
-    return Card(
-      child: SwitchListTile(
-        secondary: _leadingIcon(Icons.sms_outlined),
-        title: const Text('Allow SMS sending through Mac'),
-        subtitle: Text(
-          unreachable
-              ? 'Connect to the server to change this setting.'
-              : 'When on, SMS conversations can be sent through your Mac’s '
-                    'Messages. When off, SMS is read-only. iMessage is always '
-                    'sendable; Unknown is always read-only.',
-        ),
-        value: app.allowSmsSend,
-        onChanged: (_busy || unreachable) ? null : _toggle,
+    return SwitchListTile(
+      secondary: _leadingIcon(Icons.sms_outlined),
+      title: Text(strings.t('settings.allowSms')),
+      subtitle: Text(
+        unreachable
+            ? strings.t('settings.smsUnavailable')
+            : strings.t('settings.smsBody'),
       ),
+      value: app.allowSmsSend,
+      onChanged: (_busy || unreachable) ? null : _toggle,
     );
   }
 }
@@ -927,58 +972,32 @@ class _HiddenItemsCardState extends State<_HiddenItemsCard> {
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _leadingIcon(Icons.visibility_off_outlined),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    strings.t('settings.hiddenItems'),
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ),
-              ],
+      child: Column(
+        children: [
+          ListTile(
+            leading: _leadingIcon(Icons.chat_bubble_outline),
+            title: Text(strings.t('settings.hiddenMessages')),
+            subtitle: Text(
+              strings
+                  .t('settings.hiddenMessagesCount')
+                  .replaceAll('{n}', '$_hiddenMessages'),
             ),
-            const SizedBox(height: 4),
-            Text(
-              strings.t('settings.hiddenItemsBody'),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openMessages,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: _leadingIcon(Icons.contacts_outlined),
+            title: Text(strings.t('settings.hiddenContacts')),
+            subtitle: Text(
+              strings
+                  .t('settings.hiddenContactsCount')
+                  .replaceAll('{n}', '$_hiddenContacts'),
             ),
-            const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: _leadingIcon(Icons.chat_bubble_outline),
-              title: Text(strings.t('settings.hiddenMessages')),
-              subtitle: Text(
-                strings
-                    .t('settings.hiddenMessagesCount')
-                    .replaceAll('{n}', '$_hiddenMessages'),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _openMessages,
-            ),
-            const Divider(height: 1),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: _leadingIcon(Icons.contacts_outlined),
-              title: Text(strings.t('settings.hiddenContacts')),
-              subtitle: Text(
-                strings
-                    .t('settings.hiddenContactsCount')
-                    .replaceAll('{n}', '$_hiddenContacts'),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _openContacts,
-            ),
-          ],
-        ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openContacts,
+          ),
+        ],
       ),
     );
   }
@@ -1330,43 +1349,24 @@ class _BackupRestoreCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _leadingIcon(Icons.backup_outlined),
-                const SizedBox(width: 12),
-                Text(
-                  strings.t('settings.backupRestore'),
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              strings.t('settings.backupSubtitle'),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _TwoActionRow(
-              primary: FilledButton.tonalIcon(
-                onPressed: () => exportSettingsBackup(context),
-                icon: const Icon(Icons.ios_share),
-                label: Text(strings.t('settings.exportBackup')),
-              ),
-              secondary: OutlinedButton.icon(
-                onPressed: () => importSettingsBackup(context),
-                icon: const Icon(Icons.restore),
-                label: Text(strings.t('settings.importBackup')),
-              ),
-            ),
-          ],
-        ),
+      child: Column(
+        children: [
+          ListTile(
+            leading: _leadingIcon(Icons.ios_share),
+            title: Text(strings.t('settings.exportBackup')),
+            subtitle: Text(strings.t('settings.exportBackupBody')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => exportSettingsBackup(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: _leadingIcon(Icons.restore),
+            title: Text(strings.t('settings.importBackup')),
+            subtitle: Text(strings.t('settings.importBackupBody')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => importSettingsBackup(context),
+          ),
+        ],
       ),
     );
   }
@@ -1473,6 +1473,19 @@ class _ChatBackgroundPicker extends StatelessWidget {
           const SnackBar(content: Text('Could not use that image')),
         );
     }
+  }
+}
+
+class _AppearanceSettingsBody extends StatelessWidget {
+  const _AppearanceSettingsBody();
+
+  @override
+  Widget build(BuildContext context) {
+    final activeTheme = context.watch<ThemeController>();
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [_AppearanceCard(theme: activeTheme)],
+    );
   }
 }
 
@@ -1685,75 +1698,91 @@ class MicaGoThemeSeed {
 }
 
 class _AboutBody extends StatefulWidget {
-  const _AboutBody();
+  final bool debugUnlocked;
+  final ValueChanged<bool> onDebugModeChanged;
+
+  const _AboutBody({
+    required this.debugUnlocked,
+    required this.onDebugModeChanged,
+  });
 
   @override
   State<_AboutBody> createState() => _AboutBodyState();
 }
 
 class _AboutBodyState extends State<_AboutBody> {
-  bool _revealToken = false;
+  static const int _debugUnlockTaps = 7;
+
+  late bool _debugUnlocked;
+  int _versionTapCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _debugUnlocked = widget.debugUnlocked;
+  }
 
   @override
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
-    final app = context.watch<AppController>();
-    final profile = app.profile;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        ListTile(
-          leading: _leadingIcon(Icons.bolt),
-          title: const Text('micaGO'),
-          subtitle: const Text('Android client'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+            child: Column(
+              children: [
+                const _FloatingMicaGoLogo(),
+                const SizedBox(height: 22),
+                Text(
+                  'micaGO',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        ListTile(
-          leading: _leadingIcon(Icons.lock_outline),
-          title: Text(strings.t('settings.privacy')),
-          subtitle: const Text('No micaGO cloud. Contacts stay local.'),
+        const SizedBox(height: 20),
+        Text(
+          strings.t('settings.about'),
+          style: Theme.of(context).textTheme.titleSmall,
         ),
-        ListTile(
-          leading: _leadingIcon(Icons.science_outlined),
-          title: Text(strings.t('settings.status')),
-          subtitle: Text(strings.t('settings.preRelease')),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Card(
           child: Column(
             children: [
-              ListTile(
-                leading: _leadingIcon(Icons.dns_outlined),
-                title: Text(strings.t('settings.activeServerUrl')),
-                subtitle: SelectableText(
-                  app.activeCandidate?.baseUrl ??
-                      profile?.effectiveBaseUrl ??
-                      '—',
-                ),
+              _AboutInfoTile(
+                icon: Icons.auto_awesome_rounded,
+                title: strings.t('settings.version'),
+                value: 'Rhodolite v$kAppVersion',
+                onTap: _handleVersionTap,
               ),
               const Divider(height: 1),
-              ListTile(
-                leading: _leadingIcon(Icons.cable_outlined),
-                title: Text(strings.t('settings.websocketUrl')),
-                subtitle: SelectableText(
-                  app.activeCandidate?.wsUrl ?? profile?.effectiveWsUrl ?? '—',
-                ),
+              _AboutInfoTile(
+                icon: Icons.code_outlined,
+                title: strings.t('settings.openSource'),
+                value: 'GitHub',
+                onTap: () => _openExternal('https://github.com/cinmou/MicaGo'),
               ),
               const Divider(height: 1),
-              ListTile(
-                leading: _leadingIcon(Icons.key_outlined),
-                title: Text(strings.t('settings.bearerToken')),
-                subtitle: SelectableText(_tokenText(profile?.token ?? '')),
-                trailing: IconButton(
-                  tooltip: _revealToken ? 'Hide' : 'Reveal',
-                  icon: Icon(
-                    _revealToken
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                  ),
-                  onPressed: (profile?.token.isEmpty ?? true)
-                      ? null
-                      : () => setState(() => _revealToken = !_revealToken),
-                ),
+              _AboutInfoTile(
+                icon: Icons.science_outlined,
+                title: strings.t('settings.status'),
+                value: _debugUnlocked
+                    ? strings.t('settings.debugEnabled')
+                    : strings.t('settings.betaStatus'),
+                onTap: _debugUnlocked ? _confirmDisableDebugMode : null,
+              ),
+              const Divider(height: 1),
+              _AboutInfoTile(
+                icon: Icons.system_update_alt_outlined,
+                title: strings.t('settings.checkUpdates'),
+                value: 'GitHub Releases',
+                onTap: () =>
+                    _openExternal('https://github.com/cinmou/MicaGo/releases'),
               ),
             ],
           ),
@@ -1762,10 +1791,225 @@ class _AboutBodyState extends State<_AboutBody> {
     );
   }
 
-  String _tokenText(String token) {
-    if (token.isEmpty) return '—';
-    if (_revealToken) return token;
-    final head = token.length <= 4 ? token : token.substring(0, 4);
-    return '$head••••••••';
+  void _handleVersionTap() {
+    if (_debugUnlocked) return;
+    setState(() => _versionTapCount++);
+    final remaining = _debugUnlockTaps - _versionTapCount;
+    if (remaining <= 0) {
+      setState(() => _debugUnlocked = true);
+      widget.onDebugModeChanged(true);
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              MicaLocalizations.of(context).t('settings.debugUnlocked'),
+            ),
+          ),
+        );
+      return;
+    }
+    if (remaining <= 3) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              MicaLocalizations.of(
+                context,
+              ).t('settings.debugUnlockHint').replaceAll('{n}', '$remaining'),
+            ),
+          ),
+        );
+    }
+  }
+
+  Future<void> _confirmDisableDebugMode() async {
+    final strings = MicaLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(strings.t('settings.disableDebugTitle')),
+        content: Text(strings.t('settings.disableDebugBody')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(strings.t('settings.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(strings.t('settings.disableDebugConfirm')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _debugUnlocked = false;
+      _versionTapCount = 0;
+    });
+    widget.onDebugModeChanged(false);
+  }
+
+  Future<void> _openExternal(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('settings.openLinkFailed'),
+        kind: TopBannerKind.error,
+      );
+    }
+  }
+}
+
+class _FloatingMicaGoLogo extends StatefulWidget {
+  const _FloatingMicaGoLogo();
+
+  @override
+  State<_FloatingMicaGoLogo> createState() => _FloatingMicaGoLogoState();
+}
+
+class _FloatingMicaGoLogoState extends State<_FloatingMicaGoLogo>
+    with SingleTickerProviderStateMixin {
+  static const double _logoSize = 104;
+
+  late final AnimationController _tiltController;
+  bool _pressed = false;
+  double _rawTiltX = 0;
+  double _rawTiltY = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tiltController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+  }
+
+  @override
+  void dispose() {
+    _tiltController.dispose();
+    super.dispose();
+  }
+
+  void _onPanDown(DragDownDetails details) {
+    _updateTiltValues(details.localPosition);
+    _tiltController.forward();
+    setState(() => _pressed = true);
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    _updateTiltValues(details.localPosition);
+  }
+
+  void _updateTiltValues(Offset localPosition) {
+    setState(() {
+      final dx = (localPosition.dx - (_logoSize / 2)) / (_logoSize / 2);
+      final dy = (localPosition.dy - (_logoSize / 2)) / (_logoSize / 2);
+      _rawTiltX = dy.clamp(-1.2, 1.2) * 0.18;
+      _rawTiltY = -dx.clamp(-1.2, 1.2) * 0.18;
+    });
+  }
+
+  void _deactivate() {
+    if (!_pressed) return;
+    _tiltController.reverse().then((_) {
+      if (mounted && !_pressed) {
+        setState(() {
+          _rawTiltX = 0;
+          _rawTiltY = 0;
+        });
+      }
+    });
+    setState(() => _pressed = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onPanDown: _onPanDown,
+      onPanUpdate: _onPanUpdate,
+      onPanEnd: (_) => _deactivate(),
+      onPanCancel: _deactivate,
+      child: AnimatedBuilder(
+        animation: _tiltController,
+        builder: (context, child) {
+          return TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(
+              begin: Offset.zero,
+              end: Offset(_rawTiltX, _rawTiltY),
+            ),
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutCubic,
+            builder: (context, smoothedTilt, child) {
+              final tiltX = smoothedTilt.dx * _tiltController.value;
+              final tiltY = smoothedTilt.dy * _tiltController.value;
+              final scale = 1.0 + (0.05 * _tiltController.value);
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.001)
+                  ..rotateX(tiltX)
+                  ..rotateY(tiltY)
+                  ..scaleByDouble(scale, scale, scale, 1),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOutCubic,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withValues(
+                          alpha: _pressed ? 0.24 : 0.14,
+                        ),
+                        blurRadius: _pressed ? 28 : 18,
+                        offset: Offset(0, _pressed ? 14 : 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Image.asset(
+                      'lib/Assets/MicaGo.png',
+                      width: _logoSize,
+                      height: _logoSize,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AboutInfoTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String value;
+  final VoidCallback? onTap;
+
+  const _AboutInfoTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: _leadingIcon(icon),
+      title: Text(title),
+      subtitle: Text(value),
+      onTap: onTap,
+    );
   }
 }

@@ -1,6 +1,6 @@
 # Release Packaging
 
-Current release version: `0.54.0`.
+Current release version: `0.59.0`.
 
 ## Mac Companion DMG
 
@@ -20,7 +20,7 @@ Local unsigned DMG:
 
 ```sh
 cd MicaGoServer/micago-mac-companion
-VERSION=0.54.0 scripts/package-dmg.sh
+VERSION=0.59.0 scripts/package-dmg.sh
 ```
 
 Signed and notarized DMG:
@@ -32,7 +32,7 @@ NOTARIZE=1 \
 APPLE_ID="you@example.com" \
 APPLE_TEAM_ID="TEAMID" \
 APPLE_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx" \
-VERSION=0.54.0 \
+VERSION=0.59.0 \
 scripts/package-dmg.sh
 ```
 
@@ -42,7 +42,7 @@ Companion app, an `Applications` shortcut, and a Finder background image.
 The output is:
 
 ```text
-MicaGoServer/micago-mac-companion/build/release/micaGO-0.54.0-mac.dmg
+MicaGoServer/micago-mac-companion/build/release/micaGO-0.59.0-mac.dmg
 ```
 
 ## Flutter Android
@@ -52,7 +52,7 @@ Release APK:
 ```sh
 cd MicaGoFlutterClient
 flutter pub get
-flutter build apk --release --build-name 0.54.0 --build-number 54
+flutter build apk --release --build-name 0.59.0 --build-number 59
 ```
 
 Output:
@@ -65,7 +65,7 @@ Release App Bundle for Play-style distribution:
 
 ```sh
 cd MicaGoFlutterClient
-flutter build appbundle --release --build-name 0.54.0 --build-number 54
+flutter build appbundle --release --build-name 0.59.0 --build-number 59
 ```
 
 Output:
@@ -85,8 +85,8 @@ The workflow lives at:
 Run it manually from GitHub Actions, or push a tag:
 
 ```sh
-git tag v0.54.0
-git push origin v0.54.0
+git tag v0.59.0
+git push origin v0.59.0
 ```
 
 The workflow builds:
@@ -98,16 +98,18 @@ The workflow builds:
 ## Release Notes Template
 
 ```md
-## micaGO 0.54.0 Beta
+## micaGO 0.59.0 Beta
 
 This is a beta release for early testing and feedback. It is not yet a stable production release.
 
 ### Highlights
-- Mac Companion now ships with the Go backend bundled inside the app.
-- Android client release build is available as an APK.
+- Settings backup and restore now cover the current client configuration, including connection details, appearance, chat background, custom avatars, muted chats, hidden items, message display options, tablet sidebar width, and FCM client options.
+- Mac Companion adds a localized About page, a Developer Mode gate for Debug and Log, and a lifecycle setting to start and stop the bundled server with the app.
+- Chat UI polish includes safer keyboard inset recovery, larger emoji/sticker display, tighter group-message spacing, and inserted image/GIF input support where the platform allows it.
+- Version numbers are aligned at 0.59.0 across the client, backend, Companion, and release packaging.
 
 ### Install
-- macOS: download `micaGO-0.54.0-mac.dmg`, drag micaGO into Applications, then grant Full Disk Access when prompted.
+- macOS: download `micaGO-0.59.0-mac.dmg`, drag micaGO into Applications, then grant Full Disk Access when prompted.
 - Android: install `app-release.apk`, then pair with the Mac Companion.
 
 ### Known Notes

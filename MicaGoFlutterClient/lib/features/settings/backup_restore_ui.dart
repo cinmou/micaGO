@@ -24,13 +24,22 @@ Future<void> exportSettingsBackup(BuildContext context) async {
       title: Text(MicaLocalizations.of(ctx).t('backup.exportTitle')),
       content: Text(MicaLocalizations.of(ctx).t('backup.tokenWarning')),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: Text(MicaLocalizations.of(ctx).t('settings.cancel')),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: Text(MicaLocalizations.of(ctx).t('backup.export')),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(MicaLocalizations.of(ctx).t('settings.cancel')),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(MicaLocalizations.of(ctx).t('backup.export')),
+              ),
+            ),
+          ],
         ),
       ],
     ),

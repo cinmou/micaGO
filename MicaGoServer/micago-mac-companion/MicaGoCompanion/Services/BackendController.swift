@@ -42,7 +42,7 @@ final class BackendController: ObservableObject {
 
     // Persisted settings
     @Published var userBinaryPath: String { didSet { defaults.set(userBinaryPath, forKey: K.binaryPath) } }
-    @Published var autoStart: Bool { didSet { defaults.set(autoStart, forKey: K.autoStart) } }
+    @Published var manageLifecycleWithApp: Bool { didSet { defaults.set(manageLifecycleWithApp, forKey: K.autoStart) } }
     @Published var autoRestart: Bool { didSet { defaults.set(autoRestart, forKey: K.autoRestart) } }
     @Published var launchHidden: Bool { didSet { defaults.set(launchHidden, forKey: K.launchHidden) } }
     // v0.11.2.1: hide the Dock icon while running menu-bar-only (no window open).
@@ -78,7 +78,7 @@ final class BackendController: ObservableObject {
 
     init() {
         userBinaryPath = defaults.string(forKey: K.binaryPath) ?? ""
-        autoStart = defaults.object(forKey: K.autoStart) as? Bool ?? true
+        manageLifecycleWithApp = defaults.object(forKey: K.autoStart) as? Bool ?? true
         autoRestart = defaults.bool(forKey: K.autoRestart)
         launchHidden = defaults.bool(forKey: K.launchHidden)
         hideDockIcon = defaults.bool(forKey: K.hideDockIcon)
@@ -453,15 +453,24 @@ final class BackendController: ObservableObject {
         }
     }
 
-    /// Auto-start at companion launch when enabled, the binary exists, and no
-    /// external/unmanaged server already answers (never start over a live one).
+    /// Auto-start at companion launch when lifecycle management is enabled, the
+    /// binary exists, and no external/unmanaged server already answers.
     func autoStartIfNeeded(externalReachable: Bool) {
-        guard autoStart, process == nil, binaryExists, !externalReachable else { return }
+        guard manageLifecycleWithApp, process == nil, binaryExists, !externalReachable else { return }
         appendLog("auto-start: launching backend")
         start()
     }
 
-    /// Stop our child cleanly on app quit. Never affects external processes.
+    /// Stop our child cleanly on app quit only when the app owns lifecycle
+    /// management. Never affects external processes.
+    func shutdownForQuitIfNeeded() {
+        guard manageLifecycleWithApp else { return }
+        restartWork?.cancel()
+        intentionalStop = true
+        process?.terminate()
+    }
+
+    /// Force-stop our child on explicit user commands such as Stop Server.
     func shutdownForQuit() {
         restartWork?.cancel()
         intentionalStop = true

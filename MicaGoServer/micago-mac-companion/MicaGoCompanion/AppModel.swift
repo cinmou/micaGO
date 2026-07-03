@@ -21,6 +21,9 @@ final class AppModel: ObservableObject {
     /// reachable + authed. (It used to leak into `lastError` and show up in the
     /// Sync Control header as a spurious "Server returned HTTP 500".)
     @Published var lastPollError: String?
+    @Published var developerModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(developerModeEnabled, forKey: "developerModeEnabled") }
+    }
 
     // Connection endpoints (v0.11)
     @Published var urls: ServerURLs?
@@ -56,6 +59,7 @@ final class AppModel: ObservableObject {
     private var lastSeededPublicURL = ""
 
     init() {
+        developerModeEnabled = UserDefaults.standard.bool(forKey: "developerModeEnabled")
         reloadConfig()
     }
 
@@ -107,7 +111,7 @@ final class AppModel: ObservableObject {
         guard let d = syncDiagnostics else { return "No sync diagnostics yet." }
         func ms(_ v: Int64?) -> String { v.map { "\($0)" } ?? "—" }
         return """
-        MicaGo sync diagnostics
+        micaGO sync diagnostics
         lastTrigger: \(d.lastTriggerReason ?? "—")
         lastStartedAt: \(ms(d.lastStartedAt))  lastCompletedAt: \(ms(d.lastCompletedAt))
         lastDurationMs: \(ms(d.lastDurationMillis))
@@ -164,7 +168,7 @@ final class AppModel: ObservableObject {
             lan: lan,
             publicCandidate: pub,
             token: token,
-            serverName: Host.current().localizedName ?? "MicaGo Server",
+            serverName: Host.current().localizedName ?? "micaGO Server",
             configRevision: urls?.connectionRevision ?? "",
             redacted: redacted
         )
@@ -485,7 +489,7 @@ final class AppModel: ObservableObject {
     /// Redaction-safe diagnostics for the Sync Control error card (no token, no
     /// message text) — what the Copy diagnostics button puts on the pasteboard.
     var syncControlDiagnosticsText: String {
-        var lines = ["MicaGo Sync Control diagnostics"]
+        var lines = ["micaGO Sync Control diagnostics"]
         lines.append("server: \(baseURL?.absoluteString ?? "—")")
         lines.append("reachable: \(reachable)  authValid: \(authValid)")
         lines.append("loaded: chats \(chatsList.count) · rules \(syncRules?.rules.count ?? 0)")

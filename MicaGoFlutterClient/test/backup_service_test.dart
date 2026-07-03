@@ -29,6 +29,7 @@ void main() {
             'micago.theme.mode': 'dark',
             'micago.message_display_prefs.v1': '{}',
             'micago.muted_chats.v1': '["a","b"]',
+            'micago.fcm_options.v1': '{"projectId":"demo"}',
           },
           'chatFlags': {
             'g1': {'pinned': 1, 'hidden': 0, 'always_visible': 0},
@@ -51,7 +52,10 @@ void main() {
 
     test('rejects a non-backup zip', () {
       final bytes = _zip({'type': 'something-else'}, {});
-      expect(() => BackupService.inspect(bytes), throwsA(isA<BackupException>()));
+      expect(
+        () => BackupService.inspect(bytes),
+        throwsA(isA<BackupException>()),
+      );
     });
 
     test('rejects a newer format version', () {
@@ -59,7 +63,10 @@ void main() {
         {'app': 'micaGO', 'type': 'settings-backup', 'version': 99},
         {'secure': {}},
       );
-      expect(() => BackupService.inspect(bytes), throwsA(isA<BackupException>()));
+      expect(
+        () => BackupService.inspect(bytes),
+        throwsA(isA<BackupException>()),
+      );
     });
 
     test('rejects junk bytes', () {
@@ -70,4 +77,3 @@ void main() {
     });
   });
 }
-

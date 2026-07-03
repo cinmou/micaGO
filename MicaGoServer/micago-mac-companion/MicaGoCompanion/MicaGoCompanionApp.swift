@@ -185,7 +185,7 @@ final class MenuBarStatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func quit() {
-        backend.shutdownForQuit()
+        backend.shutdownForQuitIfNeeded()
         NSApp.terminate(nil)
     }
 }
@@ -239,7 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        BackendController.shared.shutdownForQuit()
+        BackendController.shared.shutdownForQuitIfNeeded()
         TunnelController.shared.shutdownForQuit()
     }
 

@@ -242,7 +242,7 @@ struct DeviceInfo: Codable, Identifiable {
     var createdAt: Int64
     var updatedAt: Int64
 
-    /// "{name} - MicaGo {version}" — the card's main line (C21u).
+    /// "{name} - micaGO {version}" — the card's main line (C21u).
     var displayTitle: String {
         if let v = appVersion, !v.isEmpty {
             return "\(name) - micaGO \(v)"

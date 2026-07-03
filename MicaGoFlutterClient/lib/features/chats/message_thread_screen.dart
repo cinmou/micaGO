@@ -408,6 +408,41 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     });
   }
 
+  void _onKeyboardContentInserted(KeyboardInsertedContent content) {
+    if (!_canSendAttachments) {
+      TopBanner.show(context, 'Attachments can’t be sent in this chat.');
+      return;
+    }
+    final bytes = content.data;
+    if (bytes == null || bytes.isEmpty) {
+      TopBanner.show(
+        context,
+        'Could not read keyboard media.',
+        kind: TopBannerKind.error,
+      );
+      return;
+    }
+    final filename =
+        'keyboard_${DateTime.now().millisecondsSinceEpoch}${_extensionForMime(content.mimeType)}';
+    setState(() {
+      _staged.add(StagedAttachment(bytes: bytes, filename: filename));
+      _attachOpen = false;
+      _emojiOpen = false;
+    });
+  }
+
+  String _extensionForMime(String mimeType) {
+    final mime = mimeType.toLowerCase();
+    if (mime == 'image/gif') return '.gif';
+    if (mime == 'image/jpeg' || mime == 'image/jpg') return '.jpg';
+    if (mime == 'image/bmp') return '.bmp';
+    if (mime == 'image/tiff') return '.tiff';
+    if (mime == 'image/webp') return '.webp';
+    if (mime == 'image/heic') return '.heic';
+    if (mime == 'image/heif') return '.heif';
+    return '.png';
+  }
+
   // Toggle a gallery asset in/out of the staged selection (multi-select), like
   // BlueBubbles' tap-to-select. Keeps the panel open so more can be selected.
   Future<void> _toggleAsset(AssetEntity asset) async {
@@ -641,6 +676,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
                   onVoice: _startVoice,
                   emojiOpen: _emojiOpen,
                   onEmoji: _toggleEmojiPanel,
+                  onContentInserted: _onKeyboardContentInserted,
                   onInputFocused: _onInputFocused,
                   onFocusChanged: _onComposerFocusChanged,
                 ),
@@ -1029,7 +1065,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   // or the newest messages hide behind them (and a scroll-to-bottom lands under
   // the panel). Reserve the composer baseline plus whatever is currently open.
   double _bottomInset(BuildContext context) {
-    var inset = 104.0; // composer baseline
+    var inset = (_attachOpen || _emojiOpen) ? 96.0 : 104.0; // composer baseline
     if (_staged.isNotEmpty) inset += 72;
     if (_attachOpen) inset += AttachmentPanel.panelHeightFor(context);
     if (_emojiOpen) inset += EmojiPanel.initialHeightFor(context);
@@ -1123,6 +1159,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       message: m.message,
       api: api,
       threadImages: threadImages,
+      isGroup: _active.isGroup,
       senderName: m.senderLabel,
       showSenderName: m.showSenderName,
       showSenderAvatar: m.showSenderAvatar,
@@ -2146,6 +2183,7 @@ class _MessageBubble extends StatefulWidget {
   final MessageModel message;
   final ApiClient? api;
   final List<AttachmentModel> threadImages;
+  final bool isGroup;
 
   /// Precomputed (ThreadPresentationBuilder): sender label (groups only) + body.
   final String? senderName;
@@ -2182,6 +2220,7 @@ class _MessageBubble extends StatefulWidget {
     required this.message,
     required this.api,
     required this.threadImages,
+    required this.isGroup,
     required this.senderName,
     required this.showSenderName,
     required this.showSenderAvatar,
@@ -2301,8 +2340,16 @@ class _MessageBubbleState extends State<_MessageBubble> {
         widget.compactWithNext && !widget.showStatus && !widget.showTimestamp;
     final bubbleTopPadding = tightTop ? 0.5 : 2.0;
     final bubbleBottomPadding = tightBottom ? 0.5 : 2.0;
+    final groupOutgoingWithoutFooter =
+        widget.isGroup &&
+        fromMe &&
+        !widget.showStatus &&
+        !widget.showTimestamp &&
+        effectHint == null;
     final rowTopPadding = tightTop ? 0.5 : 3.0;
-    final rowBottomPadding = tightBottom ? 0.5 : 3.0;
+    final rowBottomPadding = groupOutgoingWithoutFooter
+        ? (tightBottom ? 0.5 : 1.0)
+        : (tightBottom ? 0.5 : 3.0);
 
     final crossAxis = fromMe
         ? CrossAxisAlignment.end
@@ -3629,6 +3676,7 @@ class _Composer extends StatefulWidget {
   // just reports taps on the emoji button and keeps it visible while open.
   final bool emojiOpen;
   final VoidCallback onEmoji;
+  final ValueChanged<KeyboardInsertedContent> onContentInserted;
   final VoidCallback onInputFocused;
   final ValueChanged<bool> onFocusChanged;
 
@@ -3644,6 +3692,7 @@ class _Composer extends StatefulWidget {
     required this.onVoice,
     required this.emojiOpen,
     required this.onEmoji,
+    required this.onContentInserted,
     required this.onInputFocused,
     required this.onFocusChanged,
   });
@@ -3726,8 +3775,9 @@ class _ComposerState extends State<_Composer> {
     // the voice button.
     final showEmoji = _focus.hasFocus || widget.emojiOpen;
 
+    final panelOpen = widget.attachOpen || widget.emojiOpen;
     final bar = Container(
-      margin: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+      margin: EdgeInsets.fromLTRB(10, 6, 10, panelOpen ? 4 : 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -3795,6 +3845,21 @@ class _ComposerState extends State<_Composer> {
                               textAlignVertical: TextAlignVertical.center,
                               textInputAction: TextInputAction.newline,
                               keyboardType: TextInputType.multiline,
+                              contentInsertionConfiguration:
+                                  ContentInsertionConfiguration(
+                                    allowedMimeTypes: const [
+                                      'image/png',
+                                      'image/gif',
+                                      'image/jpeg',
+                                      'image/jpg',
+                                      'image/bmp',
+                                      'image/tiff',
+                                      'image/webp',
+                                      'image/heic',
+                                      'image/heif',
+                                    ],
+                                    onContentInserted: widget.onContentInserted,
+                                  ),
                               decoration: InputDecoration(
                                 hintText: _hintText,
                                 hintStyle: TextStyle(
@@ -3910,8 +3975,9 @@ class _ComposerState extends State<_Composer> {
       );
     }
 
+    final panelOpen = widget.attachOpen || widget.emojiOpen;
     final bar = Container(
-      margin: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+      margin: EdgeInsets.fromLTRB(10, 6, 10, panelOpen ? 4 : 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -3967,6 +4033,21 @@ class _ComposerState extends State<_Composer> {
                         textAlignVertical: TextAlignVertical.center,
                         textInputAction: TextInputAction.newline,
                         keyboardType: TextInputType.multiline,
+                        contentInsertionConfiguration:
+                            ContentInsertionConfiguration(
+                              allowedMimeTypes: const [
+                                'image/png',
+                                'image/gif',
+                                'image/jpeg',
+                                'image/jpg',
+                                'image/bmp',
+                                'image/tiff',
+                                'image/webp',
+                                'image/heic',
+                                'image/heif',
+                              ],
+                              onContentInserted: widget.onContentInserted,
+                            ),
                         decoration: InputDecoration(
                           hintText: _hintText,
                           hintStyle: TextStyle(color: hintColor, fontSize: 18),

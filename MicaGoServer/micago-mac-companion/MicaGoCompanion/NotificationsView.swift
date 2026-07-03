@@ -3,7 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// Notifications page (v0.12): provider status + self-host Firebase (FCM) setup.
-/// MicaGo provides no cloud — each user brings their own Firebase project.
+/// micaGO provides no cloud — each user brings their own Firebase project.
 struct NotificationsPage: View {
     @EnvironmentObject var model: AppModel
 
@@ -129,7 +129,7 @@ private struct PushPrivacyCard: View {
     var body: some View {
         SectionCard(title: "Push Privacy") {
             Text("""
-            • MicaGo runs no cloud server — you use your own Firebase project.
+            • micaGO runs no cloud server — you use your own Firebase project.
             • Firebase is only for Android FCM push and the optional public-URL discovery.
             • Windows clients use WebSocket + local notifications while running. Huawei/HarmonyOS Push is deferred. iOS push is out of scope.
             • Firebase NEVER stores message content, contacts, phone numbers, bearer tokens, attachments, chat history, the device registry, or sync rules.

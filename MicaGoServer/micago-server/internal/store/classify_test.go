@@ -16,6 +16,7 @@ func TestIsControlLikeText(t *testing.T) {
 		"￼":        true,
 		"   ":      true,
 		"Hello":    false,
+		"+":        false,
 		"+1":       false,
 		"你好":       false,
 		"see ya 👋": false,
@@ -35,6 +36,7 @@ func TestClassifyDebugMessage(t *testing.T) {
 		wantCand string // a candidate that must be present ("" = none required)
 	}{
 		{"plain text", DebugMessageJSON{Text: sp("Hello")}, KindText, ""},
+		{"literal plus text", DebugMessageJSON{Text: sp("+")}, KindText, ""},
 		{"control text", DebugMessageJSON{Text: sp("+!")}, KindUnsupported, candidateControl},
 		{"empty", DebugMessageJSON{}, KindUnsupported, candidateNoConten},
 		{

@@ -121,7 +121,7 @@ class _TopBannerViewState extends State<_TopBannerView>
 
     final curved = CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic);
     return Positioned(
-      top: topInset + 8,
+      top: topInset,
       left: 12,
       right: 12,
       child: IgnorePointer(
@@ -156,9 +156,7 @@ class _TopBannerViewState extends State<_TopBannerView>
                   child: Row(
                     children: [
                       Icon(
-                        isError
-                            ? Icons.error_outline
-                            : Icons.info_outline,
+                        isError ? Icons.error_outline : Icons.info_outline,
                         size: 18,
                         color: fg,
                       ),
@@ -166,8 +164,9 @@ class _TopBannerViewState extends State<_TopBannerView>
                       Expanded(
                         child: Text(
                           widget.message,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: fg),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(color: fg),
                         ),
                       ),
                     ],

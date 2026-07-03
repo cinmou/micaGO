@@ -13,7 +13,7 @@ enum TunnelState: Equatable {
 
 /// Optional integration with an **already-configured** Cloudflare Tunnel.
 ///
-/// MicaGo never logs into Cloudflare, creates tunnels/DNS, or bundles/downloads
+/// micaGO never logs into Cloudflare, creates tunnels/DNS, or bundles/downloads
 /// cloudflared. It only runs an existing local `cloudflared tunnel run <name>`
 /// if the user enables it, so the public URL keeps working without Terminal.
 @MainActor
@@ -196,7 +196,7 @@ final class TunnelController: ObservableObject {
         }
         if Self.externalTunnelRunning() {
             state = .runningExternally
-            appendLog("a cloudflared tunnel is already running (not launched by MicaGo)")
+            appendLog("a cloudflared tunnel is already running (not launched by micaGO)")
             return
         }
 

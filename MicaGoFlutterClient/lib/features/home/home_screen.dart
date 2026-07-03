@@ -112,6 +112,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // C31: track foreground/background so the keep-alive path only raises a
     // system notification when the UI isn't already showing the message.
     app.setForeground(state == AppLifecycleState.resumed);
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
     if (state == AppLifecycleState.resumed) {
       // C20: one entry point — reconnect if needed + lightweight catch-up.
       // C22: this resume → catchUp is also the post-FCM-wake correctness path.
@@ -119,7 +124,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       unawaited(_push?.start() ?? Future<void>.value());
       // Refresh the Android 13+ notification-permission diagnostic on resume.
       unawaited(_push?.refreshNotificationPermission() ?? Future<void>.value());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -166,6 +182,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       ),
     );
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: pageBg,
       appBar: tablet
           ? null

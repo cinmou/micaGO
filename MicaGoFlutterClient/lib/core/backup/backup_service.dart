@@ -20,6 +20,8 @@ import '../storage/secure_store.dart';
 /// Backs up **settings only** — never chat history, media, notification buffers,
 /// realtime diagnostics, the FCM token, or the device id (which is dropped so the
 /// restored install registers as a new device in the server's Paired Devices).
+/// User-owned Firebase client options are included because the killed-app
+/// background isolate needs them to re-initialize FCM after a restore.
 class BackupService {
   final SecureStore store;
   final LocalCacheStore cache;
@@ -44,6 +46,7 @@ class BackupService {
     'micago.in_app_notifications_enabled.v1',
     'micago.keepalive.v1',
     'micago.message_display_prefs.v1',
+    'micago.fcm_options.v1',
   ];
 
   String suggestedFileName() {

@@ -7,16 +7,18 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     // C23 cleanup: Debug + Log are technical tools, so they sit at the bottom
     // (below Advanced) instead of in the middle of the main workflow. Debug
     // holds debugging tools (Message Inspector); Log holds the server log only.
-    case dashboard, connections, syncControl, notifications, tutorials, advanced, debug, log
+    case dashboard, connections, syncControl, notifications, tutorials, about, advanced, debug, log
 
     var id: String { rawValue }
 
     /// Primary navigation, shown in the main sidebar list.
     static let primary: [SidebarItem] = [
-        .dashboard, .connections, .syncControl, .notifications, .tutorials,
+        .dashboard, .connections, .syncControl, .notifications, .tutorials, .about,
     ]
     /// Settings + tools, pinned to the bottom of the sidebar (native pattern).
-    static let bottom: [SidebarItem] = [.advanced, .debug, .log]
+    static func bottom(developerModeEnabled: Bool) -> [SidebarItem] {
+        developerModeEnabled ? [.advanced, .debug, .log] : [.advanced]
+    }
 
     var title: String {
         switch self {
@@ -27,6 +29,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .log: return L10n.tr("sidebar.log")
         case .notifications: return L10n.tr("sidebar.notifications")
         case .tutorials: return L10n.tr("sidebar.tutorials")
+        case .about: return L10n.tr("sidebar.about")
         case .advanced: return L10n.tr("sidebar.advanced")
         }
     }
@@ -40,6 +43,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .log: return "doc.plaintext"
         case .notifications: return "bell"
         case .tutorials: return "book"
+        case .about: return "info.circle"
         case .advanced: return "gearshape"
         }
     }
@@ -73,17 +77,18 @@ struct ContentView: View {
             .navigationTitle("micaGO")
             .frame(minWidth: 215)
             .safeAreaInset(edge: .bottom, spacing: 0) {
+                let bottomItems = SidebarItem.bottom(developerModeEnabled: model.developerModeEnabled)
                 VStack(spacing: 0) {
                     Divider()
                     List(selection: $nav.selection) {
-                        ForEach(SidebarItem.bottom) { item in
+                        ForEach(bottomItems) { item in
                             Label(item.title, systemImage: item.symbol).tag(item)
                         }
                     }
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
                     .scrollDisabled(true)
-                    .frame(height: 30 * CGFloat(SidebarItem.bottom.count) + 8)
+                    .frame(height: 38 * CGFloat(bottomItems.count) + 16)
                 }
             }
         } detail: {
@@ -114,6 +119,11 @@ struct ContentView: View {
         .onAppear {
             DashboardWindowOpener.shared.open = { openWindow(id: "dashboard") }
         }
+        .onChange(of: model.developerModeEnabled) { enabled in
+            if !enabled, nav.selection == .debug || nav.selection == .log {
+                nav.selection = .advanced
+            }
+        }
         // Bootstrap (config/poll/auto-start/runtime) is owned by the AppDelegate
         // so it runs even when launched silently with no window. Polling stays
         // alive for the menu-bar surface; it is not torn down when the window
@@ -131,6 +141,7 @@ struct ContentView: View {
         case .log: LogsPage()
         case .notifications: NotificationsPage()
         case .tutorials: TutorialsPage()
+        case .about: AboutPage()
         case .advanced: AdvancedPage()
         }
     }
@@ -158,7 +169,7 @@ private struct FullDiskAccessBanner: View {
                 Image(systemName: "externaldrive.badge.exclamationmark").foregroundStyle(.red)
                 Text("Full Disk Access required").fontWeight(.semibold)
             }
-            Text("MicaGo can't read the Messages database. Grant Full Disk Access to MicaGo Companion (and the bundled server), then start the server again.")
+            Text("micaGO can't read the Messages database. Grant Full Disk Access to micaGO Companion (and the bundled server), then start the server again.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Open Full Disk Access Settings") { openFullDiskAccessSettings() }
@@ -462,7 +473,7 @@ private struct ActiveConnectionRow: View {
 
 // MARK: - Shared device card (C21u)
 
-/// One paired-device card: "{name} - MicaGo {version}" main line, a
+/// One paired-device card: "{name} - micaGO {version}" main line, a
 /// "mode: …, push: …" secondary line, and a right column with connection state
 /// + last-connected time. The top-right edit menu exposes Remove (for stale
 /// devices) and, optionally, Test Push. No private data is shown.
@@ -573,6 +584,127 @@ private struct TutorialsPage: View {
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+// MARK: - About
+
+private struct AboutPage: View {
+    private let repoURL = URL(string: "https://github.com/cinmou/MicaGo")!
+    private let releasesURL = URL(string: "https://github.com/cinmou/MicaGo/releases")!
+
+    var body: some View {
+        SectionCard(title: "") {
+            VStack(spacing: 16) {
+                ClickableAppIcon()
+                Text("micaGO Companion")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+        }
+
+        SectionCard(title: "About") {
+            AboutInfoButton(
+                icon: "sparkles",
+                title: "Version",
+                value: companionVersionLabel
+            )
+            Divider()
+            AboutInfoButton(
+                icon: "chevron.left.forwardslash.chevron.right",
+                title: "Open Source",
+                value: "GitHub"
+            ) {
+                NSWorkspace.shared.open(repoURL)
+            }
+            Divider()
+            AboutInfoButton(
+                icon: "square.and.arrow.down",
+                title: "Check for Updates",
+                value: "GitHub Releases"
+            ) {
+                NSWorkspace.shared.open(releasesURL)
+            }
+        }
+
+        Text("Built with ♥️ for everyone.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var companionVersionLabel: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let cleanVersion = (version?.isEmpty == false ? version : nil) ?? "0.0.0"
+        if let build, !build.isEmpty, build != cleanVersion {
+            return "Rhodolite v\(cleanVersion) (\(build))"
+        }
+        return "Rhodolite v\(cleanVersion)"
+    }
+}
+
+private struct ClickableAppIcon: View {
+    @State private var rotation = 0.0
+    @State private var pressed = false
+
+    var body: some View {
+        Image(nsImage: NSApp.applicationIconImage)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: 104, height: 104)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .accentColor.opacity(pressed ? 0.28 : 0.16), radius: pressed ? 22 : 14, y: pressed ? 12 : 8)
+            .rotation3DEffect(.degrees(rotation), axis: (x: 0.2, y: 1, z: 0))
+            .scaleEffect(pressed ? 1.04 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.68), value: rotation)
+            .animation(.spring(response: 0.18, dampingFraction: 0.72), value: pressed)
+            .onTapGesture {
+                pressed = true
+                rotation += 360
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                    pressed = false
+                }
+            }
+    }
+}
+
+private struct AboutInfoButton: View {
+    let icon: String
+    let title: String
+    let value: String
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        if let action {
+            Button(action: action) {
+                row
+            }
+            .buttonStyle(.plain)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .frame(width: 24)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).fontWeight(.medium)
+                Text(value).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if action != nil {
+                Image(systemName: "arrow.up.right.square")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 2)
     }
 }
 
@@ -847,7 +979,7 @@ private struct BinaryPathRow: View {
                 Button("Choose…") { chooseBinary() }
                     .controlSize(.small)
             }
-            Text("Advanced: normally you do not need to change this. MicaGo uses the bundled backend.")
+            Text("Advanced: normally you do not need to change this. micaGO uses the bundled backend.")
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(resolvedDescription)
@@ -904,7 +1036,7 @@ private struct ServerBindAddressCard: View {
 
     var body: some View {
         SectionCard(title: "Server Bind Address") {
-            Text("MicaGo listens on your local network so Android devices on the same Wi‑Fi can connect. This applies to the server the companion launches.")
+            Text("micaGO listens on your local network so Android devices on the same Wi‑Fi can connect. This applies to the server the companion launches.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -1094,20 +1226,41 @@ private struct AdvancedPage: View {
     var body: some View {
         // C23 cleanup: "Startup & Lifecycle" + "Launch at Login" merged into one
         // section. General app/server lifecycle + login behavior only.
-        SectionCard(title: "General Settings") {
-            Toggle("Start server automatically when the companion launches", isOn: $backend.autoStart)
-            Toggle("Restart the server automatically if it crashes", isOn: $backend.autoRestart)
-            Toggle("Launch hidden (menu-bar only; no window at launch)", isOn: $backend.launchHidden)
-            Toggle("Hide Dock icon when running in menu bar", isOn: $backend.hideDockIcon)
+        SectionCard(title: String(localized: "settings.general.title")) {
+            LaunchAtLoginControls()
+            Toggle(String(localized: "settings.server.lifecycleWithApp"), isOn: $backend.manageLifecycleWithApp)
+            Toggle(String(localized: "settings.server.restartOnCrash"), isOn: $backend.autoRestart)
+            Toggle(String(localized: "settings.app.launchHidden"), isOn: $backend.launchHidden)
+            Toggle(String(localized: "settings.app.hideDockIcon"), isOn: $backend.hideDockIcon)
                 .onChange(of: backend.hideDockIcon) { _ in
                     // Apply immediately: turning it off restores the Dock icon now.
                     applyActivationPolicy()
                 }
-            Divider()
-            LaunchAtLoginControls()
-            Text("Auto-restart uses exponential backoff, stops after repeated crashes, never restarts after you Stop the server, and never restarts a Full Disk Access failure.")
+            Text(String(localized: "settings.server.restartHelp"))
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+
+        SectionCard(title: String(localized: "settings.developer.title")) {
+            HStack {
+                Label(
+                    model.developerModeEnabled
+                        ? String(localized: "settings.developer.enabled")
+                        : String(localized: "settings.developer.off"),
+                    systemImage: model.developerModeEnabled ? "checkmark.circle.fill" : "hammer"
+                )
+                .foregroundStyle(model.developerModeEnabled ? Color.green : Color.secondary)
+                Spacer()
+                Button(model.developerModeEnabled
+                    ? String(localized: "settings.developer.disable")
+                    : String(localized: "settings.developer.enable")
+                ) {
+                    model.developerModeEnabled.toggle()
+                }
+            }
+            Text(String(localized: "settings.developer.help"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
 
         // Permissions + runtime + detected chat.db capabilities — diagnostics.
@@ -1391,7 +1544,7 @@ private struct PublicURLEditor: View {
         case 401, 403:
             return ("Reached a server, but it rejected the token (\(r.status)). The public URL may point to a different server than this one.", false)
         case 502, 503, 504:
-            return ("The public URL reached the tunnel, but no server answered behind it (\(r.status)). Make sure MicaGo is running and the tunnel forwards to its port.", false)
+            return ("The public URL reached the tunnel, but no server answered behind it (\(r.status)). Make sure micaGO is running and the tunnel forwards to its port.", false)
         default:
             return (r.message.isEmpty ? "Validation failed (HTTP \(r.status))." : r.message, false)
         }
@@ -1626,7 +1779,7 @@ private struct LaunchAtLoginControls: View {
 
     var body: some View {
         Toggle(isOn: $enabled) {
-            Text("Start MicaGo Companion when I log in")
+            Text(String(localized: "settings.login.startAtLogin"))
         }
         .disabled(!LaunchAtLogin.isSupported)
         .onChange(of: enabled) { newValue in
@@ -1638,7 +1791,7 @@ private struct LaunchAtLoginControls: View {
                 enabled = LaunchAtLogin.isEnabled
             }
         }
-        Text("Status: \(LaunchAtLogin.statusDescription)")
+        Text("\(String(localized: "settings.login.status")): \(LaunchAtLogin.statusDescription)")
             .font(.caption).foregroundStyle(.secondary)
         if let error {
             Text(error).font(.caption).foregroundStyle(.orange)
@@ -1654,7 +1807,9 @@ struct SectionCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.title3).fontWeight(.semibold)
+            if !title.isEmpty {
+                Text(title).font(.title3).fontWeight(.semibold)
+            }
             content()
         }
         .padding(14)

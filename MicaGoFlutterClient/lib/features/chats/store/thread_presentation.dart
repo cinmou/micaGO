@@ -280,8 +280,8 @@ class ThreadPresentationBuilder {
               ? MessageSendEffect.none
               : sendEffectFor(m.expressiveSendStyleId),
           deliveryState: deliveryStateFor(m),
-          showStatus: !isSystem && showStatusFor(m),
-          showTimestamp: !isSystem && m.dedupeKey == lastRowKey,
+          showStatus: !isGroup && !isSystem && showStatusFor(m),
+          showTimestamp: !isGroup && !isSystem && m.dedupeKey == lastRowKey,
           showBubbleTail: showTailWithBreaks,
           compactWithPrevious: compactWithPrevious,
           compactWithNext: compactWithNext,

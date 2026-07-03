@@ -69,6 +69,9 @@ func IsControlLikeText(text string) bool {
 	if t == "" {
 		return true
 	}
+	if t == "+" {
+		return false
+	}
 	for _, r := range t {
 		// Letters/digits (incl. CJK, accented) are content; so is any non-ASCII
 		// rune (emoji, symbols, other scripts). Real artifacts ("+!", "+$") are

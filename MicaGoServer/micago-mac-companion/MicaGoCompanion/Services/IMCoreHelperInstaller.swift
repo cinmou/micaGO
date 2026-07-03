@@ -1,8 +1,8 @@
 import Foundation
 
-/// C26: installs the MicaGo IMCore helper (the binary that performs the advanced
+/// C26: installs the micaGO IMCore helper (the binary that performs the advanced
 /// iMessage actions — edit / unsend / delete) into `~/.micago/bin`, which the
-/// backend scans on startup. MicaGo controls this end-to-end; users never have
+/// backend scans on startup. micaGO controls this end-to-end; users never have
 /// to install imsg/imsgbridge by hand.
 ///
 /// The helper is expected to ship inside the app bundle. When a build does not
@@ -17,7 +17,7 @@ enum IMCoreHelperInstaller {
         var errorDescription: String? {
             switch self {
             case .notBundled:
-                return "This MicaGo build does not include the IMCore helper component yet, "
+                return "This micaGO build does not include the IMCore helper component yet, "
                     + "so it can’t be installed automatically. Edit, Unsend, and Delete stay "
                     + "hidden until a build that bundles the helper is installed."
             case .ioFailure(let detail):

@@ -15,6 +15,7 @@
 *Built with ♥️ for everyone.*
 
 [![Documentation](https://img.shields.io/badge/Documentation-0064E0?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/index.md)
+[![Website](https://img.shields.io/badge/Website-007AFF?style=for-the-badge)](https://micago.cinmou.uk)
 [![Getting started](https://img.shields.io/badge/Getting_started-0A1317?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/getting-started.md)
 [![Security model](https://img.shields.io/badge/Security_model-31A24C?style=for-the-badge)](https://github.com/cinmou/micaGo#-security-model)
 [![Remote access](https://img.shields.io/badge/Remote_access-5D6C7B?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/remote-access-cloudflare.md)
