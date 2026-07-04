@@ -29,6 +29,10 @@ Apple's private database and first-party clients.
 
 The relay database provides:
 
+- a durable change journal for client delta sync: `chat.db` has no updated-at
+  column or change log, so an offline client's "everything since cursor X" —
+  including read/delivered/edit state changes on old rows — can only be
+  answered from micaGO's own store;
 - a read-only boundary: micaGO never writes to or repairs Apple's `chat.db`;
 - stable API fields even when macOS changes `chat.db` columns;
 - deterministic pagination and indexing for chat lists, threads, deltas, and
@@ -108,8 +112,32 @@ Rules:
   - `includeEmpty = false`
   - `(message.text IS NOT NULL OR message.cache_has_attachments = 1)`
 - initial sync copies the latest `1000` messages by default
-- sync uses upserts
+- sync uses upserts (write-avoiding; see below)
 - sync does not delete old relay rows yet
+
+### Write avoidance (C57)
+
+Steady-state syncs are read-mostly; caching `chat.db` does not mean rewriting
+it every cycle:
+
+- every sync upsert (chats, messages, attachments) carries a
+  `DO UPDATE ... WHERE <column diff>`, so a re-scanned row whose values are
+  unchanged is skipped entirely — no row rewrite, no WAL churn, and
+  `chats.updated_at` only moves on a real content change;
+- `attachments.created_at` is insert-only (rows without a source timestamp used
+  a `now` fallback that moved on every pass, which also destabilized the
+  `(created_at, guid)` attachment-dedup ordering);
+- the per-message existence probe is one chunked `IN` query per batch instead
+  of a `SELECT` per row;
+- the date-lookback recovery scan (C11) is throttled at the app level to once
+  per minute (re-armed if the consuming sync fails). The ROWID watermark stays
+  the per-sync new-message path, and the update pass (read receipts / edits)
+  keeps its full cadence.
+
+Each sync reports written vs unchanged row counts and whether the lookback scan
+ran; they surface in the status diagnostics as `lastChatsWritten`,
+`lastMessagesWritten`, `lastAttachmentsWritten`, `lastRowsUnchanged`, and
+`lastLookbackApplied`.
 
 ## What Data Is Copied
 

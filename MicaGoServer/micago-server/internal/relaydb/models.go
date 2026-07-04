@@ -22,6 +22,17 @@ type SyncResult struct {
 	Unsent        []UnsentEvent
 	UpdateScanned int
 	UpdateSeeded  int
+	// C57 write-avoidance counters. Written = rows actually inserted or updated;
+	// Unchanged = conflict rows the DO UPDATE ... WHERE diff skipped (no write).
+	ChatsWritten         int
+	ChatsUnchanged       int
+	MessagesWritten      int
+	MessagesUnchanged    int
+	AttachmentsWritten   int
+	AttachmentsUnchanged int
+	// LookbackApplied reports whether this run included the date-window recovery
+	// scan (C57 throttles it to once per lookbackScanEvery at the app level).
+	LookbackApplied bool
 }
 
 // MessageUpdate is an old-row state change detected by the lookback update pass

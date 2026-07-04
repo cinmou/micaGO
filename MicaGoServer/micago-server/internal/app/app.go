@@ -73,6 +73,11 @@ func (d *syncDiagnostics) recordRun(start time.Time, result relaydb.SyncResult) 
 	d.data.LastUpdatePassSeeded = result.UpdateSeeded
 	d.data.LastUnsentCount = len(result.Unsent)
 	d.data.LastScannedMessageRowID = result.NewLastMessageRowID
+	d.data.LastChatsWritten = result.ChatsWritten
+	d.data.LastMessagesWritten = result.MessagesWritten
+	d.data.LastAttachmentsWritten = result.AttachmentsWritten
+	d.data.LastRowsUnchanged = result.ChatsUnchanged + result.MessagesUnchanged + result.AttachmentsUnchanged
+	d.data.LastLookbackApplied = result.LookbackApplied
 	d.data.LastSyncError = ""
 }
 
@@ -113,6 +118,41 @@ func (d *syncDiagnostics) recordError(err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.data.LastSyncError = err.Error()
+}
+
+// lookbackScanEvery is how often the date-window recovery scan runs (C57). The
+// rowid watermark catches new rows on every sync; the date union only recovers
+// rows a WAL/rowid race skipped, so once a minute keeps the recovery bound
+// tight while removing it from the 5s/mtime/send-burst hot path.
+const lookbackScanEvery = time.Minute
+
+// lookbackGate throttles the date-window recovery scan. take reports whether a
+// scan is due and consumes the slot; rearm gives the slot back (used when the
+// sync that consumed it failed, so recovery isn't delayed a full period).
+type lookbackGate struct {
+	mu      sync.Mutex
+	every   time.Duration
+	lastRun time.Time
+}
+
+func newLookbackGate(every time.Duration) *lookbackGate {
+	return &lookbackGate{every: every}
+}
+
+func (g *lookbackGate) take(now time.Time) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.lastRun.IsZero() && now.Sub(g.lastRun) < g.every {
+		return false
+	}
+	g.lastRun = now
+	return true
+}
+
+func (g *lookbackGate) rearm() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.lastRun = time.Time{}
 }
 
 func Run(options Options) error {
@@ -200,12 +240,26 @@ func Run(options Options) error {
 		dispatcher.SyncPublicURL(ctx, cfg.PublicBaseURL)
 	}
 	var syncMu sync.Mutex
+	// C57: the date-window recovery scan re-reads (and used to re-upsert) up to
+	// InitialSyncLimit rows of the lookback window on EVERY trigger — periodic
+	// 5s ticks, sub-second WAL mtime hits, and 12-shot send bursts alike. The
+	// rowid watermark is the primary new-message path and runs every sync; the
+	// date union is only a recovery net for WAL/rowid races, so it runs at most
+	// once per lookbackScanEvery (re-armed if the run fails).
+	lookbackScan := newLookbackGate(lookbackScanEvery)
 	runSync := func(ctx context.Context) (relaydb.SyncResult, error) {
 		syncMu.Lock()
 		defer syncMu.Unlock()
 		start := time.Now()
-		result, err := relaydb.SyncOnce(ctx, queries, relay, cfg.InitialSyncLimit, cfg.UpdateLookback)
+		syncLookback := time.Duration(0)
+		if lookbackScan.take(start) {
+			syncLookback = cfg.UpdateLookback
+		}
+		result, err := relaydb.SyncOnce(ctx, queries, relay, cfg.InitialSyncLimit, syncLookback)
 		if err != nil {
+			if syncLookback > 0 {
+				lookbackScan.rearm()
+			}
 			return result, err
 		}
 		// v0.11.x: bounded lookback update pass for old-row changes. Non-fatal;

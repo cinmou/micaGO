@@ -73,6 +73,30 @@ Three components:
   `GestureDetector`) opens details; the top-right info button is removed (both the
   embedded pane header and the phone `AppBar`).
 
+## Relay sync write-avoidance (C57)
+
+- **Steady-state syncs no longer rewrite identical rows.** All three sync
+  upserts (`upsertChatsTx` / `upsertMessagesTx` / `upsertAttachmentsTx`,
+  `relaydb/sync.go`) carry a `DO UPDATE ... WHERE <column diff>`, so an
+  unchanged conflict row is a no-write (`RowsAffected` 0). Written/unchanged
+  counters flow through `SyncResult` into the status diagnostics
+  (`lastChatsWritten` / `lastMessagesWritten` / `lastAttachmentsWritten` /
+  `lastRowsUnchanged` / `lastLookbackApplied`). `chats.updated_at` only moves on
+  real change (it's just an ORDER BY tiebreaker); `attachments.created_at` is
+  **insert-only** (its `now` fallback used to churn every cycle and reorder the
+  C49 dedup's `(created_at, guid)` key).
+- The per-message `SELECT 1` existence probe is now one chunked `IN` query
+  (`existingMessageGUIDsTx`, 500/chunk).
+- **The C11 date-lookback recovery scan is throttled**: `lookbackGate` (app.go,
+  `lookbackScanEvery` = 1 min) passes lookback 0 to `SyncOnce` on all other
+  triggers, re-arming on sync failure. The ROWID watermark still runs every
+  sync; `UpdatePass` cadence (read receipts/edits) is unchanged. Architecture
+  unchanged — the API still serves relay.db, never chat.db.
+- Tests: `relaydb/writeavoidance_test.go` (identical re-sync writes 0 rows +
+  timestamps frozen; real change writes exactly that row; lookback-0 skips the
+  date scan), `app/lookbackgate_test.go`. **Requires rebuilding the bundled
+  backend.**
+
 ## Config parser → yaml.v3 (C56)
 
 - `internal/config` now uses `gopkg.in/yaml.v3` (the module's 3rd dep) instead of

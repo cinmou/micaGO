@@ -73,6 +73,7 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 	}
 
 	mode := "incremental"
+	lookbackApplied := false
 	var messages []store.SyncMessageRow
 	if !hasLastRowID {
 		mode = "initial"
@@ -100,6 +101,8 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 		// C11: also scan a bounded date window (BlueBubbles-style) so rows the
 		// ROWID watermark skipped under WAL/rowid races are recovered. Idempotent
 		// — the relay upsert dedupes by guid and only truly-new rows broadcast.
+		// C57: the caller throttles this (lookback 0 on most triggers); the rowid
+		// watermark stays the primary new-message path on every sync.
 		if lookback > 0 {
 			if bd, ok := source.(byDateSource); ok {
 				afterMs := time.Now().Add(-lookback).UnixMilli()
@@ -108,6 +111,7 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 					return SyncResult{}, fmt.Errorf("list date-lookback messages: %w", derr)
 				}
 				messages = unionByGUID(messages, dated)
+				lookbackApplied = true
 			}
 		}
 	}
@@ -150,14 +154,16 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 	defer tx.Rollback()
 
 	now := time.Now().UnixMilli()
-	if err := upsertChatsTx(tx, chats, now); err != nil {
-		return SyncResult{}, err
-	}
-	insertedGUIDs, err := upsertMessagesTx(tx, syncedMessages, now)
+	chatsWritten, chatsUnchanged, err := upsertChatsTx(tx, chats, now)
 	if err != nil {
 		return SyncResult{}, err
 	}
-	if err := upsertAttachmentsTx(tx, attachments, now); err != nil {
+	insertedGUIDs, messagesWritten, messagesUnchanged, err := upsertMessagesTx(tx, syncedMessages, now)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	attachmentsWritten, attachmentsUnchanged, err := upsertAttachmentsTx(tx, attachments, now)
+	if err != nil {
 		return SyncResult{}, err
 	}
 
@@ -170,6 +176,13 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 		RowsScanned:              len(messages),
 		PerChatLimit:             settings.RecentMessagesPerChat,
 		AttachmentsSynced:        len(attachments),
+		ChatsWritten:             chatsWritten,
+		ChatsUnchanged:           chatsUnchanged,
+		MessagesWritten:          messagesWritten,
+		MessagesUnchanged:        messagesUnchanged,
+		AttachmentsWritten:       attachmentsWritten,
+		AttachmentsUnchanged:     attachmentsUnchanged,
+		LookbackApplied:          lookbackApplied,
 	}
 	for _, message := range syncedMessages {
 		if store.DebugOnlyForSyncRow(message) {
@@ -269,7 +282,12 @@ func syncChatStyle(v *int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: *v, Valid: true}
 }
 
-func upsertChatsTx(tx *sql.Tx, chats []store.SyncChatRow, updatedAt int64) error {
+// upsertChatsTx writes chats with a write-avoidance guard (C57): the DO UPDATE
+// only fires when a content column actually differs, so the every-sync pass
+// over the full chat list stops rewriting identical rows (and stops bumping
+// updated_at, which is only an ORDER BY tiebreaker) every 5 seconds.
+// Returns (written, unchanged) row counts.
+func upsertChatsTx(tx *sql.Tx, chats []store.SyncChatRow, updatedAt int64) (int, int, error) {
 	stmt, err := tx.Prepare(`
 INSERT INTO chats (
 	guid, chat_identifier, service_name, display_name, is_archived, style, participant_count, participants, updated_at
@@ -282,15 +300,23 @@ ON CONFLICT(guid) DO UPDATE SET
 	style = excluded.style,
 	participant_count = excluded.participant_count,
 	participants = excluded.participants,
-	updated_at = excluded.updated_at;
+	updated_at = excluded.updated_at
+WHERE chats.chat_identifier IS NOT excluded.chat_identifier
+	OR chats.service_name IS NOT excluded.service_name
+	OR chats.display_name IS NOT excluded.display_name
+	OR chats.is_archived IS NOT excluded.is_archived
+	OR chats.style IS NOT excluded.style
+	OR chats.participant_count IS NOT excluded.participant_count
+	OR chats.participants IS NOT excluded.participants;
 `)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	defer stmt.Close()
 
+	written, unchanged := 0, 0
 	for _, chat := range chats {
-		if _, err := stmt.Exec(
+		res, err := stmt.Exec(
 			chat.GUID,
 			chat.ChatIdentifier,
 			chat.ServiceName,
@@ -300,12 +326,22 @@ ON CONFLICT(guid) DO UPDATE SET
 			chat.ParticipantCount,
 			encodeParticipants(chat.Participants),
 			updatedAt,
-		); err != nil {
-			return err
+		)
+		if err != nil {
+			return written, unchanged, err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return written, unchanged, err
+		}
+		if affected > 0 {
+			written++
+		} else {
+			unchanged++
 		}
 	}
 
-	return nil
+	return written, unchanged, nil
 }
 
 func encodeParticipants(participants []string) string {
@@ -318,7 +354,54 @@ func encodeParticipants(participants []string) string {
 	return strings.Join(clean, "\x1f")
 }
 
-func upsertMessagesTx(tx *sql.Tx, messages []store.SyncMessageRow, createdAt int64) ([]string, error) {
+// existingMessageGUIDsTx returns the subset of guids already present, in one
+// chunked IN query instead of a per-row SELECT (C57).
+func existingMessageGUIDsTx(tx *sql.Tx, messages []store.SyncMessageRow) (map[string]struct{}, error) {
+	existing := make(map[string]struct{}, len(messages))
+	const chunkSize = 500 // stay under SQLite's bound-variable limit
+	for start := 0; start < len(messages); start += chunkSize {
+		end := start + chunkSize
+		if end > len(messages) {
+			end = len(messages)
+		}
+		chunk := messages[start:end]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+		args := make([]any, len(chunk))
+		for i, message := range chunk {
+			args[i] = message.GUID
+		}
+		rows, err := tx.Query(`SELECT guid FROM messages WHERE guid IN (`+placeholders+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var guid string
+			if err := rows.Scan(&guid); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			existing[guid] = struct{}{}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return existing, nil
+}
+
+// upsertMessagesTx writes messages with a write-avoidance guard (C57). The
+// incremental sync re-feeds the date-lookback window on every pass, so most
+// conflict rows are byte-identical — the DO UPDATE's WHERE diff turns those
+// into no-writes (RowsAffected 0) instead of constant WAL churn.
+// Returns (insertedGUIDs, written, unchanged).
+func upsertMessagesTx(tx *sql.Tx, messages []store.SyncMessageRow, createdAt int64) ([]string, int, int, error) {
+	existing, err := existingMessageGUIDsTx(tx, messages)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
 	stmt, err := tx.Prepare(`
 INSERT INTO messages (
 	guid, chat_guid, source_rowid, text, subject, service, account, date_created, date_read, date_delivered,
@@ -354,22 +437,46 @@ ON CONFLICT(guid) DO UPDATE SET
 	expressive_send_style_id = excluded.expressive_send_style_id,
 	payload_data_present = excluded.payload_data_present,
 	is_debug_only = excluded.is_debug_only,
-	is_reaction = excluded.is_reaction;
+	is_reaction = excluded.is_reaction
+WHERE messages.chat_guid IS NOT excluded.chat_guid
+	OR messages.source_rowid IS NOT excluded.source_rowid
+	OR messages.text IS NOT excluded.text
+	OR messages.subject IS NOT excluded.subject
+	OR messages.service IS NOT excluded.service
+	OR messages.account IS NOT excluded.account
+	OR messages.date_created IS NOT excluded.date_created
+	OR messages.date_read IS NOT excluded.date_read
+	OR messages.date_delivered IS NOT excluded.date_delivered
+	OR messages.is_from_me IS NOT excluded.is_from_me
+	OR messages.is_read IS NOT excluded.is_read
+	OR messages.is_delivered IS NOT excluded.is_delivered
+	OR messages.handle_id IS NOT excluded.handle_id
+	OR messages.handle_service IS NOT excluded.handle_service
+	OR messages.cache_has_attachments IS NOT excluded.cache_has_attachments
+	OR messages.has_attributed_body IS NOT excluded.has_attributed_body
+	OR messages.associated_message_type IS NOT excluded.associated_message_type
+	OR messages.associated_message_guid IS NOT excluded.associated_message_guid
+	OR messages.thread_originator_guid IS NOT excluded.thread_originator_guid
+	OR messages.item_type IS NOT excluded.item_type
+	OR messages.group_action_type IS NOT excluded.group_action_type
+	OR messages.group_title IS NOT excluded.group_title
+	OR messages.balloon_bundle_id IS NOT excluded.balloon_bundle_id
+	OR messages.expressive_send_style_id IS NOT excluded.expressive_send_style_id
+	OR messages.payload_data_present IS NOT excluded.payload_data_present
+	OR messages.is_debug_only IS NOT excluded.is_debug_only
+	OR messages.is_reaction IS NOT excluded.is_reaction;
 `)
 	if err != nil {
-		return nil, err
+		return nil, 0, 0, err
 	}
 	defer stmt.Close()
 
 	insertedGUIDs := make([]string, 0, len(messages))
+	written, unchanged := 0, 0
 	for _, message := range messages {
-		var exists int
-		err := tx.QueryRow(`SELECT 1 FROM messages WHERE guid = ? LIMIT 1`, message.GUID).Scan(&exists)
-		isNew := err == sql.ErrNoRows
-		if err != nil && err != sql.ErrNoRows {
-			return nil, err
-		}
-		if _, err := stmt.Exec(
+		_, alreadyExists := existing[message.GUID]
+		isNew := !alreadyExists
+		res, err := stmt.Exec(
 			message.GUID,
 			message.ChatGUID,
 			message.SourceRowID,
@@ -399,18 +506,33 @@ ON CONFLICT(guid) DO UPDATE SET
 			boolToInt(message.PayloadDataPresent),
 			boolToInt(store.DebugOnlyForSyncRow(message)),
 			boolToInt(store.IsReactionForSyncRow(message)),
-		); err != nil {
-			return nil, err
+		)
+		if err != nil {
+			return nil, written, unchanged, err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return nil, written, unchanged, err
+		}
+		if affected > 0 {
+			written++
+		} else {
+			unchanged++
 		}
 		if isNew {
 			insertedGUIDs = append(insertedGUIDs, message.GUID)
 		}
 	}
 
-	return insertedGUIDs, nil
+	return insertedGUIDs, written, unchanged, nil
 }
 
-func upsertAttachmentsTx(tx *sql.Tx, attachments []store.SyncAttachmentRow, createdAt int64) error {
+// upsertAttachmentsTx writes attachments with a write-avoidance guard (C57).
+// created_at is insert-only now: rows without a source timestamp used the
+// `now` fallback, so re-upserting them every sync both rewrote the row and
+// shifted the (created_at, guid) ordering the C49 identity dedup keys on.
+// Returns (written, unchanged).
+func upsertAttachmentsTx(tx *sql.Tx, attachments []store.SyncAttachmentRow, createdAt int64) (int, int, error) {
 	stmt, err := tx.Prepare(`
 INSERT INTO attachments (
 	guid, message_guid, filename, mime_type, transfer_name, total_bytes, local_path, is_outgoing, hide_attachment, created_at, uti, is_sticker
@@ -424,21 +546,31 @@ ON CONFLICT(guid) DO UPDATE SET
 	local_path = excluded.local_path,
 	is_outgoing = excluded.is_outgoing,
 	hide_attachment = excluded.hide_attachment,
-	created_at = excluded.created_at,
 	uti = excluded.uti,
-	is_sticker = excluded.is_sticker;
+	is_sticker = excluded.is_sticker
+WHERE attachments.message_guid IS NOT excluded.message_guid
+	OR attachments.filename IS NOT excluded.filename
+	OR attachments.mime_type IS NOT excluded.mime_type
+	OR attachments.transfer_name IS NOT excluded.transfer_name
+	OR attachments.total_bytes IS NOT excluded.total_bytes
+	OR attachments.local_path IS NOT excluded.local_path
+	OR attachments.is_outgoing IS NOT excluded.is_outgoing
+	OR attachments.hide_attachment IS NOT excluded.hide_attachment
+	OR attachments.uti IS NOT excluded.uti
+	OR attachments.is_sticker IS NOT excluded.is_sticker;
 `)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	defer stmt.Close()
 
+	written, unchanged := 0, 0
 	for _, attachment := range attachments {
 		created := createdAt
 		if attachment.CreatedAt != nil {
 			created = *attachment.CreatedAt
 		}
-		if _, err := stmt.Exec(
+		res, err := stmt.Exec(
 			attachment.GUID,
 			attachment.MessageGUID,
 			attachment.Filename,
@@ -451,12 +583,22 @@ ON CONFLICT(guid) DO UPDATE SET
 			created,
 			attachment.Uti,
 			boolToInt(attachment.IsSticker),
-		); err != nil {
-			return err
+		)
+		if err != nil {
+			return written, unchanged, err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return written, unchanged, err
+		}
+		if affected > 0 {
+			written++
+		} else {
+			unchanged++
 		}
 	}
 
-	return nil
+	return written, unchanged, nil
 }
 
 func setSyncStateTx(tx *sql.Tx, key, value string) error {

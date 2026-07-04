@@ -457,6 +457,13 @@ type ServerSyncDiagnostics struct {
 	LastUpdatePassSeeded    int     `json:"lastUpdatePassSeeded"`
 	LastUnsentCount         int     `json:"lastUnsentCount"`
 	LastScannedMessageRowID int64   `json:"lastScannedMessageRowId"`
+	// C57 write-avoidance: rows actually written vs skipped as unchanged in the
+	// last sync, and whether the throttled date-lookback recovery scan ran.
+	LastChatsWritten       int  `json:"lastChatsWritten"`
+	LastMessagesWritten    int  `json:"lastMessagesWritten"`
+	LastAttachmentsWritten int  `json:"lastAttachmentsWritten"`
+	LastRowsUnchanged      int  `json:"lastRowsUnchanged"`
+	LastLookbackApplied    bool `json:"lastLookbackApplied"`
 	LastChatDBMtime         *int64  `json:"lastChatDbMtime,omitempty"`
 	LastWALMtime            *int64  `json:"lastWalMtime,omitempty"`
 	LastSHMMtime            *int64  `json:"lastShmMtime,omitempty"`

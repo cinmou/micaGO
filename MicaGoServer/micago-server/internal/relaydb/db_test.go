@@ -176,16 +176,16 @@ func TestUpsertDoesNotDuplicateRows(t *testing.T) {
 	chats := []store.SyncChatRow{{GUID: "chat-1"}}
 	messages := []store.SyncMessageRow{{GUID: "msg-1", ChatGUID: "chat-1", SourceRowID: 42}}
 
-	if err := upsertChatsTx(tx, chats, 100); err != nil {
+	if _, _, err := upsertChatsTx(tx, chats, 100); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := upsertMessagesTx(tx, messages, 100); err != nil {
+	if _, _, _, err := upsertMessagesTx(tx, messages, 100); err != nil {
 		t.Fatal(err)
 	}
-	if err := upsertChatsTx(tx, chats, 200); err != nil {
+	if _, _, err := upsertChatsTx(tx, chats, 200); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := upsertMessagesTx(tx, messages, 200); err != nil {
+	if _, _, _, err := upsertMessagesTx(tx, messages, 200); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
