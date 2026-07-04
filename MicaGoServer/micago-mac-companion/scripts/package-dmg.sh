@@ -78,11 +78,15 @@ chmod +x "$APP_PATH/Contents/Resources/micago"
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
   echo "==> Signing bundled executables and app"
-  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago"
-  if [ -f "$APP_PATH/Contents/Resources/micago-imcore-helper" ]; then
-    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago-imcore-helper"
+  CODESIGN_TIMESTAMP_ARGS=(--timestamp)
+  if [ "${SIGN_TIMESTAMP:-1}" = "0" ]; then
+    CODESIGN_TIMESTAMP_ARGS=(--timestamp=none)
   fi
-  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_PATH"
+  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago"
+  if [ -f "$APP_PATH/Contents/Resources/micago-imcore-helper" ]; then
+    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago-imcore-helper"
+  fi
+  codesign --force --deep --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH"
 else
   echo "==> SIGN_IDENTITY not set; leaving app unsigned for local testing"
 fi
@@ -139,7 +143,7 @@ create-dmg \
 rm -rf "$DMG_STAGING_DIR"
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
-  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
+  codesign --force "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$DMG_PATH"
 fi
 
 if [ "${NOTARIZE:-0}" = "1" ]; then

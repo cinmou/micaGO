@@ -80,6 +80,7 @@ struct ContentView: View {
                 let bottomItems = SidebarItem.bottom(developerModeEnabled: model.developerModeEnabled)
                 VStack(spacing: 0) {
                     Divider()
+                    Spacer().frame(height: 6)
                     List(selection: $nav.selection) {
                         ForEach(bottomItems) { item in
                             Label(item.title, systemImage: item.symbol).tag(item)
@@ -88,7 +89,7 @@ struct ContentView: View {
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
                     .scrollDisabled(true)
-                    .frame(height: 38 * CGFloat(bottomItems.count) + 16)
+                    .frame(height: 38 * CGFloat(bottomItems.count) + 6)
                 }
             }
         } detail: {
