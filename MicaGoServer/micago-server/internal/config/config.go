@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -9,9 +10,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -102,46 +104,46 @@ type HMSConfig struct {
 
 type fileConfig struct {
 	Server struct {
-		Addr      string
-		PublicURL string
-	}
+		Addr      string `yaml:"addr"`
+		PublicURL string `yaml:"public_url"`
+	} `yaml:"server"`
 	Network struct {
-		PublicBaseURL            string
-		VerifyTLS                bool
-		PreferredPairingEndpoint string
-	}
+		PublicBaseURL            string `yaml:"public_base_url"`
+		VerifyTLS                bool   `yaml:"verify_tls"`
+		PreferredPairingEndpoint string `yaml:"preferred_pairing_endpoint"`
+	} `yaml:"network"`
 	Auth struct {
-		Token string
-	}
+		Token string `yaml:"token"`
+	} `yaml:"auth"`
 	Sync struct {
-		Interval       string
-		UpdateLookback string
-	}
+		Interval       string `yaml:"interval"`
+		UpdateLookback string `yaml:"update_lookback"`
+	} `yaml:"sync"`
 	Notifications struct {
-		Enabled  bool
-		Provider string
-		Preview  string
-	}
+		Enabled  bool   `yaml:"enabled"`
+		Provider string `yaml:"provider"`
+		Preview  string `yaml:"preview"`
+	} `yaml:"notifications"`
 	Webhook struct {
-		URL string
-	}
+		URL string `yaml:"url"`
+	} `yaml:"webhook"`
 	FCM struct {
-		Enabled            bool
-		ProjectID          string
-		ServiceAccountPath string
-		GoogleServicesPath string
-	}
+		Enabled            bool   `yaml:"enabled"`
+		ProjectID          string `yaml:"project_id"`
+		ServiceAccountPath string `yaml:"service_account_path"`
+		GoogleServicesPath string `yaml:"google_services_path"`
+	} `yaml:"fcm"`
 	HMS struct {
-		Enabled        bool
-		AppID          string
-		AppSecret      string
-		TokenCachePath string
-	}
+		Enabled        bool   `yaml:"enabled"`
+		AppID          string `yaml:"app_id"`
+		AppSecret      string `yaml:"app_secret"`
+		TokenCachePath string `yaml:"token_cache_path"`
+	} `yaml:"hms"`
 	Firebase struct {
-		PublicURLSync bool
-		URLCollection string
-		URLDocument   string
-	}
+		PublicURLSync bool   `yaml:"public_url_sync"`
+		URLCollection string `yaml:"url_collection"`
+		URLDocument   string `yaml:"url_document"`
+	} `yaml:"firebase"`
 }
 
 func Load(opts Options) (Config, error) {
@@ -167,7 +169,7 @@ func Load(opts Options) (Config, error) {
 	if !firstRun && strings.TrimSpace(opts.Addr) == "" && !opts.DisableAuth &&
 		IsLocalAddress(fileCfg.Server.Addr) {
 		fileCfg.Server.Addr = defaultAddr
-		if err := os.WriteFile(cfgPath, []byte(renderConfig(fileCfg)), 0o600); err != nil {
+		if err := writeConfigFile(cfgPath, fileCfg); err != nil {
 			return Config{}, fmt.Errorf("migrate loopback bind: %w", err)
 		}
 	}
@@ -320,10 +322,7 @@ func UpdatePublicBaseURL(cfgPath, publicBaseURL string, verifyTLS bool, preferre
 	fileCfg.Network.PublicBaseURL = trimmed
 	fileCfg.Network.VerifyTLS = verifyTLS
 	fileCfg.Network.PreferredPairingEndpoint = preferredPairing
-	if err := os.WriteFile(cfgPath, []byte(renderConfig(fileCfg)), 0o600); err != nil {
-		return fmt.Errorf("write config file: %w", err)
-	}
-	return nil
+	return writeConfigFile(cfgPath, fileCfg)
 }
 
 // NotificationsUpdate carries the notification/FCM/Firebase settings written by
@@ -366,10 +365,7 @@ func UpdateNotificationsConfig(cfgPath string, u NotificationsUpdate) error {
 	fileCfg.FCM.ProjectID = strings.TrimSpace(u.FCMProjectID)
 	fileCfg.FCM.ServiceAccountPath = strings.TrimSpace(u.ServiceAccountPath)
 	fileCfg.Firebase.PublicURLSync = u.PublicURLSync
-	if err := os.WriteFile(cfgPath, []byte(renderConfig(fileCfg)), 0o600); err != nil {
-		return fmt.Errorf("write config file: %w", err)
-	}
-	return nil
+	return writeConfigFile(cfgPath, fileCfg)
 }
 
 func ValidateSecurity(cfg Config) error {
@@ -439,8 +435,8 @@ func ensureConfigFile(baseDir, cfgPath string) (bool, fileConfig, error) {
 			return false, fileConfig{}, fmt.Errorf("generate auth token: %w", err)
 		}
 		cfg := defaultFileConfig(token)
-		if err := os.WriteFile(cfgPath, []byte(renderConfig(cfg)), 0o600); err != nil {
-			return false, fileConfig{}, fmt.Errorf("write config file: %w", err)
+		if err := writeConfigFile(cfgPath, cfg); err != nil {
+			return false, fileConfig{}, err
 		}
 		return true, cfg, nil
 	} else if err != nil {
@@ -485,148 +481,80 @@ func defaultFileConfig(token string) fileConfig {
 	return cfg
 }
 
-func renderConfig(cfg fileConfig) string {
-	return strings.Join([]string{
-		"server:",
-		fmt.Sprintf("  addr: %s", quoteYAML(cfg.Server.Addr)),
-		fmt.Sprintf("  public_url: %s", quoteYAML(cfg.Server.PublicURL)),
-		"",
-		"network:",
-		fmt.Sprintf("  public_base_url: %s", quoteYAML(cfg.Network.PublicBaseURL)),
-		fmt.Sprintf("  verify_tls: %t", cfg.Network.VerifyTLS),
-		fmt.Sprintf("  preferred_pairing_endpoint: %s", quoteYAML(cfg.Network.PreferredPairingEndpoint)),
-		"",
-		"auth:",
-		fmt.Sprintf("  token: %s", quoteYAML(cfg.Auth.Token)),
-		"",
-		"sync:",
-		fmt.Sprintf("  interval: %s", quoteYAML(cfg.Sync.Interval)),
-		fmt.Sprintf("  update_lookback: %s", quoteYAML(cfg.Sync.UpdateLookback)),
-		"",
-		"notifications:",
-		fmt.Sprintf("  enabled: %t", cfg.Notifications.Enabled),
-		fmt.Sprintf("  provider: %s", quoteYAML(cfg.Notifications.Provider)),
-		fmt.Sprintf("  preview: %s", quoteYAML(cfg.Notifications.Preview)),
-		"",
-		"webhook:",
-		fmt.Sprintf("  url: %s", quoteYAML(cfg.Webhook.URL)),
-		"",
-		"fcm:",
-		fmt.Sprintf("  enabled: %t", cfg.FCM.Enabled),
-		fmt.Sprintf("  project_id: %s", quoteYAML(cfg.FCM.ProjectID)),
-		fmt.Sprintf("  service_account_path: %s", quoteYAML(cfg.FCM.ServiceAccountPath)),
-		fmt.Sprintf("  google_services_path: %s", quoteYAML(cfg.FCM.GoogleServicesPath)),
-		"",
-		"hms:",
-		fmt.Sprintf("  enabled: %t", cfg.HMS.Enabled),
-		fmt.Sprintf("  app_id: %s", quoteYAML(cfg.HMS.AppID)),
-		fmt.Sprintf("  app_secret: %s", quoteYAML(cfg.HMS.AppSecret)),
-		fmt.Sprintf("  token_cache_path: %s", quoteYAML(cfg.HMS.TokenCachePath)),
-		"",
-		"firebase:",
-		fmt.Sprintf("  public_url_sync: %t", cfg.Firebase.PublicURLSync),
-		fmt.Sprintf("  url_collection: %s", quoteYAML(cfg.Firebase.URLCollection)),
-		fmt.Sprintf("  url_document: %s", quoteYAML(cfg.Firebase.URLDocument)),
-		"",
-	}, "\n")
+func writeConfigFile(cfgPath string, cfg fileConfig) error {
+	rendered, err := renderConfig(cfg)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(cfgPath, []byte(rendered), 0o600); err != nil {
+		return fmt.Errorf("write config file: %w", err)
+	}
+	return nil
 }
 
+// renderConfig marshals the config via yaml.v3, then applies the legacy style:
+// two-space indent, every string VALUE double-quoted (keys stay bare), a blank
+// line between top-level sections. That shape is load-bearing, not cosmetic —
+// the Companion's ConfigReader.swift and the smoke scripts' sed patterns
+// (`^  token: "..."$`) line-match it.
+func renderConfig(cfg fileConfig) (string, error) {
+	var doc yaml.Node
+	if err := doc.Encode(cfg); err != nil {
+		return "", fmt.Errorf("encode config: %w", err)
+	}
+	quoteStringValues(&doc)
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return "", fmt.Errorf("render config: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return "", fmt.Errorf("render config: %w", err)
+	}
+	return insertSectionBlankLines(buf.String()), nil
+}
+
+// quoteStringValues forces double-quoted style on string scalars used as
+// values. Mapping keys are skipped — a quoted `"token":` would break the
+// external line parsers.
+func quoteStringValues(n *yaml.Node) {
+	switch n.Kind {
+	case yaml.MappingNode:
+		for i := 1; i < len(n.Content); i += 2 {
+			quoteStringValues(n.Content[i])
+		}
+	case yaml.ScalarNode:
+		if n.Tag == "!!str" {
+			n.Style = yaml.DoubleQuotedStyle
+		}
+	default:
+		for _, child := range n.Content {
+			quoteStringValues(child)
+		}
+	}
+}
+
+func insertSectionBlankLines(rendered string) string {
+	lines := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+	out := make([]string, 0, len(lines)+16)
+	for i, line := range lines {
+		if i > 0 && !strings.HasPrefix(line, " ") && strings.HasSuffix(line, ":") {
+			out = append(out, "")
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n") + "\n"
+}
+
+// parseConfig reads a config.yaml body. Keys absent from the file keep their
+// defaults; unknown keys are ignored so files written by newer versions still
+// load. Explicit empty values fall back to defaults afterwards, matching the
+// old handwritten parser.
 func parseConfig(body string) (fileConfig, error) {
 	cfg := defaultFileConfig("")
-	section := ""
-	lines := strings.Split(body, "\n")
-	for _, rawLine := range lines {
-		line := strings.TrimRight(rawLine, " \t\r")
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		if !strings.HasPrefix(line, " ") && strings.HasSuffix(trimmed, ":") {
-			section = strings.TrimSuffix(trimmed, ":")
-			continue
-		}
-		if !strings.HasPrefix(line, "  ") {
-			continue
-		}
-		key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
-		if !ok {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		value = strings.Trim(value, `"`)
-		switch section {
-		case "server":
-			switch key {
-			case "addr":
-				cfg.Server.Addr = value
-			case "public_url":
-				cfg.Server.PublicURL = value
-			}
-		case "network":
-			switch key {
-			case "public_base_url":
-				cfg.Network.PublicBaseURL = value
-			case "verify_tls":
-				cfg.Network.VerifyTLS = parseBool(value)
-			case "preferred_pairing_endpoint":
-				cfg.Network.PreferredPairingEndpoint = value
-			}
-		case "auth":
-			if key == "token" {
-				cfg.Auth.Token = value
-			}
-		case "sync":
-			switch key {
-			case "interval":
-				cfg.Sync.Interval = value
-			case "update_lookback":
-				cfg.Sync.UpdateLookback = value
-			}
-		case "notifications":
-			switch key {
-			case "enabled":
-				cfg.Notifications.Enabled = parseBool(value)
-			case "provider":
-				cfg.Notifications.Provider = value
-			case "preview":
-				cfg.Notifications.Preview = value
-			}
-		case "webhook":
-			if key == "url" {
-				cfg.Webhook.URL = value
-			}
-		case "fcm":
-			switch key {
-			case "enabled":
-				cfg.FCM.Enabled = parseBool(value)
-			case "project_id":
-				cfg.FCM.ProjectID = value
-			case "service_account_path":
-				cfg.FCM.ServiceAccountPath = value
-			case "google_services_path":
-				cfg.FCM.GoogleServicesPath = value
-			}
-		case "hms":
-			switch key {
-			case "enabled":
-				cfg.HMS.Enabled = parseBool(value)
-			case "app_id":
-				cfg.HMS.AppID = value
-			case "app_secret":
-				cfg.HMS.AppSecret = value
-			case "token_cache_path":
-				cfg.HMS.TokenCachePath = value
-			}
-		case "firebase":
-			switch key {
-			case "public_url_sync":
-				cfg.Firebase.PublicURLSync = parseBool(value)
-			case "url_collection":
-				cfg.Firebase.URLCollection = value
-			case "url_document":
-				cfg.Firebase.URLDocument = value
-			}
-		}
+	if err := yaml.Unmarshal([]byte(body), &cfg); err != nil {
+		return fileConfig{}, fmt.Errorf("parse config file: %w", err)
 	}
 	if cfg.Server.Addr == "" {
 		cfg.Server.Addr = defaultAddr
@@ -655,15 +583,6 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
-}
-
-func quoteYAML(v string) string {
-	return strconv.Quote(v)
-}
-
-func parseBool(v string) bool {
-	b, _ := strconv.ParseBool(strings.ToLower(strings.TrimSpace(v)))
-	return b
 }
 
 func valueOrDefault(primary, secondary, fallback string) string {

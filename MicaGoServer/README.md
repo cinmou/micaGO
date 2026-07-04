@@ -10,6 +10,21 @@ The data flow is one-directional and simple:
 chat.db  ->  sync loop  ->  relay.db  ->  REST API / WebSocket  ->  clients
 ```
 
+### Why keep `relay.db` instead of reading `chat.db` directly?
+
+`relay.db` is intentional. It keeps the server read-only toward Apple's
+`chat.db`, gives the Android client a stable API shape, and turns noisy
+`chat.db` changes into deduplicated REST/WebSocket events. It also lets micaGO
+serve cached conversations while a startup sync is retrying, page large threads
+with its own indexes, and keep small local state that does not belong in
+Apple's database.
+
+The message/chat/attachment rows in `relay.db` are rebuildable from `chat.db`.
+However, `relay.db` also stores micaGO-owned state such as paired devices,
+push tokens, sync settings, privacy rules, and message-state fingerprints. Treat
+the message cache as disposable, but do not treat the whole database as
+throwaway user data unless you are intentionally resetting pairing and settings.
+
 ## What MicaGoServer intentionally avoids
 
 MicaGoServer is deliberately conservative and **not** a BlueBubbles clone. It

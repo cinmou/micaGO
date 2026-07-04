@@ -73,6 +73,19 @@ Three components:
   `GestureDetector`) opens details; the top-right info button is removed (both the
   embedded pane header and the phone `AppBar`).
 
+## Config parser → yaml.v3 (C56)
+
+- `internal/config` now uses `gopkg.in/yaml.v3` (the module's 3rd dep) instead of
+  the handwritten line parser/renderer; `fileConfig` carries `yaml:` tags.
+  **The written byte format is unchanged and load-bearing**: the Companion's
+  `ConfigReader.swift` and the smoke scripts' `sed 's/^  token: "\(.*\)"$/…/'`
+  line-match it. `renderConfig` encodes via a `yaml.Node` pass that double-quotes
+  string *values* (never keys) + re-inserts blank lines between sections —
+  guarded byte-for-byte by `config_migration_test.go`
+  (`TestLegacyConfigRoundTripsThroughNewRenderer` asserts render(parse(legacy)) ==
+  legacy). Parsing keeps old semantics: absent keys → defaults, unknown keys
+  ignored; malformed YAML now errors instead of being silently skipped.
+
 ## Connection security review + WS token in header (C55, v0.56.0)
 
 - **Reviewed the client→server path**: REST + WS both bearer-auth'd. Server auth

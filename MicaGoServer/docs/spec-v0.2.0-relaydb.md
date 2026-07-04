@@ -1,5 +1,13 @@
 # Mica v0.2.0 Relay DB Spec
 
+> Current status: this is the original bootstrap spec for `relay.db`. The live
+> implementation has grown beyond it: `relay.db` now stores the rebuildable
+> message/chat/attachment cache **and** micaGO-owned local state such as paired
+> devices, push tokens, sync settings, privacy rules, and message-state
+> fingerprints. The message cache can be regenerated from `chat.db`; the whole
+> database should not be treated as disposable unless the user is intentionally
+> resetting pairing and settings.
+
 ## Goal
 
 Mica v0.2.0 adds a lightweight local relay database that stores a clean iMessage-only subset of macOS Messages data copied from `~/Library/Messages/chat.db`.
@@ -12,6 +20,30 @@ This milestone is intentionally limited to:
 - copy a clean iMessage view only
 
 This milestone does not implement sending, WebSocket, auth, frontend, Firebase, push notifications, Private API, or attachment download.
+
+## Current Design Rationale
+
+micaGO does not cache Apple data because `chat.db` is hard to query. It caches a
+small, normalized projection because the product needs a stable boundary between
+Apple's private database and first-party clients.
+
+The relay database provides:
+
+- a read-only boundary: micaGO never writes to or repairs Apple's `chat.db`;
+- stable API fields even when macOS changes `chat.db` columns;
+- deterministic pagination and indexing for chat lists, threads, deltas, and
+  attachment lookup;
+- durable deduplication for realtime events and send confirmation;
+- a place for micaGO-owned local state that Apple does not store, including
+  device registration, push tokens, sync settings, and privacy rules;
+- offline/cached reads when a startup sync fails temporarily and later retries.
+
+Directly serving every client request from `chat.db` would remove one SQLite
+file, but it would make API latency, pagination, realtime dedupe, and schema
+compatibility depend on Apple's live database shape. It would also force
+micaGO-owned state into a separate database anyway. The current design keeps
+Apple's database as the source of truth while using `relay.db` as the product's
+local, controlled projection.
 
 ## Relay DB Path
 
