@@ -1,4 +1,4 @@
-# MicaGoServer
+# micaGO Server
 
 A lightweight Go-based **iMessage relay server**. It runs on a Mac with access
 to the local Messages database and exposes a small, stable, **Mica-native**
@@ -25,9 +25,9 @@ push tokens, sync settings, privacy rules, and message-state fingerprints. Treat
 the message cache as disposable, but do not treat the whole database as
 throwaway user data unless you are intentionally resetting pairing and settings.
 
-## What MicaGoServer intentionally avoids
+## What micaGO Server intentionally avoids
 
-MicaGoServer is deliberately conservative and **not** a BlueBubbles clone. It
+micaGO Server is deliberately conservative and **not** a BlueBubbles clone. It
 does **not** include:
 
 - BlueBubbles client/server API compatibility (route shapes, envelopes, event names)
@@ -110,7 +110,7 @@ zsh scripts/smoke-v0.6-security.sh
 # v0.7 — device registry (register / list / heartbeat / patch / delete)
 zsh scripts/smoke-v0.7-devices.sh
 
-# v0.8 — notification provider (test-push; webhook if configured)
+# v0.8 — notification provider (unified test notification; webhook if configured)
 zsh scripts/smoke-v0.8-notify.sh
 ```
 

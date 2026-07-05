@@ -510,19 +510,6 @@ class _NotificationsCard extends StatefulWidget {
 }
 
 class _NotificationsCardState extends State<_NotificationsCard> {
-  bool _busy = false;
-
-  Future<void> _sendTest() async {
-    setState(() => _busy = true);
-    final error = await widget.app.sendTestPush();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    final msg = error ?? MicaLocalizations.of(context).t('notif.testSent');
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(msg)));
-  }
-
   Future<void> _enableNotifications() async {
     final granted = await requestSystemNotificationPermission();
     widget.app.noteNotificationPermission(granted);
@@ -555,25 +542,12 @@ class _NotificationsCardState extends State<_NotificationsCard> {
               color: configured ? scheme.primary : scheme.onSurfaceVariant,
             ),
             title: Text(strings.t('notif.fcmBeta')),
-            subtitle: configured
-                ? null
-                : Text(strings.t('notif.notConfiguredBody')),
-          ),
-          if (configured) ...[
-            const Divider(height: 1),
-            ListTile(
-              leading: _leadingIcon(Icons.send_outlined),
-              title: Text(strings.t('notif.sendTest')),
-              trailing: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.chevron_right),
-              onTap: _busy ? null : _sendTest,
+            subtitle: Text(
+              configured
+                  ? strings.t('notif.registered')
+                  : strings.t('notif.notConfiguredBody'),
             ),
-          ],
+          ),
           const Divider(height: 1),
           SwitchListTile(
             secondary: _leadingIcon(Icons.web_asset_outlined),

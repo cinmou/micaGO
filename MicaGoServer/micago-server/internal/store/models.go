@@ -442,47 +442,49 @@ type ServerBackendStatus struct {
 }
 
 type ServerSyncDiagnostics struct {
-	LastStartedAt           *int64  `json:"lastStartedAt,omitempty"`
-	LastCompletedAt         *int64  `json:"lastCompletedAt,omitempty"`
-	LastDurationMillis      int64   `json:"lastDurationMillis"`
-	LastTriggerReason       string  `json:"lastTriggerReason,omitempty"`
-	LastInsertedMessages    int     `json:"lastInsertedMessages"`
-	LastSyncedMessages      int     `json:"lastSyncedMessages"`
-	LastRowsScanned         int     `json:"lastRowsScanned"`
-	LastRenderableRows      int     `json:"lastRenderableRows"`
-	LastHiddenDebugRows     int     `json:"lastHiddenDebugRows"`
-	LastPerChatLimit        int     `json:"lastPerChatLimit"`
-	LastBackfillMode        string  `json:"lastBackfillMode,omitempty"`
-	LastUpdatePassCount     int     `json:"lastUpdatePassCount"`
-	LastUpdatePassSeeded    int     `json:"lastUpdatePassSeeded"`
-	LastUnsentCount         int     `json:"lastUnsentCount"`
-	LastScannedMessageRowID int64   `json:"lastScannedMessageRowId"`
+	LastStartedAt           *int64 `json:"lastStartedAt,omitempty"`
+	LastCompletedAt         *int64 `json:"lastCompletedAt,omitempty"`
+	LastDurationMillis      int64  `json:"lastDurationMillis"`
+	LastTriggerReason       string `json:"lastTriggerReason,omitempty"`
+	LastInsertedMessages    int    `json:"lastInsertedMessages"`
+	LastSyncedMessages      int    `json:"lastSyncedMessages"`
+	LastRowsScanned         int    `json:"lastRowsScanned"`
+	LastRenderableRows      int    `json:"lastRenderableRows"`
+	LastHiddenDebugRows     int    `json:"lastHiddenDebugRows"`
+	LastPerChatLimit        int    `json:"lastPerChatLimit"`
+	LastBackfillMode        string `json:"lastBackfillMode,omitempty"`
+	LastUpdatePassCount     int    `json:"lastUpdatePassCount"`
+	LastUpdatePassSeeded    int    `json:"lastUpdatePassSeeded"`
+	LastUnsentCount         int    `json:"lastUnsentCount"`
+	LastScannedMessageRowID int64  `json:"lastScannedMessageRowId"`
 	// C57 write-avoidance: rows actually written vs skipped as unchanged in the
 	// last sync, and whether the throttled date-lookback recovery scan ran.
-	LastChatsWritten       int  `json:"lastChatsWritten"`
-	LastMessagesWritten    int  `json:"lastMessagesWritten"`
-	LastAttachmentsWritten int  `json:"lastAttachmentsWritten"`
-	LastRowsUnchanged      int  `json:"lastRowsUnchanged"`
-	LastLookbackApplied    bool `json:"lastLookbackApplied"`
-	LastChatDBMtime         *int64  `json:"lastChatDbMtime,omitempty"`
-	LastWALMtime            *int64  `json:"lastWalMtime,omitempty"`
-	LastSHMMtime            *int64  `json:"lastShmMtime,omitempty"`
-	LastSyncError           string  `json:"lastSyncError,omitempty"`
-	PendingSendsCount       int     `json:"pendingSendsCount"`
-	PendingTriggerCount     int     `json:"pendingTriggerCount"`
-	LockRetryCount          int     `json:"lockRetryCount"`
-	LateMatchedSendsCount   int     `json:"lateMatchedSendsCount"`
-	LastEmittedEventType    string  `json:"lastEmittedEventType,omitempty"`
-	LastEmittedChatGUID     *string `json:"lastEmittedChatGuid,omitempty"`
+	LastChatsWritten       int     `json:"lastChatsWritten"`
+	LastMessagesWritten    int     `json:"lastMessagesWritten"`
+	LastAttachmentsWritten int     `json:"lastAttachmentsWritten"`
+	LastRowsUnchanged      int     `json:"lastRowsUnchanged"`
+	LastLookbackApplied    bool    `json:"lastLookbackApplied"`
+	LastChatDBMtime        *int64  `json:"lastChatDbMtime,omitempty"`
+	LastWALMtime           *int64  `json:"lastWalMtime,omitempty"`
+	LastSHMMtime           *int64  `json:"lastShmMtime,omitempty"`
+	LastSyncError          string  `json:"lastSyncError,omitempty"`
+	PendingSendsCount      int     `json:"pendingSendsCount"`
+	PendingTriggerCount    int     `json:"pendingTriggerCount"`
+	LockRetryCount         int     `json:"lockRetryCount"`
+	LateMatchedSendsCount  int     `json:"lateMatchedSendsCount"`
+	LastEmittedEventType   string  `json:"lastEmittedEventType,omitempty"`
+	LastEmittedChatGUID    *string `json:"lastEmittedChatGuid,omitempty"`
 }
 
 type ServerNotificationStatus struct {
-	Enabled     bool     `json:"enabled"`
-	Provider    string   `json:"provider"`
-	Preview     string   `json:"preview"`
-	Providers   []string `json:"providers"`
-	Implemented []string `json:"implemented"`
-	Stub        []string `json:"stub"`
+	Enabled                     bool     `json:"enabled"`
+	Provider                    string   `json:"provider"`
+	Preview                     string   `json:"preview"`
+	Providers                   []string `json:"providers"`
+	Implemented                 []string `json:"implemented"`
+	Stub                        []string `json:"stub"`
+	FCMServiceAccountConfigured bool     `json:"fcmServiceAccountConfigured"`
+	FCMClientConfigured         bool     `json:"fcmClientConfigured"`
 }
 
 type ServerDevicesStatus struct {

@@ -241,7 +241,8 @@ struct APIClient {
     @discardableResult
     func setNotificationsConfig(enabled: Bool, provider: String, preview: String,
                                 fcmEnabled: Bool, fcmProjectID: String,
-                                serviceAccountPath: String, publicURLSync: Bool) async throws -> NotificationsConfigResponse {
+                                serviceAccountPath: String, googleServicesPath: String,
+                                publicURLSync: Bool) async throws -> NotificationsConfigResponse {
         let req = try jsonRequest("api/server/notifications", method: "POST", body: [
             "enabled": enabled,
             "provider": provider,
@@ -249,6 +250,7 @@ struct APIClient {
             "fcmEnabled": fcmEnabled,
             "fcmProjectId": fcmProjectID,
             "serviceAccountPath": serviceAccountPath,
+            "googleServicesPath": googleServicesPath,
             "publicUrlSync": publicURLSync,
         ])
         let (data, response) = try await Self.session().data(for: req)
@@ -262,18 +264,32 @@ struct APIClient {
         return try JSONDecoder().decode(NotificationsConfigResponse.self, from: data)
     }
 
-    /// Sends a real test push to a device; returns a human-readable result.
-    func testPush(deviceID: String) async -> String {
-        let req = request("api/devices/\(deviceID)/test-push", method: "POST")
+    /// Sends a real test push through the server's current notification setup.
+    func testNotifications() async -> String {
+        let req = request("api/server/notifications/test", method: "POST")
         guard let (data, response) = try? await Self.session().data(for: req),
               let http = response as? HTTPURLResponse else {
             return "Test push failed: could not reach server."
         }
-        if http.statusCode == 200 { return "Test push sent." }
+        if let env = try? JSONDecoder().decode(TestNotificationsEnvelope.self, from: data) {
+            let result = env.data
+            if result.failed == 0 {
+                return "Test push sent to \(result.sent) device\(result.sent == 1 ? "" : "s")."
+            }
+            let first = result.failures?.first ?? "Unknown error"
+            return "Sent \(result.sent), failed \(result.failed). \(first)"
+        }
         if let env = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
             return "Test push failed: \(env.error.message)"
         }
         return "Test push failed: HTTP \(http.statusCode)."
+    }
+
+    func putContactCache(_ contacts: [ServerContactEntry]) async throws {
+        let rows = contacts.map { ["name": $0.name, "addresses": $0.addresses] as [String: Any] }
+        let req = try jsonRequest("api/server/contacts/cache", method: "PUT", body: ["contacts": rows])
+        let (data, response) = try await Self.session().data(for: req)
+        try Self.validate(response, body: data)
     }
 
     /// Deletes a paired device record (C21u) — used to prune stale/historical

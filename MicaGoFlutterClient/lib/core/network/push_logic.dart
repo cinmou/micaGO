@@ -2,6 +2,10 @@
 /// be unit-tested and reasoned about in isolation. [PushService] composes these.
 library;
 
+const String testContactChatGuid = 'iMessage;-;test@micago.cinmou';
+const String testContactHandle = 'test@micago.cinmou';
+const String testContactDisplayName = 'MicaGo Test';
+
 /// BlueBubbles dedup rule: a foreground FCM message only needs a catch-up when
 /// the realtime socket is NOT connected — if the socket is live it already
 /// delivered the event, so the push is ignored (no duplicate work/bubbles).
@@ -13,11 +17,12 @@ String? pushChatGuid(Map<String, dynamic> data) {
   return (guid is String && guid.isNotEmpty) ? guid : null;
 }
 
-/// Whether a push has anything worth showing as a local notification. Test
-/// pushes and preview-disabled (empty title+body) pushes are skipped so we don't
-/// raise an empty/noisy notification.
+/// Whether a push has anything worth showing as a local notification. Preview-
+/// disabled (empty title+body) pushes are skipped so we don't raise an
+/// empty/noisy notification. Server test pushes are shown when they include
+/// visible text; otherwise the Mac-side test button looks successful but the
+/// phone appears silent.
 bool pushShouldNotify(Map<String, dynamic> data) {
-  if ((data['type'] ?? '') == 'test') return false;
   final title = (data['title'] as String?)?.trim() ?? '';
   final body = (data['body'] as String?)?.trim() ?? '';
   return title.isNotEmpty || body.isNotEmpty;
@@ -53,6 +58,7 @@ bool notificationIsGroup(Map<String, dynamic> data) {
 }
 
 String notificationSenderName(Map<String, dynamic> data) {
+  if (isTestContactPush(data)) return testContactDisplayName;
   return messageNotificationTitle(
     serverTitle: data['senderName'] as String? ?? data['title'] as String?,
     handle: data['handle'] as String?,
@@ -60,6 +66,7 @@ String notificationSenderName(Map<String, dynamic> data) {
 }
 
 String notificationConversationTitle(Map<String, dynamic> data) {
+  if (isTestContactPush(data)) return testContactDisplayName;
   final explicit = (data['conversationTitle'] as String?)?.trim() ?? '';
   if (explicit.isNotEmpty) return explicit;
   if (notificationIsGroup(data)) {
@@ -70,6 +77,12 @@ String notificationConversationTitle(Map<String, dynamic> data) {
     return 'Group chat';
   }
   return notificationSenderName(data);
+}
+
+bool isTestContactPush(Map<String, dynamic> data) {
+  final chatGuid = (data['chatGuid'] as String?)?.trim() ?? '';
+  final handle = (data['handle'] as String?)?.trim() ?? '';
+  return chatGuid == testContactChatGuid || handle == testContactHandle;
 }
 
 /// C30: validates a direct-reply text from the notification's inline input.

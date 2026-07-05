@@ -72,6 +72,7 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
   List<AssetEntity> _recent = const [];
   PermissionState? _permission;
   bool _loading = true;
+  bool _pickingCamera = false;
 
   @override
   void initState() {
@@ -108,16 +109,28 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
   }
 
   Future<void> _pickCamera() async {
+    if (_pickingCamera) return;
+    _pickingCamera = true;
     try {
-      final XFile? file = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-      );
+      final picker = ImagePicker();
+      XFile? file;
+      try {
+        file = await picker.pickImage(source: ImageSource.camera);
+      } catch (_) {
+        // Some Android camera apps briefly report unavailable while the camera
+        // is being released by a scanner/previous picker. Retry once after the
+        // activity stack has settled instead of surfacing a false failure.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        file = await picker.pickImage(source: ImageSource.camera);
+      }
       if (file == null) return;
       widget.onPicked([
         StagedAttachment(bytes: await file.readAsBytes(), filename: file.name),
       ]);
     } catch (e) {
       widget.onError('Camera unavailable or permission denied: $e');
+    } finally {
+      _pickingCamera = false;
     }
   }
 

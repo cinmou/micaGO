@@ -175,7 +175,7 @@
             </div>
             <h3>Mac Companion</h3>
             <p>Requires macOS 13 or newer. Runs the local server, pairs devices, and manages sync.</p>
-            <a class="button button-buy" href="https://github.com/cinmou/MicaGo/releases/latest">Download DMG</a>
+            <a id="download-dmg" class="button button-buy" href="https://github.com/cinmou/MicaGo/releases/latest">Download DMG</a>
           </article>
           <article class="download-card">
             <div class="download-card-header">
@@ -187,7 +187,7 @@
               Requires Android 6.0 or newer. Includes layouts for phones, tablets, and large
               screens.
             </p>
-            <a class="button button-buy" href="https://github.com/cinmou/MicaGo/releases/latest">Download APK</a>
+            <a id="download-apk" class="button button-buy" href="https://github.com/cinmou/MicaGo/releases/latest">Download APK</a>
           </article>
         </div>
         <aside class="platform-note">
@@ -235,5 +235,30 @@
       <span>Built with ♥️ for everyone.</span>
       <a href="https://github.com/cinmou/MicaGo">GitHub</a>
     </footer>
+
+    <script>
+      // Resolve direct download URLs for the latest release assets. Asset names
+      // are versioned (micaGO-<x.y.z>-android.apk / -mac.dmg), so the stable
+      // /releases/latest/download/<name> shortcut can't be hardcoded; ask the
+      // GitHub API instead. On any failure (offline, rate limit) the buttons
+      // keep their releases-page fallback href.
+      (function () {
+        fetch("https://api.github.com/repos/cinmou/MicaGo/releases/latest")
+          .then(function (res) { return res.ok ? res.json() : null; })
+          .then(function (release) {
+            if (!release || !Array.isArray(release.assets)) return;
+            function wire(id, suffix) {
+              var asset = release.assets.find(function (a) {
+                return a.name && a.name.toLowerCase().endsWith(suffix);
+              });
+              var el = document.getElementById(id);
+              if (asset && el) el.href = asset.browser_download_url;
+            }
+            wire("download-dmg", ".dmg");
+            wire("download-apk", ".apk");
+          })
+          .catch(function () { /* keep the releases-page fallback */ });
+      })();
+    </script>
   </body>
 </html>

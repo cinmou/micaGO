@@ -20,6 +20,14 @@ import 'push_logic.dart';
 /// this, the killed-app background handler can't init Firebase and shows nothing.
 const String fcmOptionsStorageKey = 'micago.fcm_options.v1';
 
+void registerMicaGoFirebaseBackgroundHandler() {
+  try {
+    FirebaseMessaging.onBackgroundMessage(micaGoFirebaseBackgroundHandler);
+  } catch (e) {
+    debugPrint('PushService: background handler registration deferred ($e)');
+  }
+}
+
 /// Pure: the minimal Firebase options map persisted for the background isolate.
 Map<String, String> fcmOptionsStorageMap(Map<String, dynamic> cfg) => {
   'apiKey': (cfg['apiKey'] ?? '') as String,
@@ -90,6 +98,9 @@ class PushService {
     if (cfg == null || cfg['configured'] != true) {
       // Firebase not set up → stay on WebSocket + delta sync (+ keep-alive local
       // notifications when enabled). Fully graceful.
+      debugPrint(
+        'PushService: FCM client config not available; will retry later',
+      );
       return;
     }
 
@@ -118,7 +129,13 @@ class PushService {
       debugPrint('PushService: token fetch failed ($e); using WS + delta');
       return;
     }
-    if (token == null || token!.isEmpty) return;
+    if (token == null || token!.isEmpty) {
+      debugPrint(
+        'PushService: Firebase returned no FCM token; will retry later',
+      );
+      return;
+    }
+    debugPrint('PushService: FCM token ready (${token!.length} chars)');
 
     available = true;
 
@@ -132,7 +149,7 @@ class PushService {
     // 5) Handlers (foreground / tap / terminated-launch) + the background isolate
     //    handler. The background registration persists natively, so a later
     //    killed-app delivery still spawns the isolate and runs our handler.
-    FirebaseMessaging.onBackgroundMessage(micaGoFirebaseBackgroundHandler);
+    registerMicaGoFirebaseBackgroundHandler();
     FirebaseMessaging.onMessage.listen(_onForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTap);
     final initial = await messaging.getInitialMessage();
@@ -309,16 +326,21 @@ Future<bool> ensureBackgroundFirebase() async {
 
 /// C32: shows the FCM (background isolate) notification as a native MessagingStyle
 /// conversation, stacked per chat. Deduped by message guid against the keep-alive
-/// path via the shared per-chat buffer + notification id. No contact avatar here
-/// (the background isolate has no contacts access); the server-resolved sender
-/// name is used, with the system monogram as the default avatar.
+/// path via the shared per-chat buffer + notification id. The background isolate
+/// cannot read contacts, but it can still use bundled app resources for known
+/// local chats such as the offline test contact.
 Future<void> showPushNotification(RemoteMessage message) async {
+  if (message.notification != null) {
+    // HTTP v1 notification+data messages are displayed by Android's system
+    // tray while the app is backgrounded. Keep this guard for legacy mixed
+    // payloads, but avoid a duplicate local notification.
+    return;
+  }
   final data = message.data;
   // Single source of truth for "is there anything to show" (test pushes and
   // preview-disabled empty pushes are skipped) — shared with the pure logic test.
   if (!pushShouldNotify(data)) return;
   final chatGuid = data['chatGuid'] as String?;
-  if (await _isBackgroundChatMuted(chatGuid)) return;
 
   final plugin = FlutterLocalNotificationsPlugin();
   await plugin.initialize(
@@ -328,12 +350,18 @@ Future<void> showPushNotification(RemoteMessage message) async {
       ),
     ),
   );
+  await plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
+      ?.createNotificationChannel(messageNotificationChannel);
   // C31/C32: group conversations use the group as conversation title and the
   // message author as Person. The FCM isolate cannot read contacts, so it uses
   // server-provided names/handles and falls back defensively for older servers.
   final sender = notificationSenderName(data);
   final conversationTitle = notificationConversationTitle(data);
   final isGroup = notificationIsGroup(data);
+  final testAvatar = isTestContactPush(data) ? androidTestContactAvatar : null;
   await showMessageNotification(
     plugin,
     chatGuid: chatGuid,
@@ -342,24 +370,11 @@ Future<void> showPushNotification(RemoteMessage message) async {
     senderKey: data['handle'] as String? ?? sender,
     conversationTitle: conversationTitle,
     body: notificationBody(data),
+    avatarDrawableResource: testAvatar,
+    conversationAvatarDrawableResource: testAvatar,
     isGroup: isGroup,
     timestampMs: notificationTimestampMs(data),
   );
-}
-
-Future<bool> _isBackgroundChatMuted(String? chatGuid) async {
-  final guid = chatGuid?.trim() ?? '';
-  if (guid.isEmpty) return false;
-  try {
-    final raw = await SecureStore().readValue(
-      AppController.mutedChatsStorageKey,
-    );
-    if (raw == null || raw.isEmpty) return false;
-    final decoded = jsonDecode(raw);
-    return decoded is List && decoded.whereType<String>().contains(guid);
-  } catch (_) {
-    return false;
-  }
 }
 
 /// C30: top-level handler for a notification action triggered while the app is

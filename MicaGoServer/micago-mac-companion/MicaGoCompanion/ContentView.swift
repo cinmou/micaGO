@@ -89,7 +89,7 @@ struct ContentView: View {
                     .listStyle(.sidebar)
                     .scrollContentBackground(.hidden)
                     .scrollDisabled(true)
-                    .frame(height: 38 * CGFloat(bottomItems.count) + 6)
+                    .frame(height: 38 * CGFloat(bottomItems.count))
                 }
             }
         } detail: {
@@ -423,15 +423,29 @@ private struct DashboardDevicesCard: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        SectionCard(title: "Paired Devices (\(model.activeConnections.count))") {
-            if model.activeConnections.isEmpty {
-                Text("No clients are connected to the server right now.")
+        SectionCard(title: "Paired Devices (\(model.devices.count))") {
+            if model.devices.isEmpty {
+                if model.activeConnections.isEmpty {
+                    Text("No devices have registered with the server yet.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Connected sessions")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(model.activeConnections.enumerated()), id: \.element.id) { index, connection in
+                        ActiveConnectionRow(connection: connection)
+                        if index < model.activeConnections.count - 1 {
+                            Divider()
+                        }
+                    }
+                }
+            } else {
+                Text("\(model.activeConnections.count) active connection\(model.activeConnections.count == 1 ? "" : "s")")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ForEach(Array(model.activeConnections.enumerated()), id: \.element.id) { index, connection in
-                    ActiveConnectionRow(connection: connection)
-                    if index < model.activeConnections.count - 1 {
+                ForEach(Array(model.devices.enumerated()), id: \.element.id) { index, device in
+                    DeviceCardRow(device: device)
+                    if index < model.devices.count - 1 {
                         Divider()
                     }
                 }
@@ -476,12 +490,11 @@ private struct ActiveConnectionRow: View {
 
 /// One paired-device card: "{name} - micaGO {version}" main line, a
 /// "mode: …, push: …" secondary line, and a right column with connection state
-/// + last-connected time. The top-right edit menu exposes Remove (for stale
-/// devices) and, optionally, Test Push. No private data is shown.
+/// + last-connected time. The top-right edit menu exposes Remove for stale
+/// devices. No private data is shown.
 private struct DeviceCardRow: View {
     @EnvironmentObject var model: AppModel
     let device: DeviceInfo
-    var showTestPush: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -505,12 +518,6 @@ private struct DeviceCardRow: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Menu {
-                if showTestPush {
-                    Button("Test Push") {
-                        Task { await model.testPush(deviceID: device.id) }
-                    }
-                    .disabled(model.notifBusy || !device.pushEnabled)
-                }
                 Button("Remove Device", role: .destructive) {
                     Task { await model.deleteDevice(deviceID: device.id) }
                 }
@@ -1677,7 +1684,7 @@ private struct DevicesSection: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(model.devices) { device in
-                    DeviceCardRow(device: device, showTestPush: true)
+                    DeviceCardRow(device: device)
                     Divider()
                 }
                 if let result = model.notifResult {
@@ -1700,7 +1707,8 @@ private struct NotificationsSection: View {
             if let n = model.status?.notifications {
                 LabeledRow(label: "Enabled", value: n.enabled ? "yes" : "no")
                 LabeledRow(label: "Provider", value: n.provider)
-                LabeledRow(label: "Preview", value: n.preview)
+                LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? "configured" : "not set")
+                LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? "configured" : "not set")
                 LabeledRow(label: "Implemented", value: n.implemented.joined(separator: ", "))
                 LabeledRow(label: "Stub", value: n.stub.isEmpty ? "—" : n.stub.joined(separator: ", "))
             } else {

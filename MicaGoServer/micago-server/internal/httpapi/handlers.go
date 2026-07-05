@@ -100,6 +100,7 @@ type eventBroadcaster interface {
 
 type notificationDispatcher interface {
 	SendTest(ctx context.Context, device store.DeviceRecord) error
+	DispatchNewMessages(ctx context.Context, devices []store.DeviceRecord, events []relaydb.NotificationEvent) error
 	ProviderNames() []string
 	ImplementedProviders() []string
 	Enabled() bool
@@ -112,6 +113,10 @@ type notificationDispatcher interface {
 type notificationConfigurator interface {
 	Reload(cfg config.Config)
 	FirestoreSyncEnabled() bool
+}
+
+type contactCacheReceiver interface {
+	SetContactCache([]notify.ContactEntry)
 }
 
 type syncSettingsService interface {
@@ -187,6 +192,7 @@ type Handlers struct {
 	startedAt       int64
 	rules           ruleService
 	notifyConfig    notificationConfigurator
+	contactCache    contactCacheReceiver
 	debug           debugQueryService
 	debugColumns    map[string]bool
 	syncNow         func(context.Context) (store.ServerSyncDiagnostics, error)
@@ -203,6 +209,8 @@ func (h *Handlers) SetRuleService(rs ruleService) { h.rules = rs }
 // SetNotificationConfigurator wires the v0.12 live dispatcher reload used by the
 // notifications-config write endpoint. Nil means that endpoint is unavailable.
 func (h *Handlers) SetNotificationConfigurator(c notificationConfigurator) { h.notifyConfig = c }
+
+func (h *Handlers) SetContactCacheReceiver(c contactCacheReceiver) { h.contactCache = c }
 
 func (h *Handlers) SetSyncNow(fn func(context.Context) (store.ServerSyncDiagnostics, error)) {
 	h.syncNow = fn
@@ -429,12 +437,14 @@ func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
 		}
 	}
 	return store.ServerNotificationStatus{
-		Enabled:     enabled,
-		Provider:    provider,
-		Preview:     preview,
-		Providers:   providers,
-		Implemented: implemented,
-		Stub:        stub,
+		Enabled:                     enabled,
+		Provider:                    provider,
+		Preview:                     preview,
+		Providers:                   providers,
+		Implemented:                 implemented,
+		Stub:                        stub,
+		FCMServiceAccountConfigured: strings.TrimSpace(h.cfg.FCM.ServiceAccountPath) != "",
+		FCMClientConfigured:         strings.TrimSpace(h.cfg.FCM.GoogleServicesPath) != "",
 	}
 }
 
@@ -1610,42 +1620,6 @@ func (h *Handlers) DeleteDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, store.HealthResponse{OK: true})
-}
-
-func (h *Handlers) TestPush(w http.ResponseWriter, r *http.Request) {
-	if h.devices == nil || h.notify == nil {
-		writeInternalError(w)
-		return
-	}
-
-	id := strings.TrimSpace(r.PathValue("id"))
-	if id == "" {
-		writeBadRequest(w, "device id is required")
-		return
-	}
-	device, err := h.devices.GetDeviceByID(r.Context(), id)
-	if err != nil {
-		h.logInternal("get device", err)
-		writeInternalError(w)
-		return
-	}
-	if device == nil {
-		writeNotFound(w, "device not found")
-		return
-	}
-
-	err = h.notify.SendTest(r.Context(), *device)
-	switch {
-	case err == nil:
-		writeJSON(w, http.StatusOK, store.HealthResponse{OK: true})
-	case errors.Is(err, notify.ErrPushNotConfigured):
-		writeAPIError(w, http.StatusBadRequest, "push_not_configured", "push is not configured for this device")
-	case errors.Is(err, notify.ErrNotImplemented):
-		writeAPIError(w, http.StatusNotImplemented, "not_implemented", "notification provider is not implemented")
-	default:
-		h.logInternal("test push", err)
-		writeInternalError(w)
-	}
 }
 
 func (h *Handlers) logInternal(action string, err error) {

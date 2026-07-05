@@ -107,6 +107,32 @@ func TestDispatcherBuildsGroupConversationNotification(t *testing.T) {
 	}
 }
 
+func TestDispatcherUsesContactCacheForNotificationNames(t *testing.T) {
+	text := "see you there"
+	dispatcher := NewDispatcher(config.Config{})
+	dispatcher.SetContactCache([]ContactEntry{{
+		Name:      "Alice",
+		Addresses: []string{"+15550001"},
+	}})
+	event := relaydb.NotificationEvent{
+		ChatGUID:    "any;+;group",
+		ChatDisplay: ptr("Family"),
+		IsGroup:     true,
+		Message: store.MessageJSON{
+			GUID:   "msg-1",
+			Text:   &text,
+			Handle: &store.HandleJSON{ID: "+15550001"},
+		},
+	}
+	notification := dispatcher.buildNotification(event, "sender_and_text")
+	if notification.Title != "Family" || notification.ConversationTitle != "Family" {
+		t.Fatalf("expected group title unchanged, got %+v", notification)
+	}
+	if notification.SenderName != "Alice" {
+		t.Fatalf("expected contact sender name, got %+v", notification)
+	}
+}
+
 func TestBuildNotificationPreviewModes(t *testing.T) {
 	text := "secret text"
 	event := relaydb.NotificationEvent{

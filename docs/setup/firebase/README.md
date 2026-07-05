@@ -81,6 +81,13 @@ This lets your Mac authenticate to Firebase to *send* pushes.
 2. Click **Generate new private key** → **Generate key**.
 3. A `*.json` file downloads. Save it on your Mac, e.g.
    `~/.micago/firebase-service-account.json`.
+4. Open the JSON and note its `client_email`.
+5. In **Google Cloud Console** → **IAM & Admin** → **IAM**, click **Grant access**.
+6. Paste that `client_email` into **New principals**.
+7. Grant **Firebase Cloud Messaging API Admin** and save.
+
+It is normal if the service account only appears under **Service accounts** and
+not in the IAM members list yet. Type the email manually when granting access.
 
 > Keep this file private — it's a credential. Don't email it, commit it to git,
 > or paste it into chats. micaGO stores only the path to it and never shows,
@@ -88,42 +95,23 @@ This lets your Mac authenticate to Firebase to *send* pushes.
 
 ## Step 4 — Configure the micaGO server
 
-There are two settings: the **service account** (set in the Companion app) and
-the **google-services.json path** (set in the config file).
+There are two files. Both are selected in the Companion app.
 
 ### 4a. In the Companion app
 
 1. Open the micaGO Companion and go to **Notifications**.
 2. In **Firebase Self-Host (Android FCM)**:
    - Turn on **Notifications enabled**.
-   - Set **Provider** to **FCM (Firebase)**.
-   - Choose a **Preview** level (see [Preview levels](#preview-levels)).
    - Turn on **Enable FCM delivery**.
+   - Click **Choose google-services.json…** and select the file from Step 2.
    - Click **Choose service-account JSON…** and select the file from Step 3.
    - (Optional) Leave **Firebase project ID** blank — it's inferred from the
      JSON.
 3. Click **Save**.
 
-### 4b. In the config file
-
-The Android client config (`google-services.json`) is served to the app by your
-server. Point the server at it by editing `~/.micago/config.yaml` and setting
-the path under `fcm:`:
-
-```yaml
-fcm:
-  enabled: true
-  google_services_path: ~/.micago/google-services.json
-  # service_account_path is set for you when you choose the file in the app.
-```
-
-Save the file, then **restart the server** (Companion toolbar → Stop, then
-Start) so it picks up the new path.
-
-> Why two places? The service account is a secret your Mac uses to send and is
-> managed in-app; `google-services.json` only contains public client identifiers
-> the app needs, and is served to paired devices over your authenticated
-> connection at `GET /api/fcm/client`.
+`google-services.json` contains public client identifiers. The service-account
+JSON is the private key your Mac uses to send FCM. Keep both files on your Mac
+and do not commit either file.
 
 ## Step 5 — Connect your phone
 
@@ -146,36 +134,18 @@ No `google-services.json` is built into the app — it's loaded at runtime from
    optional push registry.
 2. The device card should show **push: enabled (fcm)** and **background:
    enabled**.
-3. Tap the card's **⋯** menu → **Test Push**. You should get a notification on
-   the phone within a few seconds.
+3. Open **Notifications** and tap **Send test notification**. You should get a
+   notification on the phone within a few seconds.
 4. Background the app, send yourself an iMessage, and confirm a notification
    appears; tapping it opens the right conversation.
-
----
-
-## Preview levels
-
-The **Preview** setting controls how much message text is placed in the push
-itself (push text is transient and never stored):
-
-| Level | What the notification shows |
-| --- | --- |
-| **None** | "New message" only — no sender, no text |
-| **Sender** | the sender (contact/handle), no message text |
-| **Sender + text** | sender and the message text |
-
-Regardless of level, the **message data always arrives over the normal
-WebSocket / delta sync** — the push is only a wake-up + notification, never the
-source of message content.
 
 ## Privacy
 
 - micaGO runs **no cloud server**. Push uses *your* Firebase project.
 - Firebase is used **only** for Android FCM push (and, optionally, public-URL
   discovery if you enable Firestore URL sync).
-- Firebase **never** receives message content beyond the optional preview text,
-  and never stores your contacts, phone numbers, bearer token, attachments, chat
-  history, the device registry, or sync rules.
+- Firebase **never** stores your contacts, phone numbers, bearer token,
+  attachments, chat history, the device registry, or sync rules.
 - The service-account key never leaves your Mac. `google-services.json` contains
   only public client identifiers (project id, app id, API key, sender id) and is
   served to your paired devices over your authenticated connection.
@@ -183,12 +153,11 @@ source of message content.
 ## Troubleshooting
 
 - **Device card shows "push: not configured"** — the app didn't get a Firebase
-  config. Check that `fcm.enabled: true` and `fcm.google_services_path` point at
-  a real file in `~/.micago/config.yaml`, then restart the server and reconnect
-  the phone.
+  config. Re-open Companion → **Notifications**, choose `google-services.json`,
+  save, and reconnect the phone.
 - **"config invalid (fcm)"** in Provider Status — the service-account JSON is
   missing or unreadable. Re-choose it in **Notifications → Firebase Self-Host**.
-- **Test Push fails** — confirm the phone is paired and shows **connected**, the
+- **Send test notification fails** — confirm the phone is paired and shows **connected**, the
   package name in Firebase is exactly `com.micago.message.mica_go`, and the
   service account and `google-services.json` are from the **same** Firebase
   project.
@@ -201,9 +170,8 @@ source of message content.
 
 ## Turning push off
 
-- In **Notifications → Firebase Self-Host**, click **Clear Firebase config**
-  (or turn off **Enable FCM delivery**), and remove/blank
-  `fcm.google_services_path` in the config file, then restart the server.
+- In **Notifications → Firebase Self-Host**, click **Clear Firebase config** or
+  turn off **Enable FCM delivery**, then save.
 - The app keeps working normally over WebSocket + delta sync; it just won't
   receive background pushes.
 

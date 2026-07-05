@@ -11,8 +11,32 @@ The micaGO server authenticates to FCM (and optional Firestore) using a Google
    mv ~/Downloads/your-project-*.json ~/.micago/firebase-service-account.json
    chmod 600 ~/.micago/firebase-service-account.json
    ```
-4. In the companion: **Notifications** → Provider **FCM** → **Choose
-   service-account JSON…** → select that file → **Enable FCM delivery** → **Save**.
+4. In the companion: **Notifications** → **Enable FCM delivery** → **Choose
+   service-account JSON…** → select that file → **Save**.
+
+## Grant the FCM send role
+
+The private key only proves the server is using that service account. The
+service account also needs permission to send FCM messages in your Firebase /
+Google Cloud project.
+
+1. Open **Google Cloud Console** for the same project as your
+   `google-services.json`.
+2. Go to **IAM & Admin** → **IAM**.
+3. Click **Grant access**.
+4. In **New principals**, paste the `client_email` from the service-account JSON,
+   for example:
+   ```
+   firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
+   ```
+   It is normal if this address did not appear in the IAM members list before.
+   Service accounts are principals, so you can grant a role by typing the email.
+5. Add the role **Firebase Cloud Messaging API Admin**
+   (`roles/firebasecloudmessaging.admin`) and save.
+
+This role includes `cloudmessaging.messages.create`, which is the permission
+required by the FCM HTTP v1 send endpoint. Do not grant broad roles such as
+Owner unless you are only testing and plan to tighten it later.
 
 ## How micaGO uses it
 

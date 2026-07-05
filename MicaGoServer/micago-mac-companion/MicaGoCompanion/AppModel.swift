@@ -70,6 +70,7 @@ final class AppModel: ObservableObject {
     @Published var fcmEnabled = false
     @Published var fcmProjectID = ""
     @Published var serviceAccountPath = ""
+    @Published var googleServicesPath = ""
     @Published var firestoreURLSync = false
     @Published var notifBusy = false
     @Published var notifResult: String?
@@ -88,6 +89,7 @@ final class AppModel: ObservableObject {
     // C11 live sync monitor
     @Published var syncNowBusy = false
     @Published var lastSyncDiagnostics: SyncDiagnostics?
+    private var lastSyncedContactCacheSignature: Int?
 
     /// Effective sync diagnostics: the last manual run, else the live status poll.
     var syncDiagnostics: SyncDiagnostics? { lastSyncDiagnostics ?? status?.sync.diagnostics }
@@ -316,7 +318,7 @@ final class AppModel: ObservableObject {
         notifEnabled = n.enabled
         notifProvider = n.provider
         notifPreview = n.preview
-        fcmEnabled = n.implemented.contains("fcm")
+        fcmEnabled = n.provider == "fcm" || n.implemented.contains("fcm")
         didSeedNotif = true
     }
 
@@ -369,6 +371,24 @@ final class AppModel: ObservableObject {
             await refresh()
         } catch {
             lastError = "Could not validate public URL: \(error.localizedDescription)"
+        }
+    }
+
+    func syncContactCache(_ contacts: [ServerContactEntry]) async {
+        guard let baseURL else { return }
+        var hasher = Hasher()
+        hasher.combine(contacts.count)
+        for contact in contacts {
+            hasher.combine(contact)
+        }
+        let signature = hasher.finalize()
+        if lastSyncedContactCacheSignature == signature { return }
+        let client = APIClient(baseURL: baseURL, token: token)
+        do {
+            try await client.putContactCache(contacts)
+            lastSyncedContactCacheSignature = signature
+        } catch {
+            lastPollError = "contact cache — \(error.localizedDescription)"
         }
     }
 
@@ -570,9 +590,13 @@ final class AppModel: ObservableObject {
         let client = APIClient(baseURL: baseURL, token: token)
         do {
             let resp = try await client.setNotificationsConfig(
-                enabled: notifEnabled, provider: notifProvider, preview: notifPreview,
+                enabled: notifEnabled,
+                provider: fcmEnabled ? "fcm" : "none",
+                preview: "sender",
                 fcmEnabled: fcmEnabled, fcmProjectID: fcmProjectID,
-                serviceAccountPath: serviceAccountPath, publicURLSync: firestoreURLSync)
+                serviceAccountPath: serviceAccountPath,
+                googleServicesPath: googleServicesPath,
+                publicURLSync: firestoreURLSync)
             firestoreSyncActive = resp.firestoreSyncEnabled
             let fcmReady = resp.implemented.contains("fcm")
             notifResult = "Saved. FCM \(fcmReady ? "configured" : (fcmEnabled ? "config invalid" : "off"))."
@@ -588,18 +612,20 @@ final class AppModel: ObservableObject {
         notifEnabled = false
         fcmEnabled = false
         serviceAccountPath = ""
+        googleServicesPath = ""
         fcmProjectID = ""
         firestoreURLSync = false
         await saveNotificationsConfig()
         notifResult = "Firebase configuration cleared."
     }
 
-    func testPush(deviceID: String) async {
+    func testAllPushDevices() async {
         guard let baseURL else { return }
         notifBusy = true
         defer { notifBusy = false }
         let client = APIClient(baseURL: baseURL, token: token)
-        notifResult = await client.testPush(deviceID: deviceID)
+        notifResult = await client.testNotifications()
+        devices = (try? await client.devices()) ?? devices
     }
 
     /// C21u: remove a stale/historical paired device, then refresh the list.

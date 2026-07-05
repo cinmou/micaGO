@@ -36,8 +36,8 @@ func (db *DB) GetDeviceByID(ctx context.Context, id string) (*store.DeviceRecord
 	var device store.DeviceRecord
 	var pushToken *string
 	var appVersion, mode sql.NullString
-	var lastSeenAt sql.NullInt64
-	var pushEnabled, background int64
+	var lastSeenAt, background sql.NullInt64
+	var pushEnabled int64
 	err := db.sqlDB.QueryRowContext(ctx, `
 SELECT id, name, platform, client_type, app_version, mode, push_provider, push_token, push_enabled, background, last_seen_at, created_at, updated_at
 FROM devices
@@ -68,7 +68,7 @@ LIMIT 1;
 	device.Mode = mode.String
 	device.PushToken = pushToken
 	device.PushEnabled = pushEnabled != 0
-	device.Background = background != 0
+	device.Background = background.Valid && background.Int64 != 0
 	if lastSeenAt.Valid {
 		device.LastSeenAt = &lastSeenAt.Int64
 	}
@@ -91,8 +91,8 @@ ORDER BY updated_at DESC, created_at DESC, id ASC;
 		var device store.DeviceRecord
 		var pushToken *string
 		var appVersion, mode sql.NullString
-		var pushEnabled, background int64
-		var lastSeenAt sql.NullInt64
+		var pushEnabled int64
+		var background, lastSeenAt sql.NullInt64
 		if err := rows.Scan(
 			&device.ID,
 			&device.Name,
@@ -114,7 +114,7 @@ ORDER BY updated_at DESC, created_at DESC, id ASC;
 		device.Mode = mode.String
 		device.PushToken = pushToken
 		device.PushEnabled = pushEnabled != 0
-		device.Background = background != 0
+		device.Background = background.Valid && background.Int64 != 0
 		if lastSeenAt.Valid {
 			device.LastSeenAt = &lastSeenAt.Int64
 		}

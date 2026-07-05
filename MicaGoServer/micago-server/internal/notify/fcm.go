@@ -92,7 +92,7 @@ func (p *FCMProvider) Send(ctx context.Context, device store.DeviceRecord, notif
 		// message doesn't fail the whole dispatch.
 		return nil
 	default:
-		return fmt.Errorf("fcm send failed: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return fmt.Errorf("fcm send failed: %s", summarizeFCMError(resp.StatusCode, respBody))
 	}
 }
 
@@ -103,6 +103,11 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 	if len(body) > fcmMaxBodyChars {
 		body = body[:fcmMaxBodyChars]
 	}
+	notificationTitle := strings.TrimSpace(n.Title)
+	if notificationTitle == "" {
+		notificationTitle = "New message"
+	}
+	notificationBody := fcmSystemNotificationBody(n, body)
 	data := map[string]string{
 		"type":              n.Type,
 		"messageGuid":       n.MessageGUID,
@@ -119,13 +124,39 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 	}
 	return map[string]any{
 		"message": map[string]any{
-			"token": deviceToken,
-			"data":  data,
+			"token":        deviceToken,
+			"data":         data,
+			"notification": map[string]string{"title": notificationTitle, "body": notificationBody},
 			"android": map[string]any{
 				"priority": "high",
 				"ttl":      strconv.FormatInt(int64(ttl/time.Second), 10) + "s",
+				"notification": map[string]string{
+					"channel_id":   "micago_messages",
+					"click_action": "FLUTTER_NOTIFICATION_CLICK",
+				},
 			},
 		},
+	}
+}
+
+func fcmSystemNotificationBody(n Notification, body string) string {
+	body = strings.TrimSpace(body)
+	sender := strings.TrimSpace(n.SenderName)
+	conversation := strings.TrimSpace(n.ConversationTitle)
+	if body != "" {
+		if n.IsGroup && sender != "" && sender != conversation {
+			return sender + ": " + body
+		}
+		return body
+	}
+	switch n.PreviewMode {
+	case "none":
+		return "Open micaGO"
+	default:
+		if n.IsGroup && sender != "" && sender != conversation {
+			return sender
+		}
+		return "New message"
 	}
 }
 
@@ -155,4 +186,36 @@ func classifyFCMResponse(status int, body []byte) fcmOutcome {
 		return fcmTooLarge
 	}
 	return fcmError
+}
+
+func summarizeFCMError(status int, body []byte) string {
+	type googleError struct {
+		Error struct {
+			Message string `json:"message"`
+			Status  string `json:"status"`
+		} `json:"error"`
+	}
+	var parsed googleError
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		message := strings.TrimSpace(parsed.Error.Message)
+		statusText := strings.TrimSpace(parsed.Error.Status)
+		lower := strings.ToLower(message)
+		if status == http.StatusForbidden && strings.Contains(lower, "cloudmessaging.messages.create") {
+			return "service account is missing the Firebase Cloud Messaging API Admin permission (cloudmessaging.messages.create)"
+		}
+		if message != "" {
+			if statusText != "" {
+				return fmt.Sprintf("HTTP %d %s: %s", status, statusText, message)
+			}
+			return fmt.Sprintf("HTTP %d: %s", status, message)
+		}
+	}
+	text := strings.TrimSpace(string(body))
+	if text == "" {
+		return fmt.Sprintf("HTTP %d", status)
+	}
+	if len(text) > 500 {
+		text = text[:500] + "..."
+	}
+	return fmt.Sprintf("HTTP %d: %s", status, text)
 }

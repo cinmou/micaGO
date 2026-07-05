@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -119,7 +118,6 @@ class AppController extends ChangeNotifier {
   final SecureStore store;
   final LocalCacheStore cache = LocalCacheStore();
   static const _customAvatarPrefix = 'custom_avatar:';
-  static const mutedChatsStorageKey = 'micago.muted_chats.v1';
   static const inAppNotificationsStorageKey =
       'micago.in_app_notifications_enabled.v1';
   final Map<String, String> _customAvatarPaths = {};
@@ -228,10 +226,7 @@ class AppController extends ChangeNotifier {
     } else {
       _mutedChats.remove(chatGuid);
     }
-    await store.writeValue(
-      mutedChatsStorageKey,
-      jsonEncode(_mutedChats.toList()),
-    );
+    unawaited(_syncChatMuteRule(chatGuid, muted));
     notifyListeners();
   }
 
@@ -264,11 +259,32 @@ class AppController extends ChangeNotifier {
       }
     }
     if (!changed) return;
-    await store.writeValue(
-      mutedChatsStorageKey,
-      jsonEncode(_mutedChats.toList()),
-    );
+    unawaited(_syncChatMuteRules(chatGuids, muted));
     notifyListeners();
+  }
+
+  Future<void> _syncChatMuteRules(
+    Iterable<String> chatGuids,
+    bool muted,
+  ) async {
+    for (final chatGuid in chatGuids) {
+      await _syncChatMuteRule(chatGuid, muted);
+    }
+  }
+
+  Future<void> _syncChatMuteRule(String chatGuid, bool muted) async {
+    final guid = chatGuid.trim();
+    final api = _api;
+    if (guid.isEmpty || api == null) return;
+    final ok = await api.putSyncRule(
+      targetKind: 'chat',
+      targetValue: guid,
+      syncMode: 'inherit',
+      pushMode: muted ? 'muted' : 'inherit',
+    );
+    if (!ok) {
+      debugPrint('MicaGo mute sync failed for chat $guid');
+    }
   }
 
   /// Called by the app shell on foreground resume (lightweight refresh).
@@ -333,11 +349,6 @@ class AppController extends ChangeNotifier {
         timeout: const Duration(seconds: 2),
       );
       await _bootstrapStep(
-        'load muted chats',
-        _loadMutedChats,
-        timeout: const Duration(seconds: 2),
-      );
-      await _bootstrapStep(
         'load notification preferences',
         _loadNotificationPreferences,
         timeout: const Duration(seconds: 2),
@@ -386,7 +397,7 @@ class AppController extends ChangeNotifier {
   /// reconnect. The device id metadata was dropped by the restore, so the next
   /// registration mints a fresh id (a new row in the server's Paired Devices).
   Future<void> reloadAfterRestore() async {
-    await _loadMutedChats();
+    _mutedChats.clear();
     await _loadNotificationPreferences();
     await _loadCustomAvatars();
     await _loadKeepAlive();
@@ -417,19 +428,15 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadMutedChats() async {
-    final raw = await store.readValue(mutedChatsStorageKey);
-    if (raw == null || raw.isEmpty) return;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is List) {
-        _mutedChats
-          ..clear()
-          ..addAll(decoded.whereType<String>());
-      }
-    } catch (_) {
-      // Corrupt preference: keep notifications enabled.
-    }
+  Future<void> _refreshMutedChatsFromServer() async {
+    final api = _api;
+    if (api == null) return;
+    final muted = await api.getMutedChatGuids();
+    if (muted == null) return;
+    _mutedChats
+      ..clear()
+      ..addAll(muted);
+    notifyListeners();
   }
 
   Future<void> _loadNotificationPreferences() async {
@@ -479,6 +486,7 @@ class AppController extends ChangeNotifier {
     _serverUrls = await api.getServerUrls();
     await _persistEndpointCandidates(_serverUrls!);
     notifyListeners();
+    unawaited(_registerDeviceIfPossible());
   }
 
   Future<void> _persistEndpointCandidates(ServerUrls urls) async {
@@ -815,6 +823,7 @@ class AppController extends ChangeNotifier {
     // C29: register this device as soon as the server is reachable over REST —
     // not only when the WebSocket connects.
     unawaited(_registerDeviceIfPossible());
+    unawaited(_refreshMutedChatsFromServer());
     _emitConnectionNotice();
     notifyListeners();
     connectWebSocket();
@@ -1150,6 +1159,7 @@ class AppController extends ChangeNotifier {
   /// rather than creating duplicates. Also reports the app version, the active
   /// connection mode (LAN vs LAN+Public), and the push capability.
   bool _registerInFlight = false;
+  bool _registerRerunQueued = false;
   String? _lastRegisterResult;
 
   /// Human-readable summary of the last device-registration attempt (for the
@@ -1165,15 +1175,25 @@ class AppController extends ChangeNotifier {
 
   /// Registers this device (C29c: fully instrumented + hardened). Returns a
   /// result summary; never throws and never swallows a failure silently.
-  /// [force] bypasses the in-flight guard (used by the debug "Register now").
+  /// [force] is kept for call-site intent; an in-flight attempt is still
+  /// serialized and followed by exactly one fresh registration pass.
   // The real device name, resolved once (C53) and reused for every register.
   String? _deviceName;
   Future<String> _resolveDeviceName() async =>
       _deviceName ??= await resolveDeviceName();
 
   Future<String> _registerDeviceIfPossible({bool force = false}) async {
-    if (_registerInFlight && !force) {
-      return _lastRegisterResult ?? 'in flight';
+    if (_registerInFlight) {
+      // C57-fix: never DROP a registration request. The startup race was:
+      // connect kicks off a register with pushProvider='none'; while it is in
+      // flight PushService obtains the FCM token and asks to re-register as
+      // pushProvider='fcm' — which used to bail out here, leaving the server
+      // with provider=none and no token, so FCM pushes silently never fired
+      // (UI still said "registered"). Queue exactly one re-run; it executes
+      // after the in-flight attempt and reads the then-current push state.
+      _registerRerunQueued = true;
+      final queued = force ? 'force-queued' : 'queued';
+      return _lastRegisterResult ?? '$queued behind in-flight registration';
     }
     final profile = _profile;
     if (profile == null || profile.token.trim().isEmpty) {
@@ -1216,14 +1236,17 @@ class AppController extends ChangeNotifier {
         'provider=$_pushProvider bg=$background',
       );
       final failures = <String>[];
+      final successes = <String>[];
       for (final candidate in candidates) {
         // DEDICATED short-lived client: the shared _api can be closed by a
-        // concurrent _rebuildApi() (endpoint refresh), aborting the POST. Retry
-        // per endpoint, then move to the next advertised endpoint so stale LAN
-        // or Public URLs do not make the Companion-managed server look empty.
+        // concurrent _rebuildApi() (endpoint refresh), aborting the POST. Try
+        // every advertised endpoint instead of stopping on the first OK: with
+        // multiple LAN/Public routes the first reachable server can be stale,
+        // while the Companion UI is reading the current backend's device table.
         final client = ApiClient(
           baseUrl: candidate.baseUrl,
           token: profile.token,
+          timeout: const Duration(seconds: 5),
         );
         try {
           ({String? id, int status, String? error}) result = (
@@ -1238,12 +1261,8 @@ class AppController extends ChangeNotifier {
             );
             result = await client.registerDevice(body);
             if (result.status == 200) {
-              _activeCandidate = candidate;
-              _startDeviceHeartbeat(id);
-              return _recordRegister(
-                'OK id=$id status=200 via ${candidate.label} '
-                '${candidate.baseUrl}',
-              );
+              successes.add('${candidate.label} ${candidate.baseUrl}');
+              break;
             }
             final failure =
                 '${candidate.label} ${candidate.baseUrl} '
@@ -1261,9 +1280,25 @@ class AppController extends ChangeNotifier {
           client.close();
         }
       }
+      if (successes.isNotEmpty) {
+        _startDeviceHeartbeat(id);
+        final failed = failures.isEmpty
+            ? ''
+            : ' ; failed: ${failures.join(' | ')}';
+        return _recordRegister(
+          'OK id=$id on ${successes.length}/${candidates.length} endpoint(s): '
+          '${successes.join(' | ')}$failed',
+        );
+      }
       return _recordRegister('FAILED all endpoints: ${failures.join(' | ')}');
     } finally {
       _registerInFlight = false;
+      if (_registerRerunQueued) {
+        _registerRerunQueued = false;
+        // Re-register with the latest state (e.g. the FCM token that arrived
+        // while the previous attempt was still in flight).
+        unawaited(_registerDeviceIfPossible());
+      }
     }
   }
 
@@ -1658,26 +1693,6 @@ class AppController extends ChangeNotifier {
   String get pushProvider => _pushProvider;
   bool get pushEnabled => _pushEnabled;
   bool get pushConfigured => _pushEnabled && (_pushToken?.isNotEmpty ?? false);
-
-  /// C27: ask the server to deliver a test notification to THIS device. Returns
-  /// null on success, or a user-facing error message. Requires a registered push
-  /// token (Firebase configured + permission granted).
-  Future<String?> sendTestPush() async {
-    final api = _api;
-    if (api == null) return 'Not connected to the server.';
-    if (!pushConfigured) {
-      return 'Push is not configured on this device yet.';
-    }
-    try {
-      final id = await _ensureDeviceId();
-      await api.sendTestPush(id);
-      return null;
-    } on ApiException catch (e) {
-      return e.friendly;
-    } catch (e) {
-      return 'Could not send a test notification.';
-    }
-  }
 
   /// C22: a chat GUID requested via a notification tap. The shell listens and
   /// opens the conversation (after a delta sync) when possible.

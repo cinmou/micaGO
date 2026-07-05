@@ -150,6 +150,8 @@ struct NotificationStatus: Codable {
     var providers: [String]
     var implemented: [String]
     var stub: [String]
+    var fcmServiceAccountConfigured: Bool?
+    var fcmClientConfigured: Bool?
 }
 
 struct DevicesStatus: Codable {

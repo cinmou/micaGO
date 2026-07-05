@@ -73,6 +73,29 @@ Three components:
   `GestureDetector`) opens details; the top-right info button is removed (both the
   embedded pane header and the phone `AppBar`).
 
+## FCM push: dropped fcm re-registration (C58)
+
+- **Root cause of "app + server both say registered, but no push".** On startup
+  `connectForeground` registers the device with `pushProvider='none'` (the token
+  isn't fetched yet). While that multi-candidate call is in flight, `PushService`
+  obtains the FCM token and calls `updatePushRegistration(provider:'fcm')` →
+  `_registerDeviceIfPossible()` → hit the `_registerInFlight` guard → **silently
+  dropped**. Server keeps provider=none/no token → dispatcher never pushes; UI
+  still shows "registered". Race-dependent → the "works sometimes" symptom.
+- **Fix:** the in-flight guard now sets `_registerRerunQueued` instead of
+  dropping; the `finally` runs one coalesced re-register that reads the
+  then-current push state (`app_controller.dart`). Any later registration also
+  carries the fcm state since `updatePushRegistration` sets fields before
+  registering.
+- Verified-fine parts (don't re-litigate): background handler is registered
+  first-in-`main()` (native callback-handle store needs no Firebase app;
+  `start()` re-asserts it), server FCM payload is data-only + `android.priority:
+  high`, background isolate re-inits Firebase from persisted options.
+- Landing page (`docs/index.html`): logos were already wired; added a script that
+  resolves **direct download URLs** for the latest release's `.apk`/`.dmg` via the
+  GitHub API (asset names are versioned so `/releases/latest/download/<name>`
+  can't be hardcoded); falls back to the releases page.
+
 ## Relay sync write-avoidance (C57)
 
 - **Steady-state syncs no longer rewrite identical rows.** All three sync
@@ -232,7 +255,14 @@ Three components:
   `MobileScannerController` (mobile_scanner 7.2) is now `autoStart:false` with a
   manual lifecycle (`WidgetsBindingObserver`): explicit `start()` in `initState`,
   restart on resume, stop on background — plus a **Retry button** in the camera
-  error view (`_restartCamera`). New l10n `pair.cameraRetry`.
+  error view (`_restartCamera`). New l10n `pair.cameraRetry`. **C59 (final):**
+  the scanner now follows the mobile_scanner README exactly — ONE long-lived
+  controller (a controller-recreation experiment blanked the preview: the
+  MobileScanner widget stays bound to the disposed controller's ValueNotifier),
+  `start()` directly in `initState`, pause/resume stop/start **gated on
+  `value.hasCameraPermission`**, `super.dispose()` before the async
+  `controller.dispose()`. "Granted from system Settings" works because Android
+  restarts the app process on grant, so `initState` re-runs.
 - Client changes need an **APK rebuild**; the attachment dedup also needs the
   **backend rebuilt**. Reminder: the C48 orientation fix is server-side too —
   qlmanage is verified correct for HEIC *and* JPEG (orientation 6/8 → upright), so

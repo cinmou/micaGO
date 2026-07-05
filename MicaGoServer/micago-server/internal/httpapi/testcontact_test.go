@@ -3,11 +3,15 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"micagoserver/internal/config"
+	"micagoserver/internal/relaydb"
 	"micagoserver/internal/store"
 	"micagoserver/internal/testcontact"
 )
@@ -114,6 +118,69 @@ func TestPostTestContactInbound(t *testing.T) {
 	}
 	if len(tc.inbound) != 1 || tc.inbound[0] != "ping" {
 		t.Fatalf("expected inbound recorded, got %v", tc.inbound)
+	}
+}
+
+type captureTestNotifier struct {
+	stubNotifier
+	devices []store.DeviceRecord
+	events  []relaydb.NotificationEvent
+}
+
+func (c *captureTestNotifier) DispatchNewMessages(_ context.Context, devices []store.DeviceRecord, events []relaydb.NotificationEvent) error {
+	c.devices = append([]store.DeviceRecord(nil), devices...)
+	c.events = append([]relaydb.NotificationEvent(nil), events...)
+	return nil
+}
+
+func TestPostTestContactInboundDispatchesNotification(t *testing.T) {
+	tc := &fakeTestContact{enabled: true}
+	pushToken := "fcm-token"
+	devices := &stubDeviceStore{devices: map[string]store.DeviceRecord{
+		"phone": {
+			ID:           "phone",
+			Name:         "Android",
+			PushProvider: "fcm",
+			PushEnabled:  true,
+			PushToken:    &pushToken,
+		},
+	}}
+	notifier := &captureTestNotifier{}
+	h := NewHandlers(
+		&stubQueries{},
+		log.New(io.Discard, "", 0),
+		nil,
+		nil,
+		"",
+		devices,
+		notifier,
+		config.Config{WebhookURL: "", HTTPAddr: "127.0.0.1:3000"},
+		StatusDeps{},
+	)
+	h.SetTestContactService(tc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/test-contact/inbound", strings.NewReader(`{"text":"ping"}`))
+	rec := httptest.NewRecorder()
+	h.PostTestContactInbound(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if len(notifier.devices) != 1 || notifier.devices[0].ID != "phone" {
+		t.Fatalf("expected registered device passed to notifier, got %#v", notifier.devices)
+	}
+	if len(notifier.events) != 1 {
+		t.Fatalf("expected one notification event, got %d", len(notifier.events))
+	}
+	event := notifier.events[0]
+	if event.ChatGUID != testcontact.ChatGUID {
+		t.Fatalf("expected test chat guid %q, got %q", testcontact.ChatGUID, event.ChatGUID)
+	}
+	if event.ChatLabel() != testcontact.DisplayName {
+		t.Fatalf("expected display name %q, got %q", testcontact.DisplayName, event.ChatLabel())
+	}
+	if event.Message.GUID != "micago-test-in-1" {
+		t.Fatalf("expected inbound message guid, got %q", event.Message.GUID)
 	}
 }
 

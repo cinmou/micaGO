@@ -59,8 +59,8 @@ micaGO 仍處在測試階段。它會讀取 macOS「訊息」的內部資料,並
 - 🌐 **區域網路優先。** 會公告多條區域網路路由;用戶端自動選擇可達的一條並允許你釘選。
   選用的公開網址(你自己的通道)可在任何地方存取。
 - 👤 **聯絡人比對。** 在本機做姓名比對,需選擇啟用 —— 通訊錄絕不上傳。
-- 🔔 **通知(選用)。** 一個背景保活服務就能發出原生 Android MessagingStyle 通知,什麼都
-  不用設定。想用推播,改接你 **自己的** Firebase 也行。
+- 🔔 **通知(選用)。** 保活和 FCM 都走用戶端本機的 Android MessagingStyle 通知樣式。想用
+  推播,接上你 **自己的** Firebase 即可。
 
 ---
 
@@ -170,7 +170,8 @@ flutter build apk --debug      # 或：flutter run
   彈出本機通知 —— 不需要推播帳號,也不需要 `google-services.json`。預設關閉;廠商電池策略
   仍可能限制它。
 - 🔔 **Firebase / FCM 推播。** 不想一直掛著服務?那就接上你 **自己的** Firebase 專案走背景
-  推播(什麼都不內建)。負載只是一個喚醒訊號,訊息本身透過 WebSocket 或增量同步抵達。參見
+  推播(什麼都不內建)。FCM 只發 data-only 訊息;用戶端用同一套本機 MessagingStyle 通知顯示,
+  再透過 WebSocket 或增量同步拉取訊息。參見
   [`docs/setup/firebase/`](docs/setup/firebase/README.md)。
 - ✍️ **編輯 / 收回 / 刪除(IMCore 輔助程式)。** 一個小巧的內建輔助程式,呼叫 macOS 私有 IMCore API。
   - *用途* —— 從手機端編輯/收回/刪除一則已傳的 iMessage。

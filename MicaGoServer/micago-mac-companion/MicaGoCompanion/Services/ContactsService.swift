@@ -10,6 +10,11 @@ struct ContactEntry: Identifiable, Hashable {
     let rawAddresses: [String] // original phone/email strings for display
 }
 
+struct ServerContactEntry: Codable, Hashable {
+    let name: String
+    let addresses: [String]
+}
+
 /// A flattened (name, address) row used by the contact search UI.
 struct ContactAddressRow: Identifiable, Hashable {
     let name: String
@@ -25,6 +30,7 @@ final class ContactsStore: ObservableObject {
     @Published private(set) var status: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
     @Published private(set) var loaded = false
     @Published private(set) var contactCount = 0
+    @Published private(set) var contactRevision = 0
 
     // normalized address -> display name; plus a last-10-digits fallback for
     // phone numbers that lack a country code on one side.
@@ -87,6 +93,7 @@ final class ContactsStore: ObservableObject {
         entries = result.entries
         contactCount = result.entries.count
         loaded = true
+        contactRevision &+= 1
     }
 
     /// Resolve a raw handle address to a contact name, or nil if unmatched.
@@ -115,6 +122,10 @@ final class ContactsStore: ObservableObject {
             if rows.count >= 100 { break }
         }
         return rows
+    }
+
+    var serverEntries: [ServerContactEntry] {
+        entries.map { ServerContactEntry(name: $0.name, addresses: $0.rawAddresses) }
     }
 
     // MARK: - Fetch (off the main actor)

@@ -426,8 +426,8 @@ func Run(options Options) error {
 	}
 
 	handlers := httpapi.NewHandlers(relay, log.Default(), sendDeps, relay, cfg.AttachmentsRoot, relay, dispatcher, cfg, statusDeps)
-	handlers.SetRuleService(relay)                   // v0.11.3 sync rules backed by relay.db
-	handlers.SetTestContactService(relay)            // offline loopback test contact
+	handlers.SetRuleService(relay)        // v0.11.3 sync rules backed by relay.db
+	handlers.SetTestContactService(relay) // offline loopback test contact
 	// Each server (re)start resets the test conversation to a clean scratchpad.
 	if enabled, terr := relay.TestContactEnabled(ctx); terr == nil && enabled {
 		if rerr := relay.ResetTestContactMessages(ctx); rerr != nil {
@@ -436,6 +436,7 @@ func Run(options Options) error {
 	}
 	handlers.SetSyncSettingsService(relay)           // C13 service scope + backfill strategy
 	handlers.SetNotificationConfigurator(dispatcher) // v0.12 live FCM/Firebase config
+	handlers.SetContactCacheReceiver(dispatcher)     // local-only contact names for notification titles
 	handlers.SetMessageActionPerformer(imessage.NewHelperPerformer(""))
 	handlers.SetSyncNow(func(ctx context.Context) (store.ServerSyncDiagnostics, error) {
 		if _, err := syncAndBroadcast(ctx, "client_request"); err != nil {
@@ -703,7 +704,13 @@ func logSyncResult(result relaydb.SyncResult, force bool) {
 }
 
 func dispatchNotifications(ctx context.Context, dispatcher *notify.Dispatcher, relay *relaydb.DB, result relaydb.SyncResult) {
-	if dispatcher == nil || len(result.NotificationEvents) == 0 || relay == nil {
+	if dispatcher == nil || relay == nil {
+		return
+	}
+	if len(result.NotificationEvents) == 0 {
+		if result.MessagesSynced > 0 {
+			log.Printf("notification dispatch: no events generated for %d synced message(s)", result.MessagesSynced)
+		}
 		return
 	}
 	devices, err := relay.ListDevices(ctx)

@@ -1,6 +1,6 @@
 # micaGO Mac Companion
 
-A native **macOS SwiftUI controller** for the MicaGoServer Go relay. It launches
+A native **macOS SwiftUI controller** for the micaGO Go relay. It launches
 and monitors the local `micago` server binary and talks to its local control
 API. It is **not** a chat client and **not** a web dashboard.
 

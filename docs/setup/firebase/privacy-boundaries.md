@@ -19,12 +19,8 @@ optional public-URL discovery. These boundaries are enforced in the server.
 
 - ✅ **FCM push (transient delivery, not storage)**: a small `data` message with
   `type`, `messageGuid`, `chatGuid`, `title`, `body`, `previewMode`, `createdAt`.
-  The `title`/`body` text is gated by your **Preview** setting:
-  - `none` → generic "New iMessage", **no sender, no text**;
-  - `sender` → sender label only;
-  - `sender_and_text` → sender + message text (only because you explicitly chose
-    this level). The body is length-capped and sent as a transient push — it is
-    **never stored** in Firestore or persisted server-side beyond `relay.db`.
+  The body is length-capped and sent as transient delivery data. It is **never
+  stored** in Firestore or persisted server-side beyond `relay.db`.
 - ✅ **Push token → Google FCM** as the delivery address (that is its purpose).
   Stored only locally in `relay.db`; never published in a Firestore document.
 - ✅ **Public server URL** (only if you enable Firestore URL sync): the single

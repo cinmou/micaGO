@@ -12,6 +12,7 @@ const String messageChannelId = 'micago_messages';
 const String messageChannelName = 'Messages';
 const String messageChannelDescription = 'New message notifications';
 const String androidNotificationSmallIcon = 'ic_stat_micago_notification';
+const String androidTestContactAvatar = 'micago_test_contact_avatar';
 
 /// All message notifications share this group so the OS bundles them
 /// (BlueBubbles parity).
@@ -95,6 +96,8 @@ Future<void> showMessageNotification(
   String? body,
   String? avatarFilePath,
   String? conversationAvatarFilePath,
+  String? avatarDrawableResource,
+  String? conversationAvatarDrawableResource,
   bool isGroup = false,
   int? timestampMs,
 }) async {
@@ -119,10 +122,14 @@ Future<void> showMessageNotification(
     ),
   );
 
-  final BitmapFilePathAndroidIcon? avatar = avatarFilePath != null
+  final avatar = avatarDrawableResource != null
+      ? DrawableResourceAndroidIcon(avatarDrawableResource)
+      : avatarFilePath != null
       ? BitmapFilePathAndroidIcon(avatarFilePath)
       : null;
-  final FilePathAndroidBitmap? largeIcon = conversationAvatarFilePath != null
+  final largeIcon = conversationAvatarDrawableResource != null
+      ? DrawableResourceAndroidBitmap(conversationAvatarDrawableResource)
+      : conversationAvatarFilePath != null
       ? FilePathAndroidBitmap(conversationAvatarFilePath)
       : null;
   final messages = <Message>[

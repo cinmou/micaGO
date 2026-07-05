@@ -3,10 +3,12 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
 	"micagoserver/internal/realtime"
+	"micagoserver/internal/relaydb"
 	"micagoserver/internal/store"
 	"micagoserver/internal/testcontact"
 )
@@ -114,7 +116,39 @@ func (h *Handlers) PostTestContactInbound(w http.ResponseWriter, r *http.Request
 	if h.send != nil && h.send.Events != nil {
 		_ = h.send.Events.Broadcast(r.Context(), realtime.Event{Type: "message:new", Data: *msg})
 	}
+	h.dispatchTestContactNotification(r.Context(), *msg)
 	writeJSON(w, http.StatusOK, msg)
+}
+
+func (h *Handlers) dispatchTestContactNotification(ctx context.Context, msg store.MessageJSON) {
+	if h.notify == nil || h.devices == nil {
+		return
+	}
+	devices, err := h.devices.ListDevices(ctx)
+	if err != nil {
+		h.logInternal("test contact list devices", err)
+		return
+	}
+	pushReady := 0
+	for _, device := range devices {
+		if device.PushProvider != "none" && device.PushEnabled && device.PushToken != nil && strings.TrimSpace(*device.PushToken) != "" {
+			pushReady++
+		}
+	}
+	log.Printf("test contact push dispatch: registered_devices=%d push_ready_devices=%d notifications_enabled=%t preview=%s",
+		len(devices), pushReady, h.notify.Enabled(), h.notify.PreviewMode())
+	identifier := testcontact.Handle
+	display := testcontact.DisplayName
+	event := relaydb.NotificationEvent{
+		ChatGUID:       testcontact.ChatGUID,
+		ChatIdentifier: &identifier,
+		ChatDisplay:    &display,
+		IsGroup:        false,
+		Message:        msg,
+	}
+	if err := h.notify.DispatchNewMessages(ctx, devices, []relaydb.NotificationEvent{event}); err != nil {
+		log.Printf("test contact push dispatch: %v", err)
+	}
 }
 
 // sendTestLoopback records a client message to the test chat as a delivered

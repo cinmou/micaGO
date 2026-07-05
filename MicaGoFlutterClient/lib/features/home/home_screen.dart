@@ -30,6 +30,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   StreamSubscription<ForegroundMessageAlert>? _foregroundAlertSub;
   OverlayEntry? _foregroundAlertEntry;
   Timer? _foregroundAlertTimer;
+  Timer? _pushRetryTimer;
   final ValueNotifier<int> _searchRequests = ValueNotifier<int>(0);
   static const double _tabletBreakpoint = 840;
 
@@ -46,6 +47,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       // C22: start the optional FCM wake path (no-op without Firebase config).
       _push = PushService(app);
       unawaited(_push!.start());
+      _pushRetryTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+        final push = _push;
+        if (push == null || push.available) {
+          _pushRetryTimer?.cancel();
+          _pushRetryTimer = null;
+          return;
+        }
+        unawaited(push.start());
+      });
       // A notification tap routes here: jump to the Chats tab so the chat opens.
       app.pendingOpenChat.addListener(_onOpenChatRequested);
       _foregroundAlertSub = app.foregroundMessageAlerts.listen(
@@ -143,6 +153,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     _app?.pendingOpenChat.removeListener(_onOpenChatRequested);
     unawaited(_foregroundAlertSub?.cancel());
     _dismissForegroundAlert();
+    _pushRetryTimer?.cancel();
     IncomingShareService.latest.removeListener(_onIncomingShare);
     WidgetsBinding.instance.removeObserver(this);
     _searchRequests.dispose();

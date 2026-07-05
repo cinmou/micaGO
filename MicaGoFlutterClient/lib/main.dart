@@ -6,6 +6,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app/mica_go_app.dart';
 import 'core/app_controller.dart';
+import 'core/network/push_service.dart';
 import 'core/storage/secure_store.dart';
 import 'core/theme_controller.dart';
 import 'features/contacts/contacts_service.dart';
@@ -13,6 +14,7 @@ import 'features/settings/message_display_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerMicaGoFirebaseBackgroundHandler();
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
     debugPrint('[Startup] FlutterError: ${details.exception}');

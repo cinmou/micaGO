@@ -10,7 +10,18 @@ struct NotificationsConfigResponse: Codable {
     var implemented: [String]
     var stub: [String]
     var serviceAccountPathSet: Bool
+    var googleServicesPathSet: Bool
     var firestoreSyncEnabled: Bool
+}
+
+struct TestNotificationsEnvelope: Codable {
+    var data: TestNotificationsResult
+}
+
+struct TestNotificationsResult: Codable {
+    var sent: Int
+    var failed: Int
+    var failures: [String]?
 }
 
 // Standard server error envelope: { "error": { "code": ..., "message": ... } }.

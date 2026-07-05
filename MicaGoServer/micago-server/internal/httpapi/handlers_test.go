@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"micagoserver/internal/config"
-	"micagoserver/internal/notify"
 	"micagoserver/internal/realtime"
 	"micagoserver/internal/relaydb"
 	micasend "micagoserver/internal/send"
@@ -133,10 +132,19 @@ func (s *stubDeviceStore) DeleteDevice(_ context.Context, id string) error {
 }
 
 type stubNotifier struct {
-	err error
+	err  error
+	sent *int
 }
 
-func (s stubNotifier) SendTest(context.Context, store.DeviceRecord) error { return s.err }
+func (s stubNotifier) SendTest(context.Context, store.DeviceRecord) error {
+	if s.sent != nil {
+		*s.sent++
+	}
+	return s.err
+}
+func (s stubNotifier) DispatchNewMessages(context.Context, []store.DeviceRecord, []relaydb.NotificationEvent) error {
+	return s.err
+}
 func (s stubNotifier) ProviderNames() []string {
 	return []string{"none", "webhook", "fcm", "hms", "harmony_push", "ntfy"}
 }
@@ -591,23 +599,43 @@ func TestRegisterDeviceRejectsInvalidPlatform(t *testing.T) {
 	}
 }
 
-func TestTestPushReturnsConfiguredErrorForNoneProvider(t *testing.T) {
-	devices := &stubDeviceStore{
-		devices: map[string]store.DeviceRecord{
-			"dev-1": {ID: "dev-1", Name: "Device", Platform: "android", ClientType: "flutter", PushProvider: "none", PushEnabled: false, CreatedAt: 1, UpdatedAt: 1},
-		},
-	}
-	handlers := NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", devices, stubNotifier{err: notify.ErrPushNotConfigured}, config.Config{HTTPAddr: "127.0.0.1:3000"}, StatusDeps{})
-	req := httptest.NewRequest(http.MethodPost, "/api/devices/dev-1/test-push", nil)
-	req.SetPathValue("id", "dev-1")
+func TestTestNotificationsRequiresRegisteredDevice(t *testing.T) {
+	handlers := NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", &stubDeviceStore{}, stubNotifier{}, config.Config{HTTPAddr: "127.0.0.1:3000"}, StatusDeps{})
+	req := httptest.NewRequest(http.MethodPost, "/api/server/notifications/test", nil)
 	rec := httptest.NewRecorder()
 
-	handlers.TestPush(rec, req)
+	handlers.TestNotifications(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "push_not_configured") {
+	if !strings.Contains(rec.Body.String(), "push_no_devices") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestTestNotificationsSendsToFcmDevices(t *testing.T) {
+	pushToken := "tok-123"
+	devices := &stubDeviceStore{
+		devices: map[string]store.DeviceRecord{
+			"fcm-1": {ID: "fcm-1", Name: "Pixel", Platform: "android", ClientType: "flutter", PushProvider: "fcm", PushToken: &pushToken, PushEnabled: true, CreatedAt: 1, UpdatedAt: 1},
+			"ws-1":  {ID: "ws-1", Name: "LAN only", Platform: "android", ClientType: "flutter", PushProvider: "none", PushEnabled: false, CreatedAt: 1, UpdatedAt: 1},
+		},
+	}
+	sent := 0
+	handlers := NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", devices, stubNotifier{sent: &sent}, config.Config{HTTPAddr: "127.0.0.1:3000"}, StatusDeps{})
+	req := httptest.NewRequest(http.MethodPost, "/api/server/notifications/test", nil)
+	rec := httptest.NewRecorder()
+
+	handlers.TestNotifications(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if sent != 1 {
+		t.Fatalf("expected one FCM send, got %d", sent)
+	}
+	if !strings.Contains(rec.Body.String(), `"sent":1`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }

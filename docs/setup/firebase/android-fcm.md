@@ -7,10 +7,10 @@ receive push from micaGO. (The server side only needs the
 1. Firebase Console → **Project settings** → **General** → **Your apps** → **Add
    app** → **Android**.
 2. Enter your Android app's **package name**, register, and download the
-   generated **`google-services.json`**. This file is for the **Android client
-   app**, not the micaGO server.
-3. Build the Android client with that `google-services.json` so it can call
-   `FirebaseMessaging.getToken()`.
+   generated **`google-services.json`**.
+3. In the micaGO Companion, open **Notifications** and choose that
+   `google-services.json`. The Flutter client fetches the config from your server
+   and initializes Firebase at runtime; the file is not baked into the APK.
 
 ## Registering the token with micaGO
 
@@ -31,7 +31,7 @@ POST /api/devices/register
 
 ## What the push looks like
 
-micaGO sends an FCM **HTTP v1 `data` message** (high priority, 24h TTL):
+micaGO sends a **data-only** FCM HTTP v1 message (high priority, 24h TTL):
 
 ```json
 { "message": { "token": "<device token>",
@@ -40,8 +40,9 @@ micaGO sends an FCM **HTTP v1 `data` message** (high priority, 24h TTL):
   "android": { "priority": "high", "ttl": "86400s" } } }
 ```
 
-`title`/`body` content is gated by your **Preview** setting (see
-[privacy-boundaries.md](privacy-boundaries.md)). The Android client renders the
-local notification from this data payload.
+Android does not render this payload directly. The micaGO client receives the
+data message, renders the same local MessagingStyle notification used by the
+keep-alive path, and then syncs the actual message through the normal micaGO
+connection.
 
-> Test it end-to-end from the companion: **Devices → Test Push**.
+> Test it end-to-end from the companion: **Notifications → Send test notification**.

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -17,6 +18,7 @@ type notificationsConfigRequest struct {
 	FCMEnabled         bool   `json:"fcmEnabled"`
 	FCMProjectID       string `json:"fcmProjectId"`
 	ServiceAccountPath string `json:"serviceAccountPath"`
+	GoogleServicesPath string `json:"googleServicesPath"`
 	PublicURLSync      bool   `json:"publicUrlSync"`
 }
 
@@ -25,7 +27,14 @@ type notificationsConfigRequest struct {
 type notificationsConfigResponse struct {
 	store.ServerNotificationStatus
 	ServiceAccountPathSet bool `json:"serviceAccountPathSet"`
+	GoogleServicesPathSet bool `json:"googleServicesPathSet"`
 	FirestoreSyncEnabled  bool `json:"firestoreSyncEnabled"`
+}
+
+type testNotificationsResponse struct {
+	Sent     int      `json:"sent"`
+	Failed   int      `json:"failed"`
+	Failures []string `json:"failures,omitempty"`
 }
 
 // PutNotificationsConfig handles POST /api/server/notifications (v0.12): persist
@@ -44,6 +53,7 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 	req.Provider = strings.TrimSpace(req.Provider)
 	req.Preview = strings.TrimSpace(req.Preview)
 	req.ServiceAccountPath = strings.TrimSpace(req.ServiceAccountPath)
+	req.GoogleServicesPath = strings.TrimSpace(req.GoogleServicesPath)
 
 	if req.Preview != "none" && req.Preview != "sender" && req.Preview != "sender_and_text" {
 		writeBadRequest(w, "preview must be one of: none, sender, sender_and_text")
@@ -59,11 +69,25 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 	// Validate the service account up front so the user gets a clear error.
 	if req.FCMEnabled {
 		if req.ServiceAccountPath == "" {
+			req.ServiceAccountPath = h.cfg.FCM.ServiceAccountPath
+		}
+		if req.GoogleServicesPath == "" {
+			req.GoogleServicesPath = h.cfg.FCM.GoogleServicesPath
+		}
+		if req.ServiceAccountPath == "" {
 			writeBadRequest(w, "serviceAccountPath is required when fcmEnabled is true")
 			return
 		}
 		if _, err := notify.LoadServiceAccount(req.ServiceAccountPath); err != nil {
 			writeBadRequest(w, "invalid service account: "+err.Error())
+			return
+		}
+		if req.GoogleServicesPath == "" {
+			writeBadRequest(w, "googleServicesPath is required when fcmEnabled is true")
+			return
+		}
+		if _, err := notify.LoadFirebaseClientConfig(req.GoogleServicesPath); err != nil {
+			writeBadRequest(w, "invalid google-services.json: "+err.Error())
 			return
 		}
 	}
@@ -75,6 +99,7 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 		FCMEnabled:         req.FCMEnabled,
 		FCMProjectID:       req.FCMProjectID,
 		ServiceAccountPath: req.ServiceAccountPath,
+		GoogleServicesPath: req.GoogleServicesPath,
 		PublicURLSync:      req.PublicURLSync,
 	}); err != nil {
 		writeBadRequest(w, err.Error())
@@ -89,11 +114,73 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 		writeInternalError(w)
 		return
 	}
+	h.cfg = fresh
 	h.notifyConfig.Reload(fresh)
 
 	writeJSON(w, http.StatusOK, notificationsConfigResponse{
 		ServerNotificationStatus: h.notificationStatus(),
 		ServiceAccountPathSet:    req.ServiceAccountPath != "",
+		GoogleServicesPathSet:    req.GoogleServicesPath != "",
 		FirestoreSyncEnabled:     h.notifyConfig.FirestoreSyncEnabled(),
 	})
+}
+
+// TestNotifications handles POST /api/server/notifications/test.
+// One settings-page action tests the current FCM delivery path; per-device
+// testing was removed so device cards stay focused on paired-device privacy.
+func (h *Handlers) TestNotifications(w http.ResponseWriter, r *http.Request) {
+	if h.devices == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "push_device_registry_unavailable", "device registry is not available")
+		return
+	}
+	if h.notify == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "push_dispatcher_unavailable", "notification dispatcher is not available")
+		return
+	}
+
+	devices, err := h.devices.ListDevices(r.Context())
+	if err != nil {
+		h.logInternal("list devices for notification test", err)
+		writeAPIError(w, http.StatusInternalServerError, "push_device_list_failed", "could not list registered devices: "+err.Error())
+		return
+	}
+	if len(devices) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "push_no_devices", "No registered devices. Open micaGO on Android and let it connect once.")
+		return
+	}
+
+	fcmDevices := make([]store.DeviceRecord, 0, len(devices))
+	for _, device := range devices {
+		if device.PushProvider == "fcm" && device.PushEnabled && device.PushToken != nil && strings.TrimSpace(*device.PushToken) != "" {
+			fcmDevices = append(fcmDevices, device)
+		}
+	}
+	if len(fcmDevices) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "push_no_fcm_devices", "No registered FCM devices. Open micaGO on Android and let it reconnect.")
+		return
+	}
+
+	resp := testNotificationsResponse{}
+	for _, device := range fcmDevices {
+		err := h.notify.SendTest(r.Context(), device)
+		switch {
+		case err == nil:
+			resp.Sent++
+		case errors.Is(err, notify.ErrPushNotConfigured):
+			resp.Failed++
+			resp.Failures = append(resp.Failures, device.Name+": push is not configured")
+		case errors.Is(err, notify.ErrNotImplemented):
+			resp.Failed++
+			resp.Failures = append(resp.Failures, device.Name+": notification provider is not implemented")
+		default:
+			resp.Failed++
+			resp.Failures = append(resp.Failures, device.Name+": "+err.Error())
+		}
+	}
+
+	status := http.StatusOK
+	if resp.Sent == 0 {
+		status = http.StatusBadRequest
+	}
+	writeJSON(w, status, map[string]testNotificationsResponse{"data": resp})
 }

@@ -31,6 +31,7 @@ class BackupService {
   static const _formatVersion = 1;
   static const _avatarPrefix = 'custom_avatar:';
   static const _chatBackgroundKey = 'micago.theme.chatBackgroundPath';
+  static const _legacyMutedChatsKey = 'micago.muted_chats.v1';
   static const _sidebarWidthKey = 'tablet_sidebar_width';
 
   /// SecureStore keys included in a backup. The connection profile carries the
@@ -42,7 +43,6 @@ class BackupService {
     'micago.theme.color',
     'micago.theme.lang',
     'micago.theme.chatBackgroundPath',
-    'micago.muted_chats.v1',
     'micago.in_app_notifications_enabled.v1',
     'micago.keepalive.v1',
     'micago.message_display_prefs.v1',
@@ -157,7 +157,6 @@ class BackupService {
       hasMessageDisplay: secure.containsKey('micago.message_display_prefs.v1'),
       hasChatBackground: settings['chatBackgroundAsset'] != null,
       customAvatarCount: avatars.length,
-      mutedCount: _jsonListLen(secure['micago.muted_chats.v1']),
       pinnedHiddenCount: (settings['chatFlags'] as Map?)?.length ?? 0,
       hiddenMessageCount: (settings['hiddenMessages'] as List?)?.length ?? 0,
     );
@@ -175,7 +174,10 @@ class BackupService {
     for (final entry in secure.entries) {
       // The stored background path is device-specific; it's rewritten below from
       // the restored asset, so skip it here.
-      if (entry.key == _chatBackgroundKey) continue;
+      if (entry.key == _chatBackgroundKey ||
+          entry.key == _legacyMutedChatsKey) {
+        continue;
+      }
       if (entry.value is String) {
         await store.writeValue(entry.key, entry.value as String);
       }
@@ -269,16 +271,6 @@ class BackupService {
       throw const BackupException('The backup settings are unreadable.');
     }
   }
-
-  static int _jsonListLen(String? raw) {
-    if (raw == null || raw.isEmpty) return 0;
-    try {
-      final v = jsonDecode(raw);
-      return v is List ? v.length : 0;
-    } catch (_) {
-      return 0;
-    }
-  }
 }
 
 class BackupSummary {
@@ -289,7 +281,6 @@ class BackupSummary {
   final bool hasMessageDisplay;
   final bool hasChatBackground;
   final int customAvatarCount;
-  final int mutedCount;
   final int pinnedHiddenCount;
   final int hiddenMessageCount;
 
@@ -301,7 +292,6 @@ class BackupSummary {
     required this.hasMessageDisplay,
     required this.hasChatBackground,
     required this.customAvatarCount,
-    required this.mutedCount,
     required this.pinnedHiddenCount,
     required this.hiddenMessageCount,
   });

@@ -107,8 +107,6 @@ Future<bool> importSettingsBackup(BuildContext context) async {
         if (summary.hasMessageDisplay) s.t('backup.itemMessageDisplay'),
         if (summary.customAvatarCount > 0)
           '${s.t('backup.itemAvatars')} (${summary.customAvatarCount})',
-        if (summary.mutedCount > 0)
-          '${s.t('backup.itemMuted')} (${summary.mutedCount})',
         if (summary.pinnedHiddenCount > 0)
           '${s.t('backup.itemPinHide')} (${summary.pinnedHiddenCount})',
         if (summary.hiddenMessageCount > 0)

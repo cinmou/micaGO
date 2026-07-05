@@ -168,7 +168,7 @@ notification path that needs no Firebase, cross-path dedup, and diagnostics.
 | Case | Result |
 | --- | --- |
 | Foreground + WS | No system notification (UI shows it; `isForeground` guard). |
-| Background, FCM only | One FCM notification. |
+| Background, FCM only | One local MessagingStyle notification triggered from FCM data. |
 | Background, keep-alive only | One local notification (no Firebase). |
 | Background, FCM **and** keep-alive | One notification (shared id replaces). |
 | Missed push | Delta catch-up restores messages silently — no notification spam. |

@@ -9,7 +9,7 @@ This is intentionally separate from the device registry:
 
 - **Active connections / Paired Devices**: live authenticated WebSocket sessions.
 - **Push devices**: optional FCM/webhook/HMS/etc registration rows used for
-  notification delivery and Test Push.
+  notification delivery and the unified notification test.
 
 ## API
 

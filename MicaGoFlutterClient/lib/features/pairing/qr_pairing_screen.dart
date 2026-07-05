@@ -23,12 +23,15 @@ class QrPairingScreen extends StatefulWidget {
 class _QrPairingScreenState extends State<QrPairingScreen>
     with WidgetsBindingObserver {
   late final PairingController _pairing;
-  // C49: drive the camera lifecycle manually (autoStart:false). The default
-  // auto-start could land in a permanent "unauthorized" state when the first
-  // permission prompt was answered after the controller had already tried to
-  // start — and never recover even once the user granted access. We start it
-  // ourselves and restart on resume so returning from the system permission
-  // dialog (or Settings) reliably re-acquires the camera.
+  // C59: the scanner lifecycle follows the mobile_scanner README exactly —
+  // ONE controller for the State's whole lifetime (never swapped/recreated:
+  // the MobileScanner widget stays bound to its ValueNotifier, and disposing
+  // it mid-build blanks the preview), autoStart:false with an explicit
+  // start() in initState, stop/start on pause/resume gated on
+  // hasCameraPermission, and super.dispose() before the async
+  // controller.dispose(). "Denied, then granted in system Settings" is fine
+  // with this: Android restarts the app process when a permission is granted
+  // from Settings, so initState runs again and start() sees the grant.
   final MobileScannerController _scanner = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [BarcodeFormat.qrCode],
@@ -45,15 +48,19 @@ class _QrPairingScreenState extends State<QrPairingScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Per the docs: don't touch the camera before permission was ever granted
+    // (start() during the permission dialog is what wedged it originally).
+    if (!_scanner.value.hasCameraPermission) {
+      return;
+    }
     switch (state) {
       case AppLifecycleState.resumed:
-        // Returning to the screen (incl. after granting permission) re-acquires
-        // the camera, but only while we're actually showing the scanner.
         if (_pairing.stage == PairingStage.scanning) {
-          unawaited(_restartCamera());
+          unawaited(_scanner.start());
         }
         break;
       case AppLifecycleState.inactive:
+        break;
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
@@ -63,11 +70,13 @@ class _QrPairingScreenState extends State<QrPairingScreen>
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
     WidgetsBinding.instance.removeObserver(this);
-    _scanner.dispose();
     _pairing.dispose();
     super.dispose();
+    // Per the docs: dispose the controller after super.dispose(), so the
+    // MobileScanner widget detaches before its controller goes away.
+    await _scanner.dispose();
   }
 
   void _onDetect(BarcodeCapture capture) {
@@ -100,19 +109,20 @@ class _QrPairingScreenState extends State<QrPairingScreen>
 
   void _scanAgain() {
     _pairing.scanAgain();
-    _scanner.start();
+    unawaited(_restartCamera());
   }
 
-  // C49: the camera controller caches its first start result, so if permission
-  // was denied on the initial prompt (or the camera was busy) it keeps reporting
-  // "unauthorized" even after the user grants access in system Settings. Fully
-  // stop + start re-runs the permission check and re-acquires the camera.
+  // Retry button / scan-again: a plain stop → start on the long-lived
+  // controller, exactly as the mobile_scanner docs do on resume. start() re-runs
+  // the permission check, so this also recovers the "granted while the app was
+  // alive" case without ever swapping the controller out from under the widget.
   Future<void> _restartCamera() async {
     try {
       await _scanner.stop();
     } catch (_) {
-      // The controller may not have started; ignore and try to start fresh.
+      // Not started yet — fine, just start below.
     }
+    if (!mounted) return;
     try {
       await _scanner.start();
     } catch (_) {

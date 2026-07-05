@@ -1,6 +1,6 @@
-# MicaGo Android client (Flutter)
+# micaGO Android client (Flutter)
 
-Android-first Flutter client for a **MicaGo** relay server. Pair with your Mac
+Android-first Flutter client for a **micaGO** relay server. Pair with your Mac
 over LAN or an optional public URL, sync chats and messages, send text and
 attachments, and (optionally) receive push notifications.
 
@@ -57,7 +57,7 @@ connection screen until a complete profile exists).
 
 ## Server compatibility
 
-Targets the MicaGo relay API: a shared **bearer token**
+Targets the micaGO relay API: a shared **bearer token**
 (`Authorization: Bearer …`; the WebSocket also accepts `?token=`), the
 connection-endpoints payload (`/api/server/urls`), chats/messages/delta, device
 registry, message actions, and the optional FCM client config (`/api/fcm/client`).

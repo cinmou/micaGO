@@ -445,13 +445,12 @@ Marks the device seen now (updates `lastSeenAt`).
 #### `DELETE /api/devices/{id}`
 → `200 Health` `{ "ok": true }`. → `404 not_found`.
 
-#### `POST /api/devices/{id}/test-push`
-Sends a test notification through the device's configured provider.
+#### `POST /api/server/notifications/test`
+Sends a test notification to every registered FCM device.
 
-- `200 Health` `{ "ok": true }` on success.
-- `400 push_not_configured` if push is disabled/`none` for the device.
-- `501 not_implemented` if the provider is a stub (e.g. `fcm`, `hms`, `ntfy`).
-- `404 not_found` if unknown.
+- `200 { "data": { "sent": n, "failed": n, "failures": [...] } }` on success or partial success.
+- `400 push_no_devices` if no client has registered with the server.
+- `400 push_no_fcm_devices` if clients exist but none has an enabled FCM token.
 
 ---
 
@@ -556,8 +555,8 @@ When a notification is delivered to an external provider (currently the
 }
 ```
 
-`type` is `message:new` for new-message pushes or `test` for the test-push
-endpoint. `title`/`body` content depends on the server's `previewMode`
+`type` is `message:new` for new-message pushes or `test` for the notification
+test endpoint. `title`/`body` content depends on the server's `previewMode`
 (`none` | `sender` | `sender_and_text`). This payload is the **server → push
 provider** contract, distinct from the WebSocket and REST models above. See
 [`spec-v0.8.0-notification-provider.md`](spec-v0.8.0-notification-provider.md).
@@ -579,5 +578,5 @@ provider** contract, distinct from the WebSocket and REST models above. See
 | PATCH | `/api/devices/{id}` | yes | 200 | `{ data: Device }` |
 | POST | `/api/devices/{id}/heartbeat` | yes | 200 | `{ data: Device }` |
 | DELETE | `/api/devices/{id}` | yes | 200 | `Health` |
-| POST | `/api/devices/{id}/test-push` | yes | 200 | `Health` |
+| POST | `/api/server/notifications/test` | yes | 200 | `{ data: TestNotificationsResult }` |
 | GET | `/ws` | yes | 101 | WebSocket (event envelope) |

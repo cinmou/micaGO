@@ -21,6 +21,20 @@ struct MicaGoCompanionApp: App {
                 .environmentObject(backend)
                 .environmentObject(contacts)
                 .environmentObject(tunnel)
+                .task {
+                    await contacts.loadIfAuthorized()
+                    if contacts.loaded {
+                        await model.syncContactCache(contacts.serverEntries)
+                    }
+                }
+                .onReceive(contacts.$contactRevision) { _ in
+                    guard contacts.loaded else { return }
+                    Task { await model.syncContactCache(contacts.serverEntries) }
+                }
+                .onReceive(model.$authValid) { valid in
+                    guard valid, contacts.loaded else { return }
+                    Task { await model.syncContactCache(contacts.serverEntries) }
+                }
         }
         .defaultSize(width: 1000, height: 720)
         .defaultPosition(.center)

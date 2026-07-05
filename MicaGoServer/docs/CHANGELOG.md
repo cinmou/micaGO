@@ -9,7 +9,34 @@ that runs/manages the server), **Client** (Flutter Android app).
 
 ---
 
-## 0.59.0 Beta — release polish, settings backup, and Companion lifecycle
+## 0.62.0 Beta — FCM notification parity and Firebase setup polish
+
+- **Server.** FCM now sends data-only HTTP v1 messages so Android always renders
+  the visible notification through the client’s local MessagingStyle pipeline
+  instead of the system’s default FCM notification surface.
+- **Server.** The device registry now tolerates older `relay.db` rows where
+  newly added device fields are `NULL`, fixing `/api/devices` and notification
+  tests on upgraded installs.
+- **Companion.** The unified test notification path now reports actionable FCM
+  errors, including the missing `cloudmessaging.messages.create` IAM permission.
+- **Docs.** Firebase setup, troubleshooting, and the multilingual README files
+  now document service-account IAM setup and data-only notification delivery.
+- **Packaging.** Version numbers are aligned at **0.62.0** across the Flutter
+  client, Go backend, macOS Companion, release docs, and DMG packaging script.
+
+## 0.61.0 Beta — device registration reliability
+
+- **Client.** Device registration now refreshes after endpoint discovery and
+  writes to every visible LAN/Public candidate instead of stopping at the first
+  successful endpoint. This keeps the Companion's Paired Devices and FCM test
+  notification path aligned when multiple routes are reachable.
+- **Client.** In-flight registration requests are serialized and followed by one
+  fresh retry, so push-token updates, keep-alive changes, and manual registration
+  no longer race each other.
+- **Packaging.** Version numbers are aligned at **0.61.0** across the Flutter
+  client, Go backend, macOS Companion, release docs, and DMG packaging script.
+
+## 0.60.0 Beta — release polish, settings backup, and Companion lifecycle
 
 - **Client.** Settings backup now includes the current connection profile, theme,
   language, chat background, custom avatars, muted chats, in-app notification
@@ -24,7 +51,7 @@ that runs/manages the server), **Client** (Flutter Android app).
 - **Companion.** Added an About page, localized settings via String Catalog, a
   Developer Mode gate for Debug/Log, and a lifecycle setting that starts and
   stops the bundled server with micaGO Companion.
-- **Packaging.** Version numbers are aligned at **0.59.0** across the Flutter
+- **Packaging.** Version numbers are aligned at **0.60.0** across the Flutter
   client, Go backend, macOS Companion, release docs, and DMG packaging script.
 
 ## C42 — Pin/hide + a two-way test-contact Debug card (backend v0.34)
@@ -96,7 +123,7 @@ that runs/manages the server), **Client** (Flutter Android app).
   compiles it into `Resources/`), installed to `~/.micago/bin` by the Install
   button, picked up by the backend. (Execution still depends on the Mac granting
   IMCore access; otherwise it reports unsupported — never a fake success.)
-- **C27 (push/imsg/media).** Finished the FCM client surface (test-push button +
+- **C27 (push/imsg/media).** Finished the FCM client surface (notification test +
   push status card); produced an **imsg parity audit table** (what to migrate vs
   skip); polished chat media so image-only messages render as clean media cards
   without an outer chat bubble.

@@ -61,7 +61,7 @@ void main() {
         pushShouldNotify({'title': '', 'body': ''}),
         isFalse,
       ); // preview off
-      expect(pushShouldNotify({'type': 'test', 'title': 'x'}), isFalse);
+      expect(pushShouldNotify({'type': 'test', 'title': 'x'}), isTrue);
     });
   });
 
@@ -168,6 +168,18 @@ void main() {
       final data = {'chatGuid': 'any;+;group-guid', 'title': 'New message'};
       expect(notificationIsGroup(data), isTrue);
       expect(notificationConversationTitle(data), 'Group chat');
+    });
+
+    test('test contact push uses the local test contact identity', () {
+      final data = {
+        'chatGuid': testContactChatGuid,
+        'title': 'New message',
+        'senderName': 'New message',
+        'handle': testContactHandle,
+      };
+      expect(isTestContactPush(data), isTrue);
+      expect(notificationSenderName(data), testContactDisplayName);
+      expect(notificationConversationTitle(data), testContactDisplayName);
     });
 
     test(

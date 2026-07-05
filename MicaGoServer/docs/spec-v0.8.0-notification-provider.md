@@ -75,15 +75,16 @@ Preview behavior:
   - title: chat display name or chat identifier
   - body: extracted message text preview
 
-## Test Push Endpoint
+## Notification Test Endpoint
 
 Endpoint:
 
-- `POST /api/devices/{id}/test-push`
+- `POST /api/server/notifications/test`
 
 Behavior:
 
-- If the device has `pushProvider=none`, returns `push_not_configured`
+- If no device has registered, returns `push_no_devices`
+- If no device has an enabled FCM token, returns `push_no_fcm_devices`
 - If the provider exists only as a stub, returns `not_implemented`
 - If webhook delivery is configured, it posts a test payload
 
@@ -105,10 +106,10 @@ Behavior:
 ## Manual Test Plan
 
 1. Start the server with notifications disabled and register a `none` provider device.
-2. Call `POST /api/devices/{id}/test-push` and confirm `push_not_configured`.
-3. Configure `webhook.url`, enable notifications, register a webhook device, and call test-push.
+2. Call `POST /api/server/notifications/test` and confirm `push_no_fcm_devices`.
+3. Configure `webhook.url`, enable notifications, register a webhook device, and call the notification test.
 4. Confirm the webhook receives a privacy-conscious JSON payload.
-5. Register an `fcm` device and confirm test-push returns `not_implemented`.
+5. Register an `fcm` device and confirm the notification test returns `not_implemented`.
 6. Receive a real incoming iMessage and confirm the dispatcher runs only for incoming messages.
 
 ## Known Limitations

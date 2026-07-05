@@ -16,17 +16,18 @@ each optional and each a fallback for the one before it:
    message is *lost* — it just won't alert you while the app was away. It is the
    final fallback, not a notifier.
 
-The message **content always arrives over the socket/delta path** — the push is
-only a wake/awareness signal (the BlueBubbles model). So a push with previews
-turned off still results in a correct, complete thread once the app syncs.
+The message **content always arrives over the socket/delta path**. FCM is sent as
+a **data-only** wake/awareness signal (the BlueBubbles model), and the Android
+client renders the visible notification locally so FCM and keep-alive use the
+same MessagingStyle surface.
 
 ## What a notification shows (C31)
 
 - **Title = who it's from.** An on-device contact name when contacts matching is
   enabled and the sender is in your address book; otherwise the name the Mac
   knows; otherwise the raw phone/email handle. Never a GUID, never blank.
-- **Body = the message preview**, subject to the server's **preview mode**
-  (`none` / `sender` / `sender_and_text`) set in the Companion.
+- **Body = the message preview**, length-capped when it is carried in transient
+  FCM data.
 - **Native conversation style (C32).** Notifications use Android **MessagingStyle**:
   the contact's name + **avatar** (a default monogram when no photo), and
   successive messages from the same chat **stack into one conversation
@@ -35,8 +36,8 @@ turned off still results in a correct, complete thread once the app syncs.
   dismisses that chat's notification.
 - An FCM push and a keep-alive notification for the *same* message collapse into
   **one** (shared per-chat id + message-guid dedup) — never duplicates.
-- **Inline reply is deferred** for this pass — notifications have no reply action
-  yet. Tap through to the chat to respond.
+- **Inline reply** sends the text through the paired micaGO server when the
+  Android notification action is available. Tapping still opens the chat.
 
 ### Contact names & avatars: which layer resolves them
 
@@ -45,7 +46,7 @@ turned off still results in a correct, complete thread once the app syncs.
 | Keep-alive (app alive, main isolate) | **On-device contacts** (real address-book name) | **On-device contact photo** when available, else a monogram |
 | FCM background isolate | The **server-provided** name (Mac chat display name) or the raw handle | Default monogram |
 
-On-device resolution in the FCM background isolate is deliberately **not** done:
+On-device contact resolution in the FCM background isolate is deliberately **not** done:
 it would require either loading the whole address book per push or persisting a
 contacts cache to disk, and micaGO never persists your address book. The handle
 fallback keeps the FCM title meaningful.
@@ -55,14 +56,14 @@ fallback keeps the FCM title meaningful.
 Push uses a Firebase project **you own**; micaGO ships no credentials.
 
 1. In the Firebase console, create a project and add an **Android app**.
-2. In the **Companion → Notifications**, enable Firebase, set the project id, and
-   point it at your service-account JSON (kept locally on the Mac; never
-   committed or sent to the device).
+2. In the **Companion → Notifications**, enable Firebase and choose both files:
+   `google-services.json` for the client runtime config and the service-account
+   JSON for server-side sending.
 3. On the phone, open **Settings → Notifications** in micaGO. When the client
    fetches the config it initializes Firebase at runtime and registers its token
    as an optional **Push Device**.
-4. Use **Send test notification** from the push-device card to verify end-to-end
-   delivery.
+4. Use **Send test notification** in the Companion Notifications page to verify
+   end-to-end delivery.
 
 If Firebase is not configured, the app simply stays on WebSocket + delta (and
 keep-alive, if you enabled it). Everything still works while the app is open.
@@ -83,35 +84,38 @@ to a real notification on the phone.
 3. **Project settings → Service accounts → Generate new private key.** This
    downloads a service-account **`.json`** — the server uses it to call FCM. Keep
    both files on the Mac only; never commit them.
+4. Open **Google Cloud Console → IAM & Admin → IAM**, click **Grant access**, paste
+   the service-account `client_email` as the new principal, and grant **Firebase
+   Cloud Messaging API Admin**. The service account may not appear in the IAM
+   list until after you grant it a role.
 
 **B. Point the server at it (Companion)**
 
-4. Open the Companion → **Notifications**. Turn **Firebase** on, set the
-   **Project ID** (from Project settings), and select the **service-account
-   JSON** from step A3. The Companion validates the file and starts serving the
-   client config at `GET /api/fcm/client` (which is built from your
-   `google-services.json`).
-5. Make sure the server is **Running**.
+5. Open the Companion → **Notifications**. Turn **Firebase** on, choose
+   **google-services.json**, choose the **service-account JSON** from step A3,
+   and set the **Project ID** if you want to override the value inferred from the
+   service account. The Companion validates both files and starts serving the
+   client config at `GET /api/fcm/client`.
+6. Make sure the server is **Running**.
 
 **C. Register the phone as a push device**
 
-6. On the phone, the app must be **paired** to this server (Sync Control / Paired
+7. On the phone, the app must be **paired** to this server (Sync Control / Paired
    Devices should show it). Open **Settings → Notifications** in the app.
-7. The client fetches `/api/fcm/client`, initializes Firebase **at runtime**,
+8. The client fetches `/api/fcm/client`, initializes Firebase **at runtime**,
    requests the notification permission (Android 13+), and registers its FCM
-   token. The card should flip to **"Push notifications enabled (FCM)"**.
-8. Back in the Companion, **Notifications / Paired Devices** should now list the
+   token. The Firebase / FCM card should show **Registered**.
+9. Back in the Companion, **Notifications / Paired Devices** should now list the
    phone with push **enabled** and a token set.
 
 **D. Fire a test and a real message**
 
-9. In the Companion's push-device card, tap **Send test notification** → a
-   notification should arrive on the phone within a couple of seconds. (This calls
-   `POST /api/devices/{id}/test-push` → FCM → device.)
-10. Now **background the app** (home button — don't force-quit yet) and send
+10. In **Companion → Notifications**, tap **Send test notification**. A
+   notification should arrive on every registered FCM device within a few seconds.
+11. Now **background the app** (home button — don't force-quit yet) and send
     yourself an iMessage from another device/contact. You should get a native
     notification with the sender's name.
-11. To test the hardest case, **force-quit** the app and send another message.
+12. To test the hardest case, **force-quit** the app and send another message.
     With your own `google-services.json` present, the killed-app push still wakes
     a background isolate and shows the notification; tapping it opens the chat
     after a quick delta sync.
@@ -154,7 +158,7 @@ enable it under Android **Settings → Apps → micaGO → Notifications**.
 | --- | --- |
 | No Firebase, keep-alive **off**, app backgrounded | No background notification (delta catches up on resume). |
 | No Firebase, keep-alive **on**, app backgrounded | A **local** notification per incoming message. |
-| Firebase **on**, keep-alive off, app backgrounded | An **FCM** notification per message. |
+| Firebase **on**, keep-alive off, app backgrounded | A local MessagingStyle notification shown from FCM data. |
 | Firebase **on** and keep-alive **on** | Still **one** notification per message (deduped by id). |
 | App **foregrounded**, chat open | **No** system notification (the UI shows it). |
 | Tap a notification | Opens the correct chat. |

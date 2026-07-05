@@ -132,9 +132,9 @@ reveal/copy; **pairing QR** with a Local/LAN/Public endpoint picker. Source:
 
 ### Push Devices
 List from `/api/devices`: name, platform, clientType, push provider,
-`pushEnabled`, `pushTokenSet` (token never shown), `lastSeenAt`. Per-device
-**Test Push** (`POST /api/devices/{id}/test-push`) and **Remove**
-(`DELETE /api/devices/{id}`). Manual refresh.
+`pushEnabled`, `pushTokenSet` (token never shown), `lastSeenAt`. Device rows
+support **Remove** (`DELETE /api/devices/{id}`). Notification testing lives in
+the Notifications page via `POST /api/server/notifications/test`. Manual refresh.
 
 ### Notifications
 Provider status (read-only now): `enabled`, `provider`, `preview`,
@@ -178,7 +178,7 @@ links to specs. Destructive/local-only actions live here.
   clients, permissions (FDA/attachments/automation), **capabilities.schema**.
 - `GET /api/server/urls` — grouped local/LAN/public endpoints + preferred pairing.
 - `POST /api/server/public-url`, `POST /api/server/public-url/check`.
-- `GET /api/devices`, `POST /api/devices/{id}/test-push`, `DELETE /api/devices/{id}`,
+- `GET /api/devices`, `POST /api/server/notifications/test`, `DELETE /api/devices/{id}`,
   `PATCH /api/devices/{id}`, `POST /api/devices/{id}/heartbeat`.
 - `GET /ws` — realtime events for the Logs event feed.
 
@@ -215,8 +215,8 @@ Sequenced so each step is shippable; **implementation is a later pass**.
    `RuntimeSection` permission rows → **Permissions**, `RuntimeSection`
    keep-awake + `LaunchAtLoginSection` → **Advanced**, `ServerLogSection` →
    **Logs**. New **Dashboard** composes the most important status at a glance.
-3. **Devices actions**: wire Test Push + Remove (APIs already exist) with
-   confirmation for Remove.
+3. **Devices actions**: wire Remove with confirmation; notification testing is
+   a single Notifications-page action.
 4. **Logs event feed (optional)**: a small WS client appending decoded events to
    a bounded list; off by default.
 5. **Advanced capabilities matrix**: render `capabilities.schema` from status.
@@ -235,7 +235,7 @@ third-party dependencies; CoreImage for QR (already used).
 3. **Connections**: local + LAN endpoints appear when bound to `0.0.0.0`; only
    local when loopback. Public URL set/validate works; token is **masked** until
    Reveal; pairing QR regenerates per selected endpoint.
-4. **Push Devices**: registered notification devices list; Test Push returns success/▲not-configured;
+4. **Push Devices**: registered notification devices list; unified notification test returns success/▲not-configured;
    Remove deletes after confirm; push token is never shown (only "token set").
 5. **Notifications**: provider/preview and implemented vs stub render; the v0.12
    FCM panel is clearly labeled "planned".

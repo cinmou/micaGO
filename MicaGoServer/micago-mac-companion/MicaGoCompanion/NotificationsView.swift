@@ -26,7 +26,8 @@ private struct ProviderStatusCard: View {
                 LabeledRow(label: "State", value: stateLabel(n))
                 LabeledRow(label: "Enabled", value: n.enabled ? "yes" : "no")
                 LabeledRow(label: "Provider", value: n.provider)
-                LabeledRow(label: "Preview", value: n.preview)
+                LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? "configured" : "not set")
+                LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? "configured" : "not set")
                 LabeledRow(label: "Implemented", value: n.implemented.joined(separator: ", "))
                 LabeledRow(label: "Stub", value: n.stub.isEmpty ? "—" : n.stub.joined(separator: ", "))
                 LabeledRow(label: "Firestore URL sync", value: model.firestoreSyncActive ? "enabled" : "disabled")
@@ -49,49 +50,47 @@ private struct FirebaseSetupCard: View {
     var body: some View {
         SectionCard(title: "Firebase Self-Host (Android FCM)") {
             Toggle("Notifications enabled", isOn: $model.notifEnabled)
-
-            Picker("Provider", selection: $model.notifProvider) {
-                Text("None").tag("none")
-                Text("Webhook").tag("webhook")
-                Text("FCM (Firebase)").tag("fcm")
-            }
-            .pickerStyle(.menu)
-
-            Picker("Preview", selection: $model.notifPreview) {
-                Text("None (generic)").tag("none")
-                Text("Sender only").tag("sender")
-                Text("Sender + text").tag("sender_and_text")
-            }
-            .pickerStyle(.menu)
-
-            if model.notifProvider == "fcm" {
-                Toggle("Enable FCM delivery", isOn: $model.fcmEnabled)
-
-                HStack(spacing: 8) {
-                    Image(systemName: model.serviceAccountPath.isEmpty ? "doc.badge.plus" : "checkmark.seal.fill")
-                        .foregroundStyle(model.serviceAccountPath.isEmpty ? Color.secondary : Color.green)
-                    Text(serviceAccountLabel)
-                        .font(.callout).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Button("Choose service-account JSON…") { chooseServiceAccount() }
+            Toggle("Enable FCM delivery", isOn: $model.fcmEnabled)
+                .onChange(of: model.fcmEnabled) { enabled in
+                    if enabled { model.notifEnabled = true }
                 }
-                Text("The service-account JSON stays on this Mac. It is never shown again, uploaded, or sent to clients.")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
 
-                TextField("Firebase project ID (optional; inferred from the JSON)", text: $model.fcmProjectID)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.callout, design: .monospaced))
+            firebaseFileRow(
+                icon: "iphone.gen3.radiowaves.left.and.right",
+                ready: googleServicesReady,
+                title: googleServicesLabel,
+                button: "Choose google-services.json…",
+                action: chooseGoogleServices
+            )
+            Text("This lets the Android client initialize Firebase at runtime.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                Toggle("Sync public URL to Firestore (optional)", isOn: $model.firestoreURLSync)
-                Text("When on, ONLY the public server URL is written to your Firestore so remote clients can rediscover a changed tunnel URL. No tokens, contacts, or message content.")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            firebaseFileRow(
+                icon: "key.horizontal.fill",
+                ready: serviceAccountReady,
+                title: serviceAccountLabel,
+                button: "Choose service-account JSON…",
+                action: chooseServiceAccount
+            )
+            Text("This file stays on the Mac and lets the server send FCM.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextField("Firebase project ID (optional)", text: $model.fcmProjectID)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.callout, design: .monospaced))
+
+            Toggle("Sync public URL to Firestore (optional)", isOn: $model.firestoreURLSync)
+            Text("Only the public server URL is written. Messages, tokens, contacts, and attachments are not stored there.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 12) {
                 Button("Save") { Task { await model.saveNotificationsConfig() } }
                     .disabled(model.notifBusy)
+                Button("Send test notification") { Task { await model.testAllPushDevices() } }
+                    .disabled(model.notifBusy || !model.fcmEnabled)
                 Button("Clear Firebase config", role: .destructive) { Task { await model.clearNotificationsConfig() } }
                     .disabled(model.notifBusy)
                 if model.notifBusy { ProgressView().controlSize(.small) }
@@ -103,14 +102,42 @@ private struct FirebaseSetupCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("Test Push is on the Devices page (per registered device).")
+            Text("Test sends to every registered FCM device.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
 
+    private var serviceAccountReady: Bool {
+        !model.serviceAccountPath.isEmpty || (model.status?.notifications.fcmServiceAccountConfigured ?? false)
+    }
+
+    private var googleServicesReady: Bool {
+        !model.googleServicesPath.isEmpty || (model.status?.notifications.fcmClientConfigured ?? false)
+    }
+
     private var serviceAccountLabel: String {
-        if model.serviceAccountPath.isEmpty { return "No service-account file selected" }
+        if model.serviceAccountPath.isEmpty {
+            return serviceAccountReady ? "Service account already configured" : "No service-account file selected"
+        }
         return "Selected: " + (model.serviceAccountPath as NSString).lastPathComponent
+    }
+
+    private var googleServicesLabel: String {
+        if model.googleServicesPath.isEmpty {
+            return googleServicesReady ? "google-services.json already configured" : "No google-services.json selected"
+        }
+        return "Selected: " + (model.googleServicesPath as NSString).lastPathComponent
+    }
+
+    private func firebaseFileRow(icon: String, ready: Bool, title: String, button: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: ready ? "checkmark.seal.fill" : icon)
+                .foregroundStyle(ready ? Color.green : Color.secondary)
+            Text(title)
+                .font(.callout).lineLimit(1).truncationMode(.middle)
+            Spacer()
+            Button(button) { action() }
+        }
     }
 
     private func chooseServiceAccount() {
@@ -123,6 +150,17 @@ private struct FirebaseSetupCard: View {
             model.serviceAccountPath = url.path
         }
     }
+
+    private func chooseGoogleServices() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        if panel.runModal() == .OK, let url = panel.url {
+            model.googleServicesPath = url.path
+        }
+    }
 }
 
 private struct PushPrivacyCard: View {
@@ -133,7 +171,7 @@ private struct PushPrivacyCard: View {
             • Firebase is only for Android FCM push and the optional public-URL discovery.
             • Windows clients use WebSocket + local notifications while running. Huawei/HarmonyOS Push is deferred. iOS push is out of scope.
             • Firebase NEVER stores message content, contacts, phone numbers, bearer tokens, attachments, chat history, the device registry, or sync rules.
-            • Push text is gated by Preview: None sends no text, Sender sends only the sender label, Sender + text includes the message text in the transient push (never stored).
+            • FCM payloads are transient delivery data. Message history still syncs over your normal micaGO connection.
             """)
             .font(.caption)
             .foregroundStyle(.secondary)

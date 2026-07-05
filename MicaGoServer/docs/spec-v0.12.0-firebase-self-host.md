@@ -52,10 +52,10 @@ auto-bootstrap or any chat storage.
 
 ### Test push
 
-- Reuse `POST /api/devices/{id}/test-push` (already exists). With `fcm`
-  implemented, it sends a real test notification through the user's project and
-  reports success / `push_not_configured` / provider error. Surfaced by a
-  per-device "Test Push" button (companion Devices page).
+- Use `POST /api/server/notifications/test`. With `fcm` implemented, it sends a
+  real test notification through the user's project to every registered FCM
+  device and reports success / `push_no_devices` / `push_no_fcm_devices` /
+  provider error. Surfaced by the Notifications setup page.
 
 ### Device token pruning
 
@@ -140,15 +140,15 @@ no OAuth-heavy BlueBubbles-style bootstrap.
   `POST /api/server/notifications` config-write endpoint.
 - Config: reuse `fcm.service_account_path`, `notifications.{enabled,provider,preview}`;
   add an opt-in `firebase.public_url_sync` flag.
-- Companion: Notifications setup panel (provider/service-account/preview/enable),
-  Devices "Test Push".
+- Companion: Notifications setup panel (provider/service-account/enable) with a
+  single "Send test notification" action.
 
 ## Manual test checklist
 
 1. Configure `fcm` with a real service-account JSON; `/api/server/status`
    shows `fcm` in `implemented` (no longer a stub).
-2. Register a device with an FCM token; **Test Push** delivers a real
-   notification; `push_not_configured` shown when not set up.
+2. Register a device with an FCM token; **Send test notification** delivers a
+   real notification; `push_no_fcm_devices` shown when no FCM device is registered.
 3. `previewMode` levels produce the expected push content (none / sender /
    sender+text).
 4. A **sync-blocked** chat never pushes; a **push-muted** chat syncs but does not

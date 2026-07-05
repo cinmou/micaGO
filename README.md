@@ -67,9 +67,9 @@ Access, so read the [security model](#-security-model) and
   own tunnel) works from anywhere.
 - 👤 **Contacts matching.** On‑device name resolution, opt‑in — the address book
   is never uploaded.
-- 🔔 **Notifications (optional).** A keep‑alive background service raises native
-  Android MessagingStyle alerts with nothing to set up. Prefer push? Point it at
-  **your own** Firebase instead.
+- 🔔 **Notifications (optional).** Keep-alive and FCM both render through the
+  client’s native Android MessagingStyle notification path. Prefer push? Point it
+  at **your own** Firebase.
 
 ---
 
@@ -184,8 +184,9 @@ All optional and **off by default** — micaGO works fully without any of them.
   when a message lands — no push account, no `google-services.json`. Default off, and
   OEM battery managers can still throttle it.
 - 🔔 **Firebase / FCM push.** Rather not keep a service running? Wire up **your own**
-  Firebase project for background push (nothing baked in). The payload is only a wake
-  signal; the message itself arrives over WebSocket or delta sync. See
+  Firebase project for background push (nothing baked in). FCM is data-only; the
+  client renders the same local MessagingStyle notification and then syncs the
+  message over WebSocket or delta. See
   [`docs/setup/firebase/`](docs/setup/firebase/README.md).
 - ✍️ **Edit / Unsend / Delete (IMCore helper).** A small bundled helper that calls
   private macOS IMCore APIs.

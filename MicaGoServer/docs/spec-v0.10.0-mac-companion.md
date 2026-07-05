@@ -117,7 +117,7 @@ guidance to verify in System Settings.
 | **Bearer token** | `~/.micago/config.yaml` → `auth.token` | `ConfigReader`; the token is read locally and **never** fetched from the API |
 | **Current server status** | `GET /api/server/status` (after `GET /api/health` + `POST /api/auth/check`) | `APIClient`, polled every ~3s while the window is open |
 | **Paired devices** | `GET /api/server/connections` → `data[]` | active authenticated WebSocket sessions, not push registration |
-| **Push devices** | `GET /api/devices` → `data[]` | optional notification registry + Test Push |
+| **Push devices** | `GET /api/devices` → `data[]` | optional notification registry; test action lives in Notifications |
 | **Notification provider status** | `notifications` block of `/api/server/status` | shows enabled/provider/preview and implemented vs stub providers |
 | **Permission diagnostics** | `permissions` block of `/api/server/status` | Full Disk Access, Attachments, Automation |
 

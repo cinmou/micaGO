@@ -166,6 +166,42 @@ func TestDeviceTokenRefreshUpdatesSameRow(t *testing.T) {
 	}
 }
 
+func TestDeviceListAllowsLegacyNullBackground(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	_, err := db.sqlDB.ExecContext(ctx, `
+INSERT INTO devices (
+	id, name, platform, client_type, app_version, mode, push_provider, push_token,
+	push_enabled, background, last_seen_at, created_at, updated_at
+) VALUES (
+	'legacy-null-bg', 'Old Android', 'android', 'flutter', '', '', 'none', NULL,
+	0, NULL, NULL, 100, 100
+);
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	device, err := db.GetDeviceByID(ctx, "legacy-null-bg")
+	if err != nil {
+		t.Fatalf("get legacy device: %v", err)
+	}
+	if device == nil {
+		t.Fatal("expected legacy device")
+	}
+	if device.Background {
+		t.Fatalf("expected null background to read as false, got %#v", device)
+	}
+
+	devices, err := db.ListDevices(ctx)
+	if err != nil {
+		t.Fatalf("list legacy devices: %v", err)
+	}
+	if len(devices) != 1 || devices[0].Background {
+		t.Fatalf("expected one legacy device with background=false, got %#v", devices)
+	}
+}
+
 func TestUpsertDoesNotDuplicateRows(t *testing.T) {
 	db := openTestDB(t)
 	tx, err := db.sqlDB.Begin()

@@ -481,6 +481,61 @@ class ApiClient {
     }
   }
 
+  /// `GET /api/sync/rules` — returns the server-authoritative muted chat GUIDs.
+  /// The Flutter client no longer persists a local mute table; it mirrors these
+  /// push rules in memory for UI state and local keep-alive notification gating.
+  Future<Set<String>?> getMutedChatGuids() async {
+    try {
+      final res = await _send(
+        () => _http
+            .get(_uri('/api/sync/rules'), headers: _authHeaders)
+            .timeout(const Duration(seconds: 10)),
+      );
+      if (res.statusCode != 200) return null;
+      final rules = _decodeObject(res)['rules'];
+      if (rules is! List) return <String>{};
+      return {
+        for (final rule in rules.whereType<Map<String, dynamic>>())
+          if (rule['targetKind'] == 'chat' &&
+              rule['pushMode'] == 'muted' &&
+              (rule['targetValue'] as String?)?.trim().isNotEmpty == true)
+            (rule['targetValue'] as String).trim(),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// `PUT /api/sync/rules` — set a server-side sync/push rule. The client uses
+  /// this only for notification mute parity: sync stays inherited, push is
+  /// muted/inherited so Companion remains the main policy surface.
+  Future<bool> putSyncRule({
+    required String targetKind,
+    required String targetValue,
+    String syncMode = 'inherit',
+    String pushMode = 'inherit',
+  }) async {
+    try {
+      final res = await _send(
+        () => _http
+            .put(
+              _uri('/api/sync/rules'),
+              headers: {..._authHeaders, 'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'targetKind': targetKind,
+                'targetValue': targetValue,
+                'syncMode': syncMode,
+                'pushMode': pushMode,
+              }),
+            )
+            .timeout(const Duration(seconds: 10)),
+      );
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// `GET /api/test-contact` — current offline loopback test-contact settings.
   /// Returns null on any failure (the toggle then shows unavailable).
   Future<TestContactConfig?> getTestContactConfig() async {
@@ -603,20 +658,6 @@ class ApiClient {
     } catch (_) {
       // Ignore — presence is derived from freshness, not from this call.
     }
-  }
-
-  /// `POST /api/devices/{id}/test-push` — ask the server to deliver a test
-  /// notification to this device (C27). Throws [ApiException] on non-2xx, e.g.
-  /// when notifications aren't configured or this device has no push token.
-  Future<void> sendTestPush(String deviceId) async {
-    await _send(
-      () => _http
-          .post(
-            _uri('/api/devices/${Uri.encodeComponent(deviceId)}/test-push'),
-            headers: _authHeaders,
-          )
-          .timeout(const Duration(seconds: 15)),
-    );
   }
 
   /// `POST /api/chats/{guid}/send-attachment` — send a file to an iMessage chat

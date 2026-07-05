@@ -28,6 +28,8 @@ void main() {
             'micago.connection_profile.v1': '{"baseUrl":"x","token":"t"}',
             'micago.theme.mode': 'dark',
             'micago.message_display_prefs.v1': '{}',
+            // Legacy local mute state may exist in old backups; it is no longer
+            // reported or restored because server sync rules are authoritative.
             'micago.muted_chats.v1': '["a","b"]',
             'micago.fcm_options.v1': '{"projectId":"demo"}',
           },
@@ -45,7 +47,6 @@ void main() {
       expect(s.hasMessageDisplay, isTrue);
       expect(s.hasChatBackground, isTrue);
       expect(s.customAvatarCount, 1);
-      expect(s.mutedCount, 2);
       expect(s.pinnedHiddenCount, 1);
       expect(s.hiddenMessageCount, 3);
     });

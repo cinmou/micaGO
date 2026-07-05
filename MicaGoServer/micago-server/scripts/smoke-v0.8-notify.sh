@@ -20,8 +20,8 @@ echo "$REGISTER_RESPONSE"
 DEVICE_ID="$(printf '%s' "$REGISTER_RESPONSE" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -n 1)"
 
 echo
-echo "== test-push for none provider =="
-curl -sS -i -H "$AUTH_HEADER" -X POST "$BASE_URL/api/devices/$DEVICE_ID/test-push"
+echo "== notification test with no FCM device =="
+curl -sS -i -H "$AUTH_HEADER" -X POST "$BASE_URL/api/server/notifications/test"
 echo
 
 if [[ -n "$WEBHOOK_URL" ]]; then

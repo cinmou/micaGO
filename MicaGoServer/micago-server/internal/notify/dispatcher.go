@@ -23,10 +23,11 @@ type Dispatcher struct {
 	fcmActive       bool
 	firestore       *FirestoreURLSync
 	pruneFunc       func(deviceID string)
+	contacts        *contactCache
 }
 
 func NewDispatcher(cfg config.Config) *Dispatcher {
-	d := &Dispatcher{}
+	d := &Dispatcher{contacts: newContactCache()}
 	d.apply(cfg)
 	return d
 }
@@ -43,6 +44,15 @@ func (d *Dispatcher) SetPruneFunc(fn func(deviceID string)) {
 	d.mu.Lock()
 	d.pruneFunc = fn
 	d.mu.Unlock()
+}
+
+// SetContactCache replaces the local-only contact display-name cache used for
+// push notification titles. The cache is in-memory and contains no message data.
+func (d *Dispatcher) SetContactCache(entries []ContactEntry) {
+	if d.contacts == nil {
+		d.contacts = newContactCache()
+	}
+	d.contacts.Set(entries)
 }
 
 func (d *Dispatcher) apply(cfg config.Config) {
@@ -168,25 +178,65 @@ func (d *Dispatcher) DispatchNewMessages(ctx context.Context, devices []store.De
 		return nil
 	}
 
+	pushReady := 0
+	for _, device := range devices {
+		if device.PushEnabled && device.PushProvider != "none" {
+			if _, ok := providers[device.PushProvider]; ok {
+				pushReady++
+			}
+		}
+	}
+	sent := 0
+	skippedOutgoing := 0
+	skippedNoDevice := 0
+	errorsLogged := 0
 	for _, event := range events {
 		if event.Message.IsFromMe {
+			skippedOutgoing++
 			continue
 		}
-		notification := buildNotification(event, previewMode)
+		notification := d.buildNotification(event, previewMode)
 		for _, device := range devices {
 			if !device.PushEnabled || device.PushProvider == "none" {
+				skippedNoDevice++
 				continue
 			}
 			provider, ok := providers[device.PushProvider]
 			if !ok {
+				skippedNoDevice++
 				continue
 			}
 			if err := provider.Send(ctx, device, notification); err != nil && !errors.Is(err, ErrPushNotConfigured) {
+				errorsLogged++
 				log.Printf("push dispatch (%s): %v", device.PushProvider, err)
+				continue
 			}
+			sent++
 		}
 	}
+	log.Printf("push dispatch summary: events=%d devices=%d push_ready=%d sent=%d skipped_outgoing=%d skipped_no_device=%d errors=%d",
+		len(events), len(devices), pushReady, sent, skippedOutgoing, skippedNoDevice, errorsLogged)
 	return nil
+}
+
+func (d *Dispatcher) buildNotification(event relaydb.NotificationEvent, previewMode string) Notification {
+	notification := buildNotification(event, previewMode)
+	handle := strings.TrimSpace(notification.Handle)
+	if handle == "" || d.contacts == nil {
+		return notification
+	}
+	if name := d.contacts.Resolve(handle); name != "" {
+		notification.SenderName = name
+		if event.IsGroup {
+			if notification.Title == handle {
+				notification.Title = notification.ConversationTitle
+			}
+		} else {
+			notification.Title = name
+			notification.ConversationTitle = name
+		}
+	}
+	return notification
 }
 
 func (d *Dispatcher) SendTest(ctx context.Context, device store.DeviceRecord) error {

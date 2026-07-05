@@ -335,6 +335,7 @@ type NotificationsUpdate struct {
 	FCMEnabled         bool
 	FCMProjectID       string
 	ServiceAccountPath string
+	GoogleServicesPath string
 	PublicURLSync      bool
 }
 
@@ -364,6 +365,7 @@ func UpdateNotificationsConfig(cfgPath string, u NotificationsUpdate) error {
 	fileCfg.FCM.Enabled = u.FCMEnabled
 	fileCfg.FCM.ProjectID = strings.TrimSpace(u.FCMProjectID)
 	fileCfg.FCM.ServiceAccountPath = strings.TrimSpace(u.ServiceAccountPath)
+	fileCfg.FCM.GoogleServicesPath = strings.TrimSpace(u.GoogleServicesPath)
 	fileCfg.Firebase.PublicURLSync = u.PublicURLSync
 	return writeConfigFile(cfgPath, fileCfg)
 }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2650"
+   LastUpgradeVersion = "2660"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -43,6 +43,7 @@
       queueDebuggingEnableBacktraceRecording = "Yes">
       <PathRunnable
          runnableDebuggingMode = "0"
+         BundleIdentifier = "com.micago.companion"
          FilePath = "/Users/Cinmou/Library/Developer/Xcode/DerivedData/MicaGoCompanion-gqnrsgzbuuuccjahwiohsrougypo/Build/Products/Debug/MicaGoCompanion.app">
       </PathRunnable>
    </LaunchAction>
