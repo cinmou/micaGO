@@ -23,47 +23,59 @@ class QrPairingScreen extends StatefulWidget {
 class _QrPairingScreenState extends State<QrPairingScreen>
     with WidgetsBindingObserver {
   late final PairingController _pairing;
-  // C61: ONE controller for the State's whole lifetime (never swapped/recreated
-  // — the MobileScanner widget stays bound to its ValueNotifier; disposing it
-  // mid-build blanks the preview). autoStart:false + an explicit start() we
-  // drive ourselves. Two fixes over C59:
-  //   1. Start in a *post-frame* callback, not directly in initState. start()
-  //      only waits 500ms for the widget's attach(); driving it from initState
-  //      races the first build, and on a slow frame it times out with
-  //      `controllerNotAttached` → the camera never opens even with permission
-  //      granted (this was the "authorized but can't invoke" symptom). By the
-  //      post-frame callback the MobileScanner widget has attached.
-  //   2. The resume path no longer gates on `hasCameraPermission`. That getter
-  //      is false until the camera has *initialized once*, so the old gate
-  //      could never let a first start through after a grant that didn't
-  //      restart the process. start() itself no-ops when already running and
-  //      re-requests permission when needed, so an unconditional guarded start
-  //      is safe.
-  final MobileScannerController _scanner = MobileScannerController(
+
+  // C62 scanner rewrite. Root cause of every earlier "authorized but the
+  // camera never opens": *we* drove start() from this State (initState /
+  // post-frame / retry loops), racing the MobileScanner widget's attach and
+  // permission flow, and a swallowed start() exception left a permanent black
+  // preview with no error UI.
+  //
+  // New model — the widget owns the camera session, we own recovery:
+  //  * `autoStart: true` (the plugin default): MobileScanner itself calls
+  //    start() right after it attaches in its own initState, and stop() in
+  //    its dispose. We never call start() at screen-open, so there is no
+  //    attach race. Leaving the scanning stage unmounts the widget (stops
+  //    the camera); re-entering mounts it again (starts it).
+  //  * Platform start failures are caught inside the controller and land in
+  //    `value.error` → the errorBuilder card, which now also shows the real
+  //    error code, so a failure is diagnosable instead of a black box.
+  //  * Retry is a **cold restart**: a brand-new controller under a new
+  //    ValueKey. The old widget must unmount before its controller is
+  //    disposed (rebinding a live widget blanks the preview — C59), and the
+  //    platform channel is a singleton whose dispose() stops the active
+  //    camera, so the two sessions are strictly sequenced: unmount old →
+  //    dispose old → mount new. The fresh start() re-runs the permission
+  //    check, which also recovers "granted in system Settings while the app
+  //    stayed alive".
+  MobileScannerController? _scanner;
+  int _scannerGeneration = 0;
+
+  static MobileScannerController _newScanner() => MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [BarcodeFormat.qrCode],
-    autoStart: false,
   );
-  int _cameraStartEpoch = 0;
 
   @override
   void initState() {
     super.initState();
     _pairing = PairingController(context.read<AppController>());
     WidgetsBinding.instance.addObserver(this);
-    // Start after the first frame so the MobileScanner widget has attached
-    // its platform view (start() only waits 500ms for that otherwise).
-    WidgetsBinding.instance.addPostFrameCallback((_) => _queueCameraStart());
+    _scanner = _newScanner();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // MobileScanner only self-manages app lifecycle for its own internal
+    // controller; with an external controller that's this State's job.
+    final scanner = _scanner;
+    if (scanner == null) return;
     switch (state) {
       case AppLifecycleState.resumed:
-        // Covers "granted from system Settings without a process restart" and
-        // returning from the app switcher. start() no-ops if already running.
+        // start() no-ops when already running and re-runs the permission
+        // check when not; in-flight races throw and are swallowed — real
+        // failures surface through the errorBuilder.
         if (_pairing.stage == PairingStage.scanning) {
-          _queueCameraStart();
+          unawaited(scanner.start().catchError((_) {}));
         }
         break;
       case AppLifecycleState.inactive:
@@ -71,62 +83,39 @@ class _QrPairingScreenState extends State<QrPairingScreen>
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        _cameraStartEpoch++;
-        unawaited(_scanner.stop().catchError((_) {}));
+        unawaited(scanner.stop().catchError((_) {}));
         break;
     }
   }
 
-  void _queueCameraStart() {
-    final epoch = ++_cameraStartEpoch;
-    unawaited(_safeStart(epoch));
-  }
-
-  /// start() that survives the widget attach race in mobile_scanner 7.x. When a
-  /// custom controller is passed, our State owns the lifecycle and start() may
-  /// run before MobileScanner has completed attach(); retry those short races
-  /// instead of leaving the scanner blank forever.
-  Future<void> _safeStart(int epoch, {int attempt = 0}) async {
-    if (!mounted || epoch != _cameraStartEpoch) return;
-    if (_pairing.stage != PairingStage.scanning) return;
+  /// Cold restart for the Retry button: unmount the old scanner widget,
+  /// dispose its controller, then mount a fresh controller under a new key —
+  /// strictly sequential so two camera sessions never overlap.
+  Future<void> _remountScanner() async {
+    final old = _scanner;
+    if (old == null) return; // A swap is already in flight.
+    setState(() => _scanner = null); // Unmounts the old MobileScanner.
+    await WidgetsBinding.instance.endOfFrame;
     try {
-      await _scanner.start();
-    } on MobileScannerException catch (error) {
-      if (!_shouldRetryStart(error, attempt)) return;
-      await Future<void>.delayed(Duration(milliseconds: 120 * (attempt + 1)));
-      await _safeStart(epoch, attempt: attempt + 1);
-    } catch (_) {
-      if (attempt >= 3) return;
-      await Future<void>.delayed(Duration(milliseconds: 120 * (attempt + 1)));
-      await _safeStart(epoch, attempt: attempt + 1);
-    }
-  }
-
-  bool _shouldRetryStart(MobileScannerException error, int attempt) {
-    if (attempt >= 5) return false;
-    switch (error.errorCode) {
-      case MobileScannerErrorCode.controllerNotAttached:
-      case MobileScannerErrorCode.controllerAlreadyInitialized:
-      case MobileScannerErrorCode.controllerInitializing:
-      case MobileScannerErrorCode.genericError:
-        return true;
-      case MobileScannerErrorCode.controllerDisposed:
-      case MobileScannerErrorCode.controllerUninitialized:
-      case MobileScannerErrorCode.permissionDenied:
-      case MobileScannerErrorCode.unsupported:
-        return false;
-    }
+      await old.dispose();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _scannerGeneration++;
+      _scanner = _newScanner();
+    });
   }
 
   @override
   void dispose() {
-    _cameraStartEpoch++;
     WidgetsBinding.instance.removeObserver(this);
     _pairing.dispose();
+    final scanner = _scanner;
+    _scanner = null;
     super.dispose();
-    // Per the docs: dispose the controller after super.dispose(), so the
-    // MobileScanner widget detaches before its controller goes away.
-    unawaited(_scanner.dispose());
+    // After super.dispose() the MobileScanner widget has detached (its own
+    // dispose already stopped the camera); finish tearing down.
+    if (scanner != null) unawaited(scanner.dispose());
   }
 
   void _onDetect(BarcodeCapture capture) {
@@ -142,7 +131,9 @@ class _QrPairingScreenState extends State<QrPairingScreen>
 
     _pairing.onScan(raw);
     if (_pairing.stage == PairingStage.preview) {
-      _scanner.stop();
+      // Switching stages unmounts MobileScanner, which stops the camera
+      // itself; this just cuts the feed within the same frame.
+      unawaited(_scanner?.stop().catchError((_) {}));
     } else if (_pairing.message != null && mounted) {
       ScaffoldMessenger.of(
         context,
@@ -158,22 +149,9 @@ class _QrPairingScreenState extends State<QrPairingScreen>
   }
 
   void _scanAgain() {
+    // Re-entering the scanning stage remounts MobileScanner, whose autoStart
+    // restarts the camera — no manual start call.
     _pairing.scanAgain();
-    unawaited(_restartCamera());
-  }
-
-  // Retry button / scan-again: a plain stop → start on the long-lived
-  // controller, exactly as the mobile_scanner docs do on resume. start() re-runs
-  // the permission check, so this also recovers the "granted while the app was
-  // alive" case without ever swapping the controller out from under the widget.
-  Future<void> _restartCamera() async {
-    final epoch = ++_cameraStartEpoch;
-    try {
-      await _scanner.stop();
-    } catch (_) {
-      // Not started yet — fine, just start below.
-    }
-    await _safeStart(epoch);
   }
 
   @override
@@ -186,7 +164,7 @@ class _QrPairingScreenState extends State<QrPairingScreen>
           IconButton(
             tooltip: strings.t('pair.toggleTorch'),
             icon: const Icon(Icons.flashlight_on_outlined),
-            onPressed: () => _scanner.toggleTorch(),
+            onPressed: () => _scanner?.toggleTorch(),
           ),
         ],
       ),
@@ -228,15 +206,30 @@ class _QrPairingScreenState extends State<QrPairingScreen>
   }
 
   Widget _scannerView() {
+    final scanner = _scanner;
     return Stack(
       alignment: Alignment.center,
       children: [
-        MobileScanner(
-          controller: _scanner,
-          onDetect: _onDetect,
-          errorBuilder: (context, error) =>
-              _CameraError(error: error, onRetry: _restartCamera),
-        ),
+        if (scanner == null)
+          // Mid cold-restart (old session tearing down); one frame of spinner.
+          const ColoredBox(
+            color: Colors.black,
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else
+          MobileScanner(
+            // The generation key ties this widget to exactly one controller:
+            // a cold restart swaps both together (never rebinds a live view).
+            key: ValueKey(_scannerGeneration),
+            controller: scanner,
+            onDetect: _onDetect,
+            placeholderBuilder: (context) => const ColoredBox(
+              color: Colors.black,
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            errorBuilder: (context, error) =>
+                _CameraError(error: error, onRetry: _remountScanner),
+          ),
         // Simple framing + hint overlay.
         IgnorePointer(
           child: Container(
@@ -319,6 +312,12 @@ class _CameraError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final details = error.errorDetails?.message;
+    final diagnostic = [
+      error.errorCode.name,
+      if (details != null && details.isNotEmpty) details,
+    ].join(' — ');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -336,6 +335,16 @@ class _CameraError extends StatelessWidget {
               strings.t('pair.cameraHelp'),
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            // The raw plugin error (English), so failures are reportable.
+            Text(
+              diagnostic,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontFamily: 'monospace',
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton.tonalIcon(
