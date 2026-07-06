@@ -24,7 +24,9 @@ const (
 	defaultSyncInterval     = 5 * time.Second
 	defaultInitialSyncLimit = 1000
 	defaultNotificationProv = "none"
-	defaultNotificationPrev = "sender"
+	// C60: default to sender + message text so a fresh install's pushes carry
+	// real content; the Companion has a preview picker for the privacy modes.
+	defaultNotificationPrev = "sender_and_text"
 	tokenBytes              = 32
 	defaultPreferredPairing = "auto"
 	defaultUpdateLookback   = 168 * time.Hour // 7 days

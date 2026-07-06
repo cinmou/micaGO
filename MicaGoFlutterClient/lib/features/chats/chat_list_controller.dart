@@ -85,6 +85,8 @@ class ChatListController extends ChangeNotifier {
       await app.cache.upsertChats(result);
       // C54: apply any restored pin/hide flags to chats as they sync in.
       await app.cache.applyPendingChatFlags();
+      // C60: refresh the FCM isolate's handle → {name, avatar} cache (throttled).
+      unawaited(app.syncNotificationContactCache(result));
       // Display from the cache, restricted to the chats the server still returns.
       // The cache derives the unread dot (watermark) and pin order, so a full
       // reload, delta, resume, or pull-to-refresh all yield the same correct

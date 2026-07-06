@@ -66,7 +66,7 @@ final class AppModel: ObservableObject {
     // Notifications / FCM config (v0.12)
     @Published var notifEnabled = false
     @Published var notifProvider = "none"
-    @Published var notifPreview = "sender"
+    @Published var notifPreview = "sender_and_text"
     @Published var fcmEnabled = false
     @Published var fcmProjectID = ""
     @Published var serviceAccountPath = ""
@@ -592,7 +592,9 @@ final class AppModel: ObservableObject {
             let resp = try await client.setNotificationsConfig(
                 enabled: notifEnabled,
                 provider: fcmEnabled ? "fcm" : "none",
-                preview: "sender",
+                // C60: honour the user's preview choice — this used to be
+                // hardcoded to "sender", which stripped message text from pushes.
+                preview: notifPreview,
                 fcmEnabled: fcmEnabled, fcmProjectID: fcmProjectID,
                 serviceAccountPath: serviceAccountPath,
                 googleServicesPath: googleServicesPath,

@@ -55,6 +55,18 @@ private struct FirebaseSetupCard: View {
                     if enabled { model.notifEnabled = true }
                 }
 
+            // C60: what a push may reveal. "Sender & message" is what makes the
+            // phone show the actual text; the payload travels through FCM.
+            Picker("Notification preview", selection: $model.notifPreview) {
+                Text("Sender & message").tag("sender_and_text")
+                Text("Sender only").tag("sender")
+                Text("None (silent wake)").tag("none")
+            }
+            .pickerStyle(.menu)
+            Text("“Sender & message” includes the message text in the push payload (delivered via Google FCM). Choose “Sender only” or “None” if you don't want content to leave your network.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             firebaseFileRow(
                 icon: "iphone.gen3.radiowaves.left.and.right",
                 ready: googleServicesReady,

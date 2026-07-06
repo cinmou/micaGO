@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../app_controller.dart';
 import '../storage/secure_store.dart';
 import 'api_client.dart';
+import 'notification_contact_cache.dart';
 import 'notification_display.dart';
 import 'push_logic.dart';
 
@@ -356,11 +357,23 @@ Future<void> showPushNotification(RemoteMessage message) async {
       >()
       ?.createNotificationChannel(messageNotificationChannel);
   // C31/C32: group conversations use the group as conversation title and the
-  // message author as Person. The FCM isolate cannot read contacts, so it uses
-  // server-provided names/handles and falls back defensively for older servers.
-  final sender = notificationSenderName(data);
-  final conversationTitle = notificationConversationTitle(data);
+  // message author as Person. The FCM isolate cannot read contacts directly —
+  // C60: it reads the handle → {contact name, avatar file} cache the main
+  // isolate persists, so pushes show the real name + photo; server-provided
+  // names/handles remain the fallback for uncached handles / older servers.
+  final cachedContact = await lookupNotificationContact(
+    data['handle'] as String?,
+  );
+  final cachedName = cachedContact?.name?.trim() ?? '';
+  final sender = cachedName.isNotEmpty
+      ? cachedName
+      : notificationSenderName(data);
   final isGroup = notificationIsGroup(data);
+  // 1:1 chats: the conversation IS the contact, so the resolved name titles the
+  // notification too. Groups keep the server-provided group title.
+  final conversationTitle = isGroup
+      ? notificationConversationTitle(data)
+      : sender;
   final testAvatar = isTestContactPush(data) ? androidTestContactAvatar : null;
   await showMessageNotification(
     plugin,
@@ -370,6 +383,8 @@ Future<void> showPushNotification(RemoteMessage message) async {
     senderKey: data['handle'] as String? ?? sender,
     conversationTitle: conversationTitle,
     body: notificationBody(data),
+    avatarFilePath: cachedContact?.avatarPath,
+    conversationAvatarFilePath: isGroup ? null : cachedContact?.avatarPath,
     avatarDrawableResource: testAvatar,
     conversationAvatarDrawableResource: testAvatar,
     isGroup: isGroup,

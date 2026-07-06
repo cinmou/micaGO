@@ -73,6 +73,32 @@ Three components:
   `GestureDetector`) opens details; the top-right info button is removed (both the
   embedded pane header and the phone `AppBar`).
 
+## FCM notification content: name + avatar + text (C60)
+
+- **Message text in the push.** The server only includes body text when
+  `notifications.preview == "sender_and_text"`, and the Companion **hardcoded
+  `preview: "sender"` on every save** — so pushes never carried content. Fixed:
+  the Companion's Firebase card has a **Notification preview picker**
+  (sender_and_text / sender / none, `NotificationsView.swift` +
+  `AppModel.saveNotificationsConfig` passes `notifPreview`), and the server
+  default for fresh configs is now `sender_and_text` (`config.go`). **Existing
+  configs keep their written `preview: sender`** — flip it in the Companion and
+  Save.
+- **Contact name + avatar in the FCM background isolate.** The isolate can't
+  reach ContactsService, so the main isolate persists a **handle → {name,
+  avatar-file} cache** (`notification_contact_cache.dart`, SecureStore key
+  `micago.notif_contact_cache.v1`, capped 300): `AppController.
+  syncNotificationContactCache` runs after each chat-list load (throttled 10 min),
+  resolving names via `contactNameResolver` and writing contact photos to
+  **app-support**/notif-avatars (not the purgeable temp dir); custom avatars win.
+  `showPushNotification` looks the handle up, overrides the sender/conversation
+  title for 1:1 chats, and passes `avatarFilePath` (existence-checked) into the
+  MessagingStyle Person. Fallback stays server name → handle. Tests:
+  `notification_contact_cache_test.dart` (encode/decode/normalize/cap).
+- Needs: **Companion rebuild** (picker) + **backend rebuild** (default) + **APK
+  rebuild** (cache + isolate lookup); then set preview to "Sender & message" in
+  the Companion and Save.
+
 ## FCM push: dropped fcm re-registration (C58)
 
 - **Root cause of "app + server both say registered, but no push".** On startup

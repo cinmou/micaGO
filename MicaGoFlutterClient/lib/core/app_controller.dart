@@ -14,6 +14,7 @@ import 'network/connection_candidate.dart';
 import 'network/connection_notice.dart';
 import 'network/endpoint_utils.dart';
 import 'network/device_identity.dart';
+import 'network/notification_contact_cache.dart';
 import 'network/push_logic.dart';
 import 'network/refresh_coordinator.dart';
 import 'network/websocket_client.dart';
@@ -1630,6 +1631,78 @@ class AppController extends ChangeNotifier {
 
   /// Writes contact-avatar bytes to a stable temp file (one per contact key) so
   /// the notification plugin can reference it as a bitmap. Best-effort.
+  // C60: keep the FCM background isolate's contact cache fresh. The isolate
+  // can't reach ContactsService, so the main isolate persists handle →
+  // {contact name, avatar file} whenever the chat list is loaded; pushes then
+  // show the real name + photo instead of the raw handle. Throttled — the
+  // resolution walk + file writes shouldn't run on every silent reload.
+  DateTime? _notifContactCacheSyncedAt;
+
+  Future<void> syncNotificationContactCache(
+    List<ChatSummary> chats, {
+    bool force = false,
+  }) async {
+    final last = _notifContactCacheSyncedAt;
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last) < const Duration(minutes: 10)) {
+      return;
+    }
+    _notifContactCacheSyncedAt = DateTime.now();
+    try {
+      final entries = <String, NotificationContact>{};
+      Directory? avatarDir;
+      for (final chat in chats) {
+        if (chat.isGroup) continue;
+        if (entries.length >= notificationContactCacheMax) break;
+        final handle = chat.chatIdentifier?.trim() ?? '';
+        if (handle.isEmpty) continue;
+        final name = contactNameResolver?.call(handle)?.trim();
+        // Custom avatar (user-set) wins; else the contact photo, written to a
+        // stable file under app support (NOT the purgeable temp dir — the
+        // background isolate may read it days later).
+        var avatarPath = await _customSenderAvatarPath(
+          chatGuid: chat.guid,
+          handle: handle,
+          isGroup: false,
+        );
+        if (avatarPath == null) {
+          try {
+            final bytes = await contactAvatarResolver?.call(handle);
+            if (bytes != null && bytes.isNotEmpty) {
+              if (avatarDir == null) {
+                final support = await getApplicationSupportDirectory();
+                avatarDir = Directory(p.join(support.path, 'notif-avatars'));
+                await avatarDir.create(recursive: true);
+              }
+              final safe = handle.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
+              final file = File(p.join(avatarDir.path, '$safe.png'));
+              // Cheap change detector: rewrite only when the size differs.
+              if (!await file.exists() ||
+                  (await file.length()) != bytes.length) {
+                await file.writeAsBytes(bytes, flush: true);
+              }
+              avatarPath = file.path;
+            }
+          } catch (_) {
+            // No photo — the name alone is still worth caching.
+          }
+        }
+        if ((name != null && name.isNotEmpty) || avatarPath != null) {
+          entries[handle] = NotificationContact(
+            name: name,
+            avatarPath: avatarPath,
+          );
+        }
+      }
+      if (entries.isNotEmpty) {
+        await writeNotificationContactCache(store, entries);
+      }
+    } catch (_) {
+      // Best-effort; pushes fall back to the server-provided name/handle.
+    }
+  }
+
   Future<String?> _writeAvatarFile(String key, Uint8List bytes) async {
     try {
       final safe = key.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');

@@ -1,3 +1,5 @@
+// ignore_for_file: valid_regexps
+
 /// C24: lightweight emoji-only detection, adapted from BlueBubbles'
 /// `shouldShowBigEmoji` (`helpers/types/helpers/message_helper.dart`). An
 /// emoji-only message (no other visible text) with a small number of emoji is
@@ -15,7 +17,6 @@ final RegExp _emojiGlue = RegExp(
 );
 // The analyzer's static regex check doesn't understand Unicode property escapes,
 // but Dart's runtime does (covered by emoji_text_test.dart).
-// ignore: valid_regexps
 final RegExp _pictographic = RegExp(
   r'\p{Extended_Pictographic}',
   unicode: true,
