@@ -145,7 +145,6 @@ create-dmg \
   --app-drop-link "$APPLICATIONS_ICON_X" "$APPLICATIONS_ICON_Y" \
   --no-internet-enable \
   --hdiutil-quiet \
-  --overwrite \
   "$DMG_PATH" \
   "$DMG_STAGING_DIR"
 
