@@ -6,7 +6,7 @@ path is to **scan the pairing QR code** shown in the Mac app.
 ## What the Android client can do today
 
 - **Pair by QR code** (or manual URL + token entry); the token is stored in
-  Android's encrypted storage and never shown in logs.
+  Android's encrypted storage and kept out of logs.
 - **Test the REST connection** and **connect the realtime WebSocket**.
 - **Show the chat list** and open a **message thread** (history).
 - **Send text and attachments** (with a sending → sent/failed state) over
@@ -72,9 +72,8 @@ Pick the address that matches where your phone is:
   https://micago.example.com
   ```
 
-> ⚠️ **Do not use `http://127.0.0.1` on the phone.** On Android, `127.0.0.1`
-> means *the phone itself*, not your Mac. Use the Mac's LAN IP or your public
-> domain.
+> ⚠️ **Use the Mac's LAN IP on the phone.** On Android, `127.0.0.1` means *the
+> phone itself*. Use the Mac's LAN IP or your public domain.
 
 ## Step 3 — Enter your details
 
@@ -86,8 +85,8 @@ In the app's connection screen:
    automatically (see below). Only fill it in if your setup uses a different
    host for realtime.
 
-> ⚠️ Keep your token private. Don't share screenshots of this screen with the
-> token visible.
+> ⚠️ Keep your token private. Share screenshots of this screen only with the token
+> hidden.
 
 ## Step 4 — Test the connection
 
@@ -130,6 +129,6 @@ Examples:
 | **LAN address times out** | Phone isn't on the same Wi‑Fi | Put the phone on the same network as the Mac, or use the public URL. |
 | **Nothing loads with `127.0.0.1`** | Used loopback on the phone | Use the Mac's LAN IP or your public domain instead. |
 
-If REST works but the WebSocket doesn't, the
+If REST works while WebSocket fails, the
 [Remote Access guide](remote-access-cloudflare.md) and
 [Manual Test Flow](manual-test-flow.md) have more checks.
