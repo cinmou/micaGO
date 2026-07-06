@@ -121,6 +121,7 @@ class AppController extends ChangeNotifier {
   static const _customAvatarPrefix = 'custom_avatar:';
   static const inAppNotificationsStorageKey =
       'micago.in_app_notifications_enabled.v1';
+  static const developerModeStorageKey = 'micago.developer_mode.v1';
   final Map<String, String> _customAvatarPaths = {};
 
   /// The realtime client is long-lived; home screen listens to it directly.
@@ -238,6 +239,19 @@ class AppController extends ChangeNotifier {
     if (_inAppNotificationsEnabled == enabled) return;
     _inAppNotificationsEnabled = enabled;
     await store.writeValue(inAppNotificationsStorageKey, enabled ? '1' : '0');
+    notifyListeners();
+  }
+
+  /// C61: the "tap the version 7 times" developer-mode unlock is persisted, so
+  /// the Developer mode entry in Settings survives leaving the page / app
+  /// restarts until it's explicitly disabled from the About page.
+  bool _developerModeEnabled = false;
+  bool get developerModeEnabled => _developerModeEnabled;
+
+  Future<void> setDeveloperModeEnabled(bool enabled) async {
+    if (_developerModeEnabled == enabled) return;
+    _developerModeEnabled = enabled;
+    await store.writeValue(developerModeStorageKey, enabled ? '1' : '0');
     notifyListeners();
   }
 
@@ -443,6 +457,9 @@ class AppController extends ChangeNotifier {
   Future<void> _loadNotificationPreferences() async {
     _inAppNotificationsEnabled =
         await store.readValue(inAppNotificationsStorageKey) == '1';
+    // Piggybacks on this small-prefs load step (bootstrap + restore-reload).
+    _developerModeEnabled =
+        await store.readValue(developerModeStorageKey) == '1';
   }
 
   /// Builds a throwaway [ApiClient] for the connection-test screen without

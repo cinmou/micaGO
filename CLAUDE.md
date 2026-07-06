@@ -49,6 +49,27 @@ Three components:
   guides (android-client-connection / remote-access-cloudflare / notifications-setup /
   manual-test-flow) are still English-only — the localized index marks them "(英文)".
 
+## Hidden-items restyle + persisted developer mode (C61, client-only)
+
+- **Hidden messages / Hidden contacts pages** were rebuilt in the Settings style:
+  one shared generic `_HiddenItemsPage<T>` (`settings_screen.dart`) renders a
+  section-header + Card-of-tiles list inside its own `_SettingsSubPage` (which
+  now takes AppBar `actions`). Multi-select lives in the **top-right as icons**
+  (checklist enters select mode — tapping a row also does; then select-all +
+  close). Each row has a per-item unhide IconButton (visibility icon) outside
+  select mode; batch restore is a full-width bottom FilledButton with the count
+  in its label (no "N selected" text). `HiddenMessagesPage`/`HiddenContactsPage` are
+  thin wrappers supplying load/restore tear-offs + a row mapper; the old
+  `_HiddenSelectionBar`/CheckboxListTile list is gone. New l10n:
+  `settings.select` / `settings.selectAll`.
+- **Developer mode (7 taps on the About version row) is persisted**:
+  `AppController.developerModeEnabled` + `setDeveloperModeEnabled` (SecureStore
+  `micago.developer_mode.v1`, loaded in `_loadNotificationPreferences`, which
+  runs at bootstrap + restore-reload). The Settings "More" card and `_AboutBody`
+  both read it off the controller — previously it was ephemeral
+  `_SettingsScreenState` state, so leaving Settings hid the entry again.
+  Disable stays where it was: About → status row → confirm dialog.
+
 ## Video posters, device name, details media (C53)
 
 - **Video thumbnails ("Invalid image data").** The client fetches a video's
