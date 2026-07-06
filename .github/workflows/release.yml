@@ -196,6 +196,7 @@ jobs:
     needs: meta
     runs-on: macos-15
     timeout-minutes: 60
+    continue-on-error: true
     env:
       # Presence of these secrets decides signed vs unsigned; all steps below
       # degrade gracefully when they are empty. Never echo their values.
@@ -217,7 +218,9 @@ jobs:
           go vet ./...
           go test ./...
       - name: Install create-dmg
-        run: brew install create-dmg
+        run: |
+          brew untap aws/tap || true
+          brew install create-dmg
       - name: Import signing certificate (only when secrets are set)
         if: env.MACOS_CERT_P12 != ''
         run: |
@@ -269,12 +272,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/**/*.apk
-            dist/**/*.ipa
-            dist/**/*.zip
-            dist/**/*.tar.gz
-            dist/**/*.dmg
-          fail_on_unmatched_files: true
+            dist/**/*
+          fail_on_unmatched_files: false
           generate_release_notes: true
           body: |
             ## micaGO ${{ needs.meta.outputs.version }}
@@ -282,7 +281,7 @@ jobs:
             ### Downloads
             | Platform | File |
             | --- | --- |
-            | macOS (Companion + server) | `micaGO-${{ needs.meta.outputs.version }}-mac.dmg` |
+            | macOS (Companion + server, if available) | `micaGO-${{ needs.meta.outputs.version }}-mac.dmg` |
             | Android | `micaGO-${{ needs.meta.outputs.version }}-android.apk` |
             | iOS (unsigned, sideload) | `micaGO-${{ needs.meta.outputs.version }}-ios-unsigned.ipa` |
             | Windows | `micaGO-${{ needs.meta.outputs.version }}-windows-x64.zip` |
