@@ -31,8 +31,8 @@ used by the companion's in-memory cache for the local UI.
 
 ## Service account
 
-The service-account JSON stays on the Mac at the path you choose. It is never
-returned by any API. The companion shows only the filename after import.
+The service-account JSON stays on the Mac at the path you choose. The companion
+shows only the filename after import.
 
 ## Sync rules interaction (v0.11.3)
 
