@@ -77,7 +77,7 @@ dependencies:
   # C54: settings backup/restore — the .micagobak file is a plain zip.
   archive: ^4.0.0
   shared_preferences: ^2.5.5
-  connectivity_plus: ^7.2.0
+  connectivity_plus: ^6.1.5
 
 # C19: file_picker pulls a flutter_plugin_android_lifecycle that demands its
 # consumers compile against android-36, conflicting with file_picker's own

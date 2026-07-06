@@ -57,6 +57,15 @@ if [ -z "${SIGN_IDENTITY:-}" ]; then
     CODE_SIGNING_REQUIRED=NO
     CODE_SIGN_IDENTITY=-
   )
+else
+  XCODE_SIGNING_ARGS=(
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY="$SIGN_IDENTITY"
+    "CODE_SIGN_IDENTITY[sdk=macosx*]=$SIGN_IDENTITY"
+  )
+  if [ -n "${APPLE_TEAM_ID:-}" ]; then
+    XCODE_SIGNING_ARGS+=(DEVELOPMENT_TEAM="$APPLE_TEAM_ID")
+  fi
 fi
 xcodebuild \
   -project "$COMPANION_DIR/MicaGoCompanion.xcodeproj" \

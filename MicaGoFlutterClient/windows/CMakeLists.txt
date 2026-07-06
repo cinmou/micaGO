@@ -10,6 +10,13 @@ set(BINARY_NAME "mica_go")
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
 
+# GitHub-hosted Windows runners may ship a CMake version new enough to reject
+# old third-party plugin projects that still declare compatibility below 3.5.
+# Firebase's extracted C++ SDK is one of those transitive projects. Keep the
+# workaround at the app boundary so generated/extracted plugin files stay clean.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
+  "Allow older transitive CMake projects to configure on newer CMake" FORCE)
+
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(IS_MULTICONFIG)

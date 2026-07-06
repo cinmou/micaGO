@@ -144,6 +144,8 @@ jobs:
         run: flutter pub get
       - name: Build Windows
         working-directory: MicaGoFlutterClient
+        env:
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
         run: flutter build windows --release
       - name: Package zip
         shell: pwsh

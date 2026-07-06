@@ -138,8 +138,20 @@ refs/
 # Local Firebase / Google credentials. Example/template files may be tracked.
 google-services.json
 GoogleService-Info.plist
-*service-account*.json
 firebase-service-account*.json
+*service-account*.json
+*service_account*.json
+
+# Signing / notarization material. Keep these in GitHub Secrets or local
+# keychains only, never in the repository.
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.keystore
+*.jks
+*.pem
+*.key
 !*.example.json
 !**/*.example.json
 RELEASE.md
