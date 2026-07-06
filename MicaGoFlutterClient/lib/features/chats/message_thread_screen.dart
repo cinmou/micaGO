@@ -1003,7 +1003,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         return const Center(child: CircularProgressIndicator());
       case ThreadState.error:
         return _ErrorState(
-          message: _controller.error ?? 'Failed to load messages.',
+          message:
+              _controller.error ??
+              MicaLocalizations.of(context).t('common.failedToLoadMessages'),
           onRetry: () => _controller.load(),
         );
       case ThreadState.empty:
@@ -1431,6 +1433,7 @@ Future<void> showMessageActionMenu(
   }
   if (!context.mounted) return;
   final scheme = Theme.of(context).colorScheme;
+  final strings = MicaLocalizations.of(context);
   final canForward =
       api != null &&
       !message.isRetracted &&
@@ -1446,21 +1449,21 @@ Future<void> showMessageActionMenu(
       message.localState == LocalSendState.failed && message.tempId != null;
   final items = <PopupMenuEntry<MessageAction>>[
     if (text != null)
-      const PopupMenuItem<MessageAction>(
+      PopupMenuItem<MessageAction>(
         value: MessageAction.copy,
         child: ListTile(
           dense: true,
-          leading: Icon(Icons.copy),
-          title: Text('Copy'),
+          leading: const Icon(Icons.copy),
+          title: Text(strings.t('chat.copy')),
         ),
       ),
     if (canForward)
-      const PopupMenuItem<MessageAction>(
+      PopupMenuItem<MessageAction>(
         value: MessageAction.forward,
         child: ListTile(
           dense: true,
-          leading: Icon(Icons.forward_outlined),
-          title: Text('Forward'),
+          leading: const Icon(Icons.forward_outlined),
+          title: Text(strings.t('chat.forward')),
         ),
       ),
     if (onHide != null && message.guid.isNotEmpty)
@@ -1530,7 +1533,7 @@ Future<void> showMessageActionMenu(
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Message copied')));
+      ).showSnackBar(SnackBar(content: Text(strings.t('chat.messageCopied'))));
       break;
     case MessageAction.forward:
       if (api == null) return;
@@ -1642,7 +1645,11 @@ Future<void> _forwardMessage(
       .toList(growable: false);
   if ((text == null || text.isEmpty) && attachments.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('This message cannot be forwarded yet')),
+      SnackBar(
+        content: Text(
+          MicaLocalizations.of(context).t('chat.forwardUnavailable'),
+        ),
+      ),
     );
     return;
   }
@@ -1672,7 +1679,7 @@ Future<void> _forwardMessage(
         isAudioMessage: attachment.isVoiceMessage,
       );
     }
-  }, success: 'Message forwarded');
+  }, success: MicaLocalizations.of(context).t('chat.forwarded'));
 }
 
 String _forwardTempGuid(String kind) =>
@@ -1701,8 +1708,8 @@ Future<ChatSummary?> _pickForwardTarget(
       .toList(growable: false);
   if (targets.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('No available chat can receive this message'),
+      SnackBar(
+        content: Text(MicaLocalizations.of(context).t('chat.forwardNoTarget')),
       ),
     );
     return null;
@@ -1726,7 +1733,7 @@ Future<ChatSummary?> _pickForwardTarget(
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  'Forward to',
+                  MicaLocalizations.of(ctx).t('chat.forwardTo'),
                   style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -4669,12 +4676,12 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Details'),
+        title: Text(MicaLocalizations.of(context).t('details.title')),
         backgroundColor: headerBg,
         surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
-            tooltip: 'Search',
+            tooltip: MicaLocalizations.of(context).t('chat.search'),
             icon: const Icon(Icons.search),
             onPressed: _showDetailsSearchSheet,
           ),
@@ -5022,6 +5029,7 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final strings = MicaLocalizations.of(context);
     final q = _query.trim().toLowerCase();
     final results = q.isEmpty
         ? const <MessageModel>[]
@@ -5077,7 +5085,7 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                       controller: _search,
                       autofocus: true,
                       decoration: InputDecoration(
-                        hintText: 'Search this conversation',
+                        hintText: strings.t('chat.searchConversation'),
                         prefixIcon: const Icon(Icons.search),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(18),
@@ -5110,10 +5118,12 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         q.isEmpty
-                            ? 'Type to search messages'
+                            ? strings.t('chat.searchPrompt')
                             : results.isEmpty
-                            ? 'No matches'
-                            : '${results.length} match${results.length == 1 ? '' : 'es'}',
+                            ? strings.t('chat.searchNoMatches')
+                            : strings
+                                  .t('chat.searchMatchCount')
+                                  .replaceAll('{count}', '${results.length}'),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -5153,8 +5163,10 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
 
   String _subtitle(MessageModel m) {
     final who = m.isFromMe
-        ? 'You'
-        : (widget.resolveName(m.handleId) ?? m.handleId ?? 'Them');
+        ? MicaLocalizations.of(context).t('chat.you')
+        : (widget.resolveName(m.handleId) ??
+              m.handleId ??
+              MicaLocalizations.of(context).t('chat.them'));
     final ts = m.dateCreated;
     if (ts == null) return who;
     final dt = DateTime.fromMillisecondsSinceEpoch(ts);
@@ -5474,7 +5486,7 @@ class _ErrorState extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(MicaLocalizations.of(context).t('common.retry')),
             ),
           ],
         ),

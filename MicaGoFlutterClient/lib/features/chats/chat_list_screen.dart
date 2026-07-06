@@ -294,8 +294,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
           case ChatListState.loading:
             return const Center(child: CircularProgressIndicator());
           case ChatListState.error:
+            final strings = MicaLocalizations.of(context);
             return _ErrorState(
-              message: _controller.error ?? 'Failed to load chats.',
+              message:
+                  _controller.error ?? strings.t('common.failedToLoadChats'),
               onRetry: () => _controller.load(),
             );
           case ChatListState.empty:
@@ -453,13 +455,14 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
       child: SearchBar(
         controller: controller,
         focusNode: focusNode,
         onChanged: onChanged,
-        hintText: 'Search chats',
+        hintText: strings.t('chat.searchChats'),
         leading: const Icon(Icons.search),
         trailing: [
           IconButton(icon: const Icon(Icons.close), onPressed: onClose),
@@ -561,12 +564,17 @@ class _NoMatches extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
     return ListView(
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.2),
         const Icon(Icons.search_off, size: 48),
         const SizedBox(height: 12),
-        Center(child: Text('No chats match "$query"')),
+        Center(
+          child: Text(
+            strings.t('chat.noChatMatches').replaceAll('{query}', query),
+          ),
+        ),
       ],
     );
   }
@@ -1106,7 +1114,7 @@ class _ErrorState extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(MicaLocalizations.of(context).t('common.retry')),
             ),
           ],
         ),

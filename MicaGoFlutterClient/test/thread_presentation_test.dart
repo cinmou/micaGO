@@ -529,13 +529,15 @@ void main() {
       expect(items.whereType<DateSeparatorItem>().length, 1);
     });
 
-    test('inserts a time separator on a large same-day gap', () {
+    test('large same-day gaps use the full thread timestamp label', () {
       final t0 = DateTime(2024, 1, 1, 10).millisecondsSinceEpoch;
       final items = _build([
         _m(guid: 'a', text: 'one', dateCreated: t0),
         _m(guid: 'b', text: 'two', dateCreated: t0 + 90 * 60 * 1000), // +90 min
       ]);
-      expect(items.whereType<TimeSeparatorItem>().length, 1);
+      final separators = items.whereType<TimeSeparatorItem>().toList();
+      expect(separators.length, 1);
+      expect(separators.single.label, contains('2024'));
     });
 
     test('only the newest message shows a default timestamp', () {
@@ -555,12 +557,10 @@ void main() {
       );
     });
 
-    test('shouldShowTimeSeparator + label are pure and correct', () {
+    test('shouldShowTimeSeparator is pure and correct', () {
       expect(shouldShowTimeSeparator(null, 100), isFalse);
       expect(shouldShowTimeSeparator(0, 30 * 60 * 1000), isFalse); // 30 min
       expect(shouldShowTimeSeparator(0, 60 * 60 * 1000), isTrue); // 60 min
-      expect(timeOfDayLabel(DateTime(2024, 1, 1, 15, 45)), '3:45 PM');
-      expect(timeOfDayLabel(DateTime(2024, 1, 1, 0, 5)), '12:05 AM');
     });
   });
 

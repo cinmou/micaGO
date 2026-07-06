@@ -225,7 +225,7 @@ class _TabletSidebarHeader extends StatelessWidget {
           children: [
             const SizedBox(width: 12),
             IconButton(
-              tooltip: 'Search',
+              tooltip: MicaLocalizations.of(context).t('chat.search'),
               icon: const Icon(Icons.search),
               onPressed: onSearch,
             ),

@@ -271,7 +271,13 @@ func buildNotification(event relaydb.NotificationEvent, previewMode string) Noti
 	conversationTitle := event.ChatLabel()
 	handle := ""
 	if event.Message.Handle != nil {
-		handle = event.Message.Handle.ID
+		handle = strings.TrimSpace(event.Message.Handle.ID)
+	}
+	if handle == "" && !event.IsGroup && event.ChatIdentifier != nil {
+		// Synthetic one-to-one rows, such as the local test contact, may not
+		// hydrate Message.Handle on every path. Keep the push payload routable
+		// and recognizable by falling back to the chat identifier.
+		handle = strings.TrimSpace(*event.ChatIdentifier)
 	}
 	sender := handle
 	if !event.IsGroup && conversationTitle != "" {

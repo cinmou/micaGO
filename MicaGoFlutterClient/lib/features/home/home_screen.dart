@@ -202,7 +202,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               backgroundColor: headerBg,
               surfaceTintColor: Colors.transparent,
               leading: IconButton(
-                tooltip: 'Search',
+                tooltip: MicaLocalizations.of(context).t('chat.search'),
                 icon: const Icon(Icons.search),
                 onPressed: () => _searchRequests.value++,
               ),

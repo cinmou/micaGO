@@ -71,7 +71,7 @@ func TestSignedAssertionHasThreeSegments(t *testing.T) {
 	}
 }
 
-func TestFCMMessagePayloadCarriesDataAndAndroidNotification(t *testing.T) {
+func TestFCMMessagePayloadIsDataOnly(t *testing.T) {
 	n := Notification{
 		Type: "message:new", MessageGUID: "g1", ChatGUID: "c1",
 		Title: "Jane", Body: "hi", SenderName: "Jane",
@@ -87,9 +87,8 @@ func TestFCMMessagePayloadCarriesDataAndAndroidNotification(t *testing.T) {
 	if data["title"] != "Jane" || data["body"] != "hi" || data["chatGuid"] != "c1" {
 		t.Fatalf("unexpected data payload: %+v", data)
 	}
-	notification := inner["notification"].(map[string]string)
-	if notification["title"] != "Jane" || notification["body"] != "hi" {
-		t.Fatalf("unexpected notification payload: %+v", notification)
+	if _, ok := inner["notification"]; ok {
+		t.Fatalf("FCM payload must be data-only; got notification block: %+v", inner["notification"])
 	}
 	// C31: the raw sender handle is carried so the client can fall back to it and
 	// resolve it on-device (the handle is already part of the message API).
@@ -100,12 +99,14 @@ func TestFCMMessagePayloadCarriesDataAndAndroidNotification(t *testing.T) {
 		t.Fatalf("unexpected conversation fields: %+v", data)
 	}
 	android := inner["android"].(map[string]any)
+	if android["priority"] != "HIGH" {
+		t.Fatalf("expected high-priority data push, got %v", android["priority"])
+	}
 	if android["ttl"] != "86400s" {
 		t.Fatalf("expected 24h ttl, got %v", android["ttl"])
 	}
-	androidNotification := android["notification"].(map[string]string)
-	if androidNotification["channel_id"] != "micago_messages" || androidNotification["click_action"] != "FLUTTER_NOTIFICATION_CLICK" {
-		t.Fatalf("unexpected android notification config: %+v", androidNotification)
+	if _, ok := android["notification"]; ok {
+		t.Fatalf("android config must not include notification block: %+v", android["notification"])
 	}
 	// Only the intentional, minimal string fields are present — no tokens, no
 	// contact book, no message history.
@@ -115,28 +116,6 @@ func TestFCMMessagePayloadCarriesDataAndAndroidNotification(t *testing.T) {
 		default:
 			t.Fatalf("unexpected data key %q", k)
 		}
-	}
-}
-
-func TestFCMSystemNotificationBodyRespectsPreviewMode(t *testing.T) {
-	direct := Notification{PreviewMode: "sender_and_text", SenderName: "Jane", ConversationTitle: "Jane"}
-	if got := fcmSystemNotificationBody(direct, "hello"); got != "hello" {
-		t.Fatalf("expected body preview, got %q", got)
-	}
-	group := Notification{PreviewMode: "sender_and_text", SenderName: "Alice", ConversationTitle: "Family", IsGroup: true}
-	if got := fcmSystemNotificationBody(group, "hello"); got != "Alice: hello" {
-		t.Fatalf("expected group sender prefix, got %q", got)
-	}
-	group.PreviewMode = "sender"
-	if got := fcmSystemNotificationBody(group, ""); got != "Alice" {
-		t.Fatalf("expected group sender body in sender mode, got %q", got)
-	}
-	if got := fcmSystemNotificationBody(Notification{PreviewMode: "sender"}, ""); got != "New message" {
-		t.Fatalf("expected sender-mode generic body, got %q", got)
-	}
-	group.PreviewMode = "none"
-	if got := fcmSystemNotificationBody(group, ""); got != "Open micaGO" {
-		t.Fatalf("expected privacy body, got %q", got)
 	}
 }
 

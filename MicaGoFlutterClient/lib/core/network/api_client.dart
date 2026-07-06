@@ -64,6 +64,33 @@ class MessageActionCapabilities {
       );
 }
 
+class ServerNotificationConfig {
+  final bool enabled;
+  final String provider;
+  final String preview;
+  final bool fcmServiceAccountConfigured;
+  final bool fcmClientConfigured;
+
+  const ServerNotificationConfig({
+    required this.enabled,
+    required this.provider,
+    required this.preview,
+    required this.fcmServiceAccountConfigured,
+    required this.fcmClientConfigured,
+  });
+
+  factory ServerNotificationConfig.fromJson(Map<String, dynamic> json) {
+    return ServerNotificationConfig(
+      enabled: (json['enabled'] as bool?) ?? false,
+      provider: (json['provider'] as String?) ?? 'none',
+      preview: (json['preview'] as String?) ?? 'sender_and_text',
+      fcmServiceAccountConfigured:
+          (json['fcmServiceAccountConfigured'] as bool?) ?? false,
+      fcmClientConfigured: (json['fcmClientConfigured'] as bool?) ?? false,
+    );
+  }
+}
+
 /// A structured error from a MicaGo REST call. [code] is the stable
 /// machine-readable string from the server error envelope (`{"error":{...}}`)
 /// or a client-side code (`network_error`, `timeout`, `bad_response`).
@@ -195,6 +222,42 @@ class ApiClient {
       throw _errorFrom(res);
     }
     return ServerUrls.fromJson(_decodeObject(res));
+  }
+
+  Future<ServerNotificationConfig?> getNotificationConfig() async {
+    final res = await _send(
+      () => _http
+          .get(_uri('/api/server/status'), headers: _authHeaders)
+          .timeout(timeout),
+    );
+    if (res.statusCode != 200) {
+      throw _errorFrom(res);
+    }
+    final body = _decodeObject(res);
+    final notifications = body['notifications'];
+    if (notifications is Map<String, dynamic>) {
+      return ServerNotificationConfig.fromJson(notifications);
+    }
+    return null;
+  }
+
+  Future<ServerNotificationConfig?> setNotificationPreview(
+    String preview,
+  ) async {
+    final res = await _send(
+      () => _http
+          .patch(
+            _uri('/api/server/notifications/preview'),
+            headers: _jsonHeaders,
+            body: jsonEncode({'preview': preview}),
+          )
+          .timeout(timeout),
+    );
+    if (res.statusCode != 200) {
+      throw _errorFrom(res);
+    }
+    final body = _decodeObject(res);
+    return ServerNotificationConfig.fromJson(body);
   }
 
   /// `POST /api/sync/now` — asks the server to run a lightweight foreground

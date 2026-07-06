@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/l10n/app_localizations.dart';
 import '../../core/network/api_client.dart';
 import 'attachment_views.dart';
 import 'models/message_model.dart';
@@ -308,7 +309,7 @@ class _ErrorBody extends StatelessWidget {
             style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
+            label: Text(MicaLocalizations.of(context).t('common.retry')),
           ),
         ],
       ),

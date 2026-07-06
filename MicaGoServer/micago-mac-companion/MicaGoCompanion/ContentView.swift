@@ -648,9 +648,9 @@ private struct AboutPage: View {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         let cleanVersion = (version?.isEmpty == false ? version : nil) ?? "0.0.0"
         if let build, !build.isEmpty, build != cleanVersion {
-            return "Rhodolite v\(cleanVersion) (\(build))"
+            return "Lepidolite v\(cleanVersion) (\(build))"
         }
-        return "Rhodolite v\(cleanVersion)"
+        return "Lepidolite v\(cleanVersion)"
     }
 }
 

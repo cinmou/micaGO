@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
+import '../../core/l10n/app_localizations.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/websocket_client.dart';
 import '../debug/debug_log_panel.dart';
@@ -259,7 +260,9 @@ class _DiagnosticsCardState extends State<_DiagnosticsCard> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.health_and_safety_outlined, size: 18),
-                  label: const Text('Check now'),
+                  label: Text(
+                    MicaLocalizations.of(context).t('connection.checkNow'),
+                  ),
                 ),
                 const Spacer(),
                 TextButton.icon(
@@ -267,14 +270,16 @@ class _DiagnosticsCardState extends State<_DiagnosticsCard> {
                     reason: 'manual_reconnect',
                   ),
                   icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Reconnect'),
+                  label: Text(
+                    MicaLocalizations.of(context).t('connection.reconnect'),
+                  ),
                 ),
               ],
             ),
             if (connectionLog.isNotEmpty) ...[
               const Divider(height: 20),
               Text(
-                'Connection selection log',
+                MicaLocalizations.of(context).t('connection.selectionLog'),
                 style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(height: 6),
@@ -432,16 +437,33 @@ class _WsStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final strings = MicaLocalizations.of(context);
     final (Color color, String label, IconData icon) = switch (status) {
-      WsStatus.connected => (Colors.green, 'Connected', Icons.bolt),
-      WsStatus.connecting => (scheme.tertiary, 'Connecting…', Icons.sync),
-      WsStatus.failed => (scheme.error, 'Failed', Icons.error_outline),
+      WsStatus.connected => (
+        Colors.green,
+        strings.t('connection.connected'),
+        Icons.bolt,
+      ),
+      WsStatus.connecting => (
+        scheme.tertiary,
+        strings.t('connection.connecting'),
+        Icons.sync,
+      ),
+      WsStatus.failed => (
+        scheme.error,
+        strings.t('connection.failed'),
+        Icons.error_outline,
+      ),
       WsStatus.disconnected => (
         scheme.outline,
-        'Disconnected',
+        strings.t('connection.disconnected'),
         Icons.power_off,
       ),
-      WsStatus.idle => (scheme.outline, 'Idle', Icons.circle_outlined),
+      WsStatus.idle => (
+        scheme.outline,
+        strings.t('connection.idle'),
+        Icons.circle_outlined,
+      ),
     };
     return Chip(
       avatar: Icon(icon, size: 18, color: color),

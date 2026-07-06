@@ -13,6 +13,11 @@ analyzer:
   exclude:
     # Local reference projects (BlueBubbles, Mategram) — study only, not ours.
     - Ref/**
+    # Generated Flutter/Xcode/SwiftPM outputs. Keep `flutter analyze lib test`
+    # focused on source files even after local iOS/macOS builds.
+    - build/**
+    - ios/Flutter/ephemeral/**
+    - macos/Flutter/ephemeral/**
 
 linter:
   # The lint rules applied to this project can be customized in the

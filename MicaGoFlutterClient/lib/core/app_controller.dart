@@ -825,6 +825,7 @@ class AppController extends ChangeNotifier {
     // not only when the WebSocket connects.
     unawaited(_registerDeviceIfPossible());
     unawaited(_refreshMutedChatsFromServer());
+    unawaited(refreshNotificationConfig());
     _emitConnectionNotice();
     notifyListeners();
     connectWebSocket();
@@ -1385,7 +1386,49 @@ class AppController extends ChangeNotifier {
   // shows. We default to the common "sender + text" layout; `none`/`sender` hide
   // the text. (The FCM path is gated server-side; this keeps the local path in
   // step for the default.)
-  final String _notificationPreview = 'sender_and_text';
+  String _notificationPreview = 'sender_and_text';
+  String get notificationPreview => _notificationPreview;
+  bool get notificationShowsMessageText =>
+      _notificationPreview == 'sender_and_text';
+
+  Future<void> refreshNotificationConfig() async {
+    final api = _api;
+    if (api == null) return;
+    try {
+      final config = await api.getNotificationConfig();
+      final preview = config?.preview.trim();
+      if (preview == null || preview.isEmpty) return;
+      if (_notificationPreview == preview) return;
+      _notificationPreview = preview;
+      notifyListeners();
+    } catch (error) {
+      debugPrint('MicaGo notification config refresh failed: $error');
+    }
+  }
+
+  Future<void> setNotificationShowsMessageText(bool enabled) async {
+    final api = _api;
+    if (api == null) return;
+    final next = enabled ? 'sender_and_text' : 'sender';
+    if (_notificationPreview == next) return;
+    final previous = _notificationPreview;
+    _notificationPreview = next;
+    notifyListeners();
+    try {
+      final updated = await api.setNotificationPreview(next);
+      final preview = updated?.preview.trim();
+      if (preview != null &&
+          preview.isNotEmpty &&
+          preview != _notificationPreview) {
+        _notificationPreview = preview;
+        notifyListeners();
+      }
+    } catch (error) {
+      _notificationPreview = previous;
+      notifyListeners();
+      debugPrint('MicaGo notification preview update failed: $error');
+    }
+  }
 
   // C31 diagnostics -----------------------------------------------------------
   String? _notificationPermission; // 'granted' | 'denied' | null = unknown

@@ -37,6 +37,10 @@ type testNotificationsResponse struct {
 	Failures []string `json:"failures,omitempty"`
 }
 
+type notificationPreviewRequest struct {
+	Preview string `json:"preview"`
+}
+
 // PutNotificationsConfig handles POST /api/server/notifications (v0.12): persist
 // notification/FCM/Firebase settings and apply them to the live dispatcher.
 func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +125,56 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 		ServerNotificationStatus: h.notificationStatus(),
 		ServiceAccountPathSet:    req.ServiceAccountPath != "",
 		GoogleServicesPathSet:    req.GoogleServicesPath != "",
+		FirestoreSyncEnabled:     h.notifyConfig.FirestoreSyncEnabled(),
+	})
+}
+
+// PatchNotificationsPreview updates only the notification privacy preview mode.
+// The Android client uses this for "show message text" without touching the
+// user's FCM project, service-account path, or Firestore settings.
+func (h *Handlers) PatchNotificationsPreview(w http.ResponseWriter, r *http.Request) {
+	if h.notifyConfig == nil {
+		writeInternalError(w)
+		return
+	}
+	var req notificationPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeBadRequest(w, "invalid JSON body")
+		return
+	}
+	req.Preview = strings.TrimSpace(req.Preview)
+	if req.Preview != "none" && req.Preview != "sender" && req.Preview != "sender_and_text" {
+		writeBadRequest(w, "preview must be one of: none, sender, sender_and_text")
+		return
+	}
+
+	if err := config.UpdateNotificationsConfig(h.cfg.ConfigPath, config.NotificationsUpdate{
+		Enabled:            h.cfg.NotificationsEnabled,
+		Provider:           h.cfg.NotificationProvider,
+		Preview:            req.Preview,
+		FCMEnabled:         h.cfg.FCM.Enabled,
+		FCMProjectID:       h.cfg.FCM.ProjectID,
+		ServiceAccountPath: h.cfg.FCM.ServiceAccountPath,
+		GoogleServicesPath: h.cfg.FCM.GoogleServicesPath,
+		PublicURLSync:      h.cfg.Firebase.PublicURLSync,
+	}); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+
+	fresh, err := config.Load(config.Options{})
+	if err != nil {
+		h.logInternal("reload config after notification preview update", err)
+		writeInternalError(w)
+		return
+	}
+	h.cfg = fresh
+	h.notifyConfig.Reload(fresh)
+
+	writeJSON(w, http.StatusOK, notificationsConfigResponse{
+		ServerNotificationStatus: h.notificationStatus(),
+		ServiceAccountPathSet:    strings.TrimSpace(h.cfg.FCM.ServiceAccountPath) != "",
+		GoogleServicesPathSet:    strings.TrimSpace(h.cfg.FCM.GoogleServicesPath) != "",
 		FirestoreSyncEnabled:     h.notifyConfig.FirestoreSyncEnabled(),
 	})
 }

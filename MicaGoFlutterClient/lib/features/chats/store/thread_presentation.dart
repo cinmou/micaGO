@@ -7,8 +7,6 @@
 /// contact resolver is injected, so there is no Flutter/provider dependency.
 library;
 
-import 'package:intl/intl.dart';
-
 import '../message_display.dart';
 import '../emoji_text.dart';
 import '../message_render.dart';
@@ -206,13 +204,16 @@ class ThreadPresentationBuilder {
           );
           lastDay = day;
         } else if (shouldShowTimeSeparator(lastTs, ts)) {
-          // Same day but a large gap since the previous message: a time chip.
+          // Same day but a large gap since the previous message: show the same
+          // date-aware label style as day boundaries, so older pauses read as
+          // "Yesterday 09:30" / "Monday 09:30" instead of a bare clock.
           items.add(
             TimeSeparatorItem(
-              timeOfDayLabel(
+              threadTimestampLabel(
                 dt,
-                use24HourFormat: use24HourFormat,
-                localeTag: localeTag,
+                now: DateTime.now(),
+                use24h: use24HourFormat,
+                locale: localeTag ?? 'en',
               ),
               m.dedupeKey,
             ),
@@ -408,17 +409,4 @@ bool shouldShowTimeSeparator(
 }) {
   if (prevTs == null || ts == null) return false;
   return (ts - prevTs) >= gap.inMilliseconds;
-}
-
-/// Clock label for in-thread time chips, following the user's system 12/24h
-/// preference when supplied by the Flutter UI layer.
-String timeOfDayLabel(
-  DateTime dt, {
-  bool use24HourFormat = false,
-  String? localeTag,
-}) {
-  return (use24HourFormat ? DateFormat.Hm(localeTag) : DateFormat.jm(localeTag))
-      .format(dt)
-      .replaceAll('\u202f', ' ')
-      .replaceAll('\u00a0', ' ');
 }

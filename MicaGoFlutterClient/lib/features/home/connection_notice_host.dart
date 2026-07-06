@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
+import '../../core/l10n/app_localizations.dart';
 import '../../core/network/connection_notice.dart';
 import '../../core/ui/top_banner.dart';
 
@@ -59,29 +60,24 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
 
   Future<void> _showCannotConnectDialog() async {
     _cannotConnectDialogOpen = true;
+    final strings = MicaLocalizations.of(context);
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.cloud_off),
-        title: const Text('Can’t reach your micaGO server'),
-        content: const Text(
-          'The app couldn’t connect to your Mac server within 10 seconds.\n\n'
-          '• Check that the MicaGo server is running on your Mac.\n'
-          '• Make sure your phone is on the same Wi‑Fi (for LAN), or that the '
-          'Public URL is correct.\n'
-          '• Verify the server address in Settings → Connection.',
-        ),
+        title: Text(strings.t('connection.cannotReachTitle')),
+        content: Text(strings.t('connection.cannotReachBody')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Dismiss'),
+            child: Text(strings.t('common.dismiss')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(ctx).pop();
               _app?.retryInitialConnect();
             },
-            child: const Text('Retry'),
+            child: Text(strings.t('common.retry')),
           ),
         ],
       ),
@@ -101,6 +97,7 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
   void _onNotice() {
     final notice = _app?.connectionNotice.value;
     if (notice == null) return;
+    final message = MicaLocalizations.of(context).t(notice.l10nKey);
 
     if (notice.isTransient) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -109,10 +106,8 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
         // bottom snackbar.
         TopBanner.show(
           context,
-          notice.message,
-          kind: notice.isProblem
-              ? TopBannerKind.error
-              : TopBannerKind.info,
+          message,
+          kind: notice.isProblem ? TopBannerKind.error : TopBannerKind.info,
           duration: const Duration(seconds: 2),
         );
       });
@@ -129,6 +124,7 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final sticky = _sticky;
+    final strings = MicaLocalizations.of(context);
     return Column(
       children: [
         if (sticky != null)
@@ -137,16 +133,24 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 child: Row(
                   children: [
-                    Icon(Icons.cloud_off, size: 16, color: scheme.onErrorContainer),
+                    Icon(
+                      Icons.cloud_off,
+                      size: 16,
+                      color: scheme.onErrorContainer,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        sticky.message,
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(color: scheme.onErrorContainer),
+                        strings.t(sticky.l10nKey),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onErrorContainer,
+                        ),
                       ),
                     ),
                   ],

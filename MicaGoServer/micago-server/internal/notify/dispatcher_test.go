@@ -152,6 +152,31 @@ func TestBuildNotificationPreviewModes(t *testing.T) {
 	}
 }
 
+func TestBuildNotificationFallsBackToChatIdentifierHandle(t *testing.T) {
+	text := "hello from test"
+	event := relaydb.NotificationEvent{
+		ChatGUID:       "iMessage;-;test@micago.cinmou",
+		ChatIdentifier: ptr("test@micago.cinmou"),
+		ChatDisplay:    ptr("MicaGo Test"),
+		Message: store.MessageJSON{
+			GUID: "msg-test",
+			Text: &text,
+		},
+	}
+
+	notification := buildNotification(event, "sender_and_text")
+
+	if notification.Handle != "test@micago.cinmou" {
+		t.Fatalf("expected chat identifier fallback handle, got %q", notification.Handle)
+	}
+	if notification.Title != "MicaGo Test" || notification.SenderName != "MicaGo Test" {
+		t.Fatalf("expected test contact title/sender, got %+v", notification)
+	}
+	if notification.Body != text {
+		t.Fatalf("expected body preview, got %q", notification.Body)
+	}
+}
+
 // fakeProvider captures what the dispatcher sends (C22) so we can assert the
 // BlueBubbles-style payload + that disabled devices are skipped.
 type fakeProvider struct {

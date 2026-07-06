@@ -288,10 +288,12 @@ class PushService {
 
 /// Top-level background handler (runs in its own isolate when the app is
 /// backgrounded/killed). It only shows a local notification from the lightweight
-/// push data — the actual message fetch happens via delta sync when the app next
-/// opens/resumes (the existing `onResume` → `catchUp` path), exactly the
-/// BlueBubbles "push wakes, sync fetches" model. Kept dependency-free of the
-/// running app so it works without a live AppController.
+/// push data. The server sends data-only FCM messages so Android always routes
+/// them here instead of showing a system-managed notification. The actual message
+/// fetch still happens via delta sync when the app next opens/resumes (the
+/// existing `onResume` → `catchUp` path), exactly the BlueBubbles
+/// "push wakes, sync fetches" model. Kept dependency-free of the running app so
+/// it works without a live AppController.
 @pragma('vm:entry-point')
 Future<void> micaGoFirebaseBackgroundHandler(RemoteMessage message) async {
   if (!await ensureBackgroundFirebase()) {
@@ -331,12 +333,6 @@ Future<bool> ensureBackgroundFirebase() async {
 /// cannot read contacts, but it can still use bundled app resources for known
 /// local chats such as the offline test contact.
 Future<void> showPushNotification(RemoteMessage message) async {
-  if (message.notification != null) {
-    // HTTP v1 notification+data messages are displayed by Android's system
-    // tray while the app is backgrounded. Keep this guard for legacy mixed
-    // payloads, but avoid a duplicate local notification.
-    return;
-  }
   final data = message.data;
   // Single source of truth for "is there anything to show" (test pushes and
   // preview-disabled empty pushes are skipped) — shared with the pure logic test.

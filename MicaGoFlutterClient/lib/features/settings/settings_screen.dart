@@ -550,6 +550,15 @@ class _NotificationsCardState extends State<_NotificationsCard> {
           ),
           const Divider(height: 1),
           SwitchListTile(
+            secondary: _leadingIcon(Icons.subject_outlined),
+            title: Text(strings.t('notif.showMessageText')),
+            value: app.notificationShowsMessageText,
+            onChanged: app.api == null
+                ? null
+                : (v) => app.setNotificationShowsMessageText(v),
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
             secondary: _leadingIcon(Icons.web_asset_outlined),
             title: Text(strings.t('notif.inApp')),
             value: app.inAppNotificationsEnabled,
@@ -1731,7 +1740,7 @@ class _AboutBodyState extends State<_AboutBody> {
               _AboutInfoTile(
                 icon: Icons.auto_awesome_rounded,
                 title: strings.t('settings.version'),
-                value: 'Rhodolite v$kAppVersion',
+                value: 'Lepidolite v$kAppVersion',
                 onTap: _handleVersionTap,
               ),
               const Divider(height: 1),

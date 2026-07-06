@@ -103,11 +103,6 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 	if len(body) > fcmMaxBodyChars {
 		body = body[:fcmMaxBodyChars]
 	}
-	notificationTitle := strings.TrimSpace(n.Title)
-	if notificationTitle == "" {
-		notificationTitle = "New message"
-	}
-	notificationBody := fcmSystemNotificationBody(n, body)
 	data := map[string]string{
 		"type":              n.Type,
 		"messageGuid":       n.MessageGUID,
@@ -124,39 +119,13 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 	}
 	return map[string]any{
 		"message": map[string]any{
-			"token":        deviceToken,
-			"data":         data,
-			"notification": map[string]string{"title": notificationTitle, "body": notificationBody},
+			"token": deviceToken,
+			"data":  data,
 			"android": map[string]any{
-				"priority": "high",
+				"priority": "HIGH",
 				"ttl":      strconv.FormatInt(int64(ttl/time.Second), 10) + "s",
-				"notification": map[string]string{
-					"channel_id":   "micago_messages",
-					"click_action": "FLUTTER_NOTIFICATION_CLICK",
-				},
 			},
 		},
-	}
-}
-
-func fcmSystemNotificationBody(n Notification, body string) string {
-	body = strings.TrimSpace(body)
-	sender := strings.TrimSpace(n.SenderName)
-	conversation := strings.TrimSpace(n.ConversationTitle)
-	if body != "" {
-		if n.IsGroup && sender != "" && sender != conversation {
-			return sender + ": " + body
-		}
-		return body
-	}
-	switch n.PreviewMode {
-	case "none":
-		return "Open micaGO"
-	default:
-		if n.IsGroup && sender != "" && sender != conversation {
-			return sender
-		}
-		return "New message"
 	}
 }
 

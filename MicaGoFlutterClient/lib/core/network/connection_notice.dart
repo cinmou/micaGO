@@ -16,6 +16,17 @@ enum ConnectionNotice {
 }
 
 extension ConnectionNoticeDisplay on ConnectionNotice {
+  String get l10nKey => switch (this) {
+    ConnectionNotice.connected => 'connection.connected',
+    ConnectionNotice.reconnecting => 'connection.reconnecting',
+    ConnectionNotice.disconnected => 'connection.disconnected',
+    ConnectionNotice.serverUnavailable => 'connection.serverUnavailable',
+    ConnectionNotice.switchedToPublic => 'connection.switchedToPublic',
+    ConnectionNotice.switchedToLan => 'connection.switchedToLan',
+    ConnectionNotice.webSocketLost => 'connection.webSocketLost',
+    ConnectionNotice.webSocketRecovered => 'connection.webSocketRecovered',
+  };
+
   String get message => switch (this) {
     ConnectionNotice.connected => 'Connected',
     ConnectionNotice.reconnecting => 'Reconnecting…',

@@ -1,0 +1,26 @@
+{
+  "fileScopedDeclarationPrivacy" : {
+    "accessLevel" : "private"
+  },
+  "indentBlankLines" : false,
+  "indentConditionalCompilationBlocks" : true,
+  "indentSwitchCaseLabels" : false,
+  "indentation" : {
+    "spaces" : 4
+  },
+  "lineLength" : 100,
+  "maximumBlankLines" : 1,
+  "multiElementCollectionTrailingCommas" : true,
+  "respectsExistingLineBreaks" : true,
+  "rules" : {
+    "AllPublicDeclarationsHaveDocumentation" : false,
+    "BeginDocumentationCommentWithOneLineSummary" : false,
+    "NeverForceUnwrap" : false,
+    "NeverUseForceTry" : false,
+    "NeverUseImplicitlyUnwrappedOptionals" : false,
+    "ValidateDocumentationComments" : false
+  },
+  "spacesBeforeEndOfLineComments" : 2,
+  "tabWidth" : 8,
+  "version" : 1
+}
