@@ -4,17 +4,16 @@ micaGO delivers new-message alerts to the Android client through **three layers*
 each optional and each a fallback for the one before it:
 
 1. **Firebase / FCM push (optional, recommended).** A thin *wake* signal using
-   **your own** Firebase project — nothing is baked into the app. Best for
+   **your own** Firebase project. Best for
    battery: the app can be fully closed and still be woken for a new message.
 2. **Keep-alive foreground service (optional, no Firebase).** An Android
    foreground service holds the WebSocket open in the background and shows local
-   notifications itself. Works with no push setup at all, but **Android/OEM
+   notifications itself. Works as a local-only notification path, but **Android/OEM
    battery policy can throttle it**, especially when the screen is off for long
    periods.
 3. **Delta catch-up (always on, silent).** Whenever the app resumes or the socket
-   reconnects, a cursor-based sync pulls everything missed. This guarantees no
-   message is *lost* — it just won't alert you while the app was away. It is the
-   final fallback, not a notifier.
+   reconnects, a cursor-based sync pulls missed messages. It is the final silent
+   fallback, not a notifier.
 
 The message **content always arrives over the socket/delta path**. FCM is sent as
 a **data-only** wake/awareness signal (the BlueBubbles model), and the Android
@@ -25,7 +24,8 @@ same MessagingStyle surface.
 
 - **Title = who it's from.** An on-device contact name when contacts matching is
   enabled and the sender is in your address book; otherwise the name the Mac
-  knows; otherwise the raw phone/email handle. Never a GUID, never blank.
+  knows; otherwise the raw phone/email handle. The title always resolves to a
+  readable sender label.
 - **Body = the message preview**, length-capped when it is carried in transient
   FCM data.
 - **Native conversation style (C32).** Notifications use Android **MessagingStyle**:
@@ -35,7 +35,7 @@ same MessagingStyle surface.
 - **Tap** opens the correct chat (after a quick delta sync so it's current) and
   dismisses that chat's notification.
 - An FCM push and a keep-alive notification for the *same* message collapse into
-  **one** (shared per-chat id + message-guid dedup) — never duplicates.
+  **one** shared notification using per-chat id + message-guid dedup.
 - **Inline reply** sends the text through the paired micaGO server when the
   Android notification action is available. Tapping still opens the chat.
 
@@ -46,14 +46,13 @@ same MessagingStyle surface.
 | Keep-alive (app alive, main isolate) | **On-device contacts** (real address-book name) | **On-device contact photo** when available, else a monogram |
 | FCM background isolate | The **server-provided** name (Mac chat display name) or the raw handle | Default monogram |
 
-On-device contact resolution in the FCM background isolate is deliberately **not** done:
-it would require either loading the whole address book per push or persisting a
-contacts cache to disk, and micaGO never persists your address book. The handle
-fallback keeps the FCM title meaningful.
+The FCM background isolate uses the server-provided sender label or handle. This
+keeps background push lightweight and avoids persisting an address-book cache for
+push rendering.
 
 ## Set up Firebase push (optional)
 
-Push uses a Firebase project **you own**; micaGO ships no credentials.
+Push uses a Firebase project **you own**.
 
 1. In the Firebase console, create a project and add an **Android app**.
 2. In the **Companion → Notifications**, enable Firebase and choose both files:
@@ -65,8 +64,8 @@ Push uses a Firebase project **you own**; micaGO ships no credentials.
 4. Use **Send test notification** in the Companion Notifications page to verify
    end-to-end delivery.
 
-If Firebase is not configured, the app simply stays on WebSocket + delta (and
-keep-alive, if you enabled it). Everything still works while the app is open.
+With Firebase off, the app uses WebSocket + delta sync, plus keep-alive if you
+enabled it.
 
 ## Test FCM push end-to-end yourself (step by step)
 
@@ -79,11 +78,11 @@ to a real notification on the phone.
    project**. (Enabling Google Analytics is optional.)
 2. In the project, **Add app → Android**. For the package name use the client's
    application id — `com.micago.message.mica_go` — and finish the wizard. Download
-   the generated **`google-services.json`** (you keep this file; it is not baked
-   into the app).
+   the generated **`google-services.json`** (you keep this file; the app loads it
+   at runtime).
 3. **Project settings → Service accounts → Generate new private key.** This
    downloads a service-account **`.json`** — the server uses it to call FCM. Keep
-   both files on the Mac only; never commit them.
+   both files on the Mac.
 4. Open **Google Cloud Console → IAM & Admin → IAM**, click **Grant access**, paste
    the service-account `client_email` as the new principal, and grant **Firebase
    Cloud Messaging API Admin**. The service account may not appear in the IAM

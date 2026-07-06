@@ -3,43 +3,39 @@
 micaGO is local-first. Firebase is used **only** for Android FCM push and the
 optional public-URL discovery. These boundaries are enforced in the server.
 
-## Never stored in Firebase (Firestore or anywhere in your project)
+## Data kept local to micaGO
 
-- ❌ message content
-- ❌ contacts / contact display names
-- ❌ phone numbers
-- ❌ bearer token
-- ❌ push tokens in any public/world-readable document
-- ❌ attachments
-- ❌ chat history
-- ❌ the device registry
-- ❌ sync rules / `relay.db` data
+- message content
+- contacts / contact display names
+- phone numbers
+- bearer token
+- attachments
+- chat history
+- the device registry
+- sync rules / `relay.db` data
 
 ## What may transit Firebase
 
-- ✅ **FCM push (transient delivery, not storage)**: a small `data` message with
+- **FCM push (transient delivery)**: a small `data` message with
   `type`, `messageGuid`, `chatGuid`, `title`, `body`, `previewMode`, `createdAt`.
-  The body is length-capped and sent as transient delivery data. It is **never
-  stored** in Firestore or persisted server-side beyond `relay.db`.
-- ✅ **Push token → Google FCM** as the delivery address (that is its purpose).
-  Stored only locally in `relay.db`; never published in a Firestore document.
-- ✅ **Public server URL** (only if you enable Firestore URL sync): the single
-  `publicBaseUrl` string in `server/config`. No token, no content.
+  The body is length-capped and sent as transient delivery data.
+- **Push token → Google FCM** as the delivery address. The local registry is kept
+  in `relay.db`.
+- **Public server URL** (only if you enable Firestore URL sync): the single
+  `publicBaseUrl` string in `server/config`.
 
 ## Contacts
 
 Contact display names from the companion (v0.11.4) are **local-only**. They are
-**never** uploaded to Firebase, included in any FCM payload, or sent to the
-server. They exist only in the companion's in-memory cache for the local UI.
+used by the companion's in-memory cache for the local UI.
 
 ## Service account
 
 The service-account JSON stays on the Mac at the path you choose. It is never
-returned by any API, never logged, and never sent to clients. The companion
-shows only the filename after import.
+returned by any API. The companion shows only the filename after import.
 
 ## Sync rules interaction (v0.11.3)
 
-- A **sync-blocked** chat is never written to `relay.db`, so it can never push.
-- A **push-muted** (but synced) chat appears over the local WebSocket but is
-  **excluded from push dispatch** — no FCM message is sent for it.
+- A **sync-blocked** chat stays out of `relay.db` and out of push dispatch.
+- A **push-muted** chat still appears over the local WebSocket and is skipped by
+  push dispatch.

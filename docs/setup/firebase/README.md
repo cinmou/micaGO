@@ -1,16 +1,14 @@
 # Enable Push Notifications (Firebase / FCM)
 
 This guide walks you through enabling push notifications in micaGO using **your
-own Firebase project**. micaGO runs no cloud of its own — push is fully
-self-hosted, so notifications go through a Firebase project that you create and
-control.
+own Firebase project**. Push is fully self-hosted, so notifications go through a
+Firebase project that you create and control.
 
-> **Push is optional.** micaGO works without it. While the Android app is open
-> it receives messages in real time over WebSocket, and it catches up via delta
-> sync whenever you reopen it. Firebase adds a best-effort way to **wake the app
-> and show a notification** when Android allows background delivery. OEM battery
-> policy can still delay or suppress delivery. If you skip this guide,
-> everything else still works.
+> **Push is optional.** While the Android app is open it receives messages in
+> real time over WebSocket, and it catches up via delta sync whenever you reopen
+> it. Firebase adds a best-effort way to **wake the app and show a notification**
+> when Android allows background delivery. OEM battery policy can still delay or
+> suppress delivery.
 
 It takes about 10–15 minutes and uses only Firebase's free tier (Cloud
 Messaging is free).
@@ -35,8 +33,7 @@ You'll end up giving micaGO two files from *your* Firebase project:
 | `google-services.json` | the Android app (served by your server) | lets the app register for push |
 | service-account `*.json` | your Mac (the micaGO server) | lets your server send pushes |
 
-Neither file is bundled into the app or shared with anyone — see
-[Privacy](#privacy).
+These files stay part of your local Firebase setup — see [Privacy](#privacy).
 
 ---
 
@@ -54,7 +51,7 @@ Neither file is bundled into the app or shared with anyone — see
 2. Click **Add project**, give it any name (e.g. `my-micago`), and finish the
    wizard. You can disable Google Analytics — it isn't needed.
 
-This project is yours. micaGO never sees it except through the two files below.
+This project is yours. micaGO uses it through the two files below.
 
 ## Step 2 — Add an Android app and download `google-services.json`
 
@@ -89,9 +86,9 @@ This lets your Mac authenticate to Firebase to *send* pushes.
 It is normal if the service account only appears under **Service accounts** and
 not in the IAM members list yet. Type the email manually when granting access.
 
-> Keep this file private — it's a credential. Don't email it, commit it to git,
-> or paste it into chats. micaGO stores only the path to it and never shows,
-> uploads, or sends its contents.
+> Keep this file private — it's a credential. Store it on your Mac, and avoid
+> sharing it in email, git, chats, logs, or screenshots. micaGO stores the local
+> path to it.
 
 ## Step 4 — Configure the micaGO server
 
@@ -110,8 +107,7 @@ There are two files. Both are selected in the Companion app.
 3. Click **Save**.
 
 `google-services.json` contains public client identifiers. The service-account
-JSON is the private key your Mac uses to send FCM. Keep both files on your Mac
-and do not commit either file.
+JSON is the private key your Mac uses to send FCM. Keep both files on your Mac.
 
 ## Step 5 — Connect your phone
 
@@ -125,8 +121,8 @@ On connecting, the app automatically:
 - initializes Firebase,
 - registers its push token with your server.
 
-No `google-services.json` is built into the app — it's loaded at runtime from
-*your* server, so the same app build works with anyone's Firebase project.
+`google-services.json` is loaded at runtime from *your* server, so the same app
+build works with anyone's Firebase project.
 
 ## Step 6 — Verify it works
 
@@ -141,11 +137,11 @@ No `google-services.json` is built into the app — it's loaded at runtime from
 
 ## Privacy
 
-- micaGO runs **no cloud server**. Push uses *your* Firebase project.
-- Firebase is used **only** for Android FCM push (and, optionally, public-URL
+- Push uses *your* Firebase project.
+- Firebase is used for Android FCM push and, optionally, public-URL
   discovery if you enable Firestore URL sync).
-- Firebase **never** stores your contacts, phone numbers, bearer token,
-  attachments, chat history, the device registry, or sync rules.
+- Contacts, phone numbers, bearer token, attachments, chat history, device
+  registry, and sync rules stay in your micaGO setup.
 - The service-account key never leaves your Mac. `google-services.json` contains
   only public client identifiers (project id, app id, API key, sender id) and is
   served to your paired devices over your authenticated connection.
@@ -165,20 +161,18 @@ No `google-services.json` is built into the app — it's loaded at runtime from
   depends on FCM + Android's battery settings. Make sure the app isn't
   battery-restricted in Android Settings. Even if a wake is missed, the app
   catches up via delta sync the next time you open it.
-- **Foreground duplicates** — by design there are none: when the app is open and
-  connected, it uses the WebSocket and ignores the redundant push.
+- **Foreground duplicates** — when the app is open and connected, it uses the
+  WebSocket and ignores the redundant push.
 
 ## Turning push off
 
 - In **Notifications → Firebase Self-Host**, click **Clear Firebase config** or
   turn off **Enable FCM delivery**, then save.
-- The app keeps working normally over WebSocket + delta sync; it just won't
-  receive background pushes.
+- The app continues over WebSocket + delta sync.
 
 ---
 
 ### A note on automated setup
 
 The manual steps above are the supported way to enable push. They remain fully
-self-hosted and optional: you bring the Firebase project, and micaGO does not
-create or operate one for you.
+self-hosted and optional: you bring the Firebase project and keep control of it.

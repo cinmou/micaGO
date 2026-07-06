@@ -8,7 +8,7 @@
 
 **English** · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
 
-**Your iMessage, your Mac, your phone — nothing in between.**
+**Your iMessage, your Mac, your devices.**
 
 *A self-hosted iMessage bridge.*
 
@@ -35,8 +35,9 @@ optional public URL you control). Your data only ever travels between **your** M
 and **your** devices.
 
 micaGO is still in testing. It reads macOS Messages internals and needs Full Disk
-Access, so read the [security model](#-security-model) and
-[limitations](#-limitations) before relying on it. Not affiliated with Apple.
+Access, so read the [security model](#security-model) and
+[limitations](#limitations) before relying on it. micaGO is an independent
+project.
 
 ---
 
@@ -53,21 +54,21 @@ Access, so read the [security model](#-security-model) and
 
 ## ✨ What you get
 
-- 🔐 **Self‑hosted.** No micaGO account or hosted relay. Optional push and remote
-  access use services **you** own and configure.
-- 💬 **Chats & messages.** Conversation list, threads, reactions/tapbacks, replies,
+- **Self-hosted.** The bridge runs on your Mac. Optional push and remote access
+  use services **you** own and configure.
+- **Chats & messages.** Conversation list, threads, reactions/tapbacks, replies,
   send effects, stickers, **location / handwriting / Digital Touch**, and inline
   image/video media with a full‑screen viewer.
-- 📤 **Send.** Text + attachments over iMessage, **voice messages**, and SMS when
+- **Send.** Text + attachments over iMessage, **voice messages**, and SMS when
   you turn it on (off by default, gated by a server setting).
-- ⚡ **Realtime + catch‑up.** WebSocket events for live updates, plus a cursor
-  **delta** sync that fills gaps after the app was closed — nothing is lost.
-- 🌐 **LAN‑first connectivity.** Multiple LAN routes are advertised; the client
+- **Realtime + catch-up.** WebSocket events for live updates, plus a cursor
+  **delta** sync that fills gaps after the app was closed.
+- **LAN-first connectivity.** Multiple LAN routes are advertised; the client
   auto‑selects a reachable one and lets you pin it. An optional public URL (your
   own tunnel) works from anywhere.
-- 👤 **Contacts matching.** On‑device name resolution, opt‑in — the address book
-  is never uploaded.
-- 🔔 **Notifications (optional).** Keep-alive and FCM both render through the
+- **Contacts matching.** On-device name resolution is opt-in and stays local to
+  the device.
+- **Notifications (optional).** Keep-alive and FCM both render through the
   client’s native Android MessagingStyle notification path. Prefer push? Point it
   at **your own** Firebase.
 
@@ -114,13 +115,12 @@ micaGO is **local‑first** and built so your data stays yours.
 | --- | --- |
 | **Auth** | Every API call needs a server‑generated **bearer token** (`~/.micago/config.yaml`). Anyone with your URL **and** token can reach your Mac — treat it like a password. |
 | **Network** | Default bind is your **LAN**. Public exposure is opt‑in and your responsibility; prefer HTTPS for anything leaving your network. |
-| **Your data** | **No micaGO cloud relay.** Contacts are matched on‑device and never uploaded. |
-| **Push** | If you enable FCM, payloads carry only a small wake/preview — never your message history or tokens. |
-| **Private APIs** | The optional IMCore helper (edit/unsend/delete) is gated behind capability checks; it never fakes success. |
+| **Your data** | Messages are served from your Mac to paired devices. Contacts are matched on-device. |
+| **Push** | If you enable FCM, payloads carry a small wake/preview for notification delivery. |
+| **Private APIs** | The optional IMCore helper (edit/unsend/delete) is gated behind capability checks. |
 
 In short, micaGO bridges your iMessage to your devices over a connection you
-control; it does not run a cloud, hold an account, upload contacts, or store your
-messages outside your Mac.
+control. Message history remains anchored to the Messages data on your Mac.
 
 ---
 
@@ -177,25 +177,23 @@ flutter build apk --debug      # or: flutter run
 
 ## 🧰 Optional features
 
-All optional and **off by default** — micaGO works fully without any of them.
+These features are optional and **off by default**.
 
-- 🔋 **Keep‑alive service (Android).** The simple path, and how most people will run
+- **Keep-alive service (Android).** The simple path, and how most people will run
   it: a foreground service holds the connection open and raises a local notification
-  when a message lands — no push account, no `google-services.json`. Default off, and
-  OEM battery managers can still throttle it.
-- 🔔 **Firebase / FCM push.** Rather not keep a service running? Wire up **your own**
-  Firebase project for background push (nothing baked in). FCM is data-only; the
+  when a message lands. Default off, and OEM battery managers can still throttle it.
+- **Firebase / FCM push.** Rather not keep a service running? Wire up **your own**
+  Firebase project for background push. FCM is data-only; the
   client renders the same local MessagingStyle notification and then syncs the
   message over WebSocket or delta. See
   [`docs/setup/firebase/`](docs/setup/firebase/README.md).
-- ✍️ **Edit / Unsend / Delete (IMCore helper).** A small bundled helper that calls
+- **Edit / Unsend / Delete (IMCore helper).** A small bundled helper that calls
   private macOS IMCore APIs.
   - *What it's for* — edit/unsend/delete a sent iMessage from the phone.
-  - *What it does **not** do* — fake success. If your Mac doesn't grant IMCore
-    access, it reports *unsupported* and the actions stay hidden.
-- 🌍 **Remote access.** Put your own reverse proxy / tunnel (e.g. Cloudflare Tunnel)
-  in front of the server and set the **Public URL** in the Companion. micaGO does
-  not provide or manage a tunnel. See
+  - *Capability behavior* — if your Mac cannot grant IMCore access, the app reports
+    *unsupported* and hides those actions.
+- **Remote access.** Put your own reverse proxy / tunnel (e.g. Cloudflare Tunnel)
+  in front of the server and set the **Public URL** in the Companion. See
   [`docs/remote-access-cloudflare.md`](docs/remote-access-cloudflare.md).
 
 ---
@@ -213,8 +211,8 @@ MicaGo/
 └── README.md
 ```
 
-> `Ref/` (if present locally) holds third‑party reference projects used during
-> development. It is **not** part of micaGO and is git‑ignored.
+> `Ref/` (if present locally) holds third-party reference projects used during
+> development and is git-ignored.
 
 ## ⚠️ Limitations
 
@@ -227,7 +225,7 @@ MicaGo/
   best‑effort, and the socket plus delta sync still catch everything up on reopen.
 - **Verified on Android only.** The Flutter client can in principle build for other
   platforms, but Android is the only one tested. The API is client‑agnostic by design.
-- Not affiliated with, or endorsed by, Apple. Use at your own risk.
+- micaGO is an independent project. Use at your own risk.
 
 ---
 
@@ -239,8 +237,8 @@ Issues and pull requests are welcome. Before opening a PR:
 - **Client:** `flutter analyze && flutter test`
 - **Companion:** build the `MicaGoCompanion` scheme in Xcode.
 
-Keep changes lightweight and dependency‑free where possible; never log or commit
-bearer tokens or push tokens.
+Keep changes lightweight and dependency-free where possible; avoid logging or
+committing bearer tokens or push tokens.
 
 ---
 
@@ -256,4 +254,4 @@ iMessage. We are grateful for their work.
   clean read of `chat.db` and the attachment / StickerCache layout, which guided our
   server's read path.
 
-Both are independent projects and are not affiliated with micaGO.
+Both are independent projects.

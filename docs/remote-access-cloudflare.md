@@ -3,10 +3,9 @@
 This guide shows how to reach your Mac from **outside your home network** using
 your **own domain** and **Cloudflare Tunnel**.
 
-> ℹ️ **Cloudflare Tunnel is external and optional.** micaGO does **not** bundle,
-> install, or manage Cloudflare. You set up and run the tunnel yourself with
-> your own Cloudflare account and domain. If you prefer a different reverse
-> proxy or tunnel, the same idea applies — micaGO just needs a public HTTPS URL
+> ℹ️ **Cloudflare Tunnel is external and optional.** You set up and run the tunnel
+> yourself with your own Cloudflare account and domain. If you prefer a different
+> reverse proxy or tunnel, the same idea applies: micaGO needs a public HTTPS URL
 > that forwards to the local server.
 
 ## Why a tunnel?
@@ -26,8 +25,8 @@ Android client
   -> http://127.0.0.1:<PORT>           (the micaGO server on your Mac)
 ```
 
-Your token still protects every request, end to end. The tunnel only moves
-traffic; it does not replace authentication.
+Your token still protects every request, end to end. The tunnel forwards traffic;
+micaGO authentication still uses the bearer token.
 
 ## Step 1 — Get a domain
 
@@ -136,7 +135,7 @@ cloudflared service install
 
 Click **Validate Public URL**. micaGO asks its own server to confirm that the
 public URL loops back to **this** Mac and that the bearer token is accepted. The
-result is shown in plain language (the token is never displayed):
+result is shown in plain language while keeping the token hidden:
 
 - **Reachable and the token was accepted — Public is ready for pairing.** ✅
 - *Couldn't reach the public URL…* → tunnel not running / wrong port.
@@ -158,7 +157,7 @@ result is shown in plain language (the token is never displayed):
 A common goal is: *be on mobile data, away from home Wi‑Fi, and still get notified
 of new iMessages.* Here's how the tunnel fits into that.
 
-**The push itself does not go through the tunnel.** The flow is:
+**FCM wakes the phone; the micaGO connection syncs the message.** The flow is:
 
 ```
 new iMessage ─► your Mac (server) ─► FCM (Google) ─► your phone   ← the "wake"
@@ -167,9 +166,8 @@ new iMessage ─► your Mac (server) ─► FCM (Google) ─► your phone   �
                          over https://micago.example.com  ← the tunnel
 ```
 
-- The **wake** (FCM push) is delivered by Google directly to the phone — it works
-  on mobile data with no tunnel. For it, the **Mac just needs outbound internet**
-  to reach `fcm.googleapis.com` (the tunnel is not involved).
+- The **wake** (FCM push) is delivered by Google directly to the phone. For it,
+  the **Mac needs outbound internet** to reach `fcm.googleapis.com`.
 - But a push is only a wake signal — the **message content is pulled from your
   server** over WebSocket / delta sync. When the phone is **off your Wi‑Fi**, it
   can only reach the server through a **public URL**. That's what the Cloudflare
@@ -192,8 +190,7 @@ So, to get useful remote push:
 **Optional — let the client learn the public URL automatically.** In the
 Companion's **Notifications** settings you can enable **Firebase public‑URL sync**,
 which publishes the current public URL to your own Firebase so clients can pick up
-a changed tunnel hostname without re‑pairing. It's optional; pairing with Public
-reachable already embeds the URL.
+a changed tunnel hostname. Pairing with Public reachable already embeds the URL.
 
 > Keep‑alive is **not** a substitute here: when the app is killed on mobile data,
 > only the FCM wake (with a reachable public URL for the follow‑up sync) reliably

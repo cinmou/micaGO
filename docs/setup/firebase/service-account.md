@@ -35,8 +35,8 @@ Google Cloud project.
    (`roles/firebasecloudmessaging.admin`) and save.
 
 This role includes `cloudmessaging.messages.create`, which is the permission
-required by the FCM HTTP v1 send endpoint. Do not grant broad roles such as
-Owner unless you are only testing and plan to tighten it later.
+required by the FCM HTTP v1 send endpoint. Prefer this narrow role over broad
+roles such as Owner.
 
 ## How micaGO uses it
 
@@ -49,10 +49,10 @@ Owner unless you are only testing and plan to tighten it later.
 
 ## Security
 
-- The service-account JSON is **read from the path you choose** and **never**
-  returned by any API, **never** logged, and **never** sent to clients.
-- The companion stores only the **path** (e.g. in the saved config); it does not
-  read or display the key contents. After import it shows only the filename.
+- The service-account JSON is **read from the path you choose** and stays on the
+  Mac.
+- The companion stores the **path** (e.g. in the saved config). After import it
+  shows only the filename.
 - Treat the JSON like a password. Anyone with it can send push through your
   project. Revoke it in the Console (Service accounts → Manage keys) if leaked.
 

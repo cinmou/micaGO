@@ -23,9 +23,9 @@ POST /api/devices/register
   "pushProvider": "fcm", "pushToken": "<FCM registration token>", "pushEnabled": true }
 ```
 
-- The push token is stored only in the local `relay.db` and is sent to **Google
-  FCM** as the delivery address — it is never published in any Firestore
-  document. The companion only ever shows `token set`, never the token itself.
+- The push token is stored in the local `relay.db` and is sent to **Google FCM**
+  as the delivery address. The companion shows `token set` instead of the token
+  value.
 - If FCM later reports the token as `UNREGISTERED`, micaGO prunes it (clears the
   token and disables push for that device) so dead tokens don't accumulate.
 
@@ -40,9 +40,8 @@ micaGO sends a **data-only** FCM HTTP v1 message (high priority, 24h TTL):
   "android": { "priority": "high", "ttl": "86400s" } } }
 ```
 
-Android does not render this payload directly. The micaGO client receives the
-data message, renders the same local MessagingStyle notification used by the
-keep-alive path, and then syncs the actual message through the normal micaGO
-connection.
+The micaGO client receives the data message, renders the same local
+MessagingStyle notification used by the keep-alive path, and then syncs the
+actual message through the normal micaGO connection.
 
 > Test it end-to-end from the companion: **Notifications → Send test notification**.

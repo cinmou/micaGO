@@ -4,18 +4,18 @@ micaGO can deliver **Android push notifications** through **Firebase Cloud
 Messaging (FCM)** and, optionally, publish your **public server URL** to your own
 **Firestore** so remote clients can rediscover a changed tunnel URL.
 
-> **micaGO does not run a cloud server.** There is no Mica-operated relay or
-> Mica-operated Firebase. **You bring your own Firebase project.** Your service
-> account and data stay in *your* Google project and on *your* Mac.
+> **Firebase setup is self-hosted.** You bring your own Firebase project. Your
+> service account and configuration stay in *your* Google project and on *your*
+> Mac.
 
-## What Firebase is (and isn't) used for
+## What Firebase is used for
 
-- ✅ **Android FCM push** — wake/notify an Android client when a new iMessage
+- **Android FCM push** — wake/notify an Android client when a new iMessage
   arrives.
-- ✅ **Optional public-URL discovery** — write *only* the public server URL to a
+- **Optional public-URL discovery** — write the public server URL to a
   single Firestore document so remote clients can find a changed tunnel URL.
-- ❌ Not a message store, not chat history, not a contact directory, not a token
-  vault. See [privacy-boundaries.md](privacy-boundaries.md).
+- **Data boundary** — Firebase is used for notification delivery and optional URL
+  discovery. See [privacy-boundaries.md](privacy-boundaries.md).
 
 ## Other platforms
 
@@ -32,7 +32,7 @@ Messaging (FCM)** and, optionally, publish your **public server URL** to your ow
 4. Point micaGO at it: Companion → **Notifications** → enable FCM, choose
    `google-services.json`, choose the service-account JSON, and save.
 5. (Optional) [Enable Firestore public-URL sync](firestore-server-url-sync.md)
-6. [Privacy boundaries](privacy-boundaries.md) — what is and isn't sent.
+6. [Privacy boundaries](privacy-boundaries.md) — what data is used for push and URL discovery.
 7. [Troubleshooting](troubleshooting.md)
 
 ## Config keys (`~/.micago/config.yaml`)
@@ -53,8 +53,8 @@ firebase:
   url_document: "config"   # Firestore document
 ```
 
-The companion writes these via `POST /api/server/notifications` (it never sends
-or stores the service-account contents — only the file path on the Mac).
+The companion writes these via `POST /api/server/notifications`. It stores the
+service-account file path on the Mac.
 
 ## Verify
 

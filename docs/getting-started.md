@@ -56,8 +56,8 @@ organized into a few cards:
   **bearer token** is shown masked with a Reveal/Copy action.
 
 > ⚠️ **Keep your token private.** The bearer token is effectively a password.
-> It stays masked by default — only reveal it when no one is watching, and never
-> paste it into screenshots, logs, bug reports, or chats. If it leaks, generate a
+> It stays masked by default — only reveal it when no one is watching, and keep it
+> out of screenshots, logs, bug reports, or chats. If it leaks, generate a
 > new token and re‑pair your devices.
 
 ## First connection options
