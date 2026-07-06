@@ -298,18 +298,27 @@ Three components:
   - **Keyboard inset residual.** Backgrounding with the keyboard up left a blank
     gap above the composer on resume. `didChangeAppLifecycleState` now unfocuses on
     inactive/paused/hidden and `setState`s on resume.
-- **QR pairing camera "stays unauthorized even after granting."**
-  `MobileScannerController` (mobile_scanner 7.2) is now `autoStart:false` with a
-  manual lifecycle (`WidgetsBindingObserver`): explicit `start()` in `initState`,
-  restart on resume, stop on background — plus a **Retry button** in the camera
-  error view (`_restartCamera`). New l10n `pair.cameraRetry`. **C59 (final):**
-  the scanner now follows the mobile_scanner README exactly — ONE long-lived
-  controller (a controller-recreation experiment blanked the preview: the
-  MobileScanner widget stays bound to the disposed controller's ValueNotifier),
-  `start()` directly in `initState`, pause/resume stop/start **gated on
-  `value.hasCameraPermission`**, `super.dispose()` before the async
-  `controller.dispose()`. "Granted from system Settings" works because Android
-  restarts the app process on grant, so `initState` re-runs.
+- **QR pairing camera (C62 model — supersedes C49/C59).** Every earlier
+  "authorized but the camera never opens" came from *us* driving `start()`
+  (initState/post-frame/retry loops) racing the widget's attach + swallowing
+  start() exceptions into a silent black preview. Now **the MobileScanner
+  widget owns the session** (`autoStart:true`: it start()s after its own
+  attach, stop()s in its dispose — mount/unmount via the pairing stage is the
+  on/off switch), and the screen State only handles app pause/resume (external
+  controllers don't get the plugin's lifecycle handling) and **cold-restart
+  recovery**: Retry swaps in a brand-new controller under a new `ValueKey`,
+  strictly sequenced (unmount old → await endOfFrame → dispose old → mount
+  new) because the platform channel is a singleton whose dispose() stops the
+  active camera, and a live widget must never be rebound (C59 blank-preview
+  lesson). The error card shows the raw plugin `errorCode` for diagnosis —
+  which is what finally cracked it: **release builds crashed with an obfuscated
+  NPE (`qc.b.a(mc.b)`) because R8 full mode stripped ML Kit barcode internals**
+  (debug builds worked; mobile_scanner's consumer rules only keep
+  `com.google.mlkit.*` — single star, no subpackages, no gms internals). Fixed
+  in `android/app/proguard-rules.pro` (keep `com.google.mlkit.**` +
+  `gms.internal.mlkit_*` + barhopper + odml) wired via `proguardFiles` in
+  `build.gradle.kts`; verified in the release mapping (classes map to
+  themselves). Camera-related release crashes ⇒ check R8 first.
 - Client changes need an **APK rebuild**; the attachment dedup also needs the
   **backend rebuilt**. Reminder: the C48 orientation fix is server-side too —
   qlmanage is verified correct for HEIC *and* JPEG (orientation 6/8 → upright), so
