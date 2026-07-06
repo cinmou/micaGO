@@ -142,5 +142,4 @@ GoogleService-Info.plist
 firebase-service-account*.json
 !*.example.json
 !**/*.example.json
-.github/workflows/release.yml
 RELEASE.md
