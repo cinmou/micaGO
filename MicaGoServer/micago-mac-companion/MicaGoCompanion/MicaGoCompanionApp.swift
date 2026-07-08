@@ -123,11 +123,17 @@ final class MenuBarStatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// Menu-bar icons should render at ~18×18 pt so they match system items.
+    /// The SVG assets are 64×64; without an explicit size the button may blow
+    /// them up to the raw pixel dimensions.
+    private let menuBarIconSize = NSSize(width: 18, height: 18)
+
     private func updateStatusItem() {
         guard let button = statusItem.button else { return }
         let current = appearance
         let image = NSImage(named: current.assetName)
         image?.isTemplate = true
+        image?.size = menuBarIconSize
         button.image = image
         button.appearsDisabled = current.appearsDisabled
         button.toolTip = current.helpText

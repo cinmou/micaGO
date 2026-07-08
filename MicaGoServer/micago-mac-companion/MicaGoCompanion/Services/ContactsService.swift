@@ -31,6 +31,8 @@ final class ContactsStore: ObservableObject {
     @Published private(set) var loaded = false
     @Published private(set) var contactCount = 0
     @Published private(set) var contactRevision = 0
+    /// Last error text surfaced for diagnostics (e.g., TCC/code-signing failure).
+    @Published private(set) var lastError: String?
 
     // normalized address -> display name; plus a last-10-digits fallback for
     // phone numbers that lack a country code on one side.
@@ -63,8 +65,12 @@ final class ContactsStore: ObservableObject {
     }
 
     func requestAccess() {
-        CNContactStore().requestAccess(for: .contacts) { [weak self] granted, _ in
+        CNContactStore().requestAccess(for: .contacts) { [weak self] granted, error in
             Task { @MainActor in
+                if let error {
+                    self?.lastError = "requestAccess failed: \(error.localizedDescription)"
+                    NSLog("[Contacts] requestAccess error: \(error)")
+                }
                 self?.refreshStatus()
                 if granted { await self?.load() }
             }
@@ -92,6 +98,7 @@ final class ContactsStore: ObservableObject {
         byLast10 = result.byLast10
         entries = result.entries
         contactCount = result.entries.count
+        lastError = result.error
         loaded = true
         contactRevision &+= 1
     }
@@ -130,9 +137,17 @@ final class ContactsStore: ObservableObject {
 
     // MARK: - Fetch (off the main actor)
 
-    nonisolated static func fetch() -> (byAddress: [String: String], byLast10: [String: String], entries: [ContactEntry]) {
+    struct FetchResult {
+        let byAddress: [String: String]
+        let byLast10: [String: String]
+        let entries: [ContactEntry]
+        let error: String?
+    }
+
+    nonisolated static func fetch() -> FetchResult {
         let store = CNContactStore()
         let keys: [CNKeyDescriptor] = [
+            CNContactIdentifierKey as CNKeyDescriptor,
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactFamilyNameKey as CNKeyDescriptor,
             CNContactNicknameKey as CNKeyDescriptor,
@@ -169,10 +184,13 @@ final class ContactsStore: ObservableObject {
                 }
             }
         } catch {
-            // On failure, return whatever was gathered (UI falls back to raw handles).
+            let message = "enumerateContacts failed: \(error.localizedDescription)"
+            NSLog("[Contacts] \(message)")
+            entries.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return FetchResult(byAddress: byAddress, byLast10: byLast10, entries: entries, error: message)
         }
         entries.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        return (byAddress, byLast10, entries)
+        return FetchResult(byAddress: byAddress, byLast10: byLast10, entries: entries, error: nil)
     }
 
     nonisolated static func displayName(for contact: CNContact) -> String {

@@ -190,6 +190,11 @@ private struct ContactsCard: View {
                 Text("Contacts permission is managed by macOS. Open System Settings → Privacy & Security → Contacts and enable micaGO Companion. Without it, contact names and photos may be unavailable — the app still works using the raw phone/email handles where supported.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let error = contacts.lastError {
+                    Text("Diagnostic: \(error)")
+                        .font(.caption2).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 Text("Optional and local-only. Contacts are read on this Mac to show names for handles and help you create rules. They are never uploaded, stored in the relay, or sent in push.")
                     .font(.caption2).foregroundStyle(.secondary)
