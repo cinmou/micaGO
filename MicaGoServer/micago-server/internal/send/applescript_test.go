@@ -44,3 +44,42 @@ func TestBuildSendAttachmentsScript(t *testing.T) {
 		t.Fatalf("chat id missing: %s", script)
 	}
 }
+
+func TestDirectHandleFromChatGUID(t *testing.T) {
+	handle, service, ok := DirectHandleFromChatGUID("iMessage;-;user_name@example.com")
+	if !ok || handle != "user_name@example.com" || service != "iMessage" {
+		t.Fatalf("direct email guid: got %q %q %v", handle, service, ok)
+	}
+	handle, service, ok = DirectHandleFromChatGUID("SMS;-;+15551234567")
+	if !ok || handle != "+15551234567" || service != "SMS" {
+		t.Fatalf("direct sms guid: got %q %q %v", handle, service, ok)
+	}
+	// Group chats and malformed guids must not use the participant fallback.
+	if _, _, ok := DirectHandleFromChatGUID("iMessage;+;chat123456"); ok {
+		t.Fatal("group guid must not parse as direct")
+	}
+	if _, _, ok := DirectHandleFromChatGUID("garbage"); ok {
+		t.Fatal("malformed guid must not parse as direct")
+	}
+}
+
+func TestBuildSendToParticipantScript(t *testing.T) {
+	script := BuildSendToParticipantScript("iMessage", `user_name@example.com`, `hi "there"`)
+	if !strings.Contains(script, `participant "user_name@example.com"`) {
+		t.Fatalf("participant missing: %s", script)
+	}
+	if !strings.Contains(script, `send "hi \"there\""`) {
+		t.Fatalf("message not escaped: %s", script)
+	}
+	if !strings.Contains(script, "service type = iMessage") {
+		t.Fatalf("service type missing: %s", script)
+	}
+	sms := BuildSendToParticipantScript("SMS", "+15551234567", "x")
+	if !strings.Contains(sms, "service type = SMS") {
+		t.Fatalf("sms service type missing: %s", sms)
+	}
+	att := BuildSendAttachmentToParticipantScript("iMessage", "a@b.com", "/tmp/pic.jpg")
+	if !strings.Contains(att, `POSIX file "/tmp/pic.jpg"`) {
+		t.Fatalf("attachment path missing: %s", att)
+	}
+}

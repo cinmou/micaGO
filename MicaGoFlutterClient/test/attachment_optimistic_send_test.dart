@@ -219,7 +219,9 @@ void main() {
       },
     );
 
-    test('one server row consumes only the closest of multiple pendings', () {
+    test('conversion fallback refuses ambiguous (2+) candidates', () {
+      // C70: with several sends in flight, "closest by time" was a coin flip
+      // that swapped whole bubbles — an ambiguous conversion must not guess.
       final col = MessageCollection();
       col.addPending(pendingVoice(tempId: 'tmp-v1'));
       col.addPending(
@@ -237,10 +239,9 @@ void main() {
           bytes: 777,
         ),
       );
-      expect(col.ordered, hasLength(2));
-      expect(col.pendingByTempId('tmp-v1'), isNull);
+      expect(col.ordered, hasLength(3));
+      expect(col.pendingByTempId('tmp-v1'), isNotNull);
       expect(col.pendingByTempId('tmp-v2'), isNotNull);
-      expect(col.wasReconciledFromPending('srv-c2'), isTrue);
     });
 
     test('same-name server row never consumes two pending sends', () {

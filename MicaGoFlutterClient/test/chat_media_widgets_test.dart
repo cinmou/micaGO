@@ -151,7 +151,12 @@ void main() {
     );
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text('clip.mp4'), findsOneWidget);
+    // C69: while bytes load, each media kind shows its in-bubble skeleton
+    // placeholder (image / video / sticker) — never a spinner bubble and
+    // never a bare file card that swaps shape when the media arrives.
+    expect(find.byIcon(Icons.image_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
 
     release.complete();
     await tester.pumpAndSettle();

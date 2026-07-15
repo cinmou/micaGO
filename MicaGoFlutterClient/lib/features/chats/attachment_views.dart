@@ -483,26 +483,33 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
   Widget build(BuildContext context) {
     final bytes = _bytes;
     if (bytes != null && bytes.isNotEmpty) return _preview(context, bytes);
-    return FutureBuilder<Uint8List>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return _VideoFallbackCard(
+    final placeholderWidth = MediaQuery.sizeOf(context).width * 0.58;
+    return _MediaSwap(
+      child: FutureBuilder<Uint8List>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return _MediaLoadingPlaceholder(
+              key: const ValueKey('loading'),
+              width: placeholderWidth,
+              height: 200,
+              icon: Icons.videocam_outlined,
+            );
+          }
+          final bytes = snap.data;
+          if (snap.hasError || bytes == null || bytes.isEmpty) {
+            return _VideoFallbackCard(
             api: widget.api,
             attachment: widget.attachment,
-            onLongPress: widget.onLongPress,
+              onLongPress: widget.onLongPress,
+            );
+          }
+          return KeyedSubtree(
+            key: const ValueKey('media'),
+            child: _preview(context, bytes),
           );
-        }
-        final bytes = snap.data;
-        if (snap.hasError || bytes == null || bytes.isEmpty) {
-          return _VideoFallbackCard(
-            api: widget.api,
-            attachment: widget.attachment,
-            onLongPress: widget.onLongPress,
-          );
-        }
-        return _preview(context, bytes);
-      },
+        },
+      ),
     );
   }
 
@@ -656,6 +663,90 @@ class _VideoFallbackCard extends StatelessWidget {
   }
 }
 
+/// C69: skeleton shown while media bytes load (memory miss → disk/network).
+/// Shaped like a media bubble so the loaded image fades in *in place* inside
+/// the same bubble instead of popping the layout open from nothing.
+class _MediaLoadingPlaceholder extends StatefulWidget {
+  final double width;
+  final double height;
+  final double radius;
+  final IconData icon;
+  const _MediaLoadingPlaceholder({
+    super.key,
+    required this.width,
+    required this.height,
+    this.radius = 12,
+    this.icon = Icons.image_outlined,
+  });
+
+  @override
+  State<_MediaLoadingPlaceholder> createState() =>
+      _MediaLoadingPlaceholderState();
+}
+
+class _MediaLoadingPlaceholderState extends State<_MediaLoadingPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.radius),
+        child: FadeTransition(
+          opacity: Tween<double>(begin: 0.45, end: 0.85).animate(
+            CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+          ),
+          child: ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: Center(
+              child: Icon(
+                widget.icon,
+                size: 30,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// C69: one-bubble placeholder → media transition — fades the new content in
+/// and eases the size change instead of a hard layout jump.
+class _MediaSwap extends StatelessWidget {
+  final Widget child;
+  const _MediaSwap({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.center,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        child: child,
+      ),
+    );
+  }
+}
+
 /// C32: renders an iMessage sticker. Stickers are images (PNG/HEIC/GIF), so we
 /// try to load + show the bitmap with sticker styling (transparent, no card,
 /// tap to fade like BlueBubbles, long-press to enlarge). If the bytes can't be
@@ -704,17 +795,28 @@ class _StickerAttachmentState extends State<_StickerAttachment> {
     if (bytes != null) {
       return bytes.isEmpty ? const _StickerPlaceholder() : _sticker(bytes);
     }
-    return FutureBuilder<Uint8List>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox.shrink();
-        }
-        if (snap.hasError || snap.data == null || snap.data!.isEmpty) {
-          return const _StickerPlaceholder();
-        }
-        return _sticker(snap.data!);
-      },
+    return _MediaSwap(
+      child: FutureBuilder<Uint8List>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const _MediaLoadingPlaceholder(
+              key: ValueKey('loading'),
+              width: 120,
+              height: 120,
+              radius: 14,
+              icon: Icons.auto_awesome_outlined,
+            );
+          }
+          if (snap.hasError || snap.data == null || snap.data!.isEmpty) {
+            return const _StickerPlaceholder();
+          }
+          return KeyedSubtree(
+            key: const ValueKey('media'),
+            child: _sticker(snap.data!),
+          );
+        },
+      ),
     );
   }
 
@@ -888,20 +990,33 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
   Widget build(BuildContext context) {
     final bytes = _bytes;
     if (bytes != null) return _image(context, bytes);
-    return FutureBuilder<Uint8List>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox.shrink();
-        }
-        if (snap.hasError || snap.data == null) {
-          return _FileAttachment(
-            api: widget.api,
-            attachment: widget.attachment,
+    final placeholderWidth = MediaQuery.sizeOf(context).width * 0.58;
+    return _MediaSwap(
+      child: FutureBuilder<Uint8List>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return _MediaLoadingPlaceholder(
+              key: const ValueKey('loading'),
+              width: placeholderWidth,
+              height: 200,
+            );
+          }
+          if (snap.hasError || snap.data == null) {
+            return KeyedSubtree(
+              key: const ValueKey('error'),
+              child: _FileAttachment(
+                api: widget.api,
+                attachment: widget.attachment,
+              ),
+            );
+          }
+          return KeyedSubtree(
+            key: const ValueKey('media'),
+            child: _image(context, snap.data!),
           );
-        }
-        return _image(context, snap.data!);
-      },
+        },
+      ),
     );
   }
 

@@ -51,12 +51,30 @@ class MediaCache {
     if (_dir != null) return;
     try {
       final support = await getApplicationSupportDirectory();
-      final dir = Directory('${support.path}/media_cache');
+      final root = Directory('${support.path}/media_cache');
+      // C70: v2 — earlier builds could seed a *wrong* local image under a
+      // server key (multi-image sends), permanently caching swapped photos.
+      // Cached media is server-authoritative now; discard the v1 store once.
+      final dir = Directory('${root.path}/v2');
       await dir.create(recursive: true);
       _dir = dir;
+      unawaited(_purgeLegacyV1(root));
     } catch (_) {
       // No disk layer this session; everything still works from memory+network.
     }
+  }
+
+  /// One-time cleanup of pre-v2 cache files sitting in the media_cache root.
+  Future<void> _purgeLegacyV1(Directory root) async {
+    try {
+      await for (final entry in root.list()) {
+        if (entry is File) {
+          try {
+            await entry.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 
   File? _fileFor(String key) {
@@ -106,14 +124,6 @@ class MediaCache {
     _memoryCache[key] = bytes;
     unawaited(_writeDisk(key, bytes));
     return bytes;
-  }
-
-  /// Stores bytes we already have (e.g. a file the user just sent) under [key]
-  /// in both layers, so it is never fetched from the server at all.
-  Future<void> seed(String key, Uint8List bytes) async {
-    if (key.isEmpty || bytes.isEmpty) return;
-    _memoryCache[key] = bytes;
-    await _writeDisk(key, bytes);
   }
 
   /// The on-disk file for [key], or null when not cached. Used for media that

@@ -249,8 +249,13 @@ String? matchingPendingTempId(
                 const Duration(minutes: 5).inMilliseconds;
       })
       .toList(growable: false);
-  if (fallback.isEmpty) return null;
-  return _closestPending(fallback, server).tempId;
+  // C70: the fallback must be unambiguous. With several sends in flight
+  // (multi-image batches land within the same second) "closest by time" is a
+  // coin flip — a wrong guess swapped whole bubbles. Identity matching above
+  // handles the normal case; conversions reconcile only when exactly one
+  // pending could be the source.
+  if (fallback.length != 1) return null;
+  return fallback.single.tempId;
 }
 
 MessageModel _closestPending(

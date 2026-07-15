@@ -49,6 +49,43 @@ Three components:
   guides (android-client-connection / remote-access-cloudflare / notifications-setup /
   manual-test-flow) are still English-only — the localized index marks them "(英文)".
 
+## Media loading skeleton — one-bubble placeholder → image (C69, client-only)
+
+- Loading media used to render `SizedBox.shrink()` (image/sticker) or the file
+  card (video), then pop to full size when bytes arrived — cached images
+  "appeared out of nowhere". Now all three tiles show
+  `_MediaLoadingPlaceholder` (rounded skeleton, pulsing 0.45–0.85 opacity,
+  kind-specific icon: image/videocam/auto_awesome) inside the SAME bubble,
+  and `_MediaSwap` (AnimatedSize 220ms + AnimatedSwitcher 180ms fade) turns
+  the placeholder→media swap into an in-place fade + eased resize. Sync
+  memory hits still render directly (no placeholder frame, C51). The
+  "loading media never renders a second progress bubble" test now pins the
+  skeleton icons instead of the old video file-card-while-loading.
+
+## Participant send fallback + merged view beta + details l10n + UI polish (C68)
+
+- **Sends to underscored-email handles failed** — Messages' AppleScript
+  `chat id` lookup is unreliable for some 1:1 email handles even when the chat
+  exists in chat.db. `AppleScriptSender.SendText/SendAttachment` now retry via
+  `participant "<handle>" of (1st account whose service type = iMessage/SMS)`
+  (`BuildSendToParticipantScript`, `DirectHandleFromChatGUID` — group `;+;`
+  guids never take the fallback; original error is preserved if both fail).
+  **Requires rebuilding the bundled backend.**
+- **Merged view (beta, client):** per-contact toggle
+  (`AppController.isMergedDisplayEnabled`, SecureStore
+  `micago.merged_display.v1`) shown in the details Routes section when a
+  contact has 2+ iMessage routes. `ThreadController` takes `mergedGuids`:
+  load pulls the newest page of every route (paging older stays
+  primary-route-only), WS/delta/unsend/reactions route on `threadGuids`,
+  cache writes use the message's own chatGuid, sends stay on the active
+  route. Toggling rebuilds the live controller (`_rebuildActiveController`).
+- **Details sheet fully localized** (`details.*` keys ×3 locales; the media
+  header reuses `chat.media`; subtitle 'iMessage 群聊' hardcoded-zh removed).
+- **Text alignment:** composer TextField (both variants) gets explicit
+  `height: 1.35`; date-separator pill `height: 1.0` + vertical 5; jump-to-
+  bottom label `height: 1.0` + localized (`chat.backToBottom`) and the button
+  raised (`bottom: max(124, inset + 6)` from `max(94, inset − 32)`).
+
 ## U+FFFC reconciliation fix — photo sends showed two bubbles (C67, client-only)
 
 - **Root cause:** chat.db stores attachment messages with the object-replacement
@@ -67,21 +104,38 @@ Three components:
   bare-attachment matching. Tests: C67 group in
   `attachment_optimistic_send_test.dart`.
 
+## Multi-image send corruption — server-authoritative media (C70, client-only)
+
+- **"发多张图变成同一张发两遍":** the C66 "atomic handoff" seeded *local* bytes
+  under *server* cache keys, gated by a `server.attachments.length == 1`
+  short-circuit — with several sends in flight, the closest-by-time fallback
+  could match the WRONG pending and permanently cache swapped photos on disk.
+  All of that is gone: **confirmed media is server-authoritative** —
+  `MediaCache.seed` and `_absorbConfirmedAttachmentSend` deleted; the media
+  disk store moved to `media_cache/v2` with a one-time purge of the possibly
+  corrupted v1 files (a just-sent photo now downloads back once, then caches).
+- **Reconciliation authority is MessageCollection alone** (ingestion paths just
+  `upsertServer` + `_sweepAttachmentSendBookkeeping`, which releases staged
+  bytes/progress/pins when a pending vanished; failed pendings keep theirs for
+  retry). The conversion fallback **refuses ambiguous (2+) candidates** again —
+  closest-by-time guessing is what swapped bubbles.
+- **Batch sends continue past a failure** (the failed file keeps its tap-to-
+  retry bubble; the rest of the batch still sends — previously `break` meant
+  "only the first image sent" whenever one item errored).
+- **C71: all pending bubbles stage up front.** `sendAttachments` now runs two
+  phases — enqueue every optimistic bubble (pin bytes, progress notifier,
+  `dateCreated: baseMs + i` / `tempId: baseMicro + i` for stable unique order)
+  in one setState, THEN upload sequentially. Previously each bubble was only
+  added when its own upload started, so a multi-file batch showed just the
+  first bubble until that upload finished. A pending deleted while queued is
+  skipped (`pendingByTempId == null → continue`).
+
 ## Pending-attachment bubble conflicts (C66, client-only, v0.64.0)
 
 - Pending bytes stay pinned in `MediaCache` until confirmation or deletion, so
   a local bubble never tries to fetch its `local-` guid from the server.
-- Reconciliation is one-to-one. `matchingPendingTempId` prefers file identity,
-  then the closest non-failed attachment send inside the five-minute window for
-  server conversions. One server row can never remove several same-name or
-  same-size pending rows.
-- `ThreadController._absorbConfirmedAttachmentSend` performs one atomic handoff:
-  migrate local bytes to the server cache keys, replace the pending model with
-  the server model, then release progress and pinned state. The old loose
-  single-candidate branch and post-upsert bookkeeping sweep were removed.
-- Inline image and sticker loads no longer render a separate spinner block;
-  videos retain their file-style card until the poster is available. Files and
-  audio already render without a media-loading bubble.
+- ~~Closest-pending matching / atomic byte handoff~~ — superseded by C70
+  (server-authoritative media, ambiguity-refusing fallback).
 - Tests: C66 groups in `attachment_optimistic_send_test.dart`.
 
 ## Double send-animation fix + footer/timestamp l10n (C65, client-only)

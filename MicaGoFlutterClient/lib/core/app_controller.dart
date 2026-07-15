@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -123,6 +124,7 @@ class AppController extends ChangeNotifier {
   static const inAppNotificationsStorageKey =
       'micago.in_app_notifications_enabled.v1';
   static const developerModeStorageKey = 'micago.developer_mode.v1';
+  static const mergedDisplayStorageKey = 'micago.merged_display.v1';
   final Map<String, String> _customAvatarPaths = {};
 
   /// The realtime client is long-lived; home screen listens to it directly.
@@ -240,6 +242,24 @@ class AppController extends ChangeNotifier {
     if (_inAppNotificationsEnabled == enabled) return;
     _inAppNotificationsEnabled = enabled;
     await store.writeValue(inAppNotificationsStorageKey, enabled ? '1' : '0');
+    notifyListeners();
+  }
+
+  /// C68 (beta): per-contact "merged view" — show every iMessage route of one
+  /// contact in a single thread. Keyed by MergedChat.localCustomizationKey.
+  final Set<String> _mergedDisplayKeys = {};
+  bool isMergedDisplayEnabled(String key) => _mergedDisplayKeys.contains(key);
+
+  Future<void> setMergedDisplayEnabled(String key, bool enabled) async {
+    if (key.isEmpty) return;
+    final changed = enabled
+        ? _mergedDisplayKeys.add(key)
+        : _mergedDisplayKeys.remove(key);
+    if (!changed) return;
+    await store.writeValue(
+      mergedDisplayStorageKey,
+      jsonEncode(_mergedDisplayKeys.toList()),
+    );
     notifyListeners();
   }
 
@@ -468,6 +488,15 @@ class AppController extends ChangeNotifier {
     // Piggybacks on this small-prefs load step (bootstrap + restore-reload).
     _developerModeEnabled =
         await store.readValue(developerModeStorageKey) == '1';
+    _mergedDisplayKeys.clear();
+    try {
+      final raw = await store.readValue(mergedDisplayStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        _mergedDisplayKeys.addAll(
+          (jsonDecode(raw) as List).whereType<String>(),
+        );
+      }
+    } catch (_) {}
   }
 
   /// Builds a throwaway [ApiClient] for the connection-test screen without

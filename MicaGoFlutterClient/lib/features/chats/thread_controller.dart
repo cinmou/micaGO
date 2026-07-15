@@ -24,7 +24,18 @@ class ThreadController extends ChangeNotifier {
   final AppController app;
   final String chatGuid;
 
-  ThreadController({required this.app, required this.chatGuid});
+  /// C68 (beta merged view): additional route guids displayed in this thread.
+  /// Sends always go to [chatGuid]; these only widen what is *shown*.
+  final Set<String> mergedGuids;
+
+  ThreadController({
+    required this.app,
+    required this.chatGuid,
+    Set<String> mergedGuids = const {},
+  }) : mergedGuids = {...mergedGuids}..remove(chatGuid);
+
+  /// Every chat guid rendered by this thread (primary + merged routes).
+  Set<String> get threadGuids => {chatGuid, ...mergedGuids};
 
   static const int _pageSize = 50;
 
@@ -60,16 +71,26 @@ class ThreadController extends ChangeNotifier {
   }
 
   void _onDeltaMessage(MessageModel msg) {
-    if (msg.chatGuid != chatGuid || msg.guid.isEmpty) return;
-    if (!_absorbConfirmedAttachmentSend(msg)) _col.upsertServer(msg);
+    if (!threadGuids.contains(msg.chatGuid) || msg.guid.isEmpty) return;
+    _col.upsertServer(msg);
+    _sweepAttachmentSendBookkeeping();
     state = ThreadState.loaded;
     notifyListeners();
+  }
+
+  /// Cached messages for every guid this thread displays.
+  Future<List<MessageModel>> _cachedThreadMessages() async {
+    final combined = <MessageModel>[];
+    for (final guid in threadGuids) {
+      combined.addAll(await app.cache.listMessages(guid, limit: _pageSize));
+    }
+    return combined;
   }
 
   Future<void> load({bool showSpinner = true}) async {
     final api = app.api;
     if (api == null) {
-      final cached = await app.cache.listMessages(chatGuid, limit: _pageSize);
+      final cached = await _cachedThreadMessages();
       if (cached.isNotEmpty) {
         _col.replaceServerPage(cached);
         state = ThreadState.loaded;
@@ -82,7 +103,7 @@ class ThreadController extends ChangeNotifier {
       return;
     }
     if (showSpinner) {
-      final cached = await app.cache.listMessages(chatGuid, limit: _pageSize);
+      final cached = await _cachedThreadMessages();
       if (cached.isNotEmpty) {
         _col.replaceServerPage(cached);
         state = ThreadState.loaded;
@@ -93,15 +114,22 @@ class ThreadController extends ChangeNotifier {
       notifyListeners();
     }
     try {
-      final fetched = await api.getMessages(
+      final primary = await api.getMessages(
         chatGuid,
         limit: _pageSize,
         offset: 0,
       );
-      await app.cache.replaceServerPage(chatGuid, fetched);
-      if (_pendingAttachmentSends.isNotEmpty) {
-        for (final m in fetched) {
-          _absorbConfirmedAttachmentSend(m);
+      await app.cache.replaceServerPage(chatGuid, primary);
+      // C68 merged view: pull the newest page of each extra route too. Paging
+      // older history stays primary-route-only in the beta.
+      final fetched = [...primary];
+      for (final guid in mergedGuids) {
+        try {
+          final page = await api.getMessages(guid, limit: _pageSize, offset: 0);
+          await app.cache.replaceServerPage(guid, page);
+          fetched.addAll(page);
+        } on ApiException {
+          // A missing merged route must not break the primary thread.
         }
       }
       // Store everything (so unhide can restore it) but never display a
@@ -110,12 +138,13 @@ class ThreadController extends ChangeNotifier {
       _col.replaceServerPage(
         fetched.where((m) => !hidden.contains(m.guid)).toList(),
       );
-      _offset = fetched.length;
-      hasMore = fetched.length >= _pageSize;
+      _sweepAttachmentSendBookkeeping();
+      _offset = primary.length;
+      hasMore = primary.length >= _pageSize;
       state = _col.isEmpty ? ThreadState.empty : ThreadState.loaded;
       error = null;
     } on ApiException catch (e) {
-      final cached = await app.cache.listMessages(chatGuid, limit: _pageSize);
+      final cached = await _cachedThreadMessages();
       if (cached.isNotEmpty) {
         _col.replaceServerPage(cached);
         state = ThreadState.loaded;
@@ -139,8 +168,7 @@ class ThreadController extends ChangeNotifier {
     for (final guid in ids) {
       await app.cache.setMessageHidden(guid, true);
     }
-    final cached = await app.cache.listMessages(chatGuid, limit: _pageSize);
-    _col.replaceServerPage(cached);
+    _col.replaceServerPage(await _cachedThreadMessages());
     notifyListeners();
   }
 
@@ -281,18 +309,26 @@ class ThreadController extends ChangeNotifier {
     attachmentError = null;
     notifyListeners();
 
-    var anySent = false;
-    for (final item in items) {
-      final tempId = 'tmp-att-${DateTime.now().microsecondsSinceEpoch}';
+    // C71: stage EVERY bubble up front — a multi-file batch shows all its
+    // pending bubbles (with progress rings) immediately. Uploads still run
+    // one at a time below; previously the next bubble only appeared after
+    // the previous upload finished, so "only the first image showed".
+    final queue =
+        <({String tempId, StagedAttachment item, MessageModel optimistic})>[];
+    final baseMs = DateTime.now().millisecondsSinceEpoch;
+    final baseMicro = DateTime.now().microsecondsSinceEpoch;
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      // Index suffix keeps ids unique and preserves the staged order.
+      final tempId = 'tmp-att-${baseMicro + i}';
       final optimistic = MessageModel.optimisticAttachment(
         tempId: tempId,
         filename: item.filename,
         totalBytes: item.bytes.length,
-        dateCreated: DateTime.now().millisecondsSinceEpoch,
+        dateCreated: baseMs + i,
       );
       _pendingAttachmentSends[tempId] = item;
-      final progress = ValueNotifier<double>(0);
-      _uploadProgress[tempId] = progress;
+      _uploadProgress[tempId] = ValueNotifier<double>(0);
       // C66: *pin* the local bytes (non-evictable, synchronous) so the bubble
       // renders instantly — a pending guid must never fall into the
       // spinner/network path. Unpinned in _cleanupAttachmentSend.
@@ -301,8 +337,19 @@ class ThreadController extends ChangeNotifier {
         item.bytes,
       );
       _col.addPending(optimistic);
-      state = ThreadState.loaded;
-      notifyListeners();
+      queue.add((tempId: tempId, item: item, optimistic: optimistic));
+    }
+    state = ThreadState.loaded;
+    notifyListeners();
+
+    var anySent = false;
+    for (final staged in queue) {
+      final tempId = staged.tempId;
+      final item = staged.item;
+      final optimistic = staged.optimistic;
+      // The user may have deleted this pending while it was queued.
+      if (_col.pendingByTempId(tempId) == null) continue;
+      final progress = _uploadProgress[tempId];
 
       try {
         final sentFilename = await api.sendAttachment(
@@ -312,7 +359,7 @@ class ThreadController extends ChangeNotifier {
           filename: item.filename,
           isAudioMessage: item.isAudioMessage,
           onSendProgress: (sent, total) {
-            if (total > 0) progress.value = sent / total;
+            if (total > 0) progress?.value = sent / total;
           },
         );
         anySent = true;
@@ -343,15 +390,15 @@ class ThreadController extends ChangeNotifier {
         _col.replacePending(tempId, updated);
         notifyListeners();
       } on ApiException catch (e) {
+        // C70: keep sending the remaining files — the failed one keeps its
+        // failed bubble (tap to retry) and the batch continues.
         attachmentError = e.friendly;
         _col.setPendingState(tempId, LocalSendState.failed);
         notifyListeners();
-        break; // Conservative: stop the sequence on the first failure.
       } catch (e) {
         attachmentError = '$e';
         _col.setPendingState(tempId, LocalSendState.failed);
         notifyListeners();
-        break;
       }
     }
 
@@ -363,47 +410,17 @@ class ThreadController extends ChangeNotifier {
     }
   }
 
-  /// When a confirmed outgoing server row matches a pending attachment send,
-  /// seed the media cache for the *server* attachment keys with the local
-  /// bytes (so the just-sent photo is never downloaded back) and drop the
-  /// staged bookkeeping. The pending bubble itself is reconciled away inside
-  /// the collection.
-  bool _absorbConfirmedAttachmentSend(MessageModel server) {
-    if (_pendingAttachmentSends.isEmpty ||
-        !server.isFromMe ||
-        server.attachments.isEmpty) {
-      return false;
-    }
-    final pending = _pendingAttachmentSends.keys
-        .map(_col.pendingByTempId)
-        .whereType<MessageModel>();
-    final tempId = matchingPendingTempId(pending, server);
-    if (tempId == null) return false;
-    final item = _pendingAttachmentSends[tempId];
-    if (item == null) return false;
-
-    final lowerName = item.filename.toLowerCase();
-    for (final a in server.attachments) {
-      final sameFile =
-          server.attachments.length == 1 ||
-          a.displayName.toLowerCase() == lowerName ||
-          (item.bytes.isNotEmpty && a.totalBytes == item.bytes.length);
-      if (!sameFile) continue;
-      // The inline renderer reads `previewUrl ?? guid`. Seed that exact key
-      // before the pending row is replaced, so a confirmed local photo does
-      // not enter a second loading presentation.
-      if (a.canRenderInlineImage) {
-        unawaited(MediaCache.instance.seed(a.previewUrl ?? a.guid, item.bytes));
+  /// C70: confirmed images are server-authoritative. Reconciliation lives
+  /// solely in MessageCollection; this sweep just releases staged bytes,
+  /// progress notifiers, and pinned local bytes once a pending row is gone.
+  /// Failed pendings keep their row (and bytes) for retry.
+  void _sweepAttachmentSendBookkeeping() {
+    if (_pendingAttachmentSends.isEmpty) return;
+    for (final tempId in _pendingAttachmentSends.keys.toList()) {
+      if (_col.pendingByTempId(tempId) == null) {
+        _cleanupAttachmentSend(tempId);
       }
-      unawaited(
-        MediaCache.instance.seed(MediaCache.fullMediaKey(a.guid), item.bytes),
-      );
     }
-    // One atomic visual transition: replace this pending row with the server
-    // row before releasing its pinned bytes and progress notifier.
-    _col.confirmPending(tempId, server);
-    _cleanupAttachmentSend(tempId);
-    return true;
   }
 
   void _cleanupAttachmentSend(String tempId) {
@@ -471,7 +488,7 @@ class ThreadController extends ChangeNotifier {
           _scheduleReload();
           break;
         }
-        if (msg.chatGuid == chatGuid) {
+        if (threadGuids.contains(msg.chatGuid)) {
           if (rt.isReactionMessage(msg)) {
             final target = rt.reactionTargetGuid(msg);
             final applied =
@@ -488,19 +505,20 @@ class ThreadController extends ChangeNotifier {
                   add: rt.isReactionAdd(msg),
                 );
             unawaited(
-              app.cache.applyReactionEvent(chatGuid, msg).then((ok) {
+              app.cache.applyReactionEvent(msg.chatGuid ?? chatGuid, msg).then((
+                ok,
+              ) {
                 if (ok) return app.markRealtimeEventApplied(e);
                 return app.recordRealtimeFallback();
               }),
             );
             if (!applied) _scheduleReload();
           } else {
-            if (!_absorbConfirmedAttachmentSend(msg)) {
-              _col.upsertServer(msg);
-            }
+            _col.upsertServer(msg);
+            _sweepAttachmentSendBookkeeping();
             unawaited(
               app.cache
-                  .upsertMessage(chatGuid, msg)
+                  .upsertMessage(msg.chatGuid ?? chatGuid, msg)
                   .then(
                     (_) => app.markRealtimeEventApplied(e),
                     onError: (_) => app.recordRealtimeFallback(),
@@ -518,7 +536,7 @@ class ThreadController extends ChangeNotifier {
           _scheduleReload();
           break;
         }
-        if (eventChat == chatGuid) {
+        if (threadGuids.contains(eventChat)) {
           final guid = e.data['guid'] as String?;
           final dateRetracted = _asInt(e.data['dateRetracted']);
           if (guid == null || !_col.applyUnsend(guid, dateRetracted)) {
@@ -527,7 +545,7 @@ class ThreadController extends ChangeNotifier {
           } else {
             unawaited(
               app.cache
-                  .applyUnsend(chatGuid, guid, dateRetracted)
+                  .applyUnsend(eventChat, guid, dateRetracted)
                   .then((_) => app.markRealtimeEventApplied(e)),
             );
             notifyListeners();

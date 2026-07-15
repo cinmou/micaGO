@@ -172,7 +172,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         unawaited(_refreshOtherUnreadChats());
       }
     });
-    _controller = ThreadController(app: app, chatGuid: _active.guid)..start();
+    _controller = _createController(app, _active)..start();
     _composer.addListener(() => setState(() {}));
     _scroll.addListener(_onScroll);
     _controller.addListener(_publishDiagnostics);
@@ -254,7 +254,36 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     unawaited(app.markChatsViewed([route.guid]));
     setState(() {
       _active = route;
-      _controller = ThreadController(app: app, chatGuid: route.guid)..start();
+      _controller = _createController(app, route)..start();
+      _controller.addListener(_publishDiagnostics);
+    });
+  }
+
+  /// C68 (beta): when merged view is on for this contact, the thread displays
+  /// every iMessage route together; sends still go to the active route.
+  ThreadController _createController(AppController app, ChatSummary route) {
+    final imessageGuids = widget.merged.routes
+        .where((r) => r.service == ChatService.imessage)
+        .map((r) => r.guid)
+        .toSet();
+    final mergedOn =
+        imessageGuids.length > 1 &&
+        imessageGuids.contains(route.guid) &&
+        app.isMergedDisplayEnabled(widget.merged.localCustomizationKey);
+    return ThreadController(
+      app: app,
+      chatGuid: route.guid,
+      mergedGuids: mergedOn ? imessageGuids : const {},
+    );
+  }
+
+  /// Rebuilds the controller in place after the merged-view toggle changes.
+  void _rebuildActiveController() {
+    _controller.removeListener(_publishDiagnostics);
+    _controller.dispose();
+    final app = context.read<AppController>();
+    setState(() {
+      _controller = _createController(app, _active)..start();
       _controller.addListener(_publishDiagnostics);
     });
   }
@@ -753,8 +782,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         Positioned(
           left: 0,
           right: 0,
-          // Keep the jump button above the composer/panel overlay (C50).
-          bottom: math.max(94, _bottomInset(context) - 32),
+          // Keep the jump button above the composer/panel overlay (C50);
+          // C68: raised so it clears the composer pill comfortably.
+          bottom: math.max(124, _bottomInset(context) + 6),
           child: Center(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
@@ -959,6 +989,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
           onRefresh: () => _controller.load(),
           onLoadOlder: () => _controller.loadOlder(),
           onSwitchRoute: _switchRoute,
+          onMergedDisplayChanged: _rebuildActiveController,
           onJumpToMessage: (guid) {
             Navigator.of(context).pop();
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1573,10 +1604,11 @@ class _JumpToBottomButton extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               Text(
-                'Bottom',
+                MicaLocalizations.of(context).t('chat.backToBottom'),
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: scheme.primary,
                   fontWeight: FontWeight.w700,
+                  height: 1.0,
                 ),
               ),
             ],
@@ -2651,16 +2683,18 @@ class _DateSeparator extends StatelessWidget {
         child: ExcludeSemantics(
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               label,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.0,
+              ),
             ),
           ),
         ),
@@ -4577,7 +4611,11 @@ class _ComposerState extends State<_Composer> {
                               focusNode: _focus,
                               minLines: 1,
                               maxLines: 5,
-                              style: TextStyle(color: onInput, fontSize: 18),
+                              style: TextStyle(
+                                color: onInput,
+                                fontSize: 18,
+                                height: 1.35,
+                              ),
                               cursorColor: inputIconColor,
                               textAlignVertical: TextAlignVertical.center,
                               textInputAction: TextInputAction.newline,
@@ -4602,6 +4640,7 @@ class _ComposerState extends State<_Composer> {
                                 hintStyle: TextStyle(
                                   color: hintColor,
                                   fontSize: 18,
+                                  height: 1.35,
                                 ),
                                 border: InputBorder.none,
                                 isDense: true,
@@ -4765,7 +4804,11 @@ class _ComposerState extends State<_Composer> {
                         focusNode: _focus,
                         minLines: 1,
                         maxLines: 5,
-                        style: TextStyle(color: onInput, fontSize: 18),
+                        style: TextStyle(
+                          color: onInput,
+                          fontSize: 18,
+                          height: 1.35,
+                        ),
                         cursorColor: _glassBlue(scheme),
                         textAlignVertical: TextAlignVertical.center,
                         textInputAction: TextInputAction.newline,
@@ -4787,7 +4830,11 @@ class _ComposerState extends State<_Composer> {
                             ),
                         decoration: InputDecoration(
                           hintText: _hintText,
-                          hintStyle: TextStyle(color: hintColor, fontSize: 18),
+                          hintStyle: TextStyle(
+                            color: hintColor,
+                            fontSize: 18,
+                            height: 1.35,
+                          ),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(
@@ -5320,6 +5367,7 @@ class _ThreadDetailsSheet extends StatefulWidget {
   final VoidCallback onRefresh;
   final VoidCallback onLoadOlder;
   final ValueChanged<ChatSummary> onSwitchRoute;
+  final VoidCallback onMergedDisplayChanged;
   final ValueChanged<String> onJumpToMessage;
 
   const _ThreadDetailsSheet({
@@ -5332,6 +5380,7 @@ class _ThreadDetailsSheet extends StatefulWidget {
     required this.onRefresh,
     required this.onLoadOlder,
     required this.onSwitchRoute,
+    required this.onMergedDisplayChanged,
     required this.onJumpToMessage,
   });
 
@@ -5394,10 +5443,15 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
         : inkWash
         ? scheme.surface
         : _accent1_50(scheme);
+    final strings = MicaLocalizations.of(context);
     final isGroup = widget.active.isGroup;
     final detailSubtitle = isGroup
-        ? 'iMessage 群聊'
+        ? strings.t('details.groupChat')
         : widget.active.chatIdentifier;
+    final imessageRoutes = widget.merged.routes
+        .where((r) => r.service == ChatService.imessage)
+        .toList(growable: false);
+    final mergedKey = widget.merged.localCustomizationKey;
     final participants = widget.active.participants
         .map((p) => p.trim())
         .where((p) => p.isNotEmpty)
@@ -5462,11 +5516,14 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Refresh',
+                        tooltip: strings.t('details.refresh'),
                         icon: const Icon(Icons.refresh),
                         onPressed: () {
                           widget.onRefresh();
-                          TopBanner.show(context, 'Refreshing conversation');
+                          TopBanner.show(
+                            context,
+                            strings.t('details.refreshing'),
+                          );
                         },
                       ),
                     ],
@@ -5481,29 +5538,27 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                         icon: const Icon(Icons.photo_library_outlined),
                         label: Text(
                           customAvatarPath == null
-                              ? 'Set local avatar'
-                              : 'Change local avatar',
+                              ? strings.t('details.setAvatar')
+                              : strings.t('details.changeAvatar'),
                         ),
                       ),
                       if (customAvatarPath != null)
                         OutlinedButton.icon(
                           onPressed: () => _clearCustomAvatar(avatarKey),
                           icon: const Icon(Icons.delete_outline),
-                          label: const Text('Remove'),
+                          label: Text(strings.t('details.removeAvatar')),
                         ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Actions',
+                    strings.t('details.actions'),
                     style: Theme.of(context).textTheme.labelLarge,
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Mute notifications'),
-                    subtitle: const Text(
-                      'Silence local notifications for every route here',
-                    ),
+                    title: Text(strings.t('details.mute')),
+                    subtitle: Text(strings.t('details.muteBody')),
                     value: muted,
                     onChanged: (value) => app.setChatsMuted(routeGuids, value),
                   ),
@@ -5513,10 +5568,13 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                         child: OutlinedButton.icon(
                           onPressed: () {
                             widget.onRefresh();
-                            TopBanner.show(context, 'Refreshing conversation');
+                            TopBanner.show(
+                              context,
+                              strings.t('details.refreshing'),
+                            );
                           },
                           icon: const Icon(Icons.refresh),
-                          label: const Text('Refresh'),
+                          label: Text(strings.t('details.refresh')),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -5524,17 +5582,22 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                         child: OutlinedButton.icon(
                           onPressed: () {
                             widget.onLoadOlder();
-                            TopBanner.show(context, 'Fetching more messages');
+                            TopBanner.show(
+                              context,
+                              strings.t('details.fetching'),
+                            );
                           },
                           icon: const Icon(Icons.history),
-                          label: const Text('Fetch more'),
+                          label: Text(strings.t('details.fetchMore')),
                         ),
                       ),
                     ],
                   ),
                   const Divider(height: 24),
                   Text(
-                    isGroup ? 'Accounts' : 'Routes',
+                    isGroup
+                        ? strings.t('details.accounts')
+                        : strings.t('details.routes'),
                     style: Theme.of(context).textTheme.labelLarge,
                   ),
                   const SizedBox(height: 4),
@@ -5555,7 +5618,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                       ),
                     if (participants.isEmpty)
                       Text(
-                        'No accounts found',
+                        strings.t('details.noAccounts'),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -5588,10 +5651,23 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                           widget.onSwitchRoute(r);
                         },
                       ),
+                  // C68 (beta): merge every iMessage route of this contact into
+                  // one displayed thread. Sends still use the selected route.
+                  if (!isGroup && imessageRoutes.length > 1)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(strings.t('details.mergedDisplay')),
+                      subtitle: Text(strings.t('details.mergedDisplayBody')),
+                      value: app.isMergedDisplayEnabled(mergedKey),
+                      onChanged: (value) async {
+                        await app.setMergedDisplayEnabled(mergedKey, value);
+                        widget.onMergedDisplayChanged();
+                      },
+                    ),
                   const Divider(height: 24),
                   if (api != null && media.isNotEmpty) ...[
                     Text(
-                      'Images & Videos',
+                      strings.t('chat.media'),
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                     const SizedBox(height: 8),
@@ -5614,7 +5690,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                   ],
                   if (linkUrls.isNotEmpty) ...[
                     Text(
-                      'Links',
+                      strings.t('details.links'),
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                     const SizedBox(height: 4),
@@ -5638,7 +5714,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                   ],
                   if (api != null && files.isNotEmpty) ...[
                     Text(
-                      'Files',
+                      strings.t('details.files'),
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                     const SizedBox(height: 8),
