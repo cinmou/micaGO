@@ -51,16 +51,19 @@ Three components:
 
 ## Media loading skeleton — one-bubble placeholder → image (C69, client-only)
 
-- Loading media used to render `SizedBox.shrink()` (image/sticker) or the file
-  card (video), then pop to full size when bytes arrived — cached images
-  "appeared out of nowhere". Now all three tiles show
-  `_MediaLoadingPlaceholder` (rounded skeleton, pulsing 0.45–0.85 opacity,
-  kind-specific icon: image/videocam/auto_awesome) inside the SAME bubble,
-  and `_MediaSwap` (AnimatedSize 220ms + AnimatedSwitcher 180ms fade) turns
-  the placeholder→media swap into an in-place fade + eased resize. Sync
-  memory hits still render directly (no placeholder frame, C51). The
-  "loading media never renders a second progress bubble" test now pins the
-  skeleton icons instead of the old video file-card-while-loading.
+- Image, video, and sticker memory misses show one stable rounded
+  `_MediaLoadingPlaceholder` with a kind-specific icon. `_MediaLoadSwap` keeps
+  that placeholder behind a short media-only fade while `AnimatedSize` eases
+  the same frame to the media's constrained intrinsic size. Never scale, slide,
+  or circularly reveal the media: those transitions look like a second bubble
+  entrance. Sync memory hits still render directly with no placeholder frame
+  (C51).
+- Optimistic attachment rows and their confirmed server rows share a
+  presentation key recorded by `MessageCollection`. The list item, message
+  `GlobalKey`, entrance tracking, and attachment subtree all use that key, so
+  confirmation updates the existing bubble in place and preserves its loaded
+  local bytes. Do not reintroduce GUID-keyed row replacement or a separate
+  "suppress the second entrance" flag.
 
 ## Participant send fallback + merged view beta + details l10n + UI polish (C68)
 
@@ -82,9 +85,11 @@ Three components:
 - **Details sheet fully localized** (`details.*` keys ×3 locales; the media
   header reuses `chat.media`; subtitle 'iMessage 群聊' hardcoded-zh removed).
 - **Text alignment:** composer TextField (both variants) gets explicit
-  `height: 1.35`; date-separator pill `height: 1.0` + vertical 5; jump-to-
-  bottom label `height: 1.0` + localized (`chat.backToBottom`) and the button
-  raised (`bottom: max(124, inset + 6)` from `max(94, inset − 32)`).
+  `height: 1.35` with a slightly raised content baseline; date-separator pills
+  use `height: 1.0`, with the time-only label for today lowered independently
+  from older date labels. The jump-to-bottom label uses `height: 1.0` +
+  localized (`chat.backToBottom`) and the button is raised
+  (`bottom: max(124, inset + 6)` from `max(94, inset − 32)`).
 
 ## U+FFFC reconciliation fix — photo sends showed two bubbles (C67, client-only)
 
@@ -138,15 +143,14 @@ Three components:
   (server-authoritative media, ambiguity-refusing fallback).
 - Tests: C66 groups in `attachment_optimistic_send_test.dart`.
 
-## Double send-animation fix + footer/timestamp l10n (C65, client-only)
+## Stable send confirmation + footer/timestamp l10n (C65/C69, client-only)
 
-- **Sends animated twice**: the optimistic bubble played the entrance, then the
-  confirmed server row (new guid = new dedupeKey, recent timestamp) played it
-  again when the footer flipped to Sent/Delivered. Fix: `MessageCollection`
-  records the server guids that replaced a pending row
-  (`wasReconciledFromPending`, set in `confirmPending` + both reconcile paths);
-  `_shouldAnimateEntrance` skips outgoing rows flagged there. Pinned in
-  `attachment_optimistic_send_test.dart`.
+- **Send confirmation preserves the row**: `MessageCollection` maps a confirmed
+  server GUID to the optimistic row's presentation key. The presentation model,
+  list item, message `GlobalKey`, and entrance tracker all keep that key, so the
+  footer can change to Sent/Delivered without recreating or reanimating the
+  bubble. Pinned in `attachment_optimistic_send_test.dart` and
+  `message_collection_test.dart`.
 - **Footer l10n**: `_Footer`'s Sending…/Sent/Delivered/Read, the
   "Failed — tap to retry" line, and the Edited marker now use l10n keys
   (`chat.sending/sent/delivered/read/edited/failedTapRetry`). `editedMarker`
@@ -205,17 +209,16 @@ Three components:
 - **Attachment sends are optimistic bubbles now** (the old "no bubble, snackbar
   only" model is gone). `ThreadController.sendAttachments`: per staged file →
   `MessageModel.optimisticAttachment` (attachment guid `local-<tempId>`, bytes
-  seeded into MediaCache under that key so it renders instantly; images inline,
+  pinned in MediaCache under that key so it renders instantly; images inline,
   other kinds as file cards), upload progress via `_ProgressMultipartRequest`
   (api_client) → `uploadProgressOf(tempId)` ValueNotifier → `_UploadProgressBadge`
   ring on the bubble; failure → failed bubble + `_SendFailedBadge` overlay
   ("chat.notDelivered" l10n) with tap-to-retry (staged bytes kept in
   `_pendingAttachmentSends`). **No send:match for attachments** (server 202s) —
-  reconciliation is by file identity: `attachmentSendMatches` + a 5-min window in
-  `shouldReconcileLocalWithServer` (text stays 2-min); on confirm the controller
-  seeds the *server* attachment keys with the local bytes
-  (`_absorbConfirmedAttachmentSend`, wired into WS + delta + load) so a just-sent
-  photo is never downloaded back.
+  reconciliation is by file identity: `attachmentSendMatches` + a 5-min window
+  in `shouldReconcileLocalWithServer` (text stays 2-min). Confirmed media remains
+  server-authoritative; the stable presentation key preserves the existing row
+  while its attachment identity is updated.
 - **New bubbles ease in** — `_BubbleEntrance` (240ms fade + 12% rise + 0.96
   scale). Every row is wrapped (so mid-animation rebuilds can't cut it); only
   unseen keys with a <15s timestamp animate, and the first loaded render seeds

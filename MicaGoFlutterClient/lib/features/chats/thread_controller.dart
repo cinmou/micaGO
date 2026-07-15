@@ -55,11 +55,8 @@ class ThreadController extends ChangeNotifier {
   /// Chronological (oldest → newest); the thread view renders it reversed.
   List<MessageModel> get messages => _col.ordered;
 
-  /// C65: whether [guid] is the confirmed server row of an optimistic send
-  /// this session — its bubble already animated in as the pending row, so the
-  /// entrance animation must not run again on the swap.
-  bool wasReconciledFromPending(String guid) =>
-      _col.wasReconciledFromPending(guid);
+  String presentationKeyFor(MessageModel message) =>
+      _col.presentationKeyFor(message);
 
   void start() {
     _wsSub = app.ws.events.listen(_onWsEvent);
@@ -279,7 +276,7 @@ class ThreadController extends ChangeNotifier {
   }
 
   // C63 attachment send: each staged file gets an optimistic bubble that
-  // renders the local bytes immediately (seeded into the media cache under
+  // renders the local bytes immediately (pinned in the media cache under
   // `local-<tempId>`), with a live upload progress bar; failures mark the
   // bubble failed (tap to retry) instead of only a snackbar. The server can't
   // echo `tempGuid` for attachments (202 optimistic, no send:match), so the
@@ -289,7 +286,7 @@ class ThreadController extends ChangeNotifier {
   String? attachmentError;
 
   /// Staged bytes for in-flight/failed attachment sends, kept for retry and
-  /// for seeding the media cache when the confirmed server row arrives.
+  /// released after the server row reconciles.
   final Map<String, StagedAttachment> _pendingAttachmentSends = {};
   final Map<String, ValueNotifier<double>> _uploadProgress = {};
 

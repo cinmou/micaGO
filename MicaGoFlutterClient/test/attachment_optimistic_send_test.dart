@@ -120,10 +120,7 @@ void main() {
       expect(col.ordered, hasLength(1));
       expect(col.ordered.single.guid, 'srv-1');
       expect(col.pendingByTempId('tmp-att-5'), isNull);
-      // C65: the confirming row is flagged as a pending swap so the entrance
-      // animation doesn't run a second time on it.
-      expect(col.wasReconciledFromPending('srv-1'), isTrue);
-      expect(col.wasReconciledFromPending('other'), isFalse);
+      expect(col.presentationKeyFor(col.ordered.single), local.dedupeKey);
     });
   });
 
@@ -161,7 +158,7 @@ void main() {
       col.upsertServer(_serverAttachment(guid: 'srv-f2', text: '￼ '));
       expect(col.ordered, hasLength(1));
       expect(col.ordered.single.guid, 'srv-f2');
-      expect(col.wasReconciledFromPending('srv-f2'), isTrue);
+      expect(col.presentationKeyFor(col.ordered.single), 'tmp-f2');
     });
 
     test('a real caption still blocks bare-attachment reconciliation', () {
@@ -215,7 +212,7 @@ void main() {
         );
         expect(col.ordered, hasLength(1));
         expect(col.ordered.single.guid, 'srv-c1');
-        expect(col.wasReconciledFromPending('srv-c1'), isTrue);
+        expect(col.presentationKeyFor(col.ordered.single), 'tmp-v1');
       },
     );
 

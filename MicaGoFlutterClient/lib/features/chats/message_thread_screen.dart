@@ -351,8 +351,11 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     });
   }
 
-  GlobalKey _messageKey(String guid) =>
-      _messageKeys.putIfAbsent(guid, GlobalKey.new);
+  GlobalKey _messageKey(String presentationKey, String guid) {
+    final key = _messageKeys.putIfAbsent(presentationKey, GlobalKey.new);
+    if (guid.isNotEmpty) _messageKeys[guid] = key;
+    return key;
+  }
 
   Future<void> _scrollToBottom() async {
     if (!_scroll.hasClients) return;
@@ -1103,6 +1106,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
           loadingOlder: _controller.loadingOlder,
           use24HourFormat: use24HourFormat,
           localeTag: localeTag,
+          resolvePresentationKey: _controller.presentationKeyFor,
         );
         final threadImages = _controller.messages
             .expand((m) => m.attachments)
@@ -1113,7 +1117,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         if (!_entranceBaselineTaken) {
           _entranceBaselineTaken = true;
           for (final m in _controller.messages) {
-            _entranceSeenKeys.add(m.dedupeKey);
+            _entranceSeenKeys.add(_controller.presentationKeyFor(m));
           }
         }
         // Reversed list: newest at the bottom; prepending older history (top)
@@ -1259,10 +1263,16 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     List<AttachmentModel> threadImages,
   ) {
     if (item is DateSeparatorItem) {
-      return _DateSeparator(label: item.label);
+      return _DateSeparator(
+        label: item.label,
+        lowerTimeBaseline: item.isTodayTime,
+      );
     }
     if (item is TimeSeparatorItem) {
-      return _DateSeparator(label: item.label);
+      return _DateSeparator(
+        label: item.label,
+        lowerTimeBaseline: item.isTodayTime,
+      );
     }
     if (item is LoadingOlderItem) {
       return const Padding(
@@ -1288,7 +1298,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     }
     // Wrap media-bearing bubbles in a RepaintBoundary so image decode/paint
     // doesn't invalidate neighbouring rows during scroll.
-    final effectKey = m.message.dedupeKey;
+    final effectKey = m.presentationKey;
     final bubble = _MessageBubble(
       message: m.message,
       api: api,
@@ -1336,9 +1346,10 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         onSelect: _enterSelectMode,
       ),
     );
-    final keyed = m.message.guid.isEmpty
-        ? bubble
-        : KeyedSubtree(key: _messageKey(m.message.guid), child: bubble);
+    final keyed = KeyedSubtree(
+      key: _messageKey(m.presentationKey, m.message.guid),
+      child: bubble,
+    );
     final row = m.message.hasAttachments
         ? RepaintBoundary(child: keyed)
         : keyed;
@@ -1346,7 +1357,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     // popping into the list. Rows are always wrapped so a mid-animation rebuild
     // can't cut the effect short; only fresh rows actually run it.
     final entrance = _BubbleEntrance(
-      animate: _shouldAnimateEntrance(m.message),
+      animate: _shouldAnimateEntrance(m.message, m.presentationKey),
       fromMe: m.message.isFromMe,
       child: row,
     );
@@ -1368,17 +1379,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
 
   /// True exactly once per fresh row: unseen key + recent timestamp. Marks the
   /// key seen as a side effect so later rebuilds render statically.
-  bool _shouldAnimateEntrance(MessageModel message) {
-    final key = message.dedupeKey;
+  bool _shouldAnimateEntrance(MessageModel message, String key) {
     if (key.isEmpty || !_entranceBaselineTaken) return false;
     if (!_entranceSeenKeys.add(key)) return false;
-    // C65: the confirmed server row of an optimistic send is a *swap*, not a
-    // new bubble — the pending row already played the entrance. Without this
-    // the send animated twice (once on send, once when the footer flipped to
-    // Sent/Delivered on confirmation).
-    if (message.isFromMe && _controller.wasReconciledFromPending(key)) {
-      return false;
-    }
     final ts = message.dateCreated;
     if (ts == null) return false;
     return DateTime.now().millisecondsSinceEpoch - ts <
@@ -2672,7 +2675,8 @@ class _InkPainter extends CustomPainter {
 
 class _DateSeparator extends StatelessWidget {
   final String label;
-  const _DateSeparator({required this.label});
+  final bool lowerTimeBaseline;
+  const _DateSeparator({required this.label, this.lowerTimeBaseline = false});
 
   @override
   Widget build(BuildContext context) {
@@ -2683,7 +2687,9 @@ class _DateSeparator extends StatelessWidget {
         child: ExcludeSemantics(
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            padding: lowerTimeBaseline
+                ? const EdgeInsets.fromLTRB(12, 7, 12, 3)
+                : const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
@@ -4644,8 +4650,9 @@ class _ComposerState extends State<_Composer> {
                                 ),
                                 border: InputBorder.none,
                                 isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 10,
+                                contentPadding: const EdgeInsets.only(
+                                  top: 8,
+                                  bottom: 12,
                                 ),
                               ),
                             ),
@@ -4837,8 +4844,9 @@ class _ComposerState extends State<_Composer> {
                           ),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 11,
+                          contentPadding: const EdgeInsets.only(
+                            top: 9,
+                            bottom: 13,
                           ),
                         ),
                       ),

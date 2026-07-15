@@ -20,7 +20,8 @@ sealed class ThreadViewItem {
 
 class DateSeparatorItem extends ThreadViewItem {
   final String label;
-  DateSeparatorItem(this.label);
+  final bool isTodayTime;
+  DateSeparatorItem(this.label, {this.isTodayTime = false});
   @override
   String get key => 'date:$label';
 }
@@ -31,7 +32,8 @@ class DateSeparatorItem extends ThreadViewItem {
 class TimeSeparatorItem extends ThreadViewItem {
   final String label;
   final String afterKey;
-  TimeSeparatorItem(this.label, this.afterKey);
+  final bool isTodayTime;
+  TimeSeparatorItem(this.label, this.afterKey, {this.isTodayTime = false});
   @override
   String get key => 'time:$afterKey';
 }
@@ -45,6 +47,7 @@ class LoadingOlderItem extends ThreadViewItem {
 /// not re-derive anything in the build path.
 class MessageViewItem extends ThreadViewItem {
   final MessageModel message;
+  final String presentationKey;
   final MessageRenderableKind kind;
   final bool isSystem;
 
@@ -69,6 +72,7 @@ class MessageViewItem extends ThreadViewItem {
 
   MessageViewItem({
     required this.message,
+    required this.presentationKey,
     required this.kind,
     required this.isSystem,
     required this.systemLabel,
@@ -91,12 +95,13 @@ class MessageViewItem extends ThreadViewItem {
   });
 
   @override
-  String get key => 'msg:${message.dedupeKey}';
+  String get key => 'msg:$presentationKey';
 }
 
 /// Resolves a local contact display name for a handle (injected so the builder
 /// stays pure/testable).
 typedef ContactNameResolver = String? Function(String? handleId);
+typedef MessagePresentationKeyResolver = String Function(MessageModel message);
 
 class ThreadPresentationBuilder {
   /// Builds the chronological (oldest → newest) view-item list. The thread view
@@ -110,7 +115,10 @@ class ThreadPresentationBuilder {
     bool loadingOlder = false,
     bool use24HourFormat = false,
     String? localeTag,
+    MessagePresentationKeyResolver? resolvePresentationKey,
   }) {
+    final presentationKeyFor =
+        resolvePresentationKey ?? (message) => message.dedupeKey;
     final rows = buildDisplayRows(messages, prefs);
     final byGuid = {for (final m in messages) m.guid: m};
 
@@ -125,13 +133,13 @@ class ThreadPresentationBuilder {
     for (var i = 0; i < messages.length; i++) {
       final m = messages[i];
       if (!m.isFromMe) continue;
-      lastOutgoingKey = m.dedupeKey;
+      lastOutgoingKey = presentationKeyFor(m);
       final state = deliveryStateFor(m);
       if (state == MessageDeliveryState.read) {
-        lastReadOutgoingKey = m.dedupeKey;
+        lastReadOutgoingKey = presentationKeyFor(m);
         lastReadOutgoingIndex = i;
       } else if (state == MessageDeliveryState.delivered) {
-        lastDeliveredOutgoingKey = m.dedupeKey;
+        lastDeliveredOutgoingKey = presentationKeyFor(m);
         lastDeliveredOutgoingIndex = i;
       }
     }
@@ -143,9 +151,10 @@ class ThreadPresentationBuilder {
         case DeliveryLabelMode.off:
           return false;
         case DeliveryLabelMode.compact:
-          return m.dedupeKey == lastOutgoingKey ||
-              m.dedupeKey == lastReadOutgoingKey ||
-              m.dedupeKey == lastDeliveredOutgoingKey;
+          final key = presentationKeyFor(m);
+          return key == lastOutgoingKey ||
+              key == lastReadOutgoingKey ||
+              key == lastDeliveredOutgoingKey;
         case DeliveryLabelMode.detailed:
           return m.isFromMe;
       }
@@ -178,10 +187,14 @@ class ThreadPresentationBuilder {
     // default footer time; incoming timestamps stay in separators/reveal UI.
     String? lastOutgoingRowKey;
     for (final row in rows) {
-      if (row.message.isFromMe) lastOutgoingRowKey = row.message.dedupeKey;
+      if (row.message.isFromMe) {
+        lastOutgoingRowKey = presentationKeyFor(row.message);
+      }
     }
 
     final items = <ThreadViewItem>[];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     DateTime? lastDay;
     int? lastTs;
     for (var i = 0; i < rows.length; i++) {
@@ -198,10 +211,11 @@ class ThreadPresentationBuilder {
             DateSeparatorItem(
               threadTimestampLabel(
                 dt,
-                now: DateTime.now(),
+                now: now,
                 use24h: use24HourFormat,
                 locale: localeTag ?? 'en',
               ),
+              isTodayTime: day == today,
             ),
           );
           lastDay = day;
@@ -213,11 +227,12 @@ class ThreadPresentationBuilder {
             TimeSeparatorItem(
               threadTimestampLabel(
                 dt,
-                now: DateTime.now(),
+                now: now,
                 use24h: use24HourFormat,
                 locale: localeTag ?? 'en',
               ),
-              m.dedupeKey,
+              presentationKeyFor(m),
+              isTodayTime: day == today,
             ),
           );
         }
@@ -263,6 +278,7 @@ class ThreadPresentationBuilder {
       items.add(
         MessageViewItem(
           message: m,
+          presentationKey: presentationKeyFor(m),
           kind: row.kind,
           isSystem: isSystem,
           systemLabel: isSystem
@@ -288,7 +304,7 @@ class ThreadPresentationBuilder {
               !isGroup &&
               !isSystem &&
               m.isFromMe &&
-              m.dedupeKey == lastOutgoingRowKey,
+              presentationKeyFor(m) == lastOutgoingRowKey,
           showBubbleTail: showTailWithBreaks,
           compactWithPrevious: compactWithPrevious,
           compactWithNext: compactWithNext,

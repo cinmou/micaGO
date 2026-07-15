@@ -159,7 +159,19 @@ void main() {
     expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
 
     release.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    // Loaded media fades over the still-present placeholder while the same
+    // frame eases to its final size. No bubble entrance/scale animation runs.
+    expect(find.byType(Image), findsWidgets);
+    expect(find.byIcon(Icons.image_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
+
     await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.image_outlined), findsNothing);
+    expect(find.byIcon(Icons.videocam_outlined), findsNothing);
+    expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

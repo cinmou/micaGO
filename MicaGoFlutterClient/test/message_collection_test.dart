@@ -187,13 +187,15 @@ void main() {
 
     test('confirmPending replaces temp with server, no dup', () {
       final c = MessageCollection();
-      c.addPending(_optimistic('t1', 'hi', 1000));
+      final pending = _optimistic('t1', 'hi', 1000);
+      c.addPending(pending);
       c.confirmPending(
         't1',
         _server(guid: 'srv', text: 'hi', isFromMe: true, dateCreated: 1000),
       );
       expect(c.pendingByTempId('t1'), isNull);
       expect(c.length, 1);
+      expect(c.presentationKeyFor(c.serverByGuid('srv')!), pending.dedupeKey);
     });
 
     test('actual failure stays failed and is retryable', () {

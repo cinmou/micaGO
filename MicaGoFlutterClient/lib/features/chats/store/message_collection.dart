@@ -17,12 +17,18 @@ class MessageCollection {
   final Map<String, MessageModel> _server = {}; // by guid
   final Map<String, MessageModel> _pending = {}; // by tempId
 
-  /// C65: server guids that replaced an optimistic pending row. The thread's
-  /// entrance animation consults this so the confirmed row of a send doesn't
-  /// animate in a second time (the optimistic bubble already did).
-  final Set<String> _reconciledServerGuids = {};
-  bool wasReconciledFromPending(String guid) =>
-      _reconciledServerGuids.contains(guid);
+  /// A confirmed row keeps the optimistic row's presentation identity. This is
+  /// deliberately separate from message identity: the server GUID is still
+  /// used for actions and updates, while Flutter can update the existing row
+  /// in place instead of destroying the loading bubble and inserting a new one.
+  final Map<String, String> _presentationKeysByServerGuid = {};
+
+  String presentationKeyFor(MessageModel message) {
+    if (message.guid.isNotEmpty) {
+      return _presentationKeysByServerGuid[message.guid] ?? message.dedupeKey;
+    }
+    return message.dedupeKey;
+  }
 
   /// Cached, sorted display list; rebuilt lazily after mutations.
   List<MessageModel>? _orderedCache;
@@ -59,6 +65,7 @@ class MessageCollection {
   void clear() {
     _server.clear();
     _pending.clear();
+    _presentationKeysByServerGuid.clear();
     _invalidate();
   }
 
@@ -164,9 +171,7 @@ class MessageCollection {
 
   /// Replaces an optimistic row with its confirmed server message.
   void confirmPending(String tempId, MessageModel server) {
-    if (_pending.remove(tempId) != null && server.guid.isNotEmpty) {
-      _reconciledServerGuids.add(server.guid);
-    }
+    _removePendingAsConfirmed(tempId, server);
     if (server.guid.isNotEmpty) _server[server.guid] = server;
     _invalidate();
   }
@@ -185,15 +190,14 @@ class MessageCollection {
     final servers = _server.values.toList(growable: false)
       ..sort(_compareMessageTime);
     for (final server in servers) {
-      if (_reconciledServerGuids.contains(server.guid)) continue;
+      if (_presentationKeysByServerGuid.containsKey(server.guid)) continue;
       final tempId = matchingPendingTempId(
         _pending.values,
         server,
         allowAttachmentFallback: false,
       );
       if (tempId == null) continue;
-      _pending.remove(tempId);
-      _reconciledServerGuids.add(server.guid);
+      _removePendingAsConfirmed(tempId, server);
     }
   }
 
@@ -205,8 +209,13 @@ class MessageCollection {
       allowAttachmentFallback: isNewRow,
     );
     if (tempId == null) return;
-    _pending.remove(tempId);
-    _reconciledServerGuids.add(server.guid);
+    _removePendingAsConfirmed(tempId, server);
+  }
+
+  void _removePendingAsConfirmed(String tempId, MessageModel server) {
+    final pending = _pending.remove(tempId);
+    if (pending == null || server.guid.isEmpty) return;
+    _presentationKeysByServerGuid[server.guid] = presentationKeyFor(pending);
   }
 }
 
