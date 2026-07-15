@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:mica_go/app/theme.dart';
 import 'package:mica_go/core/models/connection_profile.dart';
 import 'package:mica_go/core/storage/secure_store.dart';
 import 'package:mica_go/core/theme_controller.dart';
@@ -45,6 +45,14 @@ class _MemoryStore implements SecureStore {
 }
 
 void main() {
+  test('compatibility symbols are a global text fallback', () {
+    final theme = MicaGoTheme.light();
+    expect(
+      theme.textTheme.bodyMedium?.fontFamilyFallback,
+      contains('MicaGoCompatSymbols'),
+    );
+  });
+
   test(
     'micaGO is the default color when dynamic colors are unavailable',
     () async {
@@ -62,22 +70,19 @@ void main() {
     },
   );
 
-  test(
-    'system color choice is preserved but derives a fallback when dynamic '
-    'colors disappear',
-    () async {
-      final store = _MemoryStore()..values['micago.theme.color'] = 'system';
-      final theme = ThemeController(store: store);
+  test('system color choice is preserved but derives a fallback when dynamic '
+      'colors disappear', () async {
+    final store = _MemoryStore()..values['micago.theme.color'] = 'system';
+    final theme = ThemeController(store: store);
 
-      await theme.bootstrap();
-      theme.setSystemColorsAvailable(false);
+    await theme.bootstrap();
+    theme.setSystemColorsAvailable(false);
 
-      // The saved 'system' preference is kept (so it's honoured again when
-      // dynamic colors return); the effective color falls back via the derived
-      // useSystemColors getter without overwriting the stored choice.
-      expect(theme.colorChoice, ThemeColorChoice.system);
-      expect(theme.useSystemColors, isFalse);
-      expect(store.values['micago.theme.color'], 'system');
-    },
-  );
+    // The saved 'system' preference is kept (so it's honoured again when
+    // dynamic colors return); the effective color falls back via the derived
+    // useSystemColors getter without overwriting the stored choice.
+    expect(theme.colorChoice, ThemeColorChoice.system);
+    expect(theme.useSystemColors, isFalse);
+    expect(store.values['micago.theme.color'], 'system');
+  });
 }

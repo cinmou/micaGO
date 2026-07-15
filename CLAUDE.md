@@ -49,6 +49,126 @@ Three components:
   guides (android-client-connection / remote-access-cloudflare / notifications-setup /
   manual-test-flow) are still English-only — the localized index marks them "(英文)".
 
+## U+FFFC reconciliation fix — photo sends showed two bubbles (C67, client-only)
+
+- **Root cause:** chat.db stores attachment messages with the object-replacement
+  character (U+FFFC) in the text column; the server's `ExtractMessageText` only
+  TrimSpaces (FFFC isn't whitespace) so it reaches the client as `text`. The
+  *render* layer always stripped it (`sanitizeMessageText`), but the
+  *reconciliation* layer used raw `hasText` — so the confirmed server row of a
+  photo send looked "captioned", both the identity branch (`!server.hasText`)
+  and the attachment fallback rejected it, and the pending bubble + server row
+  showed together. Reopening the thread "fixed" it because attachment pendings
+  are memory-only.
+- **Fix:** reconciliation now shares visible-text semantics —
+  `_normaliseComparableText` strips U+FFFC/U+FFFD before trimming, and all
+  has-text gates in `shouldReconcileLocalWithServer` / `matchingPendingTempId`
+  go through `_hasComparableText`. A real caption (FFFC + words) still blocks
+  bare-attachment matching. Tests: C67 group in
+  `attachment_optimistic_send_test.dart`.
+
+## Pending-attachment bubble conflicts (C66, client-only, v0.64.0)
+
+- Pending bytes stay pinned in `MediaCache` until confirmation or deletion, so
+  a local bubble never tries to fetch its `local-` guid from the server.
+- Reconciliation is one-to-one. `matchingPendingTempId` prefers file identity,
+  then the closest non-failed attachment send inside the five-minute window for
+  server conversions. One server row can never remove several same-name or
+  same-size pending rows.
+- `ThreadController._absorbConfirmedAttachmentSend` performs one atomic handoff:
+  migrate local bytes to the server cache keys, replace the pending model with
+  the server model, then release progress and pinned state. The old loose
+  single-candidate branch and post-upsert bookkeeping sweep were removed.
+- Inline image and sticker loads no longer render a separate spinner block;
+  videos retain their file-style card until the poster is available. Files and
+  audio already render without a media-loading bubble.
+- Tests: C66 groups in `attachment_optimistic_send_test.dart`.
+
+## Double send-animation fix + footer/timestamp l10n (C65, client-only)
+
+- **Sends animated twice**: the optimistic bubble played the entrance, then the
+  confirmed server row (new guid = new dedupeKey, recent timestamp) played it
+  again when the footer flipped to Sent/Delivered. Fix: `MessageCollection`
+  records the server guids that replaced a pending row
+  (`wasReconciledFromPending`, set in `confirmPending` + both reconcile paths);
+  `_shouldAnimateEntrance` skips outgoing rows flagged there. Pinned in
+  `attachment_optimistic_send_test.dart`.
+- **Footer l10n**: `_Footer`'s Sending…/Sent/Delivered/Read, the
+  "Failed — tap to retry" line, and the Edited marker now use l10n keys
+  (`chat.sending/sent/delivered/read/edited/failedTapRetry`). `editedMarker`
+  stays pure-English (tests pin it); the UI translates at render.
+- **Relative timestamp l10n**: `chatTimestampLabel`'s "now"/"5m" buckets were
+  English-only → `_nowLabel`/`_minutesAgoLabel` (刚刚/剛剛, N 分钟前/分鐘前).
+  Chinese needs the *script*, so callers pass the full language tag — the chat
+  list's `_formatTime` switched from `languageCode` to `toLanguageTag()`.
+  Tests in `chat_timestamp_test.dart` (zh-Hans/zh-Hant/zh-TW).
+
+## Unified long-press menu + thread multi-select + forward fixes (C64, client-only, v0.63.0)
+
+- **One long-press surface.** Attachment tiles no longer open the old bottom
+  sheet in threads: `AttachmentView` takes `onLongPress(position, attachment)`,
+  threaded into every tile (image/sticker/video/audio/file/preview-unavailable
+  via `_tileLongPress`), and `_MessageBubble.onActions` carries the pressed
+  attachment into `showMessageActionMenu`, which now includes Save/Share/Open
+  items (dispatching to the public `runAttachmentAction`) plus a Select entry.
+  Media bubbles also get a bubble-level long-press (previously only tiles
+  responded). Standalone contexts (details grid, fullscreen viewers, ⋮ button)
+  keep `showAttachmentActions`.
+- **手感:** the menu no longer awaits a full HTTP round-trip —
+  `getMessageActionCapabilities` is cached module-wide (2-min TTL, prefetched
+  on thread open); a cold cache waits ≤300ms then opens with last-known caps
+  (a test pins that Edit/Undo/Delete appear on first long-press). Haptics:
+  mediumImpact on menu open, selectionClick on select toggles.
+- **Multi-select** (`_enterSelectMode` via the menu's Select item):
+  `_SelectableMessageRow` slides **incoming** bubbles right (34px × animated
+  progress, same pattern as the timestamp reveal) with check circles on the
+  left; outgoing stay put (right-aligned). Whole row is one tap target
+  (AbsorbPointer suspends bubble gestures). The composer swaps for
+  `_SelectionActionBar` (Forward (n) / Hide (n) / ✕). Batch hide =
+  `ThreadController.hideMessages` (one reload); batch forward = one target
+  pick, then each message sequentially.
+- **Forward fixes** (`_forwardMessages`): `send_confirmation_timeout` no longer
+  reported as failure (the message did send), a catch-up runs afterwards so
+  forwarded rows appear promptly, and pending `local-` attachments are skipped.
+
+## Persistent media cache + optimistic attachment bubbles + entrance animation (C63, client-only)
+
+- **Media now persists on disk — permanently.** `MediaCache`
+  (`core/storage/media_cache.dart`) adds a disk layer (app-support/media_cache,
+  atomic `.part` writes, **no eviction** — removed only with app data) under the
+  in-memory `LruByteCache` (now a private `_memoryCache` there; the old public
+  `imageByteCache` in media_viewer is gone — call sites use
+  `MediaCache.instance.memoryHit/load/seed`). Reads go memory → disk → network
+  with in-flight dedup; every fetch writes through. **`init()` resolves the
+  directory once in `AppController.bootstrap`** — before/without it the cache
+  degrades to memory+network (this keeps widget tests off the path_provider
+  platform channel; a per-load `getApplicationSupportDirectory()` hung them).
+  All preview/full fetch sites route through it (image/sticker/video tiles,
+  gallery viewer, details grid, save/share/forward); `FullscreenVideo` plays
+  from the cached file when present, else streams + background-caches
+  (<200 MB gate is about bandwidth, not storage). Dead code removed with this:
+  `LocalCacheStore.releaseAllHiddenChats/Messages` (C61 replaced release-all).
+- **Attachment sends are optimistic bubbles now** (the old "no bubble, snackbar
+  only" model is gone). `ThreadController.sendAttachments`: per staged file →
+  `MessageModel.optimisticAttachment` (attachment guid `local-<tempId>`, bytes
+  seeded into MediaCache under that key so it renders instantly; images inline,
+  other kinds as file cards), upload progress via `_ProgressMultipartRequest`
+  (api_client) → `uploadProgressOf(tempId)` ValueNotifier → `_UploadProgressBadge`
+  ring on the bubble; failure → failed bubble + `_SendFailedBadge` overlay
+  ("chat.notDelivered" l10n) with tap-to-retry (staged bytes kept in
+  `_pendingAttachmentSends`). **No send:match for attachments** (server 202s) —
+  reconciliation is by file identity: `attachmentSendMatches` + a 5-min window in
+  `shouldReconcileLocalWithServer` (text stays 2-min); on confirm the controller
+  seeds the *server* attachment keys with the local bytes
+  (`_absorbConfirmedAttachmentSend`, wired into WS + delta + load) so a just-sent
+  photo is never downloaded back.
+- **New bubbles ease in** — `_BubbleEntrance` (240ms fade + 12% rise + 0.96
+  scale). Every row is wrapped (so mid-animation rebuilds can't cut it); only
+  unseen keys with a <15s timestamp animate, and the first loaded render seeds
+  the baseline so history never animates.
+- Tests: `attachment_optimistic_send_test.dart`. Client-only; needs an APK
+  rebuild.
+
 ## Hidden-items restyle + persisted developer mode (C61, client-only)
 
 - **Hidden messages / Hidden contacts pages** were rebuilt in the Settings style:

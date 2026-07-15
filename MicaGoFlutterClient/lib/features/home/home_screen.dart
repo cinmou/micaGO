@@ -11,6 +11,7 @@ import '../../core/platform/incoming_share_service.dart';
 import '../../core/theme_controller.dart';
 import '../../core/ui/top_banner.dart';
 import '../../core/ui/glass_theme_widgets.dart';
+import '../../core/ui/keyboard_insets.dart';
 import '../chats/chats_pane.dart';
 import '../chats/avatar.dart';
 import '../settings/settings_screen.dart';
@@ -192,43 +193,45 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         onOpenSettings: _openSettings,
       ),
     );
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      backgroundColor: pageBg,
-      appBar: tablet
-          ? null
-          : AppBar(
-              centerTitle: true,
-              backgroundColor: headerBg,
-              surfaceTintColor: Colors.transparent,
-              leading: IconButton(
-                tooltip: MicaLocalizations.of(context).t('chat.search'),
-                icon: const Icon(Icons.search),
-                onPressed: () => _searchRequests.value++,
+    return KeyboardInsetGuard(
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: pageBg,
+        appBar: tablet
+            ? null
+            : AppBar(
+                centerTitle: true,
+                backgroundColor: headerBg,
+                surfaceTintColor: Colors.transparent,
+                leading: IconButton(
+                  tooltip: MicaLocalizations.of(context).t('chat.search'),
+                  icon: const Icon(Icons.search),
+                  onPressed: () => _searchRequests.value++,
+                ),
+                title: const Text('micaGO'),
+                actions: [
+                  IconButton(
+                    tooltip: strings.t('nav.settings'),
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: _openSettings,
+                  ),
+                ],
               ),
-              title: const Text('micaGO'),
-              actions: [
-                IconButton(
-                  tooltip: strings.t('nav.settings'),
-                  icon: const Icon(Icons.settings_outlined),
-                  onPressed: _openSettings,
-                ),
-              ],
-            ),
-      body: tablet
-          ? SafeArea(bottom: false, child: chats)
-          : DecoratedBox(
-              decoration: BoxDecoration(color: headerBg),
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(color: pageBg),
-                  child: SafeArea(top: false, bottom: false, child: chats),
+        body: tablet
+            ? SafeArea(bottom: false, child: chats)
+            : DecoratedBox(
+                decoration: BoxDecoration(color: headerBg),
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(color: pageBg),
+                    child: SafeArea(top: false, bottom: false, child: chats),
+                  ),
                 ),
               ),
-            ),
+      ),
     );
   }
 }

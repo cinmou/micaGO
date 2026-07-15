@@ -143,6 +143,36 @@ class ApiException implements Exception {
   }
 }
 
+/// C63: a MultipartRequest that reports upload progress as its body stream is
+/// consumed by the HTTP client — this is what drives the progress bar in the
+/// optimistic attachment bubble. Progress is byte-accurate for the whole
+/// multipart body (the file dominates it).
+class _ProgressMultipartRequest extends http.MultipartRequest {
+  final void Function(int sent, int total)? onProgress;
+
+  _ProgressMultipartRequest(super.method, super.url, {this.onProgress});
+
+  @override
+  http.ByteStream finalize() {
+    final inner = super.finalize();
+    final report = onProgress;
+    if (report == null) return inner;
+    final total = contentLength;
+    var sent = 0;
+    return http.ByteStream(
+      inner.transform(
+        StreamTransformer<List<int>, List<int>>.fromHandlers(
+          handleData: (chunk, sink) {
+            sent += chunk.length;
+            report(sent, total);
+            sink.add(chunk);
+          },
+        ),
+      ),
+    );
+  }
+}
+
 /// Minimal REST client for the MicaGo server.
 ///
 /// Only the endpoints needed for the C0 foundation are implemented:
@@ -727,16 +757,22 @@ class ApiClient {
   /// (C19). multipart/form-data with `file` + `tempGuid`. The server replies
   /// 202 optimistically; the real attachment row arrives via sync/WS. Throws
   /// [ApiException] on any non-2xx (e.g. 400 for a non-iMessage chat).
-  Future<void> sendAttachment({
+  ///
+  /// C63: [onSendProgress] reports uploaded/total bytes for the optimistic
+  /// bubble's progress bar. Returns the filename the server will actually send
+  /// (voice notes get converted server-side), for pending-row reconciliation.
+  Future<String?> sendAttachment({
     required String chatGuid,
     required String tempGuid,
     required Uint8List bytes,
     required String filename,
     bool isAudioMessage = false,
+    void Function(int sent, int total)? onSendProgress,
   }) async {
-    final request = http.MultipartRequest(
+    final request = _ProgressMultipartRequest(
       'POST',
       _uri('/api/chats/${Uri.encodeComponent(chatGuid)}/send-attachment'),
+      onProgress: onSendProgress,
     );
     request.headers.addAll(_authHeaders);
     request.fields['tempGuid'] = tempGuid;
@@ -764,49 +800,11 @@ class ApiClient {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _errorFrom(res);
     }
-  }
-
-  /// `POST /api/chats/{guid}/send-attachments` — send several files as a single
-  /// grouped media send when the paired backend supports the batch endpoint.
-  Future<void> sendAttachmentBatch({
-    required String chatGuid,
-    required String tempGuid,
-    required List<({Uint8List bytes, String filename})> files,
-  }) async {
-    if (files.isEmpty) return;
-    final request = http.MultipartRequest(
-      'POST',
-      _uri('/api/chats/${Uri.encodeComponent(chatGuid)}/send-attachments'),
-    );
-    request.headers.addAll(_authHeaders);
-    request.fields['tempGuid'] = tempGuid;
-    for (final file in files) {
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'files',
-          file.bytes,
-          filename: file.filename,
-        ),
-      );
-    }
-
-    final http.Response res;
     try {
-      final streamed = await _http
-          .send(request)
-          .timeout(const Duration(seconds: 90));
-      res = await http.Response.fromStream(streamed);
-    } on TimeoutException {
-      throw const ApiException(
-        code: 'timeout',
-        message: 'Attachment batch send timed out',
-      );
-    } catch (e) {
-      throw ApiException(code: 'network_error', message: '$e');
-    }
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw _errorFrom(res);
-    }
+      final body = jsonDecode(res.body);
+      if (body is Map<String, dynamic>) return body['filename'] as String?;
+    } catch (_) {}
+    return null;
   }
 
   /// `GET /api/attachments/{guid}` — raw attachment bytes (authenticated).

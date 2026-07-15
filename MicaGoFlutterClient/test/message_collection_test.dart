@@ -211,8 +211,8 @@ void main() {
         ),
       );
       expect(c.pendingByTempId('t1'), isNotNull);
-      // Retry removes it and returns the text to resend.
-      expect(c.removePending('t1'), 'oops');
+      // Retry removes it and returns the complete row to resend.
+      expect(c.removePending('t1')?.text, 'oops');
       expect(c.pendingByTempId('t1'), isNull);
     });
 

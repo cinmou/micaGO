@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/api_client.dart';
+import '../../core/storage/media_cache.dart';
 import 'attachment_views.dart';
 import 'models/message_model.dart';
 
@@ -201,15 +202,8 @@ class _ZoomableImageState extends State<_ZoomableImage>
     widget.onZoomChanged?.call(zoomed);
   }
 
-  Future<Uint8List> _load() {
-    final cacheKey = widget.attachment.previewUrl ?? widget.attachment.guid;
-    final cached = imageByteCache[cacheKey];
-    if (cached != null) return Future.value(cached);
-    return widget.api.getAttachmentPreviewBytes(widget.attachment).then((b) {
-      imageByteCache[cacheKey] = b;
-      return b;
-    });
-  }
+  Future<Uint8List> _load() =>
+      MediaCache.instance.attachmentPreview(widget.api, widget.attachment);
 
   // Double-tap toggles between fit and a 2.5x zoom centered on the tap point,
   // animated — the mature gallery behavior.
@@ -317,48 +311,6 @@ class _ErrorBody extends StatelessWidget {
   }
 }
 
-/// Shared in-memory cache for fetched image bytes (thread bubbles + viewer).
-///
-/// Bounded LRU by total bytes (C51): an unbounded map kept the raw encoded bytes
-/// of every image ever scrolled past — on top of Flutter's own decoded-image
-/// cache — so a thread with many photos grew memory without limit and the
-/// resulting GC pressure showed up as scroll jank. Capped + least-recently-used
-/// eviction keeps the working set hot while bounding total memory. Exposes the
-/// `cache[key]` / `cache[key] = bytes` map interface the call sites already use.
-final imageByteCache = LruByteCache();
-
-class LruByteCache {
-  LruByteCache({this.maxBytes = 48 * 1024 * 1024});
-
-  final int maxBytes;
-  // Insertion order is the LRU order: a get re-inserts at the end (most recent).
-  final _entries = <String, Uint8List>{};
-  int _bytes = 0;
-
-  Uint8List? operator [](String key) {
-    final value = _entries.remove(key);
-    if (value != null) _entries[key] = value; // mark most-recently-used
-    return value;
-  }
-
-  void operator []=(String key, Uint8List value) {
-    final previous = _entries.remove(key);
-    if (previous != null) _bytes -= previous.length;
-    _entries[key] = value;
-    _bytes += value.length;
-    while (_bytes > maxBytes && _entries.isNotEmpty) {
-      final oldest = _entries.keys.first;
-      final removed = _entries.remove(oldest);
-      if (removed != null) _bytes -= removed.length;
-    }
-  }
-
-  void clear() {
-    _entries.clear();
-    _bytes = 0;
-  }
-}
-
 /// C24: full-screen video player for a single video attachment. The stream is
 /// fetched with the bearer token in the Authorization header (never in the URL).
 /// Failures show a graceful error state — never a blank/broken viewer.
@@ -404,10 +356,31 @@ class _FullscreenVideoState extends State<FullscreenVideo> {
 
   Future<void> _init() async {
     try {
-      final controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.api.attachmentUrl(widget.attachment.guid)),
-        httpHeaders: widget.api.mediaAuthHeaders,
-      );
+      // C63: play from the persistent media cache when this video was already
+      // downloaded (or sent from this device); otherwise stream from the
+      // server and cache the file in the background for next time.
+      final guid = widget.attachment.guid;
+      final mediaKey = MediaCache.fullMediaKey(guid);
+      final cachedFile = await MediaCache.instance.cachedMediaFile(mediaKey);
+      final VideoPlayerController controller;
+      if (cachedFile != null) {
+        controller = VideoPlayerController.file(cachedFile);
+      } else {
+        controller = VideoPlayerController.networkUrl(
+          Uri.parse(widget.api.attachmentUrl(guid)),
+          httpHeaders: widget.api.mediaAuthHeaders,
+        );
+        // Cap the background download so a huge video doesn't double its own
+        // bandwidth cost; anything below the cap becomes instantly replayable.
+        if (widget.attachment.totalBytes < 200 * 1024 * 1024) {
+          unawaited(
+            MediaCache.instance.cacheToDiskInBackground(
+              mediaKey,
+              () => widget.api.getAttachmentBytes(guid),
+            ),
+          );
+        }
+      }
       await controller.initialize();
       if (!mounted) {
         await controller.dispose();

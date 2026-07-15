@@ -19,6 +19,7 @@ import 'network/push_logic.dart';
 import 'network/refresh_coordinator.dart';
 import 'network/websocket_client.dart';
 import 'storage/local_cache_store.dart';
+import 'storage/media_cache.dart';
 import 'storage/secure_store.dart';
 import '../features/chats/message_render.dart';
 import '../features/chats/models/chat_summary.dart';
@@ -357,6 +358,13 @@ class AppController extends ChangeNotifier {
         'cache.open',
         cache.open,
         timeout: const Duration(seconds: 4),
+      );
+      // C63: arm the persistent media disk cache (photos/videos/previews);
+      // until/unless this resolves, media falls back to memory+network.
+      await _bootstrapStep(
+        'media cache init',
+        MediaCache.instance.init,
+        timeout: const Duration(seconds: 3),
       );
       await _bootstrapStep(
         'load realtime diagnostics',

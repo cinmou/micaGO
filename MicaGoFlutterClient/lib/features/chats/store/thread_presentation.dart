@@ -174,10 +174,12 @@ class ThreadPresentationBuilder {
       );
     }
 
-    // The newest renderable row anchors a footer timestamp at the bottom of the
-    // thread (BlueBubbles shows a time on the last message); everything else is
-    // grouped under date/time separators or revealed on tap.
-    final lastRowKey = rows.isNotEmpty ? rows.last.message.dedupeKey : null;
+    // Only outgoing bubbles own footers. The newest outgoing row anchors the
+    // default footer time; incoming timestamps stay in separators/reveal UI.
+    String? lastOutgoingRowKey;
+    for (final row in rows) {
+      if (row.message.isFromMe) lastOutgoingRowKey = row.message.dedupeKey;
+    }
 
     final items = <ThreadViewItem>[];
     DateTime? lastDay;
@@ -240,11 +242,11 @@ class ThreadPresentationBuilder {
           next != null &&
           !separatedFromNext &&
           _sameBubbleRun(row, next);
-      final showBubbleTail =
-          !isSystem &&
-          (next == null || nextIsSystem || next.message.isFromMe != m.isFromMe);
+      // Any sender-run break gives the previous bubble its pointed lower
+      // corner. This covers side/sender changes, the five-minute grouping gap,
+      // and rendered date/time separators.
       final showTailWithBreaks =
-          showBubbleTail || separatedFromNext || nextIsSmallEmoji;
+          !isSystem && (!compactWithNext || nextIsSmallEmoji);
       final inIncomingGroupRun = isGroup && !isSystem && !m.isFromMe;
       final sameAsPrev =
           inIncomingGroupRun && prev != null && _sameSenderRun(prev, row);
@@ -282,7 +284,11 @@ class ThreadPresentationBuilder {
               : sendEffectFor(m.expressiveSendStyleId),
           deliveryState: deliveryStateFor(m),
           showStatus: !isGroup && !isSystem && showStatusFor(m),
-          showTimestamp: !isGroup && !isSystem && m.dedupeKey == lastRowKey,
+          showTimestamp:
+              !isGroup &&
+              !isSystem &&
+              m.isFromMe &&
+              m.dedupeKey == lastOutgoingRowKey,
           showBubbleTail: showTailWithBreaks,
           compactWithPrevious: compactWithPrevious,
           compactWithNext: compactWithNext,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:confetti/confetti.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,7 +18,9 @@ import '../../core/network/api_client.dart';
 import '../../core/network/websocket_client.dart';
 import 'realtime_event_helpers.dart' as rt;
 import '../../core/theme_controller.dart';
+import '../../core/storage/media_cache.dart';
 import '../../core/ui/glass_theme_widgets.dart';
+import '../../core/ui/keyboard_insets.dart';
 import '../../core/ui/top_banner.dart';
 import 'package:photo_manager/photo_manager.dart';
 
@@ -74,7 +77,7 @@ class MessageThreadScreen extends StatefulWidget {
 }
 
 class _MessageThreadScreenState extends State<MessageThreadScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   late ThreadController _controller;
   final _scroll = ScrollController();
   final _composer = TextEditingController();
@@ -91,6 +94,18 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   bool _timestampRevealDragging = false;
   double _timestampRevealDragX = 0;
   double _timestampRevealDragY = 0;
+
+  // C63: entrance animation bookkeeping — only genuinely *new* rows animate.
+  // The first loaded render (history) is the baseline and never animates.
+  final Set<String> _entranceSeenKeys = {};
+  bool _entranceBaselineTaken = false;
+
+  // C64: multi-select. Entering select mode slides incoming bubbles right and
+  // reveals check circles on the left — same animated-progress pattern as the
+  // timestamp reveal, just mirrored.
+  bool _selectMode = false;
+  final Set<String> _selectedGuids = {};
+  late final AnimationController _selectModeController;
 
   // C47: the open thread is the single authority on "the user has seen this
   // conversation". It advances the read watermark for every route on open, on
@@ -122,9 +137,20 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
             });
           }
         });
+    _selectModeController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 220),
+        )..addListener(() {
+          if (mounted) setState(() {});
+        });
     _active = widget.merged.primary;
     _routeGuids = widget.merged.routes.map((r) => r.guid).toSet();
     final app = context.read<AppController>();
+    // C64: warm the action-capabilities cache so the first long-press menu is
+    // complete and instant.
+    final api = app.api;
+    if (api != null) prefetchMessageActionCapabilities(api);
     app.setActiveChatGuids(_routeGuids);
     WidgetsBinding.instance.addObserver(this);
     // C43/C47: opening a thread is the authoritative read event — advance the
@@ -245,6 +271,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _composer.dispose();
     _confettiController.dispose();
     _timestampRevealController.dispose();
+    _selectModeController.dispose();
     _sendEffects.dispose();
     _recorder.dispose();
     final app = context.read<AppController>();
@@ -745,7 +772,16 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             padding: EdgeInsets.only(bottom: _keyboardInset(context)),
-            child: bottomOverlay,
+            child: _selectMode
+                ? _SelectionActionBar(
+                    count: _selectedGuids.length,
+                    onForward: api == null || _selectedGuids.isEmpty
+                        ? null
+                        : () => _forwardSelected(api),
+                    onHide: _selectedGuids.isEmpty ? null : _hideSelected,
+                    onClose: _exitSelectMode,
+                  )
+                : bottomOverlay,
           ),
         ),
         Positioned.fill(
@@ -842,49 +878,53 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
 
     if (widget.embedded) {
       // Detail pane: slim header instead of an AppBar (the shell owns the bar).
-      return PopScope(
-        canPop: !_attachOpen && !_emojiOpen,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) _closeBottomPanelIfOpen();
-        },
-        child: Column(
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(color: headerBg),
-              child: SizedBox(
-                height: widget.embeddedHeaderHeight ?? 72,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 12),
-                    Expanded(child: titleRow),
-                    ?_routeSelector(context),
-                    const SizedBox(width: 8),
-                  ],
+      return KeyboardInsetGuard(
+        child: PopScope(
+          canPop: !_attachOpen && !_emojiOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _closeBottomPanelIfOpen();
+          },
+          child: Column(
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(color: headerBg),
+                child: SizedBox(
+                  height: widget.embeddedHeaderHeight ?? 72,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 12),
+                      Expanded(child: titleRow),
+                      ?_routeSelector(context),
+                      const SizedBox(width: 8),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Expanded(child: themedContent),
-          ],
+              Expanded(child: themedContent),
+            ],
+          ),
         ),
       );
     }
 
-    return PopScope(
-      canPop: !_attachOpen && !_emojiOpen,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _closeBottomPanelIfOpen();
-      },
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        appBar: AppBar(
-          backgroundColor: headerBg,
-          surfaceTintColor: Colors.transparent,
-          leading: _ThreadBackButton(hasOtherUnread: _hasOtherUnreadChats),
-          titleSpacing: 0,
-          title: titleRow,
-          actions: [?_routeSelector(context), const SizedBox(width: 8)],
+    return KeyboardInsetGuard(
+      child: PopScope(
+        canPop: !_attachOpen && !_emojiOpen,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _closeBottomPanelIfOpen();
+        },
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          appBar: AppBar(
+            backgroundColor: headerBg,
+            surfaceTintColor: Colors.transparent,
+            leading: _ThreadBackButton(hasOtherUnread: _hasOtherUnreadChats),
+            titleSpacing: 0,
+            title: titleRow,
+            actions: [?_routeSelector(context), const SizedBox(width: 8)],
+          ),
+          body: themedContent,
         ),
-        body: themedContent,
       ),
     );
   }
@@ -1037,6 +1077,14 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
             .expand((m) => m.attachments)
             .where((a) => a.canRenderInlineImage)
             .toList(growable: false);
+        // C63: the first loaded render seeds the entrance baseline — history
+        // must never animate in, only rows that appear after this.
+        if (!_entranceBaselineTaken) {
+          _entranceBaselineTaken = true;
+          for (final m in _controller.messages) {
+            _entranceSeenKeys.add(m.dedupeKey);
+          }
+        }
         // Reversed list: newest at the bottom; prepending older history (top)
         // does not shift the viewport, so scroll position is preserved.
         return GestureDetector(
@@ -1076,8 +1124,10 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   }
 
   double _keyboardInset(BuildContext context) {
-    if (!_composerFocused || _attachOpen || _emojiOpen) return 0;
-    return MediaQuery.viewInsetsOf(context).bottom;
+    return activeKeyboardInset(
+      context,
+      enabled: _composerFocused && !_attachOpen && !_emojiOpen,
+    );
   }
 
   void _startTimestampRevealDrag(DragStartDetails _) {
@@ -1087,7 +1137,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   }
 
   void _updateTimestampReveal(DragUpdateDetails details) {
-    if (_attachOpen || _emojiOpen) return;
+    if (_attachOpen || _emojiOpen || _selectMode) return;
     _timestampRevealDragX += details.delta.dx;
     _timestampRevealDragY += details.delta.dy;
     if (!_timestampRevealDragging) {
@@ -1118,6 +1168,57 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       curve: Curves.easeOutCubic,
       duration: const Duration(milliseconds: 240),
     );
+  }
+
+  // --- C64: multi-select -----------------------------------------------------
+
+  void _enterSelectMode(String guid) {
+    if (guid.isEmpty) return;
+    setState(() {
+      _selectMode = true;
+      _selectedGuids.add(guid);
+    });
+    _selectModeController.animateTo(1, curve: Curves.easeOutCubic);
+    unawaited(HapticFeedback.selectionClick());
+  }
+
+  void _exitSelectMode() {
+    setState(() {
+      _selectMode = false;
+      _selectedGuids.clear();
+    });
+    _selectModeController.animateBack(0, curve: Curves.easeOutCubic);
+  }
+
+  void _toggleSelected(String guid) {
+    if (guid.isEmpty) return;
+    setState(() {
+      if (!_selectedGuids.add(guid)) _selectedGuids.remove(guid);
+    });
+    unawaited(HapticFeedback.selectionClick());
+  }
+
+  Future<void> _hideSelected() async {
+    final guids = Set<String>.of(_selectedGuids);
+    if (guids.isEmpty) return;
+    _exitSelectMode();
+    await _controller.hideMessages(guids);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(MicaLocalizations.of(context).t('chat.messageHidden')),
+      ),
+    );
+  }
+
+  Future<void> _forwardSelected(ApiClient api) async {
+    // Chronological order — forwarded one message at a time.
+    final selected = _controller.messages
+        .where((m) => _selectedGuids.contains(m.guid))
+        .toList(growable: false);
+    if (selected.isEmpty) return;
+    _exitSelectMode();
+    await _forwardMessages(context, api, selected);
   }
 
   Widget _buildRow(
@@ -1182,27 +1283,265 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       showBubbleTail: m.showBubbleTail,
       compactWithPrevious: m.compactWithPrevious,
       compactWithNext: m.compactWithNext,
+      uploadProgress: m.message.tempId == null
+          ? null
+          : _controller.uploadProgressOf(m.message.tempId!),
       onRetry: () {
         final t = m.message.tempId;
         if (t != null) _controller.retry(t);
       },
       onReplyTap: (guid) => _jumpToMessage(guid),
-      onActions: (position) => showMessageActionMenu(
+      onActions: (position, [attachment]) => showMessageActionMenu(
         context,
         m.message,
         position,
         chatGuid: _active.guid,
         api: api,
+        attachment: attachment,
         onRetracted: (guid) => _controller.markRetractedLocally(guid),
         onChanged: () => _controller.load(showSpinner: false),
         onHide: () => _controller.hideMessage(m.message.guid),
         onDeletePending: (tempId) => _controller.deletePending(tempId),
+        onSelect: _enterSelectMode,
       ),
     );
     final keyed = m.message.guid.isEmpty
         ? bubble
         : KeyedSubtree(key: _messageKey(m.message.guid), child: bubble);
-    return m.message.hasAttachments ? RepaintBoundary(child: keyed) : keyed;
+    final row = m.message.hasAttachments
+        ? RepaintBoundary(child: keyed)
+        : keyed;
+    // C63: newly arrived/sent bubbles ease in (fade + small rise) instead of
+    // popping into the list. Rows are always wrapped so a mid-animation rebuild
+    // can't cut the effect short; only fresh rows actually run it.
+    final entrance = _BubbleEntrance(
+      animate: _shouldAnimateEntrance(m.message),
+      fromMe: m.message.isFromMe,
+      child: row,
+    );
+    // C64: select mode — check circle on the left, incoming bubbles slide
+    // right to make room (outgoing are right-aligned and stay put).
+    final progress = _selectModeController.value;
+    if (progress == 0 && !_selectMode) return entrance;
+    final guid = m.message.guid;
+    return _SelectableMessageRow(
+      progress: progress,
+      active: _selectMode,
+      selectable: guid.isNotEmpty,
+      selected: _selectedGuids.contains(guid),
+      fromMe: m.message.isFromMe,
+      onToggle: () => _toggleSelected(guid),
+      child: entrance,
+    );
+  }
+
+  /// True exactly once per fresh row: unseen key + recent timestamp. Marks the
+  /// key seen as a side effect so later rebuilds render statically.
+  bool _shouldAnimateEntrance(MessageModel message) {
+    final key = message.dedupeKey;
+    if (key.isEmpty || !_entranceBaselineTaken) return false;
+    if (!_entranceSeenKeys.add(key)) return false;
+    // C65: the confirmed server row of an optimistic send is a *swap*, not a
+    // new bubble — the pending row already played the entrance. Without this
+    // the send animated twice (once on send, once when the footer flipped to
+    // Sent/Delivered on confirmation).
+    if (message.isFromMe && _controller.wasReconciledFromPending(key)) {
+      return false;
+    }
+    final ts = message.dateCreated;
+    if (ts == null) return false;
+    return DateTime.now().millisecondsSinceEpoch - ts <
+        const Duration(seconds: 15).inMilliseconds;
+  }
+}
+
+/// C63: subtle entrance for a new message row — 240ms fade + 12% rise + a
+/// slight scale-up anchored at the bubble's origin side. Rows built with
+/// `animate: false` render statically (the controller starts completed).
+class _BubbleEntrance extends StatefulWidget {
+  final bool animate;
+  final bool fromMe;
+  final Widget child;
+  const _BubbleEntrance({
+    required this.animate,
+    required this.fromMe,
+    required this.child,
+  });
+
+  @override
+  State<_BubbleEntrance> createState() => _BubbleEntranceState();
+}
+
+class _BubbleEntranceState extends State<_BubbleEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 240),
+    value: widget.animate ? 0 : 1,
+  );
+  late final CurvedAnimation _curve = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.animate) _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _curve.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _curve,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.12),
+          end: Offset.zero,
+        ).animate(_curve),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1).animate(_curve),
+          alignment: widget.fromMe
+              ? Alignment.bottomRight
+              : Alignment.bottomLeft,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// C64: one message row in select mode — a check circle on the left, the row
+/// content slid right by [progress] for incoming bubbles (mirrors the
+/// timestamp-reveal translation), and a full-row tap target while active.
+class _SelectableMessageRow extends StatelessWidget {
+  final double progress; // 0..1 select-mode reveal
+  final bool active;
+  final bool selectable;
+  final bool selected;
+  final bool fromMe;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  const _SelectableMessageRow({
+    required this.progress,
+    required this.active,
+    required this.selectable,
+    required this.selected,
+    required this.fromMe,
+    required this.onToggle,
+    required this.child,
+  });
+
+  static const double _revealWidth = 34;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final shifted = Transform.translate(
+      offset: Offset(fromMe ? 0 : _revealWidth * progress, 0),
+      child: child,
+    );
+    final content = Stack(
+      children: [
+        // Check indicator, vertically centered at the left edge, sliding in.
+        if (selectable)
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Opacity(
+                opacity: progress,
+                child: Transform.translate(
+                  offset: Offset(-14 * (1 - progress), 0),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Icon(
+                      selected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 22,
+                      color: selected ? scheme.primary : scheme.outline,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        shifted,
+      ],
+    );
+    if (!active) return content;
+    // While selecting, the whole row is one tap target; bubble gestures
+    // (media taps, long-press menus) are suspended.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: selectable ? onToggle : null,
+      child: AbsorbPointer(child: content),
+    );
+  }
+}
+
+/// C64: bottom action bar in select mode — forward / hide the selection.
+class _SelectionActionBar extends StatelessWidget {
+  final int count;
+  final VoidCallback? onForward;
+  final VoidCallback? onHide;
+  final VoidCallback onClose;
+
+  const _SelectionActionBar({
+    required this.count,
+    required this.onForward,
+    required this.onHide,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    String withCount(String label) => count > 0 ? '$label ($count)' : label;
+    return Material(
+      color: scheme.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: onForward,
+                  icon: const Icon(Icons.forward_outlined, size: 18),
+                  label: Text(withCount(strings.t('chat.forward'))),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: onHide,
+                  icon: const Icon(Icons.visibility_off_outlined, size: 18),
+                  label: Text(withCount(strings.t('chat.hideMessage'))),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: strings.t('settings.cancel'),
+                onPressed: onClose,
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1408,7 +1747,53 @@ LiquidGlassSettings _glassSettings(Color color, {double blur = 7}) =>
       standardOpacityMultiplier: 1.0,
     );
 
-enum MessageAction { copy, forward, hide, edit, retract, delete, deletePending }
+enum MessageAction {
+  copy,
+  forward,
+  saveAttachment,
+  shareAttachment,
+  openAttachment,
+  select,
+  hide,
+  edit,
+  retract,
+  delete,
+  deletePending,
+}
+
+// C64: the action menu must open the instant the long-press lands — awaiting
+// a full HTTP round-trip first was the "手感" problem. Capabilities are cached
+// module-wide (prefetched on thread open, ~always warm); a cold cache waits at
+// most 300ms before opening with the last-known set.
+MessageActionCapabilities _messageActionCaps =
+    const MessageActionCapabilities();
+DateTime? _messageActionCapsAt;
+Future<MessageActionCapabilities>? _messageActionCapsFetch;
+
+Future<MessageActionCapabilities> _fetchMessageActionCapabilities(
+  ApiClient api,
+) {
+  final at = _messageActionCapsAt;
+  if (at != null &&
+      DateTime.now().difference(at) < const Duration(minutes: 2)) {
+    return Future.value(_messageActionCaps);
+  }
+  return _messageActionCapsFetch ??= api
+      .getMessageActionCapabilities()
+      .then((caps) {
+        _messageActionCaps = caps;
+        _messageActionCapsAt = DateTime.now();
+        return caps;
+      })
+      .catchError((_) => _messageActionCaps)
+      .whenComplete(() {
+        _messageActionCapsFetch = null;
+      });
+}
+
+void prefetchMessageActionCapabilities(ApiClient api) {
+  unawaited(_fetchMessageActionCapabilities(api));
+}
 
 Future<void> showMessageActionMenu(
   BuildContext context,
@@ -1416,22 +1801,35 @@ Future<void> showMessageActionMenu(
   Offset globalPosition, {
   String? chatGuid,
   ApiClient? api,
+  AttachmentModel? attachment,
   void Function(String guid)? onRetracted,
   Future<void> Function()? onChanged,
   Future<void> Function()? onHide,
   Future<void> Function(String tempId)? onDeletePending,
+  void Function(String guid)? onSelect,
 }) async {
   final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
   final text = displayText(message);
+  unawaited(HapticFeedback.mediumImpact());
   var caps = const MessageActionCapabilities();
   if (api != null) {
-    try {
-      caps = await api.getMessageActionCapabilities();
-    } catch (_) {
-      caps = const MessageActionCapabilities();
-    }
+    caps = await _fetchMessageActionCapabilities(api).timeout(
+      const Duration(milliseconds: 300),
+      onTimeout: () => _messageActionCaps,
+    );
   }
   if (!context.mounted) return;
+  // The attachment the Save/Share/Open items act on: the long-pressed tile's,
+  // else the message's only attachment.
+  final actionAttachment =
+      attachment ??
+      (message.attachments.length == 1 ? message.attachments.single : null);
+  final canAttachmentActions =
+      api != null &&
+      actionAttachment != null &&
+      actionAttachment.guid.isNotEmpty &&
+      !actionAttachment.guid.startsWith('local-') &&
+      !actionAttachment.isLinkPreview;
   final scheme = Theme.of(context).colorScheme;
   final strings = MicaLocalizations.of(context);
   final canForward =
@@ -1464,6 +1862,41 @@ Future<void> showMessageActionMenu(
           dense: true,
           leading: const Icon(Icons.forward_outlined),
           title: Text(strings.t('chat.forward')),
+        ),
+      ),
+    if (canAttachmentActions) ...[
+      PopupMenuItem<MessageAction>(
+        value: MessageAction.saveAttachment,
+        child: ListTile(
+          dense: true,
+          leading: const Icon(Icons.file_download_outlined),
+          title: Text(strings.t('chat.saveAttachment')),
+        ),
+      ),
+      PopupMenuItem<MessageAction>(
+        value: MessageAction.shareAttachment,
+        child: ListTile(
+          dense: true,
+          leading: const Icon(Icons.ios_share_outlined),
+          title: Text(strings.t('chat.shareAttachment')),
+        ),
+      ),
+      PopupMenuItem<MessageAction>(
+        value: MessageAction.openAttachment,
+        child: ListTile(
+          dense: true,
+          leading: const Icon(Icons.open_in_new_outlined),
+          title: Text(strings.t('chat.openAttachment')),
+        ),
+      ),
+    ],
+    if (onSelect != null && message.guid.isNotEmpty)
+      PopupMenuItem<MessageAction>(
+        value: MessageAction.select,
+        child: ListTile(
+          dense: true,
+          leading: const Icon(Icons.checklist),
+          title: Text(strings.t('settings.select')),
         ),
       ),
     if (onHide != null && message.guid.isNotEmpty)
@@ -1538,6 +1971,24 @@ Future<void> showMessageActionMenu(
     case MessageAction.forward:
       if (api == null) return;
       await _forwardMessage(context, api, message);
+      break;
+    case MessageAction.saveAttachment:
+    case MessageAction.shareAttachment:
+    case MessageAction.openAttachment:
+      if (api == null || actionAttachment == null) return;
+      await runAttachmentAction(
+        context,
+        api: api,
+        attachment: actionAttachment,
+        action: switch (selected) {
+          MessageAction.saveAttachment => AttachmentAction.save,
+          MessageAction.shareAttachment => AttachmentAction.share,
+          _ => AttachmentAction.open,
+        },
+      );
+      break;
+    case MessageAction.select:
+      onSelect?.call(message.guid);
       break;
     case MessageAction.hide:
       await onHide?.call();
@@ -1638,12 +2089,30 @@ Future<void> _forwardMessage(
   BuildContext context,
   ApiClient api,
   MessageModel message,
+) => _forwardMessages(context, api, [message]);
+
+/// C64: forwards [messages] (chronological) to one picked target, one message
+/// at a time. Fixes over the old single-message path: a `send_confirmation_
+/// timeout` no longer reports the forward as failed (the message actually
+/// sent — the server just hadn't confirmed the row yet), and a catch-up runs
+/// afterwards so the forwarded message shows up promptly.
+Future<void> _forwardMessages(
+  BuildContext context,
+  ApiClient api,
+  List<MessageModel> messages,
 ) async {
-  final text = displayText(message)?.trim();
-  final attachments = message.attachments
-      .where((a) => a.guid.trim().isNotEmpty)
-      .toList(growable: false);
-  if ((text == null || text.isEmpty) && attachments.isEmpty) {
+  final app = context.read<AppController>();
+  final payloads = <({String? text, List<AttachmentModel> attachments})>[];
+  for (final message in messages) {
+    final text = displayText(message)?.trim();
+    final attachments = message.attachments
+        .where((a) => a.guid.trim().isNotEmpty && !a.guid.startsWith('local-'))
+        .toList(growable: false);
+    if ((text != null && text.isNotEmpty) || attachments.isNotEmpty) {
+      payloads.add((text: text, attachments: attachments));
+    }
+  }
+  if (payloads.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1656,29 +2125,43 @@ Future<void> _forwardMessage(
 
   final target = await _pickForwardTarget(
     context,
-    needsText: text != null && text.isNotEmpty,
-    needsAttachments: attachments.isNotEmpty,
+    needsText: payloads.any((p) => p.text?.isNotEmpty ?? false),
+    needsAttachments: payloads.any((p) => p.attachments.isNotEmpty),
   );
   if (!context.mounted || target == null) return;
 
   await _runMessageAction(context, () async {
-    if (text != null && text.isNotEmpty) {
-      await api.sendText(
-        chatGuid: target.guid,
-        tempGuid: _forwardTempGuid('txt'),
-        message: text,
-      );
+    for (final payload in payloads) {
+      final text = payload.text;
+      if (text != null && text.isNotEmpty) {
+        try {
+          await api.sendText(
+            chatGuid: target.guid,
+            tempGuid: _forwardTempGuid('txt'),
+            message: text,
+          );
+        } on ApiException catch (e) {
+          // Sent, confirmation still pending — not a failure.
+          if (e.code != 'send_confirmation_timeout') rethrow;
+        }
+      }
+      for (final attachment in payload.attachments) {
+        final bytes = await MediaCache.instance.attachmentFull(
+          api,
+          attachment.guid,
+        );
+        await api.sendAttachment(
+          chatGuid: target.guid,
+          tempGuid: _forwardTempGuid('att'),
+          bytes: bytes,
+          filename: attachment.displayName,
+          isAudioMessage: attachment.isVoiceMessage,
+        );
+      }
     }
-    for (final attachment in attachments) {
-      final bytes = await api.getAttachmentBytes(attachment.guid);
-      await api.sendAttachment(
-        chatGuid: target.guid,
-        tempGuid: _forwardTempGuid('att'),
-        bytes: bytes,
-        filename: attachment.displayName,
-        isAudioMessage: attachment.isVoiceMessage,
-      );
-    }
+    // Pull the forwarded rows promptly (also covers forwarding into the
+    // currently open chat).
+    unawaited(app.catchUp(reason: 'forwarded', minInterval: Duration.zero));
   }, success: MicaLocalizations.of(context).t('chat.forwarded'));
 }
 
@@ -2221,7 +2704,15 @@ class _MessageBubble extends StatefulWidget {
   final VoidCallback? onPlayEffect;
   final VoidCallback onRetry;
   final ValueChanged<String?> onReplyTap;
-  final void Function(Offset globalPosition) onActions;
+
+  /// C64: unified long-press. [attachment] is set when the press landed on an
+  /// attachment tile, so the menu can offer Save/Share/Open for that file.
+  final void Function(Offset globalPosition, [AttachmentModel? attachment])
+  onActions;
+
+  /// C63: live upload progress for a pending attachment send (0..1); non-null
+  /// only while this bubble's message is uploading.
+  final ValueListenable<double>? uploadProgress;
 
   const _MessageBubble({
     required this.message,
@@ -2249,6 +2740,7 @@ class _MessageBubble extends StatefulWidget {
     required this.onRetry,
     required this.onReplyTap,
     required this.onActions,
+    this.uploadProgress,
   });
 
   @override
@@ -2374,6 +2866,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
               imageIndex: a.canRenderInlineImage
                   ? _imageGalleryIndex(a, galleryImages)
                   : 0,
+              onLongPress: (position, attachment) =>
+                  widget.onActions(position, attachment),
             ),
           ),
     ];
@@ -2544,6 +3038,49 @@ class _MessageBubbleState extends State<_MessageBubble> {
             child: bubbleWithOverlays,
           );
 
+    // C63: while an attachment send is uploading, overlay a progress ring on
+    // the bubble; when it failed, dim the media and show a tappable "not
+    // delivered" badge right on it (plus the footer's retry line).
+    final uploadProgress = widget.uploadProgress;
+    final sendingUpload =
+        uploadProgress != null &&
+        message.hasAttachments &&
+        message.localState == LocalSendState.sending;
+    final failedAttachmentSend =
+        message.hasAttachments &&
+        message.tempId != null &&
+        message.localState == LocalSendState.failed;
+    final Widget statusBubble;
+    if (sendingUpload) {
+      statusBubble = Stack(
+        alignment: Alignment.center,
+        children: [
+          effectedBubble,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          IgnorePointer(child: _UploadProgressBadge(progress: uploadProgress)),
+        ],
+      );
+    } else if (failedAttachmentSend) {
+      statusBubble = Stack(
+        alignment: Alignment.center,
+        children: [
+          Opacity(opacity: 0.55, child: effectedBubble),
+          _SendFailedBadge(onRetry: widget.onRetry),
+        ],
+      );
+    } else {
+      statusBubble = effectedBubble;
+    }
+
     final messageColumnBody = Column(
       crossAxisAlignment: fromMe
           ? CrossAxisAlignment.end
@@ -2571,7 +3108,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             fromMe: fromMe,
             onTap: () => widget.onReplyTap(reply.targetGuid),
           ),
-        effectedBubble,
+        statusBubble,
         ?effectLabel,
         _Footer(
           message: message,
@@ -2581,14 +3118,13 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ),
       ],
     );
-    final messageColumn = hasMedia
-        ? messageColumnBody
-        : GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onLongPressStart: (details) =>
-                widget.onActions(details.globalPosition),
-            child: messageColumnBody,
-          );
+    // C64: every bubble opens the unified menu on long-press — media bubbles
+    // included (their tiles pass the pressed attachment through onActions).
+    final messageColumn = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (details) => widget.onActions(details.globalPosition),
+      child: messageColumnBody,
+    );
 
     final row = showGroupSender
         ? Row(
@@ -2712,6 +3248,102 @@ class _IosBubblePainter extends CustomPainter {
       oldDelegate.color != color ||
       oldDelegate.fromMe != fromMe ||
       oldDelegate.showTail != showTail;
+}
+
+/// C63: centered progress ring + percentage over an uploading attachment.
+class _UploadProgressBadge extends StatelessWidget {
+  final ValueListenable<double> progress;
+  const _UploadProgressBadge({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (context, value, _) {
+            final clamped = value.clamp(0.0, 1.0);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    // An indeterminate ring right at 0 (connecting) and once
+                    // the body is fully written (waiting on the server reply).
+                    value: clamped <= 0.01 || clamped >= 0.99 ? null : clamped,
+                    strokeWidth: 2.4,
+                    color: Colors.white,
+                    backgroundColor: Colors.white24,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${(clamped * 100).round()}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// C63: "not delivered" badge over a failed attachment send; tap retries.
+class _SendFailedBadge extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _SendFailedBadge({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onRetry,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 16, color: scheme.error),
+              const SizedBox(width: 6),
+              Text(
+                MicaLocalizations.of(context).t('chat.notDelivered'),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onErrorContainer,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _GroupSenderAvatarSlot extends StatelessWidget {
@@ -2901,7 +3533,7 @@ class _AssociatedStickerStrip extends StatelessWidget {
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.6,
-        maxHeight: 100,
+        maxHeight: 90,
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -3092,6 +3724,7 @@ class _Footer extends StatelessWidget {
     final footerStyle = _footerTextStyle(context);
     final state = deliveryStateFor(message);
 
+    final strings = MicaLocalizations.of(context);
     // Failed is always actionable, regardless of position.
     if (state == MessageDeliveryState.failed) {
       return Padding(
@@ -3104,7 +3737,7 @@ class _Footer extends StatelessWidget {
               Icon(Icons.error_outline, size: 13, color: scheme.error),
               const SizedBox(width: 4),
               Text(
-                'Failed — tap to retry',
+                strings.t('chat.failedTapRetry'),
                 style: footerStyle.copyWith(color: scheme.error),
               ),
             ],
@@ -3113,33 +3746,38 @@ class _Footer extends StatelessWidget {
       );
     }
 
+    // Incoming messages never render a footer. Their timestamps remain
+    // available through the centered separators and horizontal reveal.
+    if (!message.isFromMe) return const SizedBox.shrink();
+
     final parts = <String>[];
     final ts = message.dateCreated;
-    // Footer uses the same compact date buckets as the chat list.
-    if (ts != null && (showTime || showStatus)) {
-      parts.add(
-        _chatListTimestampLabel(
-          context,
-          DateTime.fromMillisecondsSinceEpoch(ts),
-        ),
-      );
+    // Read is anchored to when this message was sent, not dateRead. Delivered
+    // intentionally has no timestamp; other latest-message states retain the
+    // compact footer time.
+    if (ts != null && state != MessageDeliveryState.delivered) {
+      final sentAt = DateTime.fromMillisecondsSinceEpoch(ts);
+      if (state == MessageDeliveryState.read && showStatus) {
+        parts.add(_timeOnlyTimestampLabel(context, sentAt));
+      } else if (showTime) {
+        parts.add(_chatListTimestampLabel(context, sentAt));
+      }
     }
-    final edited = editedMarker(message);
-    if (edited != null) parts.add(edited);
+    if (editedMarker(message) != null) parts.add(strings.t('chat.edited'));
     // Status word is outgoing-only, shown only on the latest outgoing message.
     if (showStatus) {
       switch (state) {
         case MessageDeliveryState.sending:
-          parts.add('Sending…');
+          parts.add(strings.t('chat.sending'));
           break;
         case MessageDeliveryState.sent:
-          parts.add('Sent');
+          parts.add(strings.t('chat.sent'));
           break;
         case MessageDeliveryState.read:
-          parts.add('Read');
+          parts.add(strings.t('chat.read'));
           break;
         case MessageDeliveryState.delivered:
-          parts.add('Delivered');
+          parts.add(strings.t('chat.delivered'));
           break;
         case MessageDeliveryState.incoming:
         case MessageDeliveryState.failed:
@@ -3148,9 +3786,22 @@ class _Footer extends StatelessWidget {
       }
     }
     if (parts.isEmpty) return const SizedBox.shrink();
+    final label = parts.join(' · ');
     return Padding(
       padding: const EdgeInsets.only(top: 2, left: 10, right: 10),
-      child: Text(parts.join(' · '), style: footerStyle),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 160),
+        reverseDuration: const Duration(milliseconds: 120),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        transitionBuilder: (child, animation) =>
+            FadeTransition(opacity: animation, child: child),
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          alignment: Alignment.centerRight,
+          children: [...previousChildren, ?currentChild],
+        ),
+        child: Text(label, key: ValueKey(label), style: footerStyle),
+      ),
     );
   }
 }
@@ -3244,6 +3895,7 @@ class _LinkedMessageText extends StatefulWidget {
 class _LinkedMessageTextState extends State<_LinkedMessageText> {
   final List<TapGestureRecognizer> _recognizers = [];
   List<InlineSpan>? _spans;
+  static final RegExp _shibuyaEmoji = RegExp(r'\uE50A');
 
   @override
   void initState() {
@@ -3270,21 +3922,55 @@ class _LinkedMessageTextState extends State<_LinkedMessageText> {
 
   @override
   Widget build(BuildContext context) {
-    final matches = urlPreviewRegex.allMatches(widget.text).toList();
-    if (matches.isEmpty) return Text(widget.text, style: widget.style);
+    final textStyle = _withCompatSymbolFallback(widget.style);
+    final hasLinks = urlPreviewRegex.hasMatch(widget.text);
+    final hasShibuya = _shibuyaEmoji.hasMatch(widget.text);
+    if (!hasLinks && !hasShibuya) {
+      return Text(widget.text, style: textStyle);
+    }
     return RichText(
-      text: TextSpan(style: widget.style, children: _spans ?? const []),
+      text: TextSpan(style: textStyle, children: _spans ?? const []),
     );
   }
 
   List<InlineSpan> _buildSpans() {
     final spans = <InlineSpan>[];
+    final tokens =
+        [
+          for (final match in urlPreviewRegex.allMatches(widget.text))
+            _MessageTextToken(
+              match.start,
+              match.end,
+              _MessageTextTokenKind.link,
+            ),
+          for (final match in _shibuyaEmoji.allMatches(widget.text))
+            _MessageTextToken(
+              match.start,
+              match.end,
+              _MessageTextTokenKind.shibuya,
+            ),
+        ]..sort((a, b) {
+          final byStart = a.start.compareTo(b.start);
+          if (byStart != 0) return byStart;
+          return b.end.compareTo(a.end);
+        });
     var cursor = 0;
-    for (final match in urlPreviewRegex.allMatches(widget.text)) {
-      if (match.start > cursor) {
-        spans.add(TextSpan(text: widget.text.substring(cursor, match.start)));
+    for (final token in tokens) {
+      if (token.start < cursor) continue;
+      if (token.start > cursor) {
+        spans.add(TextSpan(text: widget.text.substring(cursor, token.start)));
       }
-      final raw = widget.text.substring(match.start, match.end);
+      final raw = widget.text.substring(token.start, token.end);
+      if (token.kind == _MessageTextTokenKind.shibuya) {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _ShibuyaEmoji(style: widget.style),
+          ),
+        );
+        cursor = token.end;
+        continue;
+      }
       final url = normalizePreviewUrl(raw);
       final recognizer = TapGestureRecognizer()
         ..onTap = () async {
@@ -3304,7 +3990,7 @@ class _LinkedMessageTextState extends State<_LinkedMessageText> {
           recognizer: recognizer,
         ),
       );
-      cursor = match.end;
+      cursor = token.end;
     }
     if (cursor < widget.text.length) {
       spans.add(TextSpan(text: widget.text.substring(cursor)));
@@ -3317,6 +4003,50 @@ class _LinkedMessageTextState extends State<_LinkedMessageText> {
       r.dispose();
     }
     _recognizers.clear();
+  }
+}
+
+TextStyle _withCompatSymbolFallback(TextStyle? style) {
+  const compatFamily = 'MicaGoCompatSymbols';
+  final fallback = style?.fontFamilyFallback ?? const <String>[];
+  if (fallback.contains(compatFamily)) return style ?? const TextStyle();
+  return (style ?? const TextStyle()).copyWith(
+    fontFamilyFallback: <String>[compatFamily, ...fallback],
+  );
+}
+
+enum _MessageTextTokenKind { link, shibuya }
+
+class _MessageTextToken {
+  final int start;
+  final int end;
+  final _MessageTextTokenKind kind;
+
+  const _MessageTextToken(this.start, this.end, this.kind);
+}
+
+class _ShibuyaEmoji extends StatelessWidget {
+  final TextStyle? style;
+
+  const _ShibuyaEmoji({required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final size =
+        ((style?.fontSize ?? DefaultTextStyle.of(context).style.fontSize ?? 16)
+                    .clamp(12.0, 96.0)
+                as num)
+            .toDouble();
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: size * 0.04),
+      child: Image.asset(
+        'lib/Assets/MicaGoC.icon/Assets/shibuya_e50a.png',
+        width: size * 1.12,
+        height: size * 1.12,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+      ),
+    );
   }
 }
 
@@ -4649,7 +5379,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
       if (a.isLinkPreview) linkSet.add(a.displayName);
     }
     final linkUrls = linkSet.take(4).toList(growable: false);
-    final insets = MediaQuery.of(context).viewInsets.bottom;
+    final insets = activeKeyboardInset(context);
     final theme = context.watch<ThemeController>();
     final glass = theme.useLiquidGlass;
     final inkWash = theme.useBlackWhite;
@@ -5042,7 +5772,7 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
             ..sort(
               (a, b) => (b.dateCreated ?? 0).compareTo(a.dateCreated ?? 0),
             ));
-    final insets = MediaQuery.of(context).viewInsets.bottom;
+    final insets = activeKeyboardInset(context);
 
     return AnimatedPadding(
       duration: const Duration(milliseconds: 180),
@@ -5340,11 +6070,10 @@ class _DetailsMediaTileState extends State<_DetailsMediaTile> {
     final cacheKey = widget.attachment.isVideo
         ? 'video:${widget.attachment.previewUrl ?? widget.attachment.guid}'
         : widget.attachment.previewUrl ?? widget.attachment.guid;
-    final cached = imageByteCache[cacheKey];
-    if (cached != null) return cached;
-    final bytes = await widget.api.getAttachmentPreviewBytes(widget.attachment);
-    imageByteCache[cacheKey] = bytes;
-    return bytes;
+    return MediaCache.instance.load(
+      cacheKey,
+      () => widget.api.getAttachmentPreviewBytes(widget.attachment),
+    );
   }
 
   @override

@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/api_client.dart';
+import '../../core/storage/media_cache.dart';
 import '../../core/ui/top_banner.dart';
 import 'media_viewer.dart';
 import 'models/message_model.dart';
@@ -29,16 +30,26 @@ class AttachmentView extends StatelessWidget {
   final List<AttachmentModel> imageSiblings;
   final int imageIndex;
 
+  /// C64: when set, tile long-presses call this (the thread routes it into the
+  /// unified message action menu) instead of the legacy attachment sheet.
+  final void Function(Offset globalPosition, AttachmentModel attachment)?
+  onLongPress;
+
   const AttachmentView({
     super.key,
     required this.api,
     required this.attachment,
     this.imageSiblings = const [],
     this.imageIndex = 0,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
+    final overrideAll = onLongPress;
+    final override = overrideAll == null
+        ? null
+        : (Offset position) => overrideAll(position, attachment);
     if (attachment.isOpaquePreviewPayload) {
       return const SizedBox.shrink();
     }
@@ -46,7 +57,11 @@ class AttachmentView extends StatelessWidget {
     // and always as a sticker — we try to render the image and, if that fails,
     // show a clean "Sticker" placeholder rather than a broken file/“TIFF” card.
     if (attachment.isStickerLike) {
-      return _StickerAttachment(api: api, attachment: attachment);
+      return _StickerAttachment(
+        api: api,
+        attachment: attachment,
+        onLongPress: override,
+      );
     }
     if (attachment.canRenderInlineImage) {
       return _ImageAttachment(
@@ -54,16 +69,29 @@ class AttachmentView extends StatelessWidget {
         attachment: attachment,
         siblings: imageSiblings.isEmpty ? [attachment] : imageSiblings,
         index: imageIndex,
+        onLongPress: override,
       );
     }
     if (attachment.isImage && attachment.needsPreviewConversion) {
-      return _PreviewUnavailableAttachment(api: api, attachment: attachment);
+      return _PreviewUnavailableAttachment(
+        api: api,
+        attachment: attachment,
+        onLongPress: override,
+      );
     }
     if (attachment.isAudio) {
-      return _AudioAttachment(api: api, attachment: attachment);
+      return _AudioAttachment(
+        api: api,
+        attachment: attachment,
+        onLongPress: override,
+      );
     }
     if (attachment.isVideo) {
-      return _VideoAttachment(api: api, attachment: attachment);
+      return _VideoAttachment(
+        api: api,
+        attachment: attachment,
+        onLongPress: override,
+      );
     }
     if (attachment.isLocation) {
       return _LocationAttachment(api: api, attachment: attachment);
@@ -71,11 +99,50 @@ class AttachmentView extends StatelessWidget {
     if (attachment.isLinkPreview) {
       return _LinkAttachment(attachment: attachment);
     }
-    return _FileAttachment(api: api, attachment: attachment);
+    return _FileAttachment(
+      api: api,
+      attachment: attachment,
+      onLongPress: override,
+    );
   }
 }
 
 enum AttachmentAction { save, share, open }
+
+/// C64: tiles route long-press to the unified message menu when the thread
+/// provided an override; standalone contexts (details grid, viewers) keep the
+/// legacy sheet.
+void _tileLongPress(
+  BuildContext context,
+  void Function(Offset)? override,
+  Offset globalPosition, {
+  required ApiClient api,
+  required AttachmentModel attachment,
+}) {
+  if (override != null) {
+    override(globalPosition);
+    return;
+  }
+  showAttachmentActions(context, api: api, attachment: attachment);
+}
+
+/// C64: runs one attachment action directly (used by the unified message
+/// action menu; the legacy [showAttachmentActions] sheet also dispatches here).
+Future<void> runAttachmentAction(
+  BuildContext context, {
+  required ApiClient api,
+  required AttachmentModel attachment,
+  required AttachmentAction action,
+}) async {
+  switch (action) {
+    case AttachmentAction.save:
+      await _saveAttachment(context, api: api, attachment: attachment);
+    case AttachmentAction.share:
+      await _shareAttachment(context, api: api, attachment: attachment);
+    case AttachmentAction.open:
+      await _openAttachment(context, api: api, attachment: attachment);
+  }
+}
 
 Future<void> showAttachmentActions(
   BuildContext context, {
@@ -116,14 +183,12 @@ Future<void> showAttachmentActions(
     },
   );
   if (!context.mounted || action == null) return;
-  switch (action) {
-    case AttachmentAction.save:
-      await _saveAttachment(context, api: api, attachment: attachment);
-    case AttachmentAction.share:
-      await _shareAttachment(context, api: api, attachment: attachment);
-    case AttachmentAction.open:
-      await _openAttachment(context, api: api, attachment: attachment);
-  }
+  await runAttachmentAction(
+    context,
+    api: api,
+    attachment: attachment,
+    action: action,
+  );
 }
 
 Future<void> _saveAttachment(
@@ -134,7 +199,10 @@ Future<void> _saveAttachment(
   final strings = MicaLocalizations.of(context);
   try {
     TopBanner.show(context, strings.t('chat.savingAttachment'));
-    final bytes = await api.getAttachmentBytes(attachment.guid);
+    final bytes = await MediaCache.instance.attachmentFull(
+      api,
+      attachment.guid,
+    );
     if (!context.mounted) return;
 
     final fileName = _attachmentSaveName(attachment);
@@ -170,7 +238,7 @@ Future<File> _writeTempAttachment({
   required ApiClient api,
   required AttachmentModel attachment,
 }) async {
-  final bytes = await api.getAttachmentBytes(attachment.guid);
+  final bytes = await MediaCache.instance.attachmentFull(api, attachment.guid);
   final dir = await getTemporaryDirectory();
   final folder = Directory('${dir.path}/micago-attachments');
   if (!await folder.exists()) {
@@ -289,7 +357,10 @@ class _LocationAttachmentState extends State<_LocationAttachment> {
 
   Future<Uri?> _loadMapUrl() async {
     try {
-      final bytes = await widget.api.getAttachmentBytes(widget.attachment.guid);
+      final bytes = await MediaCache.instance.attachmentFull(
+        widget.api,
+        widget.attachment.guid,
+      );
       final text = utf8.decode(bytes, allowMalformed: true);
       // The vlocation body contains an Apple Maps URL (and/or a geo: URI).
       final match = RegExp(
@@ -376,7 +447,12 @@ class _LocationAttachmentState extends State<_LocationAttachment> {
 class _VideoAttachment extends StatefulWidget {
   final ApiClient api;
   final AttachmentModel attachment;
-  const _VideoAttachment({required this.api, required this.attachment});
+  final void Function(Offset)? onLongPress;
+  const _VideoAttachment({
+    required this.api,
+    required this.attachment,
+    this.onLongPress,
+  });
 
   @override
   State<_VideoAttachment> createState() => _VideoAttachmentState();
@@ -390,7 +466,7 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
   void initState() {
     super.initState();
     final cacheKey = _videoPreviewCacheKey(widget.attachment);
-    final cached = imageByteCache[cacheKey];
+    final cached = MediaCache.instance.memoryHit(cacheKey);
     if (cached != null) {
       _bytes = cached;
     } else {
@@ -398,14 +474,10 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
     }
   }
 
-  Future<Uint8List> _loadBytes() async {
-    final cacheKey = _videoPreviewCacheKey(widget.attachment);
-    final cached = imageByteCache[cacheKey];
-    if (cached != null) return cached;
-    final bytes = await widget.api.getAttachmentPreviewBytes(widget.attachment);
-    imageByteCache[cacheKey] = bytes;
-    return bytes;
-  }
+  Future<Uint8List> _loadBytes() => MediaCache.instance.load(
+    _videoPreviewCacheKey(widget.attachment),
+    () => widget.api.getAttachmentPreviewBytes(widget.attachment),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -415,9 +487,10 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox(
-            height: 160,
-            child: Center(child: CircularProgressIndicator()),
+          return _VideoFallbackCard(
+            api: widget.api,
+            attachment: widget.attachment,
+            onLongPress: widget.onLongPress,
           );
         }
         final bytes = snap.data;
@@ -425,6 +498,7 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
           return _VideoFallbackCard(
             api: widget.api,
             attachment: widget.attachment,
+            onLongPress: widget.onLongPress,
           );
         }
         return _preview(context, bytes);
@@ -442,15 +516,17 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
         api: widget.api,
         attachment: widget.attachment,
       ),
-      onLongPress: () => showAttachmentActions(
+      onLongPressStart: (d) => _tileLongPress(
         context,
+        widget.onLongPress,
+        d.globalPosition,
         api: widget.api,
         attachment: widget.attachment,
       ),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: 340,
-          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+          maxHeight: 306,
+          maxWidth: MediaQuery.sizeOf(context).width * 0.738,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
@@ -466,6 +542,7 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
                 errorBuilder: (_, _, _) => _VideoFallbackCard(
                   api: widget.api,
                   attachment: widget.attachment,
+                  onLongPress: widget.onLongPress,
                 ),
               ),
               Container(
@@ -526,7 +603,12 @@ String _videoPreviewCacheKey(AttachmentModel attachment) =>
 class _VideoFallbackCard extends StatelessWidget {
   final ApiClient api;
   final AttachmentModel attachment;
-  const _VideoFallbackCard({required this.api, required this.attachment});
+  final void Function(Offset)? onLongPress;
+  const _VideoFallbackCard({
+    required this.api,
+    required this.attachment,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -534,8 +616,13 @@ class _VideoFallbackCard extends StatelessWidget {
     return GestureDetector(
       onTap: () =>
           FullscreenVideo.open(context, api: api, attachment: attachment),
-      onLongPress: () =>
-          showAttachmentActions(context, api: api, attachment: attachment),
+      onLongPressStart: (d) => _tileLongPress(
+        context,
+        onLongPress,
+        d.globalPosition,
+        api: api,
+        attachment: attachment,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: Row(
@@ -578,7 +665,12 @@ class _VideoFallbackCard extends StatelessWidget {
 class _StickerAttachment extends StatefulWidget {
   final ApiClient api;
   final AttachmentModel attachment;
-  const _StickerAttachment({required this.api, required this.attachment});
+  final void Function(Offset)? onLongPress;
+  const _StickerAttachment({
+    required this.api,
+    required this.attachment,
+    this.onLongPress,
+  });
 
   @override
   State<_StickerAttachment> createState() => _StickerAttachmentState();
@@ -595,7 +687,7 @@ class _StickerAttachmentState extends State<_StickerAttachment> {
   void initState() {
     super.initState();
     final cacheKey = widget.attachment.previewUrl ?? widget.attachment.guid;
-    final cached = imageByteCache[cacheKey];
+    final cached = MediaCache.instance.memoryHit(cacheKey);
     if (cached != null) {
       _bytes = cached;
     } else {
@@ -603,14 +695,8 @@ class _StickerAttachmentState extends State<_StickerAttachment> {
     }
   }
 
-  Future<Uint8List> _load() async {
-    final cacheKey = widget.attachment.previewUrl ?? widget.attachment.guid;
-    final cached = imageByteCache[cacheKey];
-    if (cached != null) return cached;
-    final bytes = await widget.api.getAttachmentPreviewBytes(widget.attachment);
-    imageByteCache[cacheKey] = bytes;
-    return bytes;
-  }
+  Future<Uint8List> _load() =>
+      MediaCache.instance.attachmentPreview(widget.api, widget.attachment);
 
   @override
   Widget build(BuildContext context) {
@@ -622,11 +708,7 @@ class _StickerAttachmentState extends State<_StickerAttachment> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox(
-            height: 120,
-            width: 120,
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
+          return const SizedBox.shrink();
         }
         if (snap.hasError || snap.data == null || snap.data!.isEmpty) {
           return const _StickerPlaceholder();
@@ -639,8 +721,10 @@ class _StickerAttachmentState extends State<_StickerAttachment> {
   Widget _sticker(Uint8List bytes) {
     return GestureDetector(
       onTap: () => setState(() => _visible = !_visible),
-      onLongPress: () => showAttachmentActions(
+      onLongPressStart: (d) => _tileLongPress(
         context,
+        widget.onLongPress,
+        d.globalPosition,
         api: widget.api,
         attachment: widget.attachment,
       ),
@@ -648,12 +732,12 @@ class _StickerAttachmentState extends State<_StickerAttachment> {
         duration: const Duration(milliseconds: 150),
         opacity: _visible ? 1 : 0.25,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 160, maxWidth: 160),
+          constraints: const BoxConstraints(maxHeight: 144, maxWidth: 144),
           child: Image.memory(
             bytes,
             fit: BoxFit.contain,
             gaplessPlayback: true,
-            cacheWidth: 320,
+            cacheWidth: 288,
             filterQuality: FilterQuality.none,
             errorBuilder: (_, _, _) => const _StickerPlaceholder(),
           ),
@@ -699,17 +783,24 @@ class _StickerPlaceholder extends StatelessWidget {
 class _PreviewUnavailableAttachment extends StatelessWidget {
   final ApiClient api;
   final AttachmentModel attachment;
+  final void Function(Offset)? onLongPress;
   const _PreviewUnavailableAttachment({
     required this.api,
     required this.attachment,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
-      onLongPress: () =>
-          showAttachmentActions(context, api: api, attachment: attachment),
+      onLongPressStart: (d) => _tileLongPress(
+        context,
+        onLongPress,
+        d.globalPosition,
+        api: api,
+        attachment: attachment,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: Row(
@@ -759,11 +850,13 @@ class _ImageAttachment extends StatefulWidget {
   final AttachmentModel attachment;
   final List<AttachmentModel> siblings;
   final int index;
+  final void Function(Offset)? onLongPress;
   const _ImageAttachment({
     required this.api,
     required this.attachment,
     required this.siblings,
     required this.index,
+    this.onLongPress,
   });
 
   @override
@@ -780,7 +873,7 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
   void initState() {
     super.initState();
     final cacheKey = widget.attachment.previewUrl ?? widget.attachment.guid;
-    final cached = imageByteCache[cacheKey];
+    final cached = MediaCache.instance.memoryHit(cacheKey);
     if (cached != null) {
       _bytes = cached;
     } else {
@@ -788,14 +881,8 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
     }
   }
 
-  Future<Uint8List> _loadBytes() async {
-    final cacheKey = widget.attachment.previewUrl ?? widget.attachment.guid;
-    final cached = imageByteCache[cacheKey];
-    if (cached != null) return cached;
-    final bytes = await widget.api.getAttachmentPreviewBytes(widget.attachment);
-    imageByteCache[cacheKey] = bytes;
-    return bytes;
-  }
+  Future<Uint8List> _loadBytes() =>
+      MediaCache.instance.attachmentPreview(widget.api, widget.attachment);
 
   @override
   Widget build(BuildContext context) {
@@ -805,10 +892,7 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox(
-            height: 160,
-            child: Center(child: CircularProgressIndicator()),
-          );
+          return const SizedBox.shrink();
         }
         if (snap.hasError || snap.data == null) {
           return _FileAttachment(
@@ -828,7 +912,7 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
     final isSticker = widget.attachment.isSticker;
     final boxMaxWidth = isSticker
         ? 180.0
-        : MediaQuery.sizeOf(context).width * 0.82;
+        : MediaQuery.sizeOf(context).width * 0.738;
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final decodeWidth = (boxMaxWidth * dpr).round().clamp(200, 900);
     return GestureDetector(
@@ -838,8 +922,10 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
         images: widget.siblings,
         initialIndex: widget.index,
       ),
-      onLongPress: () => showAttachmentActions(
+      onLongPressStart: (d) => _tileLongPress(
         context,
+        widget.onLongPress,
+        d.globalPosition,
         api: widget.api,
         attachment: widget.attachment,
       ),
@@ -850,8 +936,8 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
         constraints: isSticker
             ? const BoxConstraints(maxHeight: 180, maxWidth: 180)
             : BoxConstraints(
-                maxHeight: 340,
-                maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+                maxHeight: 306,
+                maxWidth: MediaQuery.sizeOf(context).width * 0.738,
               ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(isSticker ? 4 : 12),
@@ -873,7 +959,12 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
 class _AudioAttachment extends StatefulWidget {
   final ApiClient api;
   final AttachmentModel attachment;
-  const _AudioAttachment({required this.api, required this.attachment});
+  final void Function(Offset)? onLongPress;
+  const _AudioAttachment({
+    required this.api,
+    required this.attachment,
+    this.onLongPress,
+  });
 
   @override
   State<_AudioAttachment> createState() => _AudioAttachmentState();
@@ -923,8 +1014,10 @@ class _AudioAttachmentState extends State<_AudioAttachment> {
     );
     final fg = scheme.onSurface;
     return GestureDetector(
-      onLongPress: () => showAttachmentActions(
+      onLongPressStart: (d) => _tileLongPress(
         context,
+        widget.onLongPress,
+        d.globalPosition,
         api: widget.api,
         attachment: widget.attachment,
       ),
@@ -1140,7 +1233,12 @@ class _AudioWaveformPainter extends CustomPainter {
 class _FileAttachment extends StatelessWidget {
   final ApiClient api;
   final AttachmentModel attachment;
-  const _FileAttachment({required this.api, required this.attachment});
+  final void Function(Offset)? onLongPress;
+  const _FileAttachment({
+    required this.api,
+    required this.attachment,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1155,8 +1253,13 @@ class _FileAttachment extends StatelessWidget {
       if (attachment.totalBytes > 0) _humanSize(attachment.totalBytes),
     ].where((s) => s.isNotEmpty).join('  ');
     return GestureDetector(
-      onLongPress: () =>
-          showAttachmentActions(context, api: api, attachment: attachment),
+      onLongPressStart: (d) => _tileLongPress(
+        context,
+        onLongPress,
+        d.globalPosition,
+        api: api,
+        attachment: attachment,
+      ),
       child: ConstrainedBox(
         constraints: BoxConstraints(
           minWidth: 260,

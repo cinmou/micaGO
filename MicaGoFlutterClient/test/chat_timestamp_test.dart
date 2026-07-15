@@ -26,6 +26,16 @@ void main() {
       expect(label(now.subtract(const Duration(minutes: 59))), '59m');
     });
 
+    test('relative buckets are localized for zh-Hans and zh-Hant (C65)', () {
+      final justNow = now.subtract(const Duration(seconds: 30));
+      final fiveMin = now.subtract(const Duration(minutes: 5));
+      expect(label(justNow, locale: 'zh-Hans'), '刚刚');
+      expect(label(fiveMin, locale: 'zh-Hans'), '5 分钟前');
+      expect(label(justNow, locale: 'zh-Hant'), '剛剛');
+      expect(label(fiveMin, locale: 'zh-Hant'), '5 分鐘前');
+      expect(label(justNow, locale: 'zh-TW'), '剛剛');
+    });
+
     test('same day but over an hour -> clock time (24h)', () {
       // 3 hours earlier today -> 12:00.
       expect(

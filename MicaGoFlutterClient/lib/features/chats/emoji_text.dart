@@ -7,6 +7,8 @@
 /// Pure + unit-testable; intentionally not a full grapheme parser.
 library;
 
+import 'package:characters/characters.dart';
+
 // Extended_Pictographic covers the vast majority of emoji. Country flags are
 // different: they are made from two regional indicator code points, so handle
 // those pairs explicitly before stripping the remaining emoji "glue".
@@ -29,27 +31,35 @@ final RegExp _pictographic = RegExp(
   unicode: true,
 );
 
+// SoftBank's legacy Shibuya 109 character is rendered with our bundled image
+// asset. Count it as emoji so an E50A-only message gets the normal large emoji
+// presentation instead of a text bubble.
+final RegExp _imageBackedEmoji = RegExp(r'^\uE50A$');
+
 /// True when [text] is only emoji (plus whitespace) — no other visible text.
 bool isEmojiOnly(String text) {
   final t = text.trim();
   if (t.isEmpty) return false;
-  if (_pictographic.firstMatch(t) == null &&
-      _regionalIndicatorPair.firstMatch(t) == null) {
-    return false;
+  final clusters = t.characters.where((c) => c.trim().isNotEmpty).toList();
+  return clusters.isNotEmpty && clusters.every(_isEmojiCluster);
+}
+
+/// Number of emoji in [text] (a rough cluster count).
+int emojiCount(String text) =>
+    text.characters.where((c) => c.trim().isNotEmpty).length;
+
+bool _isEmojiCluster(String cluster) {
+  if (_imageBackedEmoji.hasMatch(cluster)) return true;
+  if (_regionalIndicatorPair.stringMatch(cluster) == cluster) return true;
+  if (RegExp(r'^[0-9#*]\uFE0F?\u{20E3}$', unicode: true).hasMatch(cluster)) {
+    return true;
   }
-  final stripped = t
-      .replaceAll(_regionalIndicatorPair, '')
+  if (_pictographic.firstMatch(cluster) == null) return false;
+  final stripped = cluster
       .replaceAll(_pictographic, '')
       .replaceAll(_emojiGlue, '')
       .replaceAll(RegExp(r'\s+'), '');
   return stripped.isEmpty;
-}
-
-/// Number of emoji in [text] (a rough cluster count).
-int emojiCount(String text) {
-  final withoutFlags = text.replaceAll(_regionalIndicatorPair, '');
-  return _regionalIndicatorPair.allMatches(text).length +
-      _pictographic.allMatches(withoutFlags).length;
 }
 
 /// BlueBubbles-style "big emoji": emoji-only with at most 3 emoji. These render
@@ -65,10 +75,10 @@ bool isBigEmoji(String text) {
 double bigEmojiFontSize(String text) {
   switch (emojiCount(text)) {
     case 1:
-      return 96;
+      return 86.4;
     case 2:
-      return 72;
+      return 64.8;
     default:
-      return 58;
+      return 52.2;
   }
 }

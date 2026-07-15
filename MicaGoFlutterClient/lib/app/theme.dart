@@ -27,6 +27,7 @@ class MicaGoTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      fontFamilyFallback: const ['MicaGoCompatSymbols'],
       appBarTheme: const AppBarTheme(centerTitle: false),
       iconButtonTheme: inkWash
           ? IconButtonThemeData(

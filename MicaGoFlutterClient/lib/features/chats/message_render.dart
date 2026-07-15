@@ -32,8 +32,8 @@ String chatTimestampLabel(
   required String locale,
 }) {
   final diff = now.difference(dt);
-  if (diff.inMinutes < 1) return 'now';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+  if (diff.inMinutes < 1) return _nowLabel(locale);
+  if (diff.inMinutes < 60) return _minutesAgoLabel(locale, diff.inMinutes);
 
   final startOfToday = DateTime(now.year, now.month, now.day);
   final startOfThatDay = DateTime(dt.year, dt.month, dt.day);
@@ -74,7 +74,27 @@ String chatTimestampLabel(
 }
 
 String _yesterdayLabel(String locale) =>
-    locale.toLowerCase().startsWith('zh') ? '昨天' : 'Yesterday';
+    _isZh(locale) ? '昨天' : 'Yesterday';
+
+// C65: the relative buckets ("now" / "5m") were English-only. Chinese needs
+// script awareness for 分钟/分鐘, so callers pass the full language *tag*
+// (e.g. zh-Hant), not just the language code.
+bool _isZh(String locale) => locale.toLowerCase().startsWith('zh');
+
+bool _isZhHant(String locale) {
+  final l = locale.toLowerCase();
+  return l.contains('hant') ||
+      l.endsWith('-tw') ||
+      l.endsWith('-hk') ||
+      l.endsWith('-mo');
+}
+
+String _nowLabel(String locale) =>
+    _isZh(locale) ? (_isZhHant(locale) ? '剛剛' : '刚刚') : 'now';
+
+String _minutesAgoLabel(String locale, int minutes) => _isZh(locale)
+    ? (_isZhHant(locale) ? '$minutes 分鐘前' : '$minutes 分钟前')
+    : '${minutes}m';
 
 /// Clock-only label for message timestamp reveal affordances. Unlike
 /// [threadTimestampLabel], this intentionally ignores the day bucket.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,6 +94,67 @@ void main() {
     // Preview thumbnail shows a play affordance and is tappable; never throws.
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.byType(GestureDetector), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('loading media never renders a second progress bubble', (
+    tester,
+  ) async {
+    final release = Completer<void>();
+    final loadingApi = ApiClient(
+      baseUrl: 'http://localhost:0',
+      token: 't',
+      httpClient: MockClient((_) async {
+        await release.future;
+        return http.Response.bytes(_png1x1, 200);
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              AttachmentView(
+                api: loadingApi,
+                attachment: _att(
+                  guid: 'image-loading',
+                  kind: 'image',
+                  mime: 'image/png',
+                  name: 'photo.png',
+                ),
+              ),
+              AttachmentView(
+                api: loadingApi,
+                attachment: _att(
+                  guid: 'video-loading',
+                  kind: 'video',
+                  mime: 'video/mp4',
+                  name: 'clip.mp4',
+                ),
+              ),
+              AttachmentView(
+                api: loadingApi,
+                attachment: const AttachmentModel(
+                  guid: 'sticker-loading',
+                  downloadUrl: '/api/attachments/sticker-loading',
+                  filename: 'sticker.png',
+                  isSticker: true,
+                  attachmentKind: 'sticker',
+                  displayKind: 'sticker',
+                  isPreviewableImage: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('clip.mp4'), findsOneWidget);
+
+    release.complete();
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 
@@ -232,8 +295,9 @@ void main() {
     },
   );
 
-  testWidgets('a location attachment renders a Location card with Open in Maps',
-      (tester) async {
+  testWidgets('a location attachment renders a Location card with Open in Maps', (
+    tester,
+  ) async {
     final locApi = ApiClient(
       baseUrl: 'http://localhost:0',
       token: 't',

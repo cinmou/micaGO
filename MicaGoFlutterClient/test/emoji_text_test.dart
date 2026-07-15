@@ -20,6 +20,24 @@ void main() {
       expect(emojiCount('🇬🇧🇺🇸🇯🇵'), 3);
     });
 
+    test('multi-codepoint emoji clusters count as one visible emoji', () {
+      expect(isEmojiOnly('❤️‍🔥'), isTrue);
+      expect(isBigEmoji('❤️‍🔥'), isTrue);
+      expect(emojiCount('❤️‍🔥'), 1);
+      expect(isEmojiOnly('👨‍👩‍👧‍👦'), isTrue);
+      expect(isBigEmoji('👨‍👩‍👧‍👦'), isTrue);
+      expect(emojiCount('👨‍👩‍👧‍👦'), 1);
+      expect(isEmojiOnly('🫨🫠🫡'), isTrue);
+      expect(isBigEmoji('🫨🫠🫡'), isTrue);
+      expect(emojiCount('🫨🫠🫡'), 3);
+    });
+
+    test('image-backed Shibuya 109 is one big emoji', () {
+      expect(isEmojiOnly('\uE50A'), isTrue);
+      expect(isBigEmoji('\uE50A'), isTrue);
+      expect(emojiCount('\uE50A'), 1);
+    });
+
     test('emoji with surrounding whitespace still counts as emoji-only', () {
       expect(isEmojiOnly('  😀  '), isTrue);
     });

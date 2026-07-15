@@ -17,6 +17,13 @@ class MessageCollection {
   final Map<String, MessageModel> _server = {}; // by guid
   final Map<String, MessageModel> _pending = {}; // by tempId
 
+  /// C65: server guids that replaced an optimistic pending row. The thread's
+  /// entrance animation consults this so the confirmed row of a send doesn't
+  /// animate in a second time (the optimistic bubble already did).
+  final Set<String> _reconciledServerGuids = {};
+  bool wasReconciledFromPending(String guid) =>
+      _reconciledServerGuids.contains(guid);
+
   /// Cached, sorted display list; rebuilt lazily after mutations.
   List<MessageModel>? _orderedCache;
 
@@ -82,8 +89,9 @@ class MessageCollection {
   /// Patches in place by guid and reconciles any matching optimistic row.
   void upsertServer(MessageModel m) {
     if (m.guid.isEmpty) return;
+    final isNew = !_server.containsKey(m.guid);
     _server[m.guid] = m;
-    _reconcileOne(m);
+    _reconcileOne(m, isNewRow: isNew);
     _invalidate();
   }
 
@@ -146,53 +154,162 @@ class MessageCollection {
     _invalidate();
   }
 
+  /// Replaces a pending row's model in place (e.g. the server renamed the file
+  /// during a voice conversion and reconciliation must match the new name).
+  void replacePending(String tempId, MessageModel updated) {
+    if (_pending[tempId] == null) return;
+    _pending[tempId] = updated;
+    _invalidate();
+  }
+
   /// Replaces an optimistic row with its confirmed server message.
   void confirmPending(String tempId, MessageModel server) {
-    _pending.remove(tempId);
-    upsertServer(server);
+    if (_pending.remove(tempId) != null && server.guid.isNotEmpty) {
+      _reconciledServerGuids.add(server.guid);
+    }
+    if (server.guid.isNotEmpty) _server[server.guid] = server;
+    _invalidate();
   }
 
   /// Removes a pending row entirely (e.g. before a retry re-adds it).
-  String? removePending(String tempId) {
+  MessageModel? removePending(String tempId) {
     final removed = _pending.remove(tempId);
     _invalidate();
-    return removed?.text;
+    return removed;
   }
 
   // --- Reconciliation -------------------------------------------------------
 
   void _reconcilePending() {
     if (_pending.isEmpty) return;
-    _pending.removeWhere(
-      (_, local) =>
-          _server.values.any((s) => shouldReconcileLocalWithServer(local, s)),
-    );
+    final servers = _server.values.toList(growable: false)
+      ..sort(_compareMessageTime);
+    for (final server in servers) {
+      if (_reconciledServerGuids.contains(server.guid)) continue;
+      final tempId = matchingPendingTempId(
+        _pending.values,
+        server,
+        allowAttachmentFallback: false,
+      );
+      if (tempId == null) continue;
+      _pending.remove(tempId);
+      _reconciledServerGuids.add(server.guid);
+    }
   }
 
-  void _reconcileOne(MessageModel server) {
+  void _reconcileOne(MessageModel server, {bool isNewRow = false}) {
     if (_pending.isEmpty) return;
-    _pending.removeWhere(
-      (_, local) => shouldReconcileLocalWithServer(local, server),
+    final tempId = matchingPendingTempId(
+      _pending.values,
+      server,
+      allowAttachmentFallback: isNewRow,
     );
+    if (tempId == null) return;
+    _pending.remove(tempId);
+    _reconciledServerGuids.add(server.guid);
   }
 }
 
+int _compareMessageTime(MessageModel a, MessageModel b) =>
+    (a.dateCreated ?? 0).compareTo(b.dateCreated ?? 0);
+
+/// Selects exactly one optimistic row for [server]. Exact identity matches win;
+/// a new attachment row may fall back to the closest non-failed attachment send
+/// in the confirmation window. This is deliberately one-to-one: a server row
+/// must never remove several same-name or same-size pending sends.
+String? matchingPendingTempId(
+  Iterable<MessageModel> pending,
+  MessageModel server, {
+  bool allowAttachmentFallback = true,
+}) {
+  final candidates = pending.where((m) => m.tempId != null).toList();
+  if (candidates.isEmpty) return null;
+
+  final exact = candidates
+      .where((m) => shouldReconcileLocalWithServer(m, server))
+      .toList(growable: false);
+  if (exact.isNotEmpty) return _closestPending(exact, server).tempId;
+
+  if (!allowAttachmentFallback ||
+      !server.isFromMe ||
+      _hasComparableText(server) ||
+      server.attachments.isEmpty ||
+      server.dateCreated == null) {
+    return null;
+  }
+  final fallback = candidates
+      .where((m) {
+        final at = m.dateCreated;
+        return m.isFromMe &&
+            m.hasAttachments &&
+            !_hasComparableText(m) &&
+            m.localState != LocalSendState.failed &&
+            at != null &&
+            (at - server.dateCreated!).abs() <=
+                const Duration(minutes: 5).inMilliseconds;
+      })
+      .toList(growable: false);
+  if (fallback.isEmpty) return null;
+  return _closestPending(fallback, server).tempId;
+}
+
+MessageModel _closestPending(
+  List<MessageModel> candidates,
+  MessageModel server,
+) {
+  final serverAt = server.dateCreated ?? 0;
+  candidates.sort((a, b) {
+    final byDistance = ((a.dateCreated ?? 0) - serverAt).abs().compareTo(
+      ((b.dateCreated ?? 0) - serverAt).abs(),
+    );
+    if (byDistance != 0) return byDistance;
+    return (a.dateCreated ?? 0).compareTo(b.dateCreated ?? 0);
+  });
+  return candidates.first;
+}
+
 /// True when an optimistic local send should be replaced by a server message —
-/// matched by guid, tempId, or (chat-scoped) identical text within a 2-minute
+/// matched by guid, tempId, (chat-scoped) identical text, or attachment file
+/// identity (C63 — attachment sends get no `send:match`), each within a time
 /// window. Prevents showing both a pending bubble and its confirmed server row.
 bool shouldReconcileLocalWithServer(MessageModel local, MessageModel server) {
   if (!local.isFromMe || !server.isFromMe || server.guid.isEmpty) return false;
   if (local.guid.isNotEmpty && local.guid == server.guid) return true;
   if (local.tempId != null && local.tempId == server.tempId) return true;
-  final localText = _normaliseComparableText(local.text);
-  final serverText = _normaliseComparableText(server.text);
-  if (localText.isEmpty || localText != serverText) return false;
   final localAt = local.dateCreated;
   final serverAt = server.dateCreated;
   if (localAt == null || serverAt == null) return false;
-  return (localAt - serverAt).abs() <=
-      const Duration(minutes: 2).inMilliseconds;
+  final apart = (localAt - serverAt).abs();
+  // C63: pending attachment sends (no text) reconcile by file identity; the
+  // window is wider than text because the upload + AppleScript send + sync can
+  // take a while for large files.
+  //
+  // C67: "has text" here means *visible* text. chat.db stores attachment
+  // messages with the object-replacement character (U+FFFC) in the text
+  // column and the server passes it through — treating that as a caption made
+  // every photo send fail to reconcile (two bubbles until the thread was
+  // reopened, which drops the memory-only pending row).
+  if (local.hasAttachments && !_hasComparableText(local)) {
+    return apart <= const Duration(minutes: 5).inMilliseconds &&
+        !_hasComparableText(server) &&
+        attachmentSendMatches(local, server);
+  }
+  final localText = _normaliseComparableText(local.text);
+  final serverText = _normaliseComparableText(server.text);
+  if (localText.isEmpty || localText != serverText) return false;
+  return apart <= const Duration(minutes: 2).inMilliseconds;
 }
 
-String _normaliseComparableText(String? text) =>
-    (text ?? '').trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+/// Visible-text semantics shared by every reconciliation check: strips the
+/// attachment placeholder (U+FFFC) and replacement char (U+FFFD) before
+/// trimming, so an attachment-only row is recognized as such even though its
+/// raw text column is non-empty.
+String _normaliseComparableText(String? text) => (text ?? '')
+    .replaceAll('\uFFFC', ' ')
+    .replaceAll('\uFFFD', ' ')
+    .trim()
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .toLowerCase();
+
+bool _hasComparableText(MessageModel m) =>
+    _normaliseComparableText(m.text).isNotEmpty;

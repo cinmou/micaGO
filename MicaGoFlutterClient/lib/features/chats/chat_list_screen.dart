@@ -829,13 +829,13 @@ class _ChatRow extends StatelessWidget {
   //   • within 7 days   → weekday in the app's language (e.g. Monday / 星期一)
   //   • older           → numeric date in the app's locale (e.g. 12/06/2026)
   String _formatTime(BuildContext context, int unixMs) {
-    // Use only the languageCode (en/zh): flutter_localizations loads date symbols
-    // for the active locale, and zh weekday/date glyphs match Hans/Hant.
+    // C65: pass the full language tag — the relative buckets need the script
+    // (分钟 vs 分鐘); intl date symbols resolve from the tag the same way.
     return chatTimestampLabel(
       DateTime.fromMillisecondsSinceEpoch(unixMs),
       now: DateTime.now(),
       use24h: MediaQuery.maybeOf(context)?.alwaysUse24HourFormat ?? false,
-      locale: Localizations.localeOf(context).languageCode,
+      locale: Localizations.localeOf(context).toLanguageTag(),
     );
   }
 }

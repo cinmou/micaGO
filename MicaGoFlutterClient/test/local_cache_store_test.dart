@@ -385,7 +385,7 @@ void main() {
     ]);
     expect((await store.listMessages('c1')).length, 1);
 
-    expect(await store.releaseAllHiddenMessages(), 1);
+    expect(await store.releaseHiddenMessages(['b']), 1);
     expect((await store.listMessages('c1')).length, 2);
   });
 
@@ -399,7 +399,7 @@ void main() {
     expect(await store.hiddenChatCount(), 1);
     expect((await store.listChats()).map((c) => c.guid), ['c2']);
 
-    expect(await store.releaseAllHiddenChats(), 1);
+    expect(await store.releaseHiddenChats(['c1']), 1);
     expect((await store.listChats()).length, 2);
   });
 

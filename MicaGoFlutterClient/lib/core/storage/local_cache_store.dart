@@ -259,11 +259,6 @@ ON CONFLICT(guid) DO UPDATE SET
     return results.whereType<int>().fold<int>(0, (sum, value) => sum + value);
   }
 
-  Future<int> releaseAllHiddenChats() async {
-    final chats = await hiddenChats();
-    return releaseHiddenChats(chats.map((chat) => chat.guid));
-  }
-
   /// Hides a single message on the client only (a tombstone; the server copy is
   /// untouched). Idempotent.
   Future<void> setMessageHidden(String guid, bool hidden) async {
@@ -348,11 +343,6 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     }
     final results = await batch.commit();
     return results.whereType<int>().fold<int>(0, (sum, value) => sum + value);
-  }
-
-  Future<int> releaseAllHiddenMessages() async {
-    final messages = await hiddenMessages();
-    return releaseHiddenMessages(messages.map((message) => message.guid));
   }
 
   Future<List<MessageModel>> listMessages(
