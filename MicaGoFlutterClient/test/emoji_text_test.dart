@@ -11,6 +11,15 @@ void main() {
       expect(bigEmojiFontSize('😀'), greaterThan(bigEmojiFontSize('😀😂🥰')));
     });
 
+    test('country flag emoji are emoji-only and big', () {
+      expect(isEmojiOnly('🇬🇧'), isTrue);
+      expect(isBigEmoji('🇬🇧'), isTrue);
+      expect(emojiCount('🇬🇧'), 1);
+      expect(isEmojiOnly('🇬🇧🇺🇸🇯🇵'), isTrue);
+      expect(isBigEmoji('🇬🇧🇺🇸🇯🇵'), isTrue);
+      expect(emojiCount('🇬🇧🇺🇸🇯🇵'), 3);
+    });
+
     test('emoji with surrounding whitespace still counts as emoji-only', () {
       expect(isEmojiOnly('  😀  '), isTrue);
     });
@@ -19,6 +28,7 @@ void main() {
       expect(isEmojiOnly('hi 😀'), isFalse);
       expect(isBigEmoji('great 👍'), isFalse);
       expect(isEmojiOnly('😀 lol'), isFalse);
+      expect(isEmojiOnly('flag 🇬🇧'), isFalse);
     });
 
     test('plain text is not emoji', () {
