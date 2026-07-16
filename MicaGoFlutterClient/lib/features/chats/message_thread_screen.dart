@@ -5398,6 +5398,38 @@ class _ThreadDetailsSheet extends StatefulWidget {
 
 class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
   late String _activeGuid = widget.active.guid;
+  List<MessageModel> _cachedMessages = const [];
+  bool _cacheLoadStarted = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_cacheLoadStarted) return;
+    _cacheLoadStarted = true;
+    final cache = context.read<AppController>().cache;
+    unawaited(() async {
+      final cached = <MessageModel>[];
+      for (final route in widget.merged.routes) {
+        cached.addAll(await cache.listAllMessages(route.guid));
+      }
+      if (!mounted) return;
+      setState(() => _cachedMessages = cached);
+    }());
+  }
+
+  List<MessageModel> get _detailMessages {
+    final byKey = <String, MessageModel>{};
+    for (final message in _cachedMessages) {
+      byKey[message.dedupeKey] = message;
+    }
+    // Live rows win over their cached copies (delivery state, edits, etc.).
+    for (final message in widget.messages) {
+      byKey[message.dedupeKey] = message;
+    }
+    final merged = byKey.values.toList(growable: false);
+    merged.sort((a, b) => (b.dateCreated ?? 0).compareTo(a.dateCreated ?? 0));
+    return merged;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5408,18 +5440,26 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
     final customAvatarPath = app.customAvatarPathFor(avatarKey);
     final routeGuids = widget.merged.routes.map((r) => r.guid).toList();
     final muted = app.areChatsMuted(routeGuids);
-    final allAttachments = [
-      for (final m in widget.messages)
-        for (final a in m.attachments)
-          if (!a.isOpaquePreviewPayload) a,
-    ];
+    final detailMessages = _detailMessages;
+    final attachmentsByKey = <String, AttachmentModel>{};
+    for (final message in detailMessages) {
+      for (var i = 0; i < message.attachments.length; i++) {
+        final attachment = message.attachments[i];
+        if (attachment.isOpaquePreviewPayload) continue;
+        final key = attachment.guid.isNotEmpty
+            ? attachment.guid
+            : '${message.dedupeKey}:$i';
+        attachmentsByKey.putIfAbsent(key, () => attachment);
+      }
+    }
+    final allAttachments = attachmentsByKey.values.toList(growable: false);
     // Recent photos/videos only — stickers are excluded from the media grid,
     // which shows 11 with a "show all" tile when there are more (C53).
     final mediaAll = allAttachments
         .where((a) => (a.canRenderInlineImage || a.isVideo) && !a.isStickerLike)
         .toList(growable: false);
     final media = mediaAll.take(11).toList(growable: false);
-    final images = media
+    final images = mediaAll
         .where((a) => a.canRenderInlineImage)
         .toList(growable: false);
     final files = allAttachments
@@ -5427,7 +5467,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
         .take(18)
         .toList(growable: false);
     final linkSet = <String>{};
-    for (final m in widget.messages) {
+    for (final m in detailMessages) {
       final text = displayText(m);
       final url = text == null ? null : firstUrlInText(text);
       if (url != null) linkSet.add(url);
@@ -5767,7 +5807,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
       showDragHandle: false,
       backgroundColor: Colors.transparent,
       builder: (context) => _ThreadSearchSheet(
-        messages: widget.messages,
+        messages: _detailMessages,
         resolveName: widget.resolveName,
         onSelect: (guid) {
           Navigator.of(context).pop();
@@ -6151,13 +6191,7 @@ class _DetailsMediaTileState extends State<_DetailsMediaTile> {
     if (!widget.attachment.canRenderInlineImage && !widget.attachment.isVideo) {
       return null;
     }
-    final cacheKey = widget.attachment.isVideo
-        ? 'video:${widget.attachment.previewUrl ?? widget.attachment.guid}'
-        : widget.attachment.previewUrl ?? widget.attachment.guid;
-    return MediaCache.instance.load(
-      cacheKey,
-      () => widget.api.getAttachmentPreviewBytes(widget.attachment),
-    );
+    return MediaCache.instance.attachmentPreview(widget.api, widget.attachment);
   }
 
   @override

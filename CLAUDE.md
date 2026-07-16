@@ -64,6 +64,12 @@ Three components:
   confirmation updates the existing bubble in place and preserves its loaded
   local bytes. Do not reintroduce GUID-keyed row replacement or a separate
   "suppress the second entrance" flag.
+- Details media aggregation reads every message persisted for each route from
+  SQLite, merges it with the live thread rows, and deduplicates messages and
+  attachments by identity. Thread refresh/background sync uses
+  `mergeServerPage`, so older pages fetched through pagination remain cached;
+  the details preview and full gallery therefore cover the complete locally
+  cached media history rather than only the current in-memory page.
 
 ## Participant send fallback + merged view beta + details l10n + UI polish (C68)
 

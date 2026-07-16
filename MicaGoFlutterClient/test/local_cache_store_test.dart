@@ -50,6 +50,28 @@ void main() {
     expect(messages.single.text, 'hello');
   });
 
+  test('merged pages preserve all cached message history', () async {
+    await store.replaceServerPage('chat-1', [
+      MessageModel.fromJson({
+        'guid': 'older',
+        'chatGuid': 'chat-1',
+        'text': 'older attachment',
+        'dateCreated': 10,
+      }),
+    ]);
+    await store.mergeServerPage('chat-1', [
+      MessageModel.fromJson({
+        'guid': 'newer',
+        'chatGuid': 'chat-1',
+        'text': 'newer attachment',
+        'dateCreated': 20,
+      }),
+    ]);
+
+    final messages = await store.listAllMessages('chat-1');
+    expect(messages.map((m) => m.guid), ['newer', 'older']);
+  });
+
   test('drops cached opaque URL preview payload attachments', () async {
     await store.replaceServerPage('chat-1', [
       MessageModel.fromJson({
@@ -156,8 +178,11 @@ void main() {
         lastMessagePreview: 'old',
       ),
     ]);
-    expect((await store.listChats()).single.hasUnread, isFalse,
-        reason: 'existing history starts seen');
+    expect(
+      (await store.listChats()).single.hasUnread,
+      isFalse,
+      reason: 'existing history starts seen',
+    );
 
     final ok = await store.bumpChatWithMessage(
       MessageModel.fromJson({
@@ -215,29 +240,36 @@ void main() {
     expect(chat.unreadCount, 0);
   });
 
-  test('a backgrounded message (seen:false) re-lights the dot after open', () async {
-    // Open the chat (watermark catches up to its latest), then a new message
-    // arrives while backgrounded — bumped with seen:false — must light the dot
-    // again even though the chat was "seen" moments ago (C45).
-    await store.upsertChats([
-      const ChatSummary(guid: 'c1', lastMessageAt: 20, lastMessagePreview: 'x'),
-    ]);
-    await store.markChatsSeen(['c1']);
-    expect((await store.listChats()).single.hasUnread, isFalse);
+  test(
+    'a backgrounded message (seen:false) re-lights the dot after open',
+    () async {
+      // Open the chat (watermark catches up to its latest), then a new message
+      // arrives while backgrounded — bumped with seen:false — must light the dot
+      // again even though the chat was "seen" moments ago (C45).
+      await store.upsertChats([
+        const ChatSummary(
+          guid: 'c1',
+          lastMessageAt: 20,
+          lastMessagePreview: 'x',
+        ),
+      ]);
+      await store.markChatsSeen(['c1']);
+      expect((await store.listChats()).single.hasUnread, isFalse);
 
-    await store.bumpChatWithMessage(
-      MessageModel.fromJson({
-        'guid': 'bg',
-        'chatGuid': 'c1',
-        'text': 'while backgrounded',
-        'isFromMe': false,
-        'dateCreated': 99,
-      }),
-      markUnread: true,
-      seen: false,
-    );
-    expect((await store.listChats()).single.hasUnread, isTrue);
-  });
+      await store.bumpChatWithMessage(
+        MessageModel.fromJson({
+          'guid': 'bg',
+          'chatGuid': 'c1',
+          'text': 'while backgrounded',
+          'isFromMe': false,
+          'dateCreated': 99,
+        }),
+        markUnread: true,
+        seen: false,
+      );
+      expect((await store.listChats()).single.hasUnread, isTrue);
+    },
+  );
 
   test('markChatsSeen(upTo:) clears a not-yet-bumped arrival (C47 race)', () async {
     // The open thread observes a WS/delta message and marks itself read, but the
@@ -264,8 +296,11 @@ void main() {
       markUnread: true,
       seen: false,
     );
-    expect((await store.listChats()).single.hasUnread, isFalse,
-        reason: 'upTo advanced the watermark to 80, matching the new message');
+    expect(
+      (await store.listChats()).single.hasUnread,
+      isFalse,
+      reason: 'upTo advanced the watermark to 80, matching the new message',
+    );
   });
 
   test('markChatsSeen never regresses the watermark', () async {
@@ -286,8 +321,11 @@ void main() {
       markUnread: true,
       seen: false,
     );
-    expect((await store.listChats()).single.hasUnread, isFalse,
-        reason: 'watermark stayed at 90; a 50ms message is already seen');
+    expect(
+      (await store.listChats()).single.hasUnread,
+      isFalse,
+      reason: 'watermark stayed at 90; a 50ms message is already seen',
+    );
   });
 
   test('a server refresh keeps a chat read until a newer message', () async {
@@ -303,7 +341,11 @@ void main() {
     // A genuinely newer incoming message (from the server's latestFromMe=false)
     // does light it.
     await store.upsertChats([
-      const ChatSummary(guid: 'c1', lastMessageAt: 50, lastMessagePreview: 'new'),
+      const ChatSummary(
+        guid: 'c1',
+        lastMessageAt: 50,
+        lastMessagePreview: 'new',
+      ),
     ]);
     expect((await store.listChats()).single.hasUnread, isTrue);
   });
@@ -402,7 +444,6 @@ void main() {
     expect(await store.releaseHiddenChats(['c1']), 1);
     expect((await store.listChats()).length, 2);
   });
-
 
   test(
     'server chat refresh preserves local unread when server omits it',
@@ -599,7 +640,11 @@ void main() {
     await store.upsertChats([
       const ChatSummary(guid: 'c1', lastMessageAt: 10, lastMessagePreview: 'x'),
       const ChatSummary(guid: 'c2', lastMessageAt: 20, lastMessagePreview: 'y'),
-      const ChatSummary(guid: 'plain', lastMessageAt: 5, lastMessagePreview: 'z'),
+      const ChatSummary(
+        guid: 'plain',
+        lastMessageAt: 5,
+        lastMessagePreview: 'z',
+      ),
     ]);
     await store.setChatPinned('c1', true);
     await store.setChatHidden('c2', true);
@@ -619,10 +664,7 @@ void main() {
     ]);
     await store.applyPendingChatFlags();
     // c2 is now hidden: excluded by default, present with includeHidden.
-    expect(
-      (await store.listChats()).where((c) => c.guid == 'c2'),
-      isEmpty,
-    );
+    expect((await store.listChats()).where((c) => c.guid == 'c2'), isEmpty);
     expect(
       (await store.listChats(includeHidden: true)).where((c) => c.guid == 'c2'),
       isNotEmpty,

@@ -2077,7 +2077,7 @@ class AppController extends ChangeNotifier {
         onProgress?.call('Syncing chat $i of ${chats.length}…');
         try {
           final msgs = await client.getMessages(chat.guid, limit: perChat);
-          await cache.replaceServerPage(chat.guid, msgs);
+          await cache.mergeServerPage(chat.guid, msgs);
           diag.messagesFetched += msgs.length;
           diag.messagesWritten += msgs.where((m) => !m.isDebugOnly).length;
           diag.hiddenDebugRowsIgnored += msgs

@@ -8,6 +8,7 @@ import 'package:mica_go/core/network/api_client.dart';
 import 'package:mica_go/features/chats/attachment_panel.dart';
 import 'package:mica_go/features/chats/chat_service.dart';
 import 'package:mica_go/features/chats/models/chat_summary.dart';
+import 'package:mica_go/features/chats/models/message_model.dart';
 
 void main() {
   group('C21c explicit server send capabilities (no client inference)', () {
@@ -63,9 +64,15 @@ void main() {
     });
 
     test('older server (no caps) falls back to service + setting', () {
-      final imsg = ChatSummary.fromJson({'guid': 'g', 'effectiveService': 'imessage'});
+      final imsg = ChatSummary.fromJson({
+        'guid': 'g',
+        'effectiveService': 'imessage',
+      });
       expect(imsg.canSendText(allowSmsSend: false), isTrue);
-      final sms = ChatSummary.fromJson({'guid': 'g', 'effectiveService': 'sms'});
+      final sms = ChatSummary.fromJson({
+        'guid': 'g',
+        'effectiveService': 'sms',
+      });
       expect(sms.canSendText(allowSmsSend: false), isFalse);
       expect(sms.canSendText(allowSmsSend: true), isTrue);
     });
@@ -77,7 +84,10 @@ void main() {
       expect(StagedAttachment(bytes: b(), filename: 'a.JPG').isImage, isTrue);
       expect(StagedAttachment(bytes: b(), filename: 'a.png').isImage, isTrue);
       expect(StagedAttachment(bytes: b(), filename: 'a.mp4').isImage, isFalse);
-      expect(StagedAttachment(bytes: b(), filename: 'doc.pdf').isImage, isFalse);
+      expect(
+        StagedAttachment(bytes: b(), filename: 'doc.pdf').isImage,
+        isFalse,
+      );
     });
 
     test('gallery picks carry a sourceId for multi-select toggling', () {
@@ -88,7 +98,10 @@ void main() {
       );
       expect(g.sourceId, 'asset-42');
       // Camera/file picks have no sourceId (not toggleable from the grid).
-      final f = StagedAttachment(bytes: Uint8List.fromList([1]), filename: 'd.pdf');
+      final f = StagedAttachment(
+        bytes: Uint8List.fromList([1]),
+        filename: 'd.pdf',
+      );
       expect(f.sourceId, isNull);
     });
 
@@ -112,10 +125,48 @@ void main() {
         );
       }
       expect(paths.length, 3);
-      expect(
-        paths.every((p) => p.endsWith('/send-attachment')),
-        isTrue,
+      expect(paths.every((p) => p.endsWith('/send-attachment')), isTrue);
+    });
+  });
+
+  group('attachment thumbnail transport', () {
+    test('inline thumbnail requests the bounded preview variant', () async {
+      Uri? requested;
+      final api = ApiClient(
+        baseUrl: 'http://127.0.0.1:3000',
+        token: 'tok',
+        httpClient: MockClient((request) async {
+          requested = request.url;
+          return http.Response.bytes([1, 2, 3], 200);
+        }),
       );
+      const attachment = AttachmentModel(
+        guid: 'photo-guid',
+        downloadUrl: '/api/attachments/photo-guid',
+        attachmentKind: 'image',
+      );
+
+      await api.getAttachmentThumbnailBytes(attachment);
+
+      expect(requested?.path, '/api/attachments/photo-guid/preview');
+      expect(requested?.queryParameters['thumbnail'], '1');
+    });
+
+    test('original attachment request remains separate', () async {
+      Uri? requested;
+      final api = ApiClient(
+        baseUrl: 'http://127.0.0.1:3000',
+        token: 'tok',
+        httpClient: MockClient((request) async {
+          requested = request.url;
+          return http.Response.bytes([1, 2, 3], 200);
+        }),
+      );
+
+      await api.getAttachmentBytes('photo-guid');
+
+      expect(requested?.path, '/api/attachments/photo-guid');
+      expect(requested?.query, isEmpty);
     });
   });
 }

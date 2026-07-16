@@ -1364,16 +1364,28 @@ func (h *Handlers) GetAttachmentPreview(w http.ResponseWriter, r *http.Request) 
 		writeNotFound(w, "attachment not found")
 		return
 	}
-	// Videos serve a Quick Look poster frame as their thumbnail; images that
-	// aren't web-renderable (HEIC/TIFF) or need orientation baked (JPEG) convert
-	// too. Everything else is served as-is.
+	// Inline chat media explicitly requests a bounded thumbnail. The unqualified
+	// preview route remains the high-quality display path used by the viewer:
+	// web-renderable images are served byte-for-byte, while HEIC/TIFF/JPEG and
+	// videos are rasterized with orientation baked in.
 	isVideo := store.IsVideoAttachment(meta.MimeType, meta.Uti, meta.TransferName, meta.Filename)
-	if !attachmentNeedsPreviewConversion(meta) && !isVideo {
+	isImage := store.AttachmentKind(meta.IsSticker, meta.MimeType, meta.Uti, meta.TransferName, meta.Filename) == store.AttachmentKindImage
+	thumbnail := r.URL.Query().Get("thumbnail") == "1" && (isImage || isVideo)
+	if !thumbnail && !attachmentNeedsPreviewConversion(meta) && !isVideo {
 		http.ServeFile(w, r, source)
 		return
 	}
 
-	previewPath := filepath.Join(os.TempDir(), "micago-attachment-previews", safePreviewName(guid)+".png")
+	maxDimension := 4000
+	cacheSuffix := ""
+	if thumbnail {
+		// The Flutter list never decodes wider than 900 physical pixels. A 1200px
+		// source leaves comfortable headroom for high-density displays without
+		// retaining multi-megapixel originals for every visible bubble.
+		maxDimension = 1200
+		cacheSuffix = "-thumb-1200"
+	}
+	previewPath := filepath.Join(os.TempDir(), "micago-attachment-previews", safePreviewName(guid)+cacheSuffix+".png")
 	if _, err := os.Stat(previewPath); err != nil {
 		if err := os.MkdirAll(filepath.Dir(previewPath), 0o700); err != nil {
 			h.logInternal("create attachment preview dir", err)
@@ -1382,7 +1394,7 @@ func (h *Handlers) GetAttachmentPreview(w http.ResponseWriter, r *http.Request) 
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
-		if err := renderOrientedPreview(ctx, source, previewPath); err != nil {
+		if err := renderOrientedPreview(ctx, source, previewPath, maxDimension); err != nil {
 			h.logInternal("convert attachment preview", err)
 			writeAPIError(w, http.StatusNotImplemented, "preview_unavailable", "preview conversion is not available for this attachment")
 			return
@@ -1398,9 +1410,9 @@ func (h *Handlers) GetAttachmentPreview(w http.ResponseWriter, r *http.Request) 
 // orientation tag, so an iPhone photo whose orientation is baked into EXIF (very
 // common for HEIC) renders rotated 90° — even though every other viewer shows it
 // upright. Quick Look bakes the EXIF rotation into the pixels, so the PNG is
-// already oriented correctly (verified for orientation 6 and 8). `-s 4000` caps
-// the long edge so a huge photo doesn't rasterize at full resolution.
-func renderOrientedPreview(ctx context.Context, source, destPath string) error {
+// already oriented correctly (verified for orientation 6 and 8). maxDimension
+// bounds the long edge for either the viewer preview or inline thumbnail.
+func renderOrientedPreview(ctx context.Context, source, destPath string, maxDimension int) error {
 	outDir, err := os.MkdirTemp("", "micago-ql-")
 	if err != nil {
 		return err
@@ -1408,7 +1420,7 @@ func renderOrientedPreview(ctx context.Context, source, destPath string) error {
 	defer os.RemoveAll(outDir)
 	// qlmanage exits 0 even when it can't render, so success is judged by whether
 	// it actually wrote the thumbnail (named "<basename(source)>.png").
-	if err := exec.CommandContext(ctx, "qlmanage", "-t", "-s", "4000", source, "-o", outDir).Run(); err != nil {
+	if err := exec.CommandContext(ctx, "qlmanage", "-t", "-s", strconv.Itoa(maxDimension), source, "-o", outDir).Run(); err != nil {
 		return err
 	}
 	generated := filepath.Join(outDir, filepath.Base(source)+".png")

@@ -116,14 +116,14 @@ class ThreadController extends ChangeNotifier {
         limit: _pageSize,
         offset: 0,
       );
-      await app.cache.replaceServerPage(chatGuid, primary);
+      await app.cache.mergeServerPage(chatGuid, primary);
       // C68 merged view: pull the newest page of each extra route too. Paging
       // older history stays primary-route-only in the beta.
       final fetched = [...primary];
       for (final guid in mergedGuids) {
         try {
           final page = await api.getMessages(guid, limit: _pageSize, offset: 0);
-          await app.cache.replaceServerPage(guid, page);
+          await app.cache.mergeServerPage(guid, page);
           fetched.addAll(page);
         } on ApiException {
           // A missing merged route must not break the primary thread.

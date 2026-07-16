@@ -18,9 +18,9 @@ import '../network/api_client.dart';
 /// through to disk. Sent attachments are [seed]ed directly, so the client
 /// never re-downloads a file it just uploaded.
 ///
-/// Keys are the same strings call sites always used (`previewUrl ?? guid`,
-/// plus a `full:` prefix for original bytes), encoded to safe filenames with
-/// URL-safe base64.
+/// Thumbnail, display-preview, and original bytes use distinct versioned keys,
+/// encoded to safe filenames with URL-safe base64. This prevents an old inline
+/// cache entry containing a full-resolution photo from returning to the feed.
 class MediaCache {
   MediaCache._();
   static final MediaCache instance = MediaCache._();
@@ -154,15 +154,35 @@ class MediaCache {
 
   // --- attachment-shaped helpers (the two fetch paths the app uses) ---------
 
-  /// Preview/inline bytes: same key shape call sites always used.
+  /// Bounded bytes used by message rows and media grids.
   Future<Uint8List> attachmentPreview(ApiClient api, AttachmentModel a) =>
-      load(a.previewUrl ?? a.guid, () => api.getAttachmentPreviewBytes(a));
+      load(previewMediaKey(a), () {
+        if (a.isStickerLike || a.guid.startsWith('local-')) {
+          return api.getAttachmentPreviewBytes(a);
+        }
+        return api.getAttachmentThumbnailBytes(a);
+      });
+
+  /// High-quality display bytes used only after opening the media viewer.
+  Future<Uint8List> attachmentDisplay(ApiClient api, AttachmentModel a) =>
+      load(displayMediaKey(a), () => api.getAttachmentPreviewBytes(a));
 
   /// Original attachment bytes (save/share/forward/video).
   Future<Uint8List> attachmentFull(ApiClient api, String guid) =>
       load(fullMediaKey(guid), () => api.getAttachmentBytes(guid));
 
   static String fullMediaKey(String attachmentGuid) => 'full:$attachmentGuid';
+
+  static String previewMediaKey(AttachmentModel attachment) {
+    if (attachment.guid.startsWith('local-')) return attachment.guid;
+    if (attachment.isStickerLike) {
+      return 'sticker:v1:${attachment.previewUrl ?? attachment.guid}';
+    }
+    return 'thumb:v1:${attachment.guid}';
+  }
+
+  static String displayMediaKey(AttachmentModel attachment) =>
+      'display:v1:${attachment.previewUrl ?? attachment.guid}';
 
   Future<void> _writeDisk(String key, Uint8List bytes) async {
     final file = _fileFor(key);
@@ -177,7 +197,6 @@ class MediaCache {
       // Cache write failures are non-fatal.
     }
   }
-
 }
 
 /// Pure: cache-key → safe filename (URL-safe base64, no padding). Collision-free

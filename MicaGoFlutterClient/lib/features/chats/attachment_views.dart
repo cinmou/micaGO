@@ -465,7 +465,7 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
   @override
   void initState() {
     super.initState();
-    final cacheKey = _videoPreviewCacheKey(widget.attachment);
+    final cacheKey = MediaCache.previewMediaKey(widget.attachment);
     final cached = MediaCache.instance.memoryHit(cacheKey);
     if (cached != null) {
       _bytes = cached;
@@ -474,10 +474,8 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
     }
   }
 
-  Future<Uint8List> _loadBytes() => MediaCache.instance.load(
-    _videoPreviewCacheKey(widget.attachment),
-    () => widget.api.getAttachmentPreviewBytes(widget.attachment),
-  );
+  Future<Uint8List> _loadBytes() =>
+      MediaCache.instance.attachmentPreview(widget.api, widget.attachment);
 
   @override
   Widget build(BuildContext context) {
@@ -601,9 +599,6 @@ class _VideoAttachmentState extends State<_VideoAttachment> {
     );
   }
 }
-
-String _videoPreviewCacheKey(AttachmentModel attachment) =>
-    'video:${attachment.previewUrl ?? attachment.guid}';
 
 class _VideoFallbackCard extends StatelessWidget {
   final ApiClient api;
@@ -800,7 +795,7 @@ class _StickerAttachmentState extends State<_StickerAttachment> {
   @override
   void initState() {
     super.initState();
-    final cacheKey = widget.attachment.previewUrl ?? widget.attachment.guid;
+    final cacheKey = MediaCache.previewMediaKey(widget.attachment);
     final cached = MediaCache.instance.memoryHit(cacheKey);
     if (cached != null) {
       _bytes = cached;
@@ -995,7 +990,7 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
   @override
   void initState() {
     super.initState();
-    final cacheKey = widget.attachment.previewUrl ?? widget.attachment.guid;
+    final cacheKey = MediaCache.previewMediaKey(widget.attachment);
     final cached = MediaCache.instance.memoryHit(cacheKey);
     if (cached != null) {
       _bytes = cached;

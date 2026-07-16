@@ -845,6 +845,29 @@ class ApiClient {
     return res.bodyBytes;
   }
 
+  /// A bounded preview for scrolling surfaces. The full-screen viewer keeps
+  /// using [getAttachmentPreviewBytes], which returns original bytes for
+  /// directly renderable images and an orientation-correct high-quality
+  /// rendering for Apple-only formats.
+  Future<Uint8List> getAttachmentThumbnailBytes(
+    AttachmentModel attachment,
+  ) async {
+    final path =
+        '/api/attachments/${Uri.encodeComponent(attachment.guid)}/preview';
+    final uri = _uri(path).replace(queryParameters: {'thumbnail': '1'});
+    final res = await _send(
+      () => _http
+          .get(uri, headers: {'Authorization': 'Bearer $token'})
+          .timeout(const Duration(seconds: 30)),
+    );
+    if (res.statusCode != 200) {
+      // Older backends do not understand every preview format. Preserve the
+      // previous fallback while paired versions roll forward independently.
+      return getAttachmentPreviewBytes(attachment);
+    }
+    return res.bodyBytes;
+  }
+
   /// Absolute URL for an attachment, for media players that stream by URL.
   /// Pair it with [mediaAuthHeaders] so the token travels in the header, not
   /// the URL.

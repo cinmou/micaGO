@@ -169,6 +169,7 @@ class _ZoomableImage extends StatefulWidget {
 class _ZoomableImageState extends State<_ZoomableImage>
     with SingleTickerProviderStateMixin {
   late Future<Uint8List> _future = _load();
+  bool _usingCompatibilityPreview = false;
   final TransformationController _tc = TransformationController();
   late final AnimationController _anim = AnimationController(
     vsync: this,
@@ -203,7 +204,21 @@ class _ZoomableImageState extends State<_ZoomableImage>
   }
 
   Future<Uint8List> _load() =>
-      MediaCache.instance.attachmentPreview(widget.api, widget.attachment);
+      MediaCache.instance.attachmentFull(widget.api, widget.attachment.guid);
+
+  void _useCompatibilityPreview() {
+    if (_usingCompatibilityPreview) return;
+    _usingCompatibilityPreview = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _future = MediaCache.instance.attachmentDisplay(
+          widget.api,
+          widget.attachment,
+        );
+      });
+    });
+  }
 
   // Double-tap toggles between fit and a 2.5x zoom centered on the tap point,
   // animated — the mature gallery behavior.
@@ -263,10 +278,21 @@ class _ZoomableImageState extends State<_ZoomableImage>
                 snap.data!,
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
-                errorBuilder: (_, _, _) => _ErrorBody(
-                  name: widget.attachment.displayName,
-                  onRetry: () => setState(() => _future = _load()),
-                ),
+                errorBuilder: (_, _, _) {
+                  if (!_usingCompatibilityPreview) {
+                    _useCompatibilityPreview();
+                    return const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    );
+                  }
+                  return _ErrorBody(
+                    name: widget.attachment.displayName,
+                    onRetry: () => setState(() {
+                      _usingCompatibilityPreview = false;
+                      _future = _load();
+                    }),
+                  );
+                },
               ),
             ),
           ),

@@ -323,5 +323,34 @@ void main() {
     test('full-media keys do not collide with preview keys', () {
       expect(MediaCache.fullMediaKey('g1'), isNot('g1'));
     });
+
+    test('inline and viewer media use distinct versioned cache keys', () {
+      const attachment = AttachmentModel(
+        guid: 'g1',
+        downloadUrl: '/api/attachments/g1',
+        previewUrl: '/api/attachments/g1/preview',
+        attachmentKind: 'image',
+      );
+
+      expect(MediaCache.previewMediaKey(attachment), 'thumb:v1:g1');
+      expect(
+        MediaCache.displayMediaKey(attachment),
+        'display:v1:/api/attachments/g1/preview',
+      );
+      expect(
+        MediaCache.previewMediaKey(attachment),
+        isNot(MediaCache.displayMediaKey(attachment)),
+      );
+    });
+
+    test('pending local media keeps the pinned cache key', () {
+      const attachment = AttachmentModel(
+        guid: 'local-tmp-att-1',
+        downloadUrl: '',
+        attachmentKind: 'image',
+      );
+
+      expect(MediaCache.previewMediaKey(attachment), 'local-tmp-att-1');
+    });
   });
 }

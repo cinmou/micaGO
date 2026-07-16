@@ -362,6 +362,20 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     return rows.map(_messageFromRow).toList(growable: false);
   }
 
+  /// Every locally persisted message for a chat, newest first. Details/media
+  /// aggregation uses this instead of the thread's bounded in-memory window.
+  Future<List<MessageModel>> listAllMessages(String chatGuid) async {
+    final db = await _ready();
+    final rows = await db.query(
+      'messages',
+      where:
+          'chat_guid = ? AND (guid IS NULL OR guid NOT IN (SELECT guid FROM hidden_messages))',
+      whereArgs: [chatGuid],
+      orderBy: 'date_created DESC, updated_at DESC',
+    );
+    return rows.map(_messageFromRow).toList(growable: false);
+  }
+
   Future<bool> hasMessageGuid(String guid) async {
     if (guid.isEmpty) return false;
     final db = await _ready();
@@ -386,6 +400,19 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
       where: "chat_guid = ? AND (temp_id IS NULL OR temp_id = '')",
       whereArgs: [chatGuid],
     );
+    _batchUpsertMessages(batch, chatGuid, messages);
+    await batch.commit(noResult: true);
+  }
+
+  /// Adds or updates a fetched page without dropping older cached history.
+  /// Thread refreshes use this so media fetched through pagination remains
+  /// available to the details aggregation after the next refresh.
+  Future<void> mergeServerPage(
+    String chatGuid,
+    Iterable<MessageModel> messages,
+  ) async {
+    final db = await _ready();
+    final batch = db.batch();
     _batchUpsertMessages(batch, chatGuid, messages);
     await batch.commit(noResult: true);
   }
