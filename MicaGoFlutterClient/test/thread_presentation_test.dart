@@ -583,36 +583,6 @@ void main() {
       expect(separators.single.label, contains('2024'));
     });
 
-    test(
-      'only the newest outgoing message shows a default footer timestamp',
-      () {
-        final t0 = DateTime(2024, 1, 1, 10).millisecondsSinceEpoch;
-        final items = _build([
-          _m(guid: 'a', text: 'one', isFromMe: true, dateCreated: t0),
-          _m(
-            guid: 'b',
-            text: 'two',
-            isFromMe: true,
-            dateCreated: t0 + 60 * 1000,
-          ),
-          _m(guid: 'incoming', text: 'three', dateCreated: t0 + 120 * 1000),
-        ]);
-        final msgs = items.whereType<MessageViewItem>().toList();
-        expect(
-          msgs.firstWhere((m) => m.message.guid == 'a').showTimestamp,
-          isFalse,
-        );
-        expect(
-          msgs.firstWhere((m) => m.message.guid == 'b').showTimestamp,
-          isTrue,
-        );
-        expect(
-          msgs.firstWhere((m) => m.message.guid == 'incoming').showTimestamp,
-          isFalse,
-        );
-      },
-    );
-
     test('shouldShowTimeSeparator is pure and correct', () {
       expect(shouldShowTimeSeparator(null, 100), isFalse);
       expect(shouldShowTimeSeparator(0, 30 * 60 * 1000), isFalse); // 30 min

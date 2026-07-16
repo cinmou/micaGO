@@ -157,6 +157,12 @@ Three components:
   footer can change to Sent/Delivered without recreating or reanimating the
   bubble. Pinned in `attachment_optimistic_send_test.dart` and
   `message_collection_test.dart`.
+- **C72: footer transitions** — the `_Footer` mount in `_MessageBubble` is
+  wrapped in `AnimatedSize` (220ms, aligned to the bubble's side) +
+  `AnimatedSwitcher` (160ms side-aligned fade, keyed on
+  showStatus/showTimestamp/deliveryState/isEdited), so a footer appearing on
+  the newest row / leaving the previous one eases in and the rows above glide
+  instead of jumping.
 - **Footer l10n**: `_Footer`'s Sending…/Sent/Delivered/Read, the
   "Failed — tap to retry" line, and the Edited marker now use l10n keys
   (`chat.sending/sent/delivered/read/edited/failedTapRetry`). `editedMarker`

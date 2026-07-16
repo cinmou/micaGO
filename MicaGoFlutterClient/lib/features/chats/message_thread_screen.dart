@@ -1319,7 +1319,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
           ? null
           : () => _playMessageEffect(m.sendEffect, effectKey),
       showStatus: !_active.isGroup && m.showStatus,
-      showTimestamp: !_active.isGroup && m.showTimestamp,
       timestampRevealProgress: _timestampRevealProgress,
       showBubbleTail: m.showBubbleTail,
       compactWithPrevious: m.compactWithPrevious,
@@ -2724,9 +2723,6 @@ class _MessageBubble extends StatefulWidget {
   /// Part I: whether to render the delivery-status line.
   final bool showStatus;
 
-  /// Whether the footer shows the time by default (currently the newest row).
-  /// Other bubbles expose their time through the horizontal reveal overlay.
-  final bool showTimestamp;
   final double timestampRevealProgress;
   final bool showBubbleTail;
   final bool compactWithPrevious;
@@ -2764,7 +2760,6 @@ class _MessageBubble extends StatefulWidget {
     required this.showSenderAvatar,
     required this.body,
     required this.showStatus,
-    required this.showTimestamp,
     required this.timestampRevealProgress,
     required this.showBubbleTail,
     required this.compactWithPrevious,
@@ -2875,16 +2870,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final previewUrl = bodyUrls.length == 1 ? bodyUrls.first : null;
     final hasLinkAttachment = message.attachments.any((a) => a.isLinkPreview);
     final tightTop = widget.compactWithPrevious && !widget.showSenderName;
-    final tightBottom =
-        widget.compactWithNext && !widget.showStatus && !widget.showTimestamp;
+    final tightBottom = widget.compactWithNext && !widget.showStatus;
     final bubbleTopPadding = tightTop ? 0.5 : 2.0;
     final bubbleBottomPadding = tightBottom ? 0.5 : 2.0;
     final groupOutgoingWithoutFooter =
-        widget.isGroup &&
-        fromMe &&
-        !widget.showStatus &&
-        !widget.showTimestamp &&
-        effectHint == null;
+        widget.isGroup && fromMe && !widget.showStatus && effectHint == null;
     final rowTopPadding = tightTop ? 0.5 : 3.0;
     final rowBottomPadding = groupOutgoingWithoutFooter
         ? (tightBottom ? 0.5 : 1.0)
@@ -3150,11 +3140,35 @@ class _MessageBubbleState extends State<_MessageBubble> {
           ),
         statusBubble,
         ?effectLabel,
-        _Footer(
-          message: message,
-          showStatus: widget.showStatus,
-          showTime: widget.showTimestamp,
-          onRetry: widget.onRetry,
+        // C72: the footer (Sending…/Delivered/Read, timestamps) appears on the
+        // newest outgoing row and leaves the previous one — ease both the
+        // content swap (side-aligned fade) and the row-height change (so the
+        // bubbles above glide instead of jumping when a footer vanishes).
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: fromMe ? Alignment.topRight : Alignment.topLeft,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            layoutBuilder: (current, previous) => Stack(
+              clipBehavior: Clip.none,
+              alignment: fromMe ? Alignment.centerRight : Alignment.centerLeft,
+              children: [...previous, ?current],
+            ),
+            child: KeyedSubtree(
+              key: ValueKey(
+                'footer:${widget.showStatus}:'
+                '${deliveryStateFor(message).name}:${message.isEdited}',
+              ),
+              child: _Footer(
+                message: message,
+                showStatus: widget.showStatus,
+                onRetry: widget.onRetry,
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -3747,14 +3761,10 @@ class _Footer extends StatelessWidget {
   /// Whether to render a delivery-status word (latest outgoing only, Part I).
   final bool showStatus;
 
-  /// Whether to render the timestamp in the footer. Most per-message times now
-  /// appear through the iMessage-style horizontal reveal instead.
-  final bool showTime;
   final VoidCallback onRetry;
   const _Footer({
     required this.message,
     required this.showStatus,
-    required this.showTime,
     required this.onRetry,
   });
 
@@ -3792,15 +3802,14 @@ class _Footer extends StatelessWidget {
 
     final parts = <String>[];
     final ts = message.dateCreated;
-    // Read is anchored to when this message was sent, not dateRead. Delivered
-    // intentionally has no timestamp; other latest-message states retain the
-    // compact footer time.
-    if (ts != null && state != MessageDeliveryState.delivered) {
-      final sentAt = DateTime.fromMillisecondsSinceEpoch(ts);
-      if (state == MessageDeliveryState.read && showStatus) {
+    // Read is anchored to when this message was sent, not dateRead. Other
+    // states intentionally carry no timestamp; message times remain available
+    // through separators and the horizontal reveal gesture.
+    if (state == MessageDeliveryState.read && showStatus) {
+      parts.add(strings.t('chat.read'));
+      if (ts != null) {
+        final sentAt = DateTime.fromMillisecondsSinceEpoch(ts);
         parts.add(_timeOnlyTimestampLabel(context, sentAt));
-      } else if (showTime) {
-        parts.add(_chatListTimestampLabel(context, sentAt));
       }
     }
     if (editedMarker(message) != null) parts.add(strings.t('chat.edited'));
@@ -3814,7 +3823,6 @@ class _Footer extends StatelessWidget {
           parts.add(strings.t('chat.sent'));
           break;
         case MessageDeliveryState.read:
-          parts.add(strings.t('chat.read'));
           break;
         case MessageDeliveryState.delivered:
           parts.add(strings.t('chat.delivered'));
@@ -3891,18 +3899,6 @@ String _threadTimestampLabel(BuildContext context, DateTime dt) {
       Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'en';
   final use24HourFormat = MediaQuery.alwaysUse24HourFormatOf(context);
   return threadTimestampLabel(
-    dt,
-    now: DateTime.now(),
-    use24h: use24HourFormat,
-    locale: localeTag,
-  );
-}
-
-String _chatListTimestampLabel(BuildContext context, DateTime dt) {
-  final localeTag =
-      Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'en';
-  final use24HourFormat = MediaQuery.alwaysUse24HourFormatOf(context);
-  return chatTimestampLabel(
     dt,
     now: DateTime.now(),
     use24h: use24HourFormat,

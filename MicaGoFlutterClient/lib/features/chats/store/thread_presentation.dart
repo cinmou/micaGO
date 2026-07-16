@@ -65,7 +65,6 @@ class MessageViewItem extends ThreadViewItem {
   final MessageSendEffect sendEffect;
   final MessageDeliveryState deliveryState;
   final bool showStatus; // whether to render a delivery label
-  final bool showTimestamp; // whether the footer shows the time by default
   final bool showBubbleTail; // only the last bubble in a same-side run gets one
   final bool compactWithPrevious; // tight vertical gap inside same-sender run
   final bool compactWithNext; // tight vertical gap inside same-sender run
@@ -88,7 +87,6 @@ class MessageViewItem extends ThreadViewItem {
     required this.sendEffect,
     required this.deliveryState,
     required this.showStatus,
-    required this.showTimestamp,
     required this.showBubbleTail,
     required this.compactWithPrevious,
     required this.compactWithNext,
@@ -181,15 +179,6 @@ class ThreadPresentationBuilder {
         targetLoaded: true,
         targetGuid: target.guid,
       );
-    }
-
-    // Only outgoing bubbles own footers. The newest outgoing row anchors the
-    // default footer time; incoming timestamps stay in separators/reveal UI.
-    String? lastOutgoingRowKey;
-    for (final row in rows) {
-      if (row.message.isFromMe) {
-        lastOutgoingRowKey = presentationKeyFor(row.message);
-      }
     }
 
     final items = <ThreadViewItem>[];
@@ -300,11 +289,6 @@ class ThreadPresentationBuilder {
               : sendEffectFor(m.expressiveSendStyleId),
           deliveryState: deliveryStateFor(m),
           showStatus: !isGroup && !isSystem && showStatusFor(m),
-          showTimestamp:
-              !isGroup &&
-              !isSystem &&
-              m.isFromMe &&
-              presentationKeyFor(m) == lastOutgoingRowKey,
           showBubbleTail: showTailWithBreaks,
           compactWithPrevious: compactWithPrevious,
           compactWithNext: compactWithNext,
