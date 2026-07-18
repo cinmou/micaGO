@@ -83,6 +83,29 @@ func TestDispatcherBuildsNotificationPreview(t *testing.T) {
 	}
 }
 
+func TestDispatcherUsesUnifiedAttachmentPreview(t *testing.T) {
+	placeholder := "\uFFFC"
+	event := relaydb.NotificationEvent{
+		ChatGUID:       "chat-attachment",
+		ChatIdentifier: ptr("chat@example.com"),
+		Message: store.MessageJSON{
+			GUID:                "msg-attachment",
+			Text:                &placeholder,
+			CacheHasAttachments: true,
+		},
+	}
+
+	notification := buildNotification(event, "sender_and_text")
+	if notification.Body != "[附件]" || !notification.HasAttachments {
+		t.Fatalf("expected unified attachment preview, got %+v", notification)
+	}
+
+	senderOnly := buildNotification(event, "sender")
+	if senderOnly.Body != "" || !senderOnly.HasAttachments {
+		t.Fatalf("sender-only mode leaked attachment preview: %+v", senderOnly)
+	}
+}
+
 func TestDispatcherBuildsGroupConversationNotification(t *testing.T) {
 	text := "see you there"
 	event := relaydb.NotificationEvent{
@@ -259,8 +282,8 @@ func TestDispatchUsesAttachmentPreviewWhenTextIsEmpty(t *testing.T) {
 	if len(fake.sent) != 1 {
 		t.Fatalf("expected 1 push, got %d", len(fake.sent))
 	}
-	if fake.sent[0].notification.Body != "（图片）" {
-		t.Fatalf("expected image preview label, got %q", fake.sent[0].notification.Body)
+	if fake.sent[0].notification.Body != "[附件]" {
+		t.Fatalf("expected unified attachment preview, got %q", fake.sent[0].notification.Body)
 	}
 }
 

@@ -1269,6 +1269,13 @@ func (h *Handlers) GetAttachmentPlayable(w http.ResponseWriter, r *http.Request)
 		writeNotFound(w, "attachment not found")
 		return
 	}
+	// C73: videos get a transcoded H.264 fast-start MP4. iPhone camera clips
+	// are HEVC-in-QuickTime; Android devices without an HEVC decoder can't
+	// play the raw stream, so the client falls back to this endpoint.
+	if attachmentIsVideo(meta) {
+		h.servePlayableVideo(w, r, guid, meta, source)
+		return
+	}
 	if !attachmentIsCAF(meta) {
 		h.serveAttachmentPath(w, r, meta, source)
 		return
@@ -1326,6 +1333,48 @@ func (h *Handlers) serveAttachmentPath(w http.ResponseWriter, r *http.Request, m
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	}
 	http.ServeContent(w, r, filename, stat.ModTime(), file)
+}
+
+func attachmentIsVideo(meta *store.AttachmentMeta) bool {
+	if meta == nil {
+		return false
+	}
+	return store.IsVideoAttachment(meta.MimeType, meta.Uti, meta.TransferName, meta.Filename)
+}
+
+// servePlayableVideo transcodes the attachment to an H.264 fast-start MP4 via
+// the system avconvert (cached in the temp dir) and serves it. Any transcode
+// failure falls back to the original bytes, so this endpoint is never worse
+// than the raw attachment.
+func (h *Handlers) servePlayableVideo(w http.ResponseWriter, r *http.Request, guid string, meta *store.AttachmentMeta, source string) {
+	playablePath := filepath.Join(os.TempDir(), "micago-attachment-video", safePreviewName(guid)+".mp4")
+	if _, err := os.Stat(playablePath); err != nil {
+		if err := os.MkdirAll(filepath.Dir(playablePath), 0o700); err != nil {
+			h.logInternal("create playable video dir", err)
+			h.serveAttachmentPath(w, r, meta, source)
+			return
+		}
+		// Unique temp name: concurrent requests may transcode the same guid;
+		// the rename at the end is atomic either way.
+		tmpPath := fmt.Sprintf("%s.%d.part.mp4", playablePath, time.Now().UnixNano())
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		defer cancel()
+		if err := exec.CommandContext(ctx, "avconvert", "--preset", "Preset1920x1080", "--source", source, "--output", tmpPath, "--replace").Run(); err != nil {
+			_ = os.Remove(tmpPath)
+			h.logInternal("convert playable video", err)
+			h.serveAttachmentPath(w, r, meta, source)
+			return
+		}
+		if err := os.Rename(tmpPath, playablePath); err != nil {
+			_ = os.Remove(tmpPath)
+			h.logInternal("finalize playable video", err)
+			h.serveAttachmentPath(w, r, meta, source)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": "Video.mp4"}))
+	http.ServeFile(w, r, playablePath)
 }
 
 func attachmentIsCAF(meta *store.AttachmentMeta) bool {

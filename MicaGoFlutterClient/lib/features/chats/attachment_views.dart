@@ -63,6 +63,16 @@ class AttachmentView extends StatelessWidget {
         onLongPress: override,
       );
     }
+    // A video preview URL points to its poster image, not to an image
+    // attachment. Route video before image so incomplete legacy metadata still
+    // opens the player when the filename/UTI identifies a movie.
+    if (attachment.isVideo) {
+      return _VideoAttachment(
+        api: api,
+        attachment: attachment,
+        onLongPress: override,
+      );
+    }
     if (attachment.canRenderInlineImage) {
       return _ImageAttachment(
         api: api,
@@ -81,13 +91,6 @@ class AttachmentView extends StatelessWidget {
     }
     if (attachment.isAudio) {
       return _AudioAttachment(
-        api: api,
-        attachment: attachment,
-        onLongPress: override,
-      );
-    }
-    if (attachment.isVideo) {
-      return _VideoAttachment(
         api: api,
         attachment: attachment,
         onLongPress: override,

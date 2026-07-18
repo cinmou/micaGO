@@ -856,7 +856,10 @@ class _SwipeBg extends StatelessWidget {
   Widget build(BuildContext context) {
     final left = alignment == Alignment.centerLeft;
     return Container(
-      color: color.withValues(alpha: 0.85),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(24),
+      ),
       alignment: alignment,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(

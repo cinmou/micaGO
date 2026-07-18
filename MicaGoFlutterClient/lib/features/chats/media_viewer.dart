@@ -407,18 +407,39 @@ class _FullscreenVideoState extends State<FullscreenVideo> {
           );
         }
       }
-      await controller.initialize();
-      if (!mounted) {
-        await controller.dispose();
-        return;
-      }
-      controller.addListener(_onTick);
-      await controller.play();
-      setState(() => _controller = controller);
-      _scheduleHide();
+      await _startController(controller);
     } catch (_) {
-      if (mounted) setState(() => _failed = true);
+      // C73: the direct stream failed — typically an iPhone HEVC-in-QuickTime
+      // clip on a device without an HEVC decoder (or a corrupt cached file).
+      // Retry once through the server's transcoded H.264 playable stream.
+      final recovered = await _initPlayable();
+      if (!recovered && mounted) setState(() => _failed = true);
     }
+  }
+
+  Future<bool> _initPlayable() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.api.attachmentPlayableUrl(widget.attachment.guid)),
+        httpHeaders: widget.api.mediaAuthHeaders,
+      );
+      await _startController(controller);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _startController(VideoPlayerController controller) async {
+    await controller.initialize();
+    if (!mounted) {
+      await controller.dispose();
+      return;
+    }
+    controller.addListener(_onTick);
+    await controller.play();
+    setState(() => _controller = controller);
+    _scheduleHide();
   }
 
   void _onTick() {

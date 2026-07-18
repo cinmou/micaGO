@@ -38,8 +38,19 @@ String notificationTitle(Map<String, dynamic> data) {
 /// C30: the body to show — the message preview, or null when preview is off
 /// (the title alone, e.g. just the sender, is enough).
 String? notificationBody(Map<String, dynamic> data) {
+  final previewMode = (data['previewMode'] as String?)?.trim() ?? '';
+  if (previewMode.isNotEmpty && previewMode != 'sender_and_text') return null;
+
   final body = (data['body'] as String?)?.trim() ?? '';
+  if (body.isEmpty && _pushBool(data['hasAttachments'])) {
+    return '[附件]';
+  }
   return body.isEmpty ? null : body;
+}
+
+bool _pushBool(Object? value) {
+  if (value is bool) return value;
+  return value is String && value.toLowerCase() == 'true';
 }
 
 int? notificationTimestampMs(Map<String, dynamic> data) {

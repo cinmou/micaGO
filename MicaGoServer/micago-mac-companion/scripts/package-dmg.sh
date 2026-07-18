@@ -13,7 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.65.0}"
+VERSION="${VERSION:-0.66.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED_DATA="${DERIVED_DATA:-$COMPANION_DIR/build/DerivedData}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
@@ -61,7 +61,6 @@ else
   XCODE_SIGNING_ARGS=(
     CODE_SIGN_STYLE=Manual
     CODE_SIGN_IDENTITY="$SIGN_IDENTITY"
-    "CODE_SIGN_IDENTITY[sdk=macosx*]=$SIGN_IDENTITY"
   )
   if [ -n "${APPLE_TEAM_ID:-}" ]; then
     XCODE_SIGNING_ARGS+=(DEVELOPMENT_TEAM="$APPLE_TEAM_ID")

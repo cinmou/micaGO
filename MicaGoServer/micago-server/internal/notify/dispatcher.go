@@ -330,33 +330,21 @@ func buildNotification(event relaydb.NotificationEvent, previewMode string) Noti
 		IsGroup:           event.IsGroup,
 		Handle:            handle,
 		PreviewMode:       previewMode,
+		HasAttachments:    event.Message.CacheHasAttachments || len(event.Message.Attachments) > 0,
 		CreatedAt:         time.Now().UnixMilli(),
 	}
 }
 
 func messagePreviewText(message store.MessageJSON) string {
-	if text := strings.TrimSpace(stringValue(message.Text)); text != "" {
+	text := strings.TrimSpace(stringValue(message.Text))
+	text = strings.TrimSpace(strings.NewReplacer("\uFFFC", "", "\uFFFD", "").Replace(text))
+	if text != "" {
 		return text
 	}
-	if len(message.Attachments) == 0 {
+	if len(message.Attachments) == 0 && !message.CacheHasAttachments {
 		return ""
 	}
-	a := message.Attachments[0]
-	mime := strings.TrimSpace(stringValue(a.MimeType))
-	switch {
-	case a.IsSticker || a.DisplayKind == "sticker" || a.AttachmentKind == "sticker":
-		return "（贴纸）"
-	case a.IsVoiceMessage:
-		return "（语音）"
-	case a.AttachmentKind == "image" || strings.HasPrefix(mime, "image/"):
-		return "（图片）"
-	case a.AttachmentKind == "video" || strings.HasPrefix(mime, "video/"):
-		return "（视频）"
-	case a.AttachmentKind == "audio" || strings.HasPrefix(mime, "audio/"):
-		return "（音频）"
-	default:
-		return "（文件）"
-	}
+	return "[附件]"
 }
 
 func stringValue(value *string) string {

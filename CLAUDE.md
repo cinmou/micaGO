@@ -49,6 +49,22 @@ Three components:
   guides (android-client-connection / remote-access-cloudflare / notifications-setup /
   manual-test-flow) are still English-only — the localized index marks them "(英文)".
 
+## Video playable transcode fallback (C73)
+
+- **"视频查看器坏了" root cause:** nearly every library video is iPhone-camera
+  **HEVC (`hvc1`) in QuickTime** — server serving verified healthy (200/206
+  Range, qlmanage posters fine), but Android devices without an HEVC decoder
+  fail ExoPlayer init → the error card. Fix mirrors the CAF-audio design:
+  `GET /api/attachments/{guid}/playable` now transcodes **videos** to H.264
+  fast-start MP4 via the system `avconvert --preset Preset1920x1080`
+  (`servePlayableVideo`, cached in temp, unique `.part` + atomic rename,
+  3-min timeout; any failure falls back to the raw bytes — never worse).
+  Verified live on a real HEVC .mov → `avc1` + moov-at-front. The client's
+  `FullscreenVideo._init` retries once via `attachmentPlayableUrl` when the
+  direct stream (cached file or raw) fails, so capable devices keep original
+  quality and incapable ones self-heal. **Requires rebuilding the bundled
+  backend.**
+
 ## Media loading skeleton — one-bubble placeholder → image (C69, client-only)
 
 - Image, video, and sticker memory misses show one stable rounded

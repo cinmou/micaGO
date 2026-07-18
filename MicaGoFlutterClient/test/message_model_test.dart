@@ -238,5 +238,37 @@ void main() {
       expect(a.canRenderInlineImage, isFalse);
       expect(a.displayKind, 'image_needs_preview');
     });
+
+    test(
+      'MOV poster preview remains a video with incomplete legacy metadata',
+      () {
+        final a = AttachmentModel.fromJson({
+          'guid': 'mov',
+          'transferName': 'IMG_0042.MOV',
+          'mimeType': 'image/jpeg',
+          'originalMimeType': 'video/quicktime',
+          'attachmentKind': 'image',
+          'previewUrl': '/api/attachments/mov/preview',
+          'downloadUrl': '/api/attachments/mov',
+        });
+
+        expect(a.isVideo, isTrue);
+        expect(a.isImage, isFalse);
+        expect(a.canRenderInlineImage, isFalse);
+      },
+    );
+
+    test('QuickTime UTI identifies extensionless legacy videos', () {
+      final a = AttachmentModel.fromJson({
+        'guid': 'mov',
+        'filename': '/Library/Messages/Attachments/legacy-file',
+        'uti': 'com.apple.quicktime-movie',
+        'previewUrl': '/api/attachments/mov/preview',
+        'downloadUrl': '/api/attachments/mov',
+      });
+
+      expect(a.isVideo, isTrue);
+      expect(a.canRenderInlineImage, isFalse);
+    });
   });
 }

@@ -76,7 +76,7 @@ func TestFCMMessagePayloadIsDataOnly(t *testing.T) {
 		Type: "message:new", MessageGUID: "g1", ChatGUID: "c1",
 		Title: "Jane", Body: "hi", SenderName: "Jane",
 		ConversationTitle: "Jane", Handle: "+15550001",
-		PreviewMode: "sender_and_text", CreatedAt: 123,
+		PreviewMode: "sender_and_text", HasAttachments: true, CreatedAt: 123,
 	}
 	msg := fcmMessage("dev-token", n, 24*time.Hour)
 	inner := msg["message"].(map[string]any)
@@ -98,6 +98,9 @@ func TestFCMMessagePayloadIsDataOnly(t *testing.T) {
 	if data["senderName"] != "Jane" || data["conversationTitle"] != "Jane" || data["isGroup"] != "false" {
 		t.Fatalf("unexpected conversation fields: %+v", data)
 	}
+	if data["hasAttachments"] != "true" {
+		t.Fatalf("expected attachment metadata in payload, got %+v", data)
+	}
 	android := inner["android"].(map[string]any)
 	if android["priority"] != "HIGH" {
 		t.Fatalf("expected high-priority data push, got %v", android["priority"])
@@ -112,7 +115,7 @@ func TestFCMMessagePayloadIsDataOnly(t *testing.T) {
 	// contact book, no message history.
 	for k := range data {
 		switch k {
-		case "type", "messageGuid", "chatGuid", "sourceRowId", "title", "body", "senderName", "conversationTitle", "isGroup", "handle", "previewMode", "createdAt":
+		case "type", "messageGuid", "chatGuid", "sourceRowId", "title", "body", "senderName", "conversationTitle", "isGroup", "handle", "previewMode", "hasAttachments", "createdAt":
 		default:
 			t.Fatalf("unexpected data key %q", k)
 		}

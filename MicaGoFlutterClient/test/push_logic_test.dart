@@ -78,6 +78,25 @@ void main() {
       expect(notificationBody({}), isNull);
     });
 
+    test('attachments use the same compact preview as the chat list', () {
+      expect(
+        notificationBody({
+          'body': '',
+          'hasAttachments': 'true',
+          'previewMode': 'sender_and_text',
+        }),
+        '[附件]',
+      );
+      expect(
+        notificationBody({
+          'body': '',
+          'hasAttachments': 'true',
+          'previewMode': 'sender',
+        }),
+        isNull,
+      );
+    });
+
     test('timestamp accepts FCM string data', () {
       expect(
         notificationTimestampMs({'createdAt': '1782861203813'}),

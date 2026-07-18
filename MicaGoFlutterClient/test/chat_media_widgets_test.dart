@@ -97,6 +97,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a legacy MOV with an image poster still renders as video', (
+    tester,
+  ) async {
+    final videoApi = ApiClient(
+      baseUrl: 'http://localhost:0',
+      token: 't',
+      httpClient: MockClient((_) async => http.Response.bytes(_png1x1, 200)),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AttachmentView(
+            api: videoApi,
+            attachment: const AttachmentModel(
+              guid: 'legacy-mov',
+              downloadUrl: '/api/attachments/legacy-mov',
+              transferName: 'IMG_0042.MOV',
+              mimeType: 'image/jpeg',
+              originalMimeType: 'video/quicktime',
+              attachmentKind: 'image',
+              previewUrl: '/api/attachments/legacy-mov/preview',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('loading media never renders a second progress bubble', (
     tester,
   ) async {

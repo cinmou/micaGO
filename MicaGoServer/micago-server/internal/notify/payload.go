@@ -19,5 +19,8 @@ type Notification struct {
 	// on-device address book — so a push never shows a GUID or an empty title.
 	Handle      string `json:"handle"`
 	PreviewMode string `json:"previewMode"`
-	CreatedAt   int64  `json:"createdAt"`
+	// HasAttachments lets the client render the shared attachment placeholder
+	// when the notification body is intentionally empty.
+	HasAttachments bool  `json:"hasAttachments"`
+	CreatedAt      int64 `json:"createdAt"`
 }
