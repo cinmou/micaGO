@@ -414,6 +414,24 @@ h3 {
   border-radius: 28px;
 }
 
+/* Landscape rows (Tablet / macOS): three side-by-side shots were too small to
+   read — show them as a horizontally scrollable strip of large images with
+   snap points instead. */
+.screenshot-grid-landscape {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: min(720px, 86%);
+  justify-content: start;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 4px 4px 18px;
+  scrollbar-width: thin;
+}
+
+.screenshot-grid-landscape img {
+  scroll-snap-align: center;
+}
+
 .steps-section {
   padding: 8px 0 80px;
 }

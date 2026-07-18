@@ -41,13 +41,15 @@ micaGO 仍处在测试阶段。它会读取 macOS「信息」的内部数据,并
 |:---:|:---:|:---:|
 | <img src="docs/assets/Android%201.png" alt="安卓会话列表" width="240" /> | <img src="docs/assets/Android%202.png" alt="安卓设置界面" width="240" /> | <img src="docs/assets/Android%203.png" alt="安卓聊天界面" width="240" /> |
 
-| 平板客户端 | 平板客户端 | 平板客户端 |
-|:---:|:---:|:---:|
-| <img src="docs/assets/Pad%201.png" alt="平板分栏界面" width="360" /> | <img src="docs/assets/Pad%202.png" alt="平板聊天界面" width="360" /> | <img src="docs/assets/Pad%203.png" alt="平板设置界面" width="360" /> |
+| 平板客户端 | 平板客户端 |
+|:---:|:---:|
+| <img src="docs/assets/Pad%201.png" alt="平板分栏界面" width="480" /> | <img src="docs/assets/Pad%202.png" alt="平板聊天界面" width="480" /> |
+| <img src="docs/assets/Pad%203.png" alt="平板设置界面" width="480" /> | |
 
-| Mac 伴侣应用 | Mac 伴侣应用 | Mac 伴侣应用 |
-|:---:|:---:|:---:|
-| <img src="docs/assets/Companion1.png" alt="Mac 伴侣应用仪表盘" width="360" /> | <img src="docs/assets/Companion2.png" alt="Mac 伴侣应用配对界面" width="360" /> | <img src="docs/assets/Companion3.png" alt="Mac 伴侣应用设置界面" width="360" /> |
+| Mac 伴侣应用 | Mac 伴侣应用 |
+|:---:|:---:|
+| <img src="docs/assets/Companion1.png" alt="Mac 伴侣应用仪表盘" width="480" /> | <img src="docs/assets/Companion2.png" alt="Mac 伴侣应用配对界面" width="480" /> |
+| <img src="docs/assets/Companion3.png" alt="Mac 伴侣应用设置界面" width="480" /> | |
 
 ---
 

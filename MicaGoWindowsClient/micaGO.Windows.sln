@@ -1,0 +1,54 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "micaGO.App", "src\micaGO.App\micaGO.App.csproj", "{7B840EF2-B6ED-4B48-93AB-A407F02923C0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "micaGO.Core", "src\micaGO.Core\micaGO.Core.csproj", "{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "micaGO.Infrastructure", "src\micaGO.Infrastructure\micaGO.Infrastructure.csproj", "{78DA4F25-78D3-426E-A056-53001DD49570}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "micaGO.Core.ContractTests", "tests\micaGO.Core.ContractTests\micaGO.Core.ContractTests.csproj", "{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM64 = Debug|ARM64
+		Debug|x64 = Debug|x64
+		Release|ARM64 = Release|ARM64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Debug|ARM64.Build.0 = Debug|ARM64
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Debug|x64.ActiveCfg = Debug|x64
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Debug|x64.Build.0 = Debug|x64
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Release|ARM64.ActiveCfg = Release|ARM64
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Release|ARM64.Build.0 = Release|ARM64
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Release|x64.ActiveCfg = Release|x64
+		{7B840EF2-B6ED-4B48-93AB-A407F02923C0}.Release|x64.Build.0 = Release|x64
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Debug|x64.Build.0 = Debug|Any CPU
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Release|ARM64.Build.0 = Release|Any CPU
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Release|x64.ActiveCfg = Release|Any CPU
+		{5BC65D75-0753-455C-8D4F-7EAFB01F91E9}.Release|x64.Build.0 = Release|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Debug|x64.Build.0 = Debug|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Release|ARM64.Build.0 = Release|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Release|x64.ActiveCfg = Release|Any CPU
+		{78DA4F25-78D3-426E-A056-53001DD49570}.Release|x64.Build.0 = Release|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Debug|x64.Build.0 = Debug|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Release|ARM64.Build.0 = Release|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Release|x64.ActiveCfg = Release|Any CPU
+		{44B7B7B2-6C5D-49B7-92FB-B77A64122F26}.Release|x64.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
