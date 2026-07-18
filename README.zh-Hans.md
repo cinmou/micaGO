@@ -35,6 +35,20 @@ Wi‑Fi(或你自行控制的可选公网地址)与之配对。你的数据始�
 micaGO 仍处在测试阶段。它会读取 macOS「信息」的内部数据,并需要「完全磁盘访问权限」。
 在依赖它之前,请先阅读 [安全模型](#安全模型) 与 [局限性](#局限性)。micaGO 是独立项目。
 
+## 应用截图
+
+| 安卓客户端 | 安卓客户端 | 安卓客户端 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Android%201.png" alt="安卓会话列表" width="240" /> | <img src="docs/assets/Android%202.png" alt="安卓设置界面" width="240" /> | <img src="docs/assets/Android%203.png" alt="安卓聊天界面" width="240" /> |
+
+| 平板客户端 | 平板客户端 | 平板客户端 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Pad%201.png" alt="平板分栏界面" width="360" /> | <img src="docs/assets/Pad%202.png" alt="平板聊天界面" width="360" /> | <img src="docs/assets/Pad%203.png" alt="平板设置界面" width="360" /> |
+
+| Mac 伴侣应用 | Mac 伴侣应用 | Mac 伴侣应用 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Companion1.png" alt="Mac 伴侣应用仪表盘" width="360" /> | <img src="docs/assets/Companion2.png" alt="Mac 伴侣应用配对界面" width="360" /> | <img src="docs/assets/Companion3.png" alt="Mac 伴侣应用设置界面" width="360" /> |
+
 ---
 
 ## ✅ 系统要求

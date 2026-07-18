@@ -35,6 +35,20 @@ micaGO 讓你 **自己的** Android 手機,透過你 **自己的** Mac,收發你
 micaGO 仍處在測試階段。它會讀取 macOS「訊息」的內部資料,並需要「完全取用磁碟」權限。
 在依賴它之前,請先閱讀 [安全模型](#-安全模型) 與 [限制](#-限制)。micaGO 是獨立專案。
 
+## 應用程式截圖
+
+| Android 用戶端 | Android 用戶端 | Android 用戶端 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Android%201.png" alt="Android 對話列表" width="240" /> | <img src="docs/assets/Android%202.png" alt="Android 設定畫面" width="240" /> | <img src="docs/assets/Android%203.png" alt="Android 對話畫面" width="240" /> |
+
+| 平板用戶端 | 平板用戶端 | 平板用戶端 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Pad%201.png" alt="平板分割畫面" width="360" /> | <img src="docs/assets/Pad%202.png" alt="平板對話畫面" width="360" /> | <img src="docs/assets/Pad%203.png" alt="平板設定畫面" width="360" /> |
+
+| Mac 伴隨程式 | Mac 伴隨程式 | Mac 伴隨程式 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Companion1.png" alt="Mac 伴隨程式儀表板" width="360" /> | <img src="docs/assets/Companion2.png" alt="Mac 伴隨程式配對畫面" width="360" /> | <img src="docs/assets/Companion3.png" alt="Mac 伴隨程式設定畫面" width="360" /> |
+
 ---
 
 ## ✅ 系統需求

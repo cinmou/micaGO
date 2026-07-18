@@ -39,6 +39,20 @@ Access, so read the [security model](#security-model) and
 [limitations](#limitations) before relying on it. micaGO is an independent
 project.
 
+## Screenshots
+
+| Android | Android | Android |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Android%201.png" alt="Android conversation list" width="240" /> | <img src="docs/assets/Android%202.png" alt="Android settings" width="240" /> | <img src="docs/assets/Android%203.png" alt="Android message thread" width="240" /> |
+
+| Tablet | Tablet | Tablet |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Pad%201.png" alt="Tablet split view" width="360" /> | <img src="docs/assets/Pad%202.png" alt="Tablet message thread" width="360" /> | <img src="docs/assets/Pad%203.png" alt="Tablet settings" width="360" /> |
+
+| Mac Companion | Mac Companion | Mac Companion |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Companion1.png" alt="Mac Companion dashboard" width="360" /> | <img src="docs/assets/Companion2.png" alt="Mac Companion pairing" width="360" /> | <img src="docs/assets/Companion3.png" alt="Mac Companion settings" width="360" /> |
+
 ---
 
 ## ✅ Requirements
