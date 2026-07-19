@@ -7,73 +7,61 @@
             <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="#FFF7F7F7" />
             <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="#F7FFFFFF" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFFFFFFF" />
-            <SolidColorBrush x:Key="MicaGoOutgoingMessageBrush" Color="#FFE8F2FA" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
-            <SolidColorBrush x:Key="MicaGoStrongStrokeBrush" Color="#20000000" />
-            <SolidColorBrush x:Key="MicaGoHoverBrush" Color="#09000000" />
-            <SolidColorBrush x:Key="MicaGoPressedBrush" Color="#12000000" />
-            <SolidColorBrush x:Key="MicaGoSelectedBrush" Color="#09000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="#FF171717" />
             <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="#F72C2C2C" />
-            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FF242424" />
-            <SolidColorBrush x:Key="MicaGoOutgoingMessageBrush" Color="#FF263E52" />
+            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FF2C2C2E" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FF252525" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#16FFFFFF" />
-            <SolidColorBrush x:Key="MicaGoStrongStrokeBrush" Color="#28FFFFFF" />
-            <SolidColorBrush x:Key="MicaGoHoverBrush" Color="#0AFFFFFF" />
-            <SolidColorBrush x:Key="MicaGoPressedBrush" Color="#12FFFFFF" />
-            <SolidColorBrush x:Key="MicaGoSelectedBrush" Color="#0FFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
             <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="{ThemeResource SystemColorWindowColor}" />
-            <SolidColorBrush x:Key="MicaGoOutgoingMessageBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-            <SolidColorBrush x:Key="MicaGoStrongStrokeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-            <SolidColorBrush x:Key="MicaGoHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-            <SolidColorBrush x:Key="MicaGoPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-            <SolidColorBrush x:Key="MicaGoSelectedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
             <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="#FFF7F7F7" />
             <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="#F7FFFFFF" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFFFFFFF" />
-            <SolidColorBrush x:Key="MicaGoOutgoingMessageBrush" Color="#FFE8F2FA" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
-            <SolidColorBrush x:Key="MicaGoStrongStrokeBrush" Color="#20000000" />
-            <SolidColorBrush x:Key="MicaGoHoverBrush" Color="#09000000" />
-            <SolidColorBrush x:Key="MicaGoPressedBrush" Color="#12000000" />
-            <SolidColorBrush x:Key="MicaGoSelectedBrush" Color="#09000000" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
-
-    <Color x:Key="MicaGoAccentColor">#1877D2</Color>
-    <SolidColorBrush x:Key="MicaGoAccentBrush" Color="{StaticResource MicaGoAccentColor}" />
-
-    <CornerRadius x:Key="MicaGoControlCornerRadius">10</CornerRadius>
-    <CornerRadius x:Key="MicaGoPanelCornerRadius">14</CornerRadius>
-    <CornerRadius x:Key="MicaGoMessageCornerRadius">16</CornerRadius>
+    <CornerRadius x:Key="MicaGoCardCornerRadius">4</CornerRadius>
 
     <Style x:Key="MicaGoIconButtonStyle" TargetType="Button">
-        <Setter Property="Width" Value="40" />
-        <Setter Property="Height" Value="40" />
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Windows 11 Settings-style card: icon | title + description | control. -->
+    <Style x:Key="MicaGoSettingsCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource MicaGoCardCornerRadius}" />
+        <Setter Property="Padding" Value="16,12" />
+        <Setter Property="MinHeight" Value="64" />
+    </Style>
+
+    <Style x:Key="MicaGoSettingsHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+        <Setter Property="Margin" Value="1,16,0,4" />
     </Style>
 
     <Style x:Key="MicaGoChatListStyle" TargetType="ListViewItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="Margin" Value="8,2" />
-        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Margin" Value="8,1" />
+        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
         <Setter Property="MinHeight" Value="64" />
         <Setter Property="UseSystemFocusVisuals" Value="True" />
     </Style>
@@ -82,6 +70,7 @@
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Margin" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="IsTabStop" Value="False" />
     </Style>

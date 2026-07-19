@@ -2,146 +2,219 @@
     x:Class="MicaGo.App.Views.SettingsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Styled after the Windows 11 Settings app: a large page title and one
+         card per setting (icon | title + description | trailing control). -->
     <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
         <Grid.RowDefinitions>
-            <RowDefinition Height="64" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Padding="8,6,16,6">
+        <Grid MaxWidth="1000" Padding="36,24,36,8" HorizontalAlignment="Stretch">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="40" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <Button Style="{StaticResource MicaGoIconButtonStyle}"
+            <Button Margin="0,0,8,0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MicaGoIconButtonStyle}"
                     ToolTipService.ToolTip="Back"
                     Click="BackButton_Click">
-                <FontIcon Glyph="&#xE72B;" FontSize="16" />
+                <FontIcon FontSize="16" Glyph="&#xE72B;" />
             </Button>
             <TextBlock x:Name="PageTitle"
                        Grid.Column="1"
-                       Margin="10,0,0,0"
                        VerticalAlignment="Center"
-                       FontSize="20"
-                       FontWeight="SemiBold"
+                       Style="{StaticResource TitleTextBlockStyle}"
                        Text="General" />
         </Grid>
 
         <ScrollViewer Grid.Row="1">
-            <Grid MaxWidth="760" Margin="24,12,24,32" HorizontalAlignment="Stretch">
-                <StackPanel x:Name="GeneralSection" Spacing="12">
-                    <TextBlock x:Name="ConnectionHeader" FontWeight="SemiBold" Text="Connection" />
-                    <Border Padding="16"
-                            Background="{ThemeResource MicaGoContactBarBrush}"
-                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8">
-                        <Grid>
+            <Grid MaxWidth="1000" Margin="36,0,36,40" HorizontalAlignment="Stretch">
+
+                <StackPanel x:Name="GeneralSection" Spacing="4">
+                    <TextBlock x:Name="ConnectionHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Connection" />
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="3">
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE968;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                 <TextBlock x:Name="ConnectionTitle" Text="micaGO server" />
                                 <TextBlock x:Name="ConnectionSubtitle"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            FontSize="12"
-                                           Text="Not connected" />
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="Not connected"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
                             <Button x:Name="DisconnectButton"
-                                    Grid.Column="1"
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
                                     Content="Disconnect"
                                     Click="DisconnectButton_Click" />
                         </Grid>
                     </Border>
 
-                    <TextBlock x:Name="BehaviorHeader" Margin="0,8,0,0" FontWeight="SemiBold" Text="Windows behavior" />
-                    <Border Padding="16"
-                            Background="{ThemeResource MicaGoContactBarBrush}"
-                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8">
-                        <StackPanel Spacing="10">
-                            <ToggleSwitch x:Name="NotificationToggle" Header="Show notifications" Toggled="NotificationToggle_Toggled" />
-                            <TextBlock x:Name="NotificationLabel" Visibility="Collapsed" />
-                        </StackPanel>
+                    <TextBlock x:Name="BehaviorHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Notifications" />
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEA8F;" />
+                            <TextBlock x:Name="NotificationLabel"
+                                       Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Text="Show new-message notifications" />
+                            <ToggleSwitch x:Name="NotificationToggle"
+                                          Grid.Column="2"
+                                          MinWidth="0"
+                                          VerticalAlignment="Center"
+                                          OffContent=""
+                                          OnContent=""
+                                          Toggled="NotificationToggle_Toggled" />
+                        </Grid>
                     </Border>
 
-                    <TextBlock x:Name="AppearanceHeader" Margin="0,8,0,0" FontWeight="SemiBold" Text="Appearance" />
-                    <Border Padding="16"
-                            Background="{ThemeResource MicaGoContactBarBrush}"
-                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8">
-                        <StackPanel Spacing="8">
-                            <TextBlock x:Name="ThemeLabel" Text="Theme" />
-                            <ComboBox x:Name="ThemePicker" HorizontalAlignment="Stretch" SelectionChanged="ThemePicker_SelectionChanged">
+                    <TextBlock x:Name="AppearanceHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Appearance" />
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE790;" />
+                            <TextBlock x:Name="ThemeLabel"
+                                       Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Text="Theme" />
+                            <ComboBox x:Name="ThemePicker"
+                                      Grid.Column="2"
+                                      MinWidth="180"
+                                      VerticalAlignment="Center"
+                                      SelectionChanged="ThemePicker_SelectionChanged">
                                 <ComboBoxItem Content="System" />
                                 <ComboBoxItem Content="Light" />
                                 <ComboBoxItem Content="Dark" />
                             </ComboBox>
-                            <TextBlock x:Name="LanguageLabel" Margin="0,6,0,0" Text="Language" />
-                            <ComboBox x:Name="LanguagePicker" HorizontalAlignment="Stretch" SelectionChanged="LanguagePicker_SelectionChanged">
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xF2B7;" />
+                            <TextBlock x:Name="LanguageLabel"
+                                       Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Text="Language" />
+                            <ComboBox x:Name="LanguagePicker"
+                                      Grid.Column="2"
+                                      MinWidth="180"
+                                      VerticalAlignment="Center"
+                                      SelectionChanged="LanguagePicker_SelectionChanged">
                                 <ComboBoxItem Content="System" />
                                 <ComboBoxItem Content="English" />
                                 <ComboBoxItem Content="简体中文" />
                                 <ComboBoxItem Content="繁體中文" />
                             </ComboBox>
-                        </StackPanel>
+                        </Grid>
                     </Border>
                 </StackPanel>
 
-                <StackPanel x:Name="ContactsSection" Spacing="12" Visibility="Collapsed">
-                    <TextBlock x:Name="ContactsHeader" FontWeight="SemiBold" Text="Google Contacts" />
-                    <Border Padding="16"
-                            Background="{ThemeResource MicaGoContactBarBrush}"
-                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8">
-                        <StackPanel Spacing="10">
-                            <TextBlock x:Name="ContactsHint" TextWrapping="Wrap" />
+                <StackPanel x:Name="ContactsSection" Spacing="4" Visibility="Collapsed">
+                    <TextBlock x:Name="ContactsHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Contacts" />
+                    <TextBlock x:Name="ContactsHint"
+                               Margin="1,0,0,8"
+                               FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" />
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEDE1;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="ImportCsvLabel" Text="Import contacts from CSV" />
+                                <TextBlock x:Name="CsvImportStatus"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
                             <Button x:Name="ImportCsvButton"
-                                    HorizontalAlignment="Left"
-                                    Click="ImportCsvButton_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Import" />
-                                    <TextBlock x:Name="ImportCsvLabel" Text="Import contacts from CSV" />
-                                </StackPanel>
-                            </Button>
-                            <TextBlock x:Name="CsvImportStatus"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       TextWrapping="Wrap" />
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    Content="Browse…"
+                                    Click="ImportCsvButton_Click" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE77B;" />
+                                <TextBlock VerticalAlignment="Center" Text="Google Contacts" />
+                            </Grid>
                             <TextBox x:Name="GoogleClientId" PlaceholderText="OAuth desktop client ID" />
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button x:Name="GoogleSignInButton" Content="Sign in" Click="GoogleSignInButton_Click" />
                                 <Button x:Name="GoogleSyncButton" Content="Sync" Click="GoogleSyncButton_Click" />
                                 <Button x:Name="GoogleSignOutButton" Content="Sign out" Click="GoogleSignOutButton_Click" />
                             </StackPanel>
-                            <TextBlock x:Name="GoogleStatus" TextWrapping="Wrap" />
+                            <TextBlock x:Name="GoogleStatus"
+                                       FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
 
-                <StackPanel x:Name="StorageSection" Spacing="12" Visibility="Collapsed">
-                    <TextBlock x:Name="StorageHeader" FontWeight="SemiBold" Text="Storage" />
-                    <Border Padding="16"
-                            Background="{ThemeResource MicaGoContactBarBrush}"
-                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8">
-                        <Grid>
+                <StackPanel x:Name="StorageSection" Spacing="4" Visibility="Collapsed">
+                    <TextBlock x:Name="StorageHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Storage" />
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="3">
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEDA2;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                 <TextBlock Text="Media and message cache" />
-                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                <TextBlock x:Name="ClearCacheHint"
                                            FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            Text="Remove locally cached data from this PC." />
                             </StackPanel>
                             <Button x:Name="ClearCacheButton"
-                                    Grid.Column="1"
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
                                     Content="Clear cache"
                                     Click="ClearCacheButton_Click" />
                         </Grid>

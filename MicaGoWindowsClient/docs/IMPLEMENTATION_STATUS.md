@@ -44,3 +44,28 @@
 - Credential Manager 使用 Win32 通用凭据，不是 MSIX 身份下的 `PasswordVault`；转 MSIX 时需要决定是否迁移到 Credential Locker，并提供一次性迁移。
 - 媒体缓存已落盘且可从设置清理；后续需加入内存 LRU 与解码尺寸限制，避免媒体密集会话占用过高。
 
+## UI 重构（W-UI1，Windows 待验证）
+
+- `MessageBubble` 全量重写为确定性绑定（每次 DataContext 变更全量重置，弃用 VisualState，杜绝容器复用串样式）。渲染分层对齐 Flutter 端：群聊发送者名在气泡上方、送达 footer 与 “Sent with …” 效果标签在气泡下方、回复预览块在气泡上方；媒体永远是独立于文字气泡的无框块（图+文=两个视觉兄弟，对应 Flutter C50）；大 emoji（≤3，84/64/52px）与纯贴纸消息去掉气泡；反应 chip 叠在气泡上角（发出→左上，接收→右上）；每个附件单独渲染（此前只渲染第一个）：图片/视频用 Rectangle+ImageBrush 得到真圆角裁剪并按位图纵横比在 320×306 内定尺寸、视频带播放角标、语音/音频/文件/位置/链接是圆形图标卡片；上传中在气泡上叠进度环+压暗，失败叠红色“未送达”徽标（附件消息）；气泡 ToolTip 显示完整时间。外发气泡使用系统强调色（`AccentFillColorDefaultBrush`+`TextOnAccentFillColorPrimaryBrush`），跟随 Windows 个性化设置。
+- Shell：会话行改为 `PersonPicture`（自动首字母+联系人头像）+ 静音/置顶图标 + 强调色未读 pill（99+ 截断）；会话头部去掉无功能的返回键，改 `PersonPicture` 头像；设置入口从标题栏移到侧栏搜索框旁（标题栏只留标题与拖拽区）；发送键改为强调色圆形按钮。`Ui.cs` 提供 x:Bind 函数（头像 ImageSource、可见性、计数文案）。
+- 设置页与会话详情页重排为 Windows 11 设置卡片风格：`TitleTextBlockStyle` 页标题 + `MicaGoSettingsCardStyle`（CardBackground/CardStroke、圆角 4、图标|标题+描述|尾部控件）逐项成卡；详情页含 hero 头像块、静音/置顶卡、参与者卡、圆角媒体网格（Rectangle+ImageBrush，绑定 `PreviewBrush`）。
+- 主题：删除未用的自定义笔刷（含硬编码 accent）；新增设置卡样式与 header 样式。以上全部**未经 Windows 编译验证**，需在 Windows 上跑一次 Debug x64。
+
+## 连接持久化 + 独立配对窗口（W-UI2，Windows 待验证）
+
+- **每次启动都要重新配对的根因**：`ConnectionPage_Loaded` 只显示"粘贴 JSON"提示，`RestoreConnectionAsync()` 是从未被调用的死代码——`ConnectionManager.TryRestoreAsync`（连接文件 + Credential Manager token + 线路探测）一直存在但没接线。现在页面加载即静默恢复（8s 超时），成功直接进主窗口。
+- **配对改为独立窗口** `ConnectionWindow`（640×560 DPI 缩放、不可调整大小/最大化、Mica Base、自定义标题栏）。`App` 负责窗口编排：启动先开配对窗口（兼作启动画面，自动恢复成功后换主窗口）；设置页 Disconnect → 关主窗口开配对窗口；`_switchingWindows` 标志保证只有用户关掉最后一个窗口时才 `AppServices.Dispose()`。`MainWindow` 现在只承载 `ShellPage`，`Closed` 时调 `ShellPage.ShutdownAsync()`（停 timer + DisposeAsync ViewModel，终止 WS 重连循环）。
+- **配对卡片去嵌套**：页面背景透明，只剩一张 `Background=Transparent` 的卡片直接透出窗口 Mica（CardStroke 描边），Connect 强调色按钮移到卡片右上角；文案全量本地化（`conn*` 键 ×3 语言）。
+
+## 气泡显示逻辑补全（W-UI3，Windows 待验证）
+
+对照 Flutter 端补上此前缺失的显示项（均在 `MessageBubble` + `ShellPage`）：
+
+- **回复跳转**：点回复预览块 → 静态事件 `ReplyJumpRequested`（`ThreadPresentation.NormalizeTarget` 公开化）→ ShellPage `ScrollIntoView` + 容器透明度闪烁两次。
+- **位置卡可点**：下载 vlocation 原文件，正则取第一个 URL，`Launcher.LaunchUriAsync` 打开地图。
+- **URL 预览卡**：正文恰含一个 URL 且无服务器 link 附件时，气泡上方出现链接卡（图标+标题+域名，点开浏览器）；标题异步抓 `<title>`（5s 超时、静态缓存 200 条、失败静默降级为域名）。
+- **交互式 App 消息卡**：`BalloonBundleId` 非空且无文字无媒体的消息不再落入"Unsupported"系统行（`ThreadPresentation.IsSystem` 排除），渲染 App 卡片（手写/Digital Touch/bundle 尾段名）。
+- **发送效果播放**：点 "Sent with …" 标签 —— 气泡效果（Slam 回弹缩放+倾斜、Loud 关键帧抖动、Gentle 从小到大）用 Storyboard 作用于 `BubbleTransform`；屏幕效果经 `ScreenEffectRequested` → ShellPage `EffectCanvas` 播 32 个 emoji 粒子（🎉❤️🎈🎆⚡✨ 按效果映射，升/降向 + 透明度关键帧，完成后清空画布）。**Invisible Ink**：`InkCover` 遮罩默认盖住消息，点遮罩显形、点标签重新遮住（`RevealedInkKeys`）。
+- **动画**：新消息入场（<15s 新 key，240ms 淡入+12px 上升）；网络加载的媒体 180ms 淡入（内存缓存命中直渲，C51 规则）；footer 文案变化 160ms 淡入（C72 近似，无行高滑动）。防历史动画：`ResetTransientState()`（ShellPage 每次开会话调用）+ 700ms 开场宽限期。
+- 仍未迁移（交互功能非显示）：多选/批量转发/隐藏（C64）、消息 tombstone、合并视图 beta、Echo/Spotlight 全屏原版粒子系统。
+

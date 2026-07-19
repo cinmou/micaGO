@@ -20,6 +20,31 @@ Three components:
 - Companion menu-bar icon must use **template rendering** (no hard-coded colors) so it adapts to light/dark menu bars.
 - **Before debugging sync, check the running backend binary's version against source** — a stale binary is a common false lead. Rebuild via `scripts/build-backend.sh`.
 
+## Windows client UI redesign (W-UI1)
+
+- `MicaGoWindowsClient` UI pass, chat parity with the Flutter client + Fluent
+  (Windows 11 Settings-card) styling. Details in
+  `MicaGoWindowsClient/docs/IMPLEMENTATION_STATUS.md` § "UI 重构". Key rules:
+  `MessageBubble` is deterministic-bind (full reset per DataContext change, no
+  VisualStates — recycling-safe); media always renders bubble-less above the
+  text bubble (C50 split); outgoing bubble = system accent brushes; avatars are
+  `PersonPicture` everywhere; rounded media = Rectangle+ImageBrush (WinUI
+  Border/Grid CornerRadius does NOT clip child Images). Settings/details pages
+  use `MicaGoSettingsCardStyle`. **Not yet compiled on Windows** — needs a
+  Debug x64 build pass.
+- W-UI3: bubble-logic gap fill — reply jump (static `ReplyJumpRequested` →
+  shell scroll+flash), location open-in-maps, URL preview card (single-URL
+  body, async `<title>`), interactive-app card (balloon rows no longer
+  "Unsupported"), send-effect playback (bubble storyboards + `EffectCanvas`
+  emoji particles + Invisible Ink cover), entrance/media/footer animations
+  gated by `MessageBubble.ResetTransientState()` per chat open.
+- W-UI2: pairing is a dedicated `ConnectionWindow` (Mica, fixed-size); `App`
+  orchestrates window swaps (`ShowMainWindow`/`ShowConnectionWindow`, dispose
+  only on real last-window close). Auto-reconnect fixed: `TryRestoreAsync` was
+  dead code — the connection page now silently restores the saved
+  profile/token on load. `MainWindow` hosts only `ShellPage` and calls
+  `ShellPage.ShutdownAsync()` on close to stop the WS loop.
+
 ## Known UI/state notes
 
 - `serverDisplayState(process:reachable:)` (`BackendController.swift`) is the single source of truth for combined process+reachability state; both the menu-bar icon and the dashboard pill derive from it.

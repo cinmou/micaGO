@@ -21,6 +21,8 @@ public sealed partial class ShellPage : Page
         NavigationCacheMode=Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
         Loaded += ShellPage_Loaded;
         _timestampTimer.Tick+=(_,_)=>_viewModel?.RefreshChatTimestamps();
+        Controls.MessageBubble.ReplyJumpRequested += OnReplyJumpRequested;
+        Controls.MessageBubble.ScreenEffectRequested += OnScreenEffectRequested;
     }
 
     private async void ShellPage_Loaded(object sender, RoutedEventArgs e)
@@ -31,7 +33,7 @@ public sealed partial class ShellPage : Page
         if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
         ApplyLocalizedText();
         var api = AppServices.Current.Connection.Api;
-        if (api is null) { Frame.Navigate(typeof(ConnectionPage)); return; }
+        if (api is null) { App.ShowConnectionWindow(); return; }
         _viewModel = new ShellViewModel(DispatcherQueue, api, AppServices.Current);
         _viewModel.StateChanged += ViewModel_StateChanged;
         ChatList.ItemsSource = _viewModel.Chats;
@@ -54,6 +56,7 @@ public sealed partial class ShellPage : Page
         SettingsSidebarTitle.Text=l["settings"]; GeneralSettingsLabel.Text=l["appearance"];
         ContactSettingsLabel.Text=l["contacts"]; StorageSettingsLabel.Text=l["cache"];
         ToolTipService.SetToolTip(AttachButton,l["attach"]); ToolTipService.SetToolTip(SendButton,l["send"]);
+        ToolTipService.SetToolTip(SidebarSettingsButton,l["settings"]);
     }
 
     private void ViewModel_StateChanged(object? sender, EventArgs e)
@@ -70,7 +73,10 @@ public sealed partial class ShellPage : Page
     {
         if (_viewModel is null) return;
         ShowConversationPane();
-        ThreadInitials.Text = chat.Initials; ThreadTitle.Text = chat.Title;
+        Controls.MessageBubble.ResetTransientState();
+        ThreadAvatar.DisplayName = chat.Title;
+        ThreadAvatar.ProfilePicture = Ui.Image(chat.AvatarPath);
+        ThreadTitle.Text = chat.Title;
         ThreadSubtitle.Text = chat.IsMuted ? $"{chat.ServiceLabel} · Notifications muted" : chat.ServiceLabel;
         await _viewModel.SelectChatAsync(chat);
         EmptyState.Visibility = Visibility.Collapsed;
@@ -133,7 +139,7 @@ public sealed partial class ShellPage : Page
         DetailFrame.Navigate(typeof(ConversationDetailsPage), new ShellNavigationContext(this, chat), new DrillInNavigationTransitionInfo());
     }
 
-    private void ConversationBackButton_Click(object sender, RoutedEventArgs e) => ChatList.Focus(FocusState.Programmatic);
+    private void SidebarSettingsButton_Click(object sender, RoutedEventArgs e) => OpenSettings();
 
     private void ConversationMoreButton_Click(object sender, RoutedEventArgs e)
     {
@@ -159,14 +165,111 @@ public sealed partial class ShellPage : Page
     public void NavigateToConnection()
     {
         ExitDetailMode();
-        Frame.Navigate(typeof(ConnectionPage));
-        Frame.BackStack.Clear();
+        App.ShowConnectionWindow();
+    }
+
+    /// <summary>Stops the realtime loop and timers when the chat window closes.</summary>
+    public async Task ShutdownAsync()
+    {
+        _timestampTimer.Stop();
+        Controls.MessageBubble.ReplyJumpRequested -= OnReplyJumpRequested;
+        Controls.MessageBubble.ScreenEffectRequested -= OnScreenEffectRequested;
+        if (_viewModel is { } viewModel)
+        {
+            _viewModel = null;
+            viewModel.StateChanged -= ViewModel_StateChanged;
+            await viewModel.DisposeAsync();
+        }
+    }
+
+    /// <summary>Scrolls to (and briefly flashes) the message a reply points at.</summary>
+    private async void OnReplyJumpRequested(object? sender, string target)
+    {
+        if (_viewModel is null) return;
+        var row = _viewModel.Messages.FirstOrDefault(item =>
+            !item.IsSeparator
+            && (string.Equals(item.Id, target, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ThreadPresentation.NormalizeTarget(item.Id), target, StringComparison.OrdinalIgnoreCase)));
+        if (row is null) return;
+        MessageList.ScrollIntoView(row);
+        await Task.Delay(140);
+        if (MessageList.ContainerFromItem(row) is UIElement container)
+        {
+            container.Opacity = 0.35;
+            await Task.Delay(160);
+            container.Opacity = 1;
+            await Task.Delay(140);
+            container.Opacity = 0.55;
+            await Task.Delay(160);
+            container.Opacity = 1;
+        }
+    }
+
+    private void OnScreenEffectRequested(object? sender, string effectId) => PlayScreenEffect(effectId);
+
+    /// <summary>
+    /// Lightweight port of the Flutter screen send effects: an emoji particle
+    /// shower over the conversation area (the full CustomPainter systems are
+    /// not reproduced).
+    /// </summary>
+    private void PlayScreenEffect(string effectId)
+    {
+        var width = EffectCanvas.ActualWidth;
+        var height = EffectCanvas.ActualHeight;
+        if (width < 10 || height < 10) return;
+        var rising = effectId.Contains("Heart", StringComparison.OrdinalIgnoreCase)
+            || effectId.Contains("HappyBirthday", StringComparison.OrdinalIgnoreCase);
+        var emoji = effectId switch
+        {
+            _ when effectId.Contains("Confetti", StringComparison.OrdinalIgnoreCase) => "🎉",
+            _ when effectId.Contains("Heart", StringComparison.OrdinalIgnoreCase) => "❤️",
+            _ when effectId.Contains("HappyBirthday", StringComparison.OrdinalIgnoreCase) => "🎈",
+            _ when effectId.Contains("Fireworks", StringComparison.OrdinalIgnoreCase) => "🎆",
+            _ when effectId.Contains("Lasers", StringComparison.OrdinalIgnoreCase) => "⚡",
+            _ when effectId.Contains("Spotlight", StringComparison.OrdinalIgnoreCase) => "💡",
+            _ when effectId.Contains("Echo", StringComparison.OrdinalIgnoreCase) => "💬",
+            _ => "✨",
+        };
+        var random = new Random();
+        var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        for (var i = 0; i < 32; i++)
+        {
+            var particle = new TextBlock { Text = emoji, FontSize = random.Next(14, 30), Opacity = 0 };
+            var transform = new Microsoft.UI.Xaml.Media.TranslateTransform();
+            particle.RenderTransform = transform;
+            Canvas.SetLeft(particle, random.NextDouble() * width);
+            Canvas.SetTop(particle, rising ? height + 20 : -30);
+            EffectCanvas.Children.Add(particle);
+            var travel = (height + 60) * (rising ? -1 : 1);
+            var duration = random.Next(1300, 2400);
+            var begin = TimeSpan.FromMilliseconds(random.Next(0, 450));
+            var fall = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+            {
+                From = 0,
+                To = travel,
+                BeginTime = begin,
+                Duration = new Duration(TimeSpan.FromMilliseconds(duration)),
+            };
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(fall, transform);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(fall, "Y");
+            storyboard.Children.Add(fall);
+            var fade = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimationUsingKeyFrames { BeginTime = begin };
+            fade.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearDoubleKeyFrame { KeyTime = TimeSpan.Zero, Value = 0 });
+            fade.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearDoubleKeyFrame { KeyTime = TimeSpan.FromMilliseconds(180), Value = 1 });
+            fade.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearDoubleKeyFrame { KeyTime = TimeSpan.FromMilliseconds(Math.Max(200, duration - 280)), Value = 1 });
+            fade.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearDoubleKeyFrame { KeyTime = TimeSpan.FromMilliseconds(duration), Value = 0 });
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(fade, particle);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(fade, "Opacity");
+            storyboard.Children.Add(fade);
+        }
+        storyboard.Completed += (_, _) => EffectCanvas.Children.Clear();
+        storyboard.Begin();
     }
 
     public async Task RefreshContactsAsync()
     {
         if(_viewModel is null)return;await _viewModel.RefreshContactsAsync();ChatList.ItemsSource=_viewModel.Chats;
-        if(_viewModel.SelectedChat is{} chat){ThreadInitials.Text=chat.Initials;ThreadTitle.Text=chat.Title;}
+        if(_viewModel.SelectedChat is{} chat){ThreadAvatar.DisplayName=chat.Title;ThreadAvatar.ProfilePicture=Ui.Image(chat.AvatarPath);ThreadTitle.Text=chat.Title;}
     }
 
     private void ShowConversationPane()

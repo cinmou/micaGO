@@ -2,35 +2,144 @@
     x:Class="MicaGo.App.Views.ConversationDetailsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Windows 11 Settings-style detail page: hero identity block, then one
+         card per option, then the shared-media grid. -->
     <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
-        <Grid.RowDefinitions><RowDefinition Height="64" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <Grid Padding="12,0">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="48" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <Button Style="{StaticResource MicaGoIconButtonStyle}" Click="BackButton_Click"><FontIcon Glyph="&#xE72B;" /></Button>
-            <TextBlock x:Name="PageTitle" Grid.Column="1" VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Text="Conversation details" />
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid MaxWidth="1000" Padding="36,24,36,8" HorizontalAlignment="Stretch">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Button Margin="0,0,8,0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MicaGoIconButtonStyle}"
+                    ToolTipService.ToolTip="Back"
+                    Click="BackButton_Click">
+                <FontIcon FontSize="16" Glyph="&#xE72B;" />
+            </Button>
+            <TextBlock x:Name="PageTitle"
+                       Grid.Column="1"
+                       VerticalAlignment="Center"
+                       Style="{StaticResource TitleTextBlockStyle}"
+                       Text="Conversation details" />
         </Grid>
+
         <ScrollViewer Grid.Row="1">
-            <StackPanel MaxWidth="720" Margin="24" Spacing="16">
-                <Border Padding="20" Background="{ThemeResource MicaGoContactBarBrush}" BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}" BorderThickness="1" CornerRadius="14">
-                    <StackPanel HorizontalAlignment="Center" Spacing="8">
-                        <Border Width="72" Height="72" Background="{StaticResource MicaGoAccentBrush}" CornerRadius="36"><TextBlock x:Name="InitialsText" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" FontSize="22" FontWeight="SemiBold" /></Border>
-                        <TextBlock x:Name="TitleText" FontSize="22" FontWeight="SemiBold" />
-                        <TextBlock x:Name="ServiceText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <StackPanel MaxWidth="1000" Margin="36,0,36,40" HorizontalAlignment="Stretch" Spacing="4">
+
+                <Border Padding="24,20" Style="{StaticResource MicaGoSettingsCardStyle}">
+                    <StackPanel HorizontalAlignment="Center" Spacing="10">
+                        <PersonPicture x:Name="HeroAvatar"
+                                       Width="88"
+                                       Height="88"
+                                       HorizontalAlignment="Center" />
+                        <TextBlock x:Name="TitleText"
+                                   HorizontalAlignment="Center"
+                                   Style="{StaticResource SubtitleTextBlockStyle}" />
+                        <TextBlock x:Name="ServiceText"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
                 </Border>
-                <TextBlock x:Name="ParticipantsHeader" FontSize="13" FontWeight="SemiBold" Text="Participants" />
-                <Border Padding="16" Background="{ThemeResource MicaGoContactBarBrush}" BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}" BorderThickness="1" CornerRadius="12"><ItemsControl x:Name="ParticipantsList" /></Border>
-                <TextBlock x:Name="ConversationHeader" FontSize="13" FontWeight="SemiBold" Text="Conversation" />
-                <Border Padding="16,8" Background="{ThemeResource MicaGoContactBarBrush}" BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}" BorderThickness="1" CornerRadius="12">
-                    <StackPanel>
-                        <ToggleSwitch x:Name="MuteToggle" Header="Mute notifications" Toggled="MuteToggle_Toggled" />
-                        <ToggleSwitch x:Name="PinToggle" Header="Pin conversation" Toggled="PinToggle_Toggled" />
-                    </StackPanel>
+
+                <TextBlock x:Name="ConversationHeader"
+                           Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                           Text="Conversation" />
+                <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE74F;" />
+                        <TextBlock x:Name="MuteLabel"
+                                   Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   Text="Mute notifications" />
+                        <ToggleSwitch x:Name="MuteToggle"
+                                      Grid.Column="2"
+                                      MinWidth="0"
+                                      VerticalAlignment="Center"
+                                      OffContent=""
+                                      OnContent=""
+                                      Toggled="MuteToggle_Toggled" />
+                    </Grid>
                 </Border>
-                <TextBlock x:Name="MediaHeader" FontSize="13" FontWeight="SemiBold" Text="Shared media" />
+                <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE718;" />
+                        <TextBlock x:Name="PinLabel"
+                                   Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   Text="Pin conversation" />
+                        <ToggleSwitch x:Name="PinToggle"
+                                      Grid.Column="2"
+                                      MinWidth="0"
+                                      VerticalAlignment="Center"
+                                      OffContent=""
+                                      OnContent=""
+                                      Toggled="PinToggle_Toggled" />
+                    </Grid>
+                </Border>
+
+                <TextBlock x:Name="ParticipantsHeader"
+                           Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                           Text="Participants" />
+                <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                    <ItemsControl x:Name="ParticipantsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="0,6" ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon VerticalAlignment="Center"
+                                              FontSize="14"
+                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                              Glyph="&#xE77B;" />
+                                    <TextBlock Grid.Column="1"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+
+                <TextBlock x:Name="MediaHeader"
+                           Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                           Text="Shared media" />
                 <ItemsControl x:Name="MediaList">
-                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid MaximumRowsOrColumns="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate><DataTemplate><Border Width="148" Height="112" Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="10"><Grid><Image Source="{Binding Preview}" Stretch="UniformToFill"/><TextBlock Margin="8" VerticalAlignment="Bottom" Foreground="White" Text="{Binding Label}" TextTrimming="CharacterEllipsis"><TextBlock.Shadow><ThemeShadow/></TextBlock.Shadow></TextBlock></Grid></Border></DataTemplate></ItemsControl.ItemTemplate>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsWrapGrid Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,8,8" ToolTipService.ToolTip="{Binding Label}">
+                                <Rectangle Width="148"
+                                           Height="112"
+                                           Fill="{Binding PreviewBrush}"
+                                           RadiusX="8"
+                                           RadiusY="8" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
         </ScrollViewer>

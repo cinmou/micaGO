@@ -24,33 +24,58 @@ public sealed partial class ConnectionPage : Page
         {
             return;
         }
-
         _restoreAttempted = true;
-        ShowStatus("Paste a pairing JSON to connect this PC.",InfoBarSeverity.Informational);
-        await Task.CompletedTask;
+
+        await AppServices.Current.Cache.InitializeAsync();
+        var language = await AppServices.Current.Cache.GetSettingAsync("settings.language");
+        if (!string.IsNullOrWhiteSpace(language))
+        {
+            AppServices.Current.Localization.SetLanguage(language);
+        }
+        ApplyText();
+
+        await RestoreConnectionAsync();
     }
 
+    private void ApplyText()
+    {
+        var l = AppServices.Current.Localization;
+        SubtitleText.Text = l["connSubtitle"];
+        PairingJsonLabel.Text = l["connPairingJson"];
+        PairingJsonBox.PlaceholderText = l["connPlaceholder"];
+        TokenNoteText.Text = l["connTokenNote"];
+        ConnectButton.Content = l["connConnect"];
+    }
+
+    /// <summary>
+    /// Silent auto-reconnect: the saved profile + Credential Manager token are
+    /// probed first, so an already-paired PC goes straight to the chat window.
+    /// </summary>
     private async Task RestoreConnectionAsync()
     {
-        ShowStatus("Paste a pairing JSON, or wait while micaGO checks the saved connection.",InfoBarSeverity.Informational);
-        _connectionCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var l = AppServices.Current.Localization;
+        SetBusy(true, l["connChecking"]);
+        _connectionCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         try
         {
             if (await AppServices.Current.Connection.TryRestoreAsync(_connectionCancellation.Token))
             {
-                NavigateToChats();
+                App.ShowMainWindow();
                 return;
             }
-
-            ShowStatus("Paste a pairing JSON to connect this PC.", InfoBarSeverity.Informational);
+            ShowStatus(l["connPaste"], InfoBarSeverity.Informational);
         }
         catch (OperationCanceledException)
         {
-            ShowStatus("Saved connection check timed out. Paste a pairing JSON to continue.",InfoBarSeverity.Informational);
+            ShowStatus(l["connTimeout"], InfoBarSeverity.Informational);
         }
         catch (Exception exception)
         {
-            ShowStatus($"The saved connection could not be restored: {SafeMessage(exception)}", InfoBarSeverity.Warning);
+            ShowStatus(string.Format(l["connRestoreFailed"], SafeMessage(exception)), InfoBarSeverity.Warning);
+        }
+        finally
+        {
+            SetBusy(false, string.Empty);
         }
     }
 
@@ -58,7 +83,7 @@ public sealed partial class ConnectionPage : Page
     {
         _connectionCancellation?.Cancel();
         _connectionCancellation = new CancellationTokenSource();
-        SetBusy(true, "Testing LAN routes...");
+        SetBusy(true, AppServices.Current.Localization["connTesting"]);
         StatusBar.IsOpen = false;
         try
         {
@@ -66,7 +91,7 @@ public sealed partial class ConnectionPage : Page
                 PairingJsonBox.Password,
                 _connectionCancellation.Token);
             PairingJsonBox.Password = string.Empty;
-            NavigateToChats();
+            App.ShowMainWindow();
         }
         catch (PairingPayloadException exception)
         {
@@ -104,12 +129,6 @@ public sealed partial class ConnectionPage : Page
         StatusBar.Message = message;
         StatusBar.Severity = severity;
         StatusBar.IsOpen = true;
-    }
-
-    private void NavigateToChats()
-    {
-        Frame.Navigate(typeof(ShellPage));
-        Frame.BackStack.Clear();
     }
 
     private static string SafeMessage(Exception exception) => exception switch

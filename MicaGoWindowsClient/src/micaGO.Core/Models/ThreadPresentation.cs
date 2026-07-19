@@ -80,7 +80,7 @@ public static class ThreadPresentation
         return result;
     }
 
-    private static bool IsSystem(Message row)=>row.IsRetracted||row.IsServiceEvent||row.IsReaction||row.SemanticKind is "deleted" or "unavailable" or "missing_attachment_rows" or "empty_edited_residue"||MessageSemantics.VisibleText(row.Text).Length==0&&row.Media.Count==0;
+    private static bool IsSystem(Message row)=>row.IsRetracted||row.IsServiceEvent||row.IsReaction||row.SemanticKind is "deleted" or "unavailable" or "missing_attachment_rows" or "empty_edited_residue"||MessageSemantics.VisibleText(row.Text).Length==0&&row.Media.Count==0&&string.IsNullOrWhiteSpace(row.BalloonBundleId);
     private static bool IsInteractiveUpdate(Message row)=>row.AssociatedMessageType>=4000&&!string.IsNullOrWhiteSpace(row.AssociatedMessageGuid)&&!string.IsNullOrWhiteSpace(row.BalloonBundleId);
     private static bool IsKeptAudioNotice(Message row)=>row.ItemType==5&&!string.IsNullOrWhiteSpace(row.Subject);
     private static string SystemLabel(Message row)
@@ -94,7 +94,9 @@ public static class ThreadPresentation
     private static bool SameRun(Message? left,Message? right)=>left is not null&&right is not null&&!left.IsPresentationSystem&&!right.IsPresentationSystem&&left.IsOutgoing==right.IsOutgoing&&(left.IsOutgoing||Identity(left)==Identity(right))&&left.DateCreated>0&&right.DateCreated>0&&Math.Abs(right.DateCreated-left.DateCreated)<=TimeSpan.FromMinutes(5).TotalMilliseconds;
     private static bool SameSender(Message? left,Message? right)=>left is not null&&right is not null&&!left.IsOutgoing&&!right.IsOutgoing&&Identity(left).Length>0&&Identity(left)==Identity(right)&&left.DateCreated>0&&right.DateCreated>0&&Math.Abs(right.DateCreated-left.DateCreated)<=TimeSpan.FromMinutes(5).TotalMilliseconds;
     private static string Identity(Message row)=>(row.SenderIdentity??row.SenderName??string.Empty).Trim().ToLowerInvariant();
-    private static string? Target(string? value){var raw=value?.Trim();if(string.IsNullOrEmpty(raw))return null;if(raw.StartsWith("p:",StringComparison.Ordinal)||raw.StartsWith("bp:",StringComparison.Ordinal))raw=raw[(raw.IndexOf(':')+1)..];var slash=raw.IndexOf('/');if(slash>=0)raw=raw[(slash+1)..];return raw.TrimStart('+');}
+    /// <summary>Normalises an associated/reply guid ("p:0/GUID", "bp:GUID") to the bare message guid.</summary>
+    public static string? NormalizeTarget(string? value){var raw=value?.Trim();if(string.IsNullOrEmpty(raw))return null;if(raw.StartsWith("p:",StringComparison.Ordinal)||raw.StartsWith("bp:",StringComparison.Ordinal))raw=raw[(raw.IndexOf(':')+1)..];var slash=raw.IndexOf('/');if(slash>=0)raw=raw[(slash+1)..];return raw.TrimStart('+');}
+    private static string? Target(string? value)=>NormalizeTarget(value);
     private static string? ReactionEmoji(int code)=>(code%1000) switch{0=>"❤️",1=>"👍",2=>"👎",3=>"😂",4=>"‼️",5=>"❓",_=>null};
     private static string? Effect(string? id)=>string.IsNullOrWhiteSpace(id)?null:Effects.GetValueOrDefault(id,"Sent with an effect");
     private static bool IsBigEmoji(string text){if(string.IsNullOrWhiteSpace(text))return false;var elements=StringInfo.GetTextElementEnumerator(text);var count=0;while(elements.MoveNext()){var element=elements.GetTextElement();if(string.IsNullOrWhiteSpace(element))continue;count++;if(count>3||!element.EnumerateRunes().Any(r=>r.Value is >=0x1F000 and <=0x1FAFF or >=0x2600 and <=0x27BF or >=0x1F1E6 and <=0x1F1FF or 0xE50A))return false;}return count is>=1 and<=3;}

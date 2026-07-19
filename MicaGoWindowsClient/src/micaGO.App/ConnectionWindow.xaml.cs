@@ -1,22 +1,23 @@
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 using MicaGo.App.Services;
-using MicaGo.App.Views;
 using Windows.Graphics;
 using Windows.UI;
 
 namespace MicaGo.App;
 
-public sealed partial class MainWindow : Window
+/// <summary>
+/// The pairing window: a small fixed-size Mica window that hosts the
+/// connection card. It is the first window shown at launch (the page inside
+/// silently tries the saved connection) and reappears after a disconnect.
+/// </summary>
+public sealed partial class ConnectionWindow : Window
 {
-    private const double InitialWidth = 1180;
-    private const double InitialHeight = 760;
-    private const double MinimumWidth = 880;
-    private const double MinimumHeight = 600;
+    private const double WindowWidth = 640;
+    private const double WindowHeight = 560;
 
-    public MainWindow()
+    public ConnectionWindow()
     {
         InitializeComponent();
         if (AppWindowTitleBar.IsCustomizationSupported())
@@ -34,30 +35,25 @@ public sealed partial class MainWindow : Window
         WindowRoot.Loaded += WindowRoot_Loaded;
         WindowRoot.ActualThemeChanged += (_, _) => ApplyTitleBarColors();
 
-        Closed += async (_, _) => { if (RootFrame.Content is ShellPage shell) await shell.ShutdownAsync(); };
-        RootFrame.Navigate(typeof(ShellPage));
-    }
-
-    private void WindowRoot_Loaded(object sender, RoutedEventArgs e)
-    {
-        WindowRoot.Loaded -= WindowRoot_Loaded;
-        ApplyTitleBarColors();
-        ApplyDpiAwareWindowSize();
-        _ = LoadPlatformSettingsAsync();
-        if (WindowRoot.XamlRoot is not null)
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
-            WindowRoot.XamlRoot.Changed += (_, _) => UpdateMinimumSize(WindowRoot.XamlRoot.RasterizationScale);
+            presenter.IsResizable = false;
+            presenter.IsMaximizable = false;
         }
     }
 
-    private async Task LoadPlatformSettingsAsync()
+    private async void WindowRoot_Loaded(object sender, RoutedEventArgs e)
     {
+        ApplyTitleBarColors();
+        ApplyDpiAwareWindowSize();
         await AppServices.Current.Cache.InitializeAsync();
-        AppServices.Current.Notifications.Enabled = await AppServices.Current.Cache.GetSettingAsync("settings.notifications") != "false";
-        var language = await AppServices.Current.Cache.GetSettingAsync("settings.language");
-        if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
         var theme = await AppServices.Current.Cache.GetSettingAsync("settings.theme");
-        WindowRoot.RequestedTheme = theme switch { "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+        WindowRoot.RequestedTheme = theme switch
+        {
+            "light" => ElementTheme.Light,
+            "dark" => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
     }
 
     private void ApplyTitleBarColors()
@@ -88,21 +84,10 @@ public sealed partial class MainWindow : Window
     {
         var scale = WindowRoot.XamlRoot?.RasterizationScale ?? 1;
         var workArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        var width = Math.Min((int)Math.Round(InitialWidth * scale), workArea.Width);
-        var height = Math.Min((int)Math.Round(InitialHeight * scale), workArea.Height);
+        var width = Math.Min((int)Math.Round(WindowWidth * scale), workArea.Width);
+        var height = Math.Min((int)Math.Round(WindowHeight * scale), workArea.Height);
         var x = workArea.X + Math.Max(0, (workArea.Width - width) / 2);
         var y = workArea.Y + Math.Max(0, (workArea.Height - height) / 2);
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
-        UpdateMinimumSize(scale);
-    }
-
-    private void UpdateMinimumSize(double scale)
-    {
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            var workArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-            presenter.PreferredMinimumWidth = Math.Min((int)Math.Round(MinimumWidth * scale), workArea.Width);
-            presenter.PreferredMinimumHeight = Math.Min((int)Math.Round(MinimumHeight * scale), workArea.Height);
-        }
     }
 }
