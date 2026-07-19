@@ -11,7 +11,11 @@ public sealed record ChatSummary(
     string ServiceLabel = "Unknown",
     bool CanSendText = false,
     bool IsPinned = false,
-    bool IsGroup = false)
+    bool IsGroup = false,
+    long UpdatedAt = 0,
+    IReadOnlyList<string>? Participants = null,
+    string? AvatarPath = null,
+    IReadOnlyList<string>? RouteIds = null)
 {
     public double UnreadBadgeOpacity => UnreadCount > 0 ? 1 : 0;
 }

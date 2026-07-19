@@ -26,13 +26,14 @@ public sealed partial class ConnectionPage : Page
         }
 
         _restoreAttempted = true;
-        await RestoreConnectionAsync();
+        ShowStatus("Paste a pairing JSON to connect this PC.",InfoBarSeverity.Informational);
+        await Task.CompletedTask;
     }
 
     private async Task RestoreConnectionAsync()
     {
-        SetBusy(true, "Checking saved connection...");
-        _connectionCancellation = new CancellationTokenSource();
+        ShowStatus("Paste a pairing JSON, or wait while micaGO checks the saved connection.",InfoBarSeverity.Informational);
+        _connectionCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         try
         {
             if (await AppServices.Current.Connection.TryRestoreAsync(_connectionCancellation.Token))
@@ -43,13 +44,13 @@ public sealed partial class ConnectionPage : Page
 
             ShowStatus("Paste a pairing JSON to connect this PC.", InfoBarSeverity.Informational);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            ShowStatus("Saved connection check timed out. Paste a pairing JSON to continue.",InfoBarSeverity.Informational);
+        }
+        catch (Exception exception)
         {
             ShowStatus($"The saved connection could not be restored: {SafeMessage(exception)}", InfoBarSeverity.Warning);
-        }
-        finally
-        {
-            SetBusy(false, string.Empty);
         }
     }
 

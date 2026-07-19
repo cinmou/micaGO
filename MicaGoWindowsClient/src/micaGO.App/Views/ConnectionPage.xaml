@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Grid Background="{ThemeResource MicaGoThreadBrush}">
+    <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
         <Border Width="560"
                 MaxWidth="560"
                 Padding="28"

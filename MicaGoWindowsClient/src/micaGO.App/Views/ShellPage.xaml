@@ -5,67 +5,102 @@
     xmlns:controls="using:MicaGo.App.Controls"
     xmlns:models="using:MicaGo.Core.Models">
 
-    <Grid x:Name="ShellRoot">
+    <Grid x:Name="ShellRoot" Background="Transparent">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="360" MinWidth="280" MaxWidth="480" />
-            <ColumnDefinition Width="1" />
+            <ColumnDefinition x:Name="SidebarColumn" Width="340" MinWidth="280" MaxWidth="420" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Grid Grid.Column="0" Background="{ThemeResource MicaGoSidebarBrush}">
+        <!-- The sidebar and thread header intentionally reveal one continuous Mica surface. -->
+        <Grid x:Name="ChatSidebar" Grid.Column="0" Background="Transparent">
             <Grid.RowDefinitions>
                 <RowDefinition Height="64" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="34" />
+                <RowDefinition Height="38" />
             </Grid.RowDefinitions>
 
-            <Grid Padding="12,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <Grid Padding="12,8,8,8">
                 <AutoSuggestBox x:Name="SearchBox"
                                 Height="40"
-                                PlaceholderText="Search"
-                                TextChanged="SearchBox_TextChanged">
+                                PlaceholderText="Search conversations"
+                                TextMemberPath="Title"
+                                TextChanged="SearchBox_TextChanged"
+                                SuggestionChosen="SearchBox_SuggestionChosen"
+                                QuerySubmitted="SearchBox_QuerySubmitted">
                     <AutoSuggestBox.QueryIcon>
                         <SymbolIcon Symbol="Find" />
                     </AutoSuggestBox.QueryIcon>
                 </AutoSuggestBox>
-                <Button Grid.Column="1"
-                        Margin="8,0,0,0"
-                        Style="{StaticResource MicaGoIconButtonStyle}"
-                        ToolTipService.ToolTip="Settings"
-                        Click="SettingsButton_Click">
-                    <FontIcon Glyph="&#xE713;" />
-                </Button>
             </Grid>
 
             <ListView x:Name="ChatList"
                       Grid.Row="1"
+                      Background="Transparent"
                       IsItemClickEnabled="True"
                       ItemClick="ChatList_ItemClick"
                       SelectionMode="Single"
                       ItemContainerStyle="{StaticResource MicaGoChatListStyle}">
+                <ListView.ItemContainerTransitions>
+                    <TransitionCollection>
+                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                        <RepositionThemeTransition />
+                    </TransitionCollection>
+                </ListView.ItemContainerTransitions>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="models:ChatSummary">
-                        <Grid Padding="8,7">
+                        <Grid MinHeight="60" Padding="8,6">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="48" />
+                                <ColumnDefinition Width="46" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Border Width="42" Height="42" CornerRadius="21" Background="{StaticResource MicaGoAccentBrush}">
-                                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" FontWeight="SemiBold" Text="{x:Bind Initials}" />
+                            <Border Width="40"
+                                    Height="40"
+                                    CornerRadius="20"
+                                    Background="{StaticResource MicaGoAccentBrush}">
+                                <Grid><TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="White"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Text="{x:Bind Initials}" /></Grid>
                             </Border>
-                            <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center" Spacing="3">
-                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Text="{x:Bind Preview}" TextTrimming="CharacterEllipsis" />
+                            <StackPanel Grid.Column="1"
+                                        Margin="8,0,8,0"
+                                        VerticalAlignment="Center"
+                                        Spacing="2">
+                                <TextBlock FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Text="{x:Bind Title}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontSize="12"
+                                           MaxLines="1"
+                                           Text="{x:Bind Preview}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <StackPanel Grid.Column="2" HorizontalAlignment="Right" Spacing="6">
-                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="11" Text="{x:Bind Time}" />
-                                <Border x:Name="UnreadBadge" MinWidth="18" Height="18" Padding="5,0" HorizontalAlignment="Right" Background="{StaticResource MicaGoAccentBrush}" CornerRadius="9" Opacity="{x:Bind UnreadBadgeOpacity}">
-                                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" FontSize="10" Text="{x:Bind UnreadCount}" />
+                            <StackPanel Grid.Column="2"
+                                        MinWidth="36"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Spacing="5">
+                                <TextBlock HorizontalAlignment="Right"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontSize="11"
+                                           Text="{x:Bind Time}" />
+                                <Border MinWidth="18"
+                                        Height="18"
+                                        Padding="5,0"
+                                        HorizontalAlignment="Right"
+                                        Background="{StaticResource MicaGoAccentBrush}"
+                                        CornerRadius="9"
+                                        Opacity="{x:Bind UnreadBadgeOpacity}">
+                                    <TextBlock HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="White"
+                                               FontSize="10"
+                                               Text="{x:Bind UnreadCount}" />
                                 </Border>
                             </StackPanel>
                         </Grid>
@@ -73,94 +108,286 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <Grid Grid.Row="2" Padding="12,0">
+            <Grid Grid.Row="2" Padding="16,0,12,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Ellipse Width="7" Height="7" Fill="#1A9B55" />
-                <TextBlock x:Name="ConnectionStatusText" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="11" Text="Connected" />
+                <TextBlock x:Name="ConnectionStatusText"
+                           Grid.Column="1"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           FontSize="11"
+                           Text="Connected"
+                           TextTrimming="CharacterEllipsis" />
             </Grid>
         </Grid>
 
-        <Rectangle Grid.Column="1" Fill="{ThemeResource MicaGoDividerBrush}" />
-
-        <Grid Grid.Column="2" Background="{ThemeResource MicaGoThreadBrush}">
+        <Grid x:Name="SettingsSidebar"
+              Grid.Column="0"
+              Background="Transparent"
+              Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="64" />
-                <RowDefinition Height="1" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-
-            <Grid Padding="18,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center" Spacing="2">
-                    <TextBlock x:Name="ThreadTitle" FontSize="16" FontWeight="SemiBold" Text="Select a conversation" />
-                    <TextBlock x:Name="ThreadSubtitle" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="11" Text="Messages stay on this device" />
-                </StackPanel>
-                <Button Grid.Column="1" Style="{StaticResource MicaGoIconButtonStyle}" ToolTipService.ToolTip="Conversation info">
-                    <FontIcon Glyph="&#xE946;" />
-                </Button>
-            </Grid>
-            <Rectangle Grid.Row="1" Fill="{ThemeResource MicaGoDividerBrush}" />
-
-            <Grid Grid.Row="2">
-                <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-                    <FontIcon Glyph="&#xE8BD;" FontSize="28" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Choose a conversation to start" />
-                </StackPanel>
-                <ListView x:Name="MessageList"
-                          Padding="0,16,0,12"
-                          SelectionMode="None"
-                          IsTabStop="False">
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="models:Message">
-                            <controls:MessageBubble />
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-            </Grid>
-
-            <Grid Grid.Row="3" Padding="14,10,14,14" Background="{ThemeResource MicaGoSidebarBrush}">
+            <Grid Padding="8,8,12,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="40" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="44" />
                 </Grid.ColumnDefinitions>
-                <Button IsEnabled="False" Style="{StaticResource MicaGoIconButtonStyle}" ToolTipService.ToolTip="Attach">
-                    <FontIcon Glyph="&#xE723;" />
+                <Button Style="{StaticResource MicaGoIconButtonStyle}"
+                        ToolTipService.ToolTip="Back"
+                        Click="SettingsBackButton_Click">
+                    <FontIcon Glyph="&#xE72B;" FontSize="16" />
                 </Button>
-                <TextBox x:Name="Composer"
-                         Grid.Column="1"
-                         Margin="8,0"
-                         MinHeight="40"
-                         MaxHeight="128"
-                         AcceptsReturn="True"
-                         IsEnabled="False"
-                         TextWrapping="Wrap"
-                         PlaceholderText="Message"
-                         TextChanged="Composer_TextChanged"
-                         KeyDown="Composer_KeyDown" />
-                <Button x:Name="SendButton"
-                        Grid.Column="2"
-                        IsEnabled="False"
-                        Style="{StaticResource MicaGoIconButtonStyle}"
-                        ToolTipService.ToolTip="Send"
-                        Click="SendButton_Click">
-                    <FontIcon Glyph="&#xE724;" Foreground="{StaticResource MicaGoAccentBrush}" />
-                </Button>
+                <TextBlock x:Name="SettingsSidebarTitle"
+                           Grid.Column="1"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           Text="Settings" />
             </Grid>
+            <ListView x:Name="SettingsNavigationList"
+                      Grid.Row="1"
+                      Padding="8,4"
+                      SelectionMode="Single"
+                      SelectionChanged="SettingsNavigationList_SelectionChanged">
+                <ListView.ItemContainerTransitions>
+                    <TransitionCollection>
+                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                    </TransitionCollection>
+                </ListView.ItemContainerTransitions>
+                <ListViewItem Tag="general">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <SymbolIcon Symbol="Setting" />
+                        <TextBlock x:Name="GeneralSettingsLabel" VerticalAlignment="Center" Text="General" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem Tag="contacts">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <SymbolIcon Symbol="Contact" />
+                        <TextBlock x:Name="ContactSettingsLabel" VerticalAlignment="Center" Text="Contacts" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem Tag="storage">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <SymbolIcon Symbol="Save" />
+                        <TextBlock x:Name="StorageSettingsLabel" VerticalAlignment="Center" Text="Storage" />
+                    </StackPanel>
+                </ListViewItem>
+            </ListView>
         </Grid>
+
+        <Border Grid.Column="0"
+                Width="1"
+                HorizontalAlignment="Right"
+                Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+                IsHitTestVisible="False" />
+
+        <!-- The conversation pane is a distinct rounded surface below the native title bar. -->
+        <Border x:Name="ConversationPane"
+                Grid.Column="1"
+                Background="{ThemeResource MicaGoChatSurfaceBrush}"
+                CornerRadius="14,0,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="64" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Contact information belongs to the conversation, not to the window chrome. -->
+                <Border MinHeight="64"
+                        Background="{ThemeResource MicaGoContactBarBrush}"
+                        BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                        BorderThickness="0,0,0,1"
+                        CornerRadius="14,0,0,0">
+                    <Grid Padding="8,6,10,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="40" />
+                            <ColumnDefinition Width="44" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="40" />
+                            <ColumnDefinition Width="40" />
+                        </Grid.ColumnDefinitions>
+                        <Button Style="{StaticResource MicaGoIconButtonStyle}"
+                                ToolTipService.ToolTip="Close conversation"
+                                Click="ConversationBackButton_Click">
+                            <FontIcon Glyph="&#xE72B;" FontSize="16" />
+                        </Button>
+                        <Border Grid.Column="1"
+                                Width="36"
+                                Height="36"
+                                Background="{StaticResource MicaGoAccentBrush}"
+                                CornerRadius="18">
+                            <TextBlock x:Name="ThreadInitials"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="White"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Text="?" />
+                        </Border>
+                        <StackPanel Grid.Column="2"
+                                    Margin="6,0,8,0"
+                                    VerticalAlignment="Center"
+                                    Spacing="1">
+                            <TextBlock x:Name="ThreadTitle"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                   Text="Select a conversation"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="ThreadSubtitle"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       FontSize="11"
+                                       Text="Messages stay on this device"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Button Grid.Column="3"
+                                Style="{StaticResource MicaGoIconButtonStyle}"
+                                ToolTipService.ToolTip="Conversation info"
+                                Click="ConversationInfoButton_Click">
+                            <FontIcon Glyph="&#xE721;" FontSize="16" />
+                        </Button>
+                        <Button Grid.Column="4"
+                                Style="{StaticResource MicaGoIconButtonStyle}"
+                                ToolTipService.ToolTip="More options"
+                                Click="ConversationMoreButton_Click">
+                            <FontIcon Glyph="&#xE712;" FontSize="16" />
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel x:Name="EmptyState"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Spacing="10">
+                        <Border Width="52"
+                                Height="52"
+                                HorizontalAlignment="Center"
+                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                CornerRadius="26">
+                            <FontIcon Glyph="&#xE8BD;"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      FontSize="23"
+                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </Border>
+                        <TextBlock x:Name="EmptyStateText" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Text="Choose a conversation to start" />
+                    </StackPanel>
+                    <ListView x:Name="MessageList"
+                              Padding="0,18,0,10"
+                              Background="Transparent"
+                              SelectionMode="None"
+                              IsTabStop="False"
+                              ItemContainerStyle="{StaticResource MicaGoMessageListStyle}"
+                              RightTapped="MessageList_RightTapped">
+                        <ListView.Header><Button x:Name="LoadOlderButton" Margin="0,0,0,12" HorizontalAlignment="Center" Content="Load earlier messages" Click="LoadOlderButton_Click"/></ListView.Header>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:Message">
+                                <controls:MessageBubble />
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <Grid Grid.Row="1" Padding="16,8,16,14">
+                    <Border MinHeight="48"
+                            MaxWidth="920"
+                            HorizontalAlignment="Stretch"
+                            Background="{ThemeResource MicaGoComposerBrush}"
+                            BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
+                            BorderThickness="1"
+                            CornerRadius="24">
+                        <Grid Padding="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="40" />
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="AttachButton"
+                                    Style="{StaticResource MicaGoIconButtonStyle}"
+                                    ToolTipService.ToolTip="Attach"
+                                    Click="AttachButton_Click">
+                                <FontIcon Glyph="&#xE723;" FontSize="17" />
+                            </Button>
+                            <TextBox x:Name="Composer"
+                                     Grid.Column="1"
+                                     MinHeight="40"
+                                     MaxHeight="128"
+                                     Padding="8,8"
+                                     AcceptsReturn="True"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     CornerRadius="0"
+                                     IsEnabled="False"
+                                     TextWrapping="Wrap"
+                                     PlaceholderText="Message"
+                                     TextChanged="Composer_TextChanged"
+                                     KeyDown="Composer_KeyDown" />
+                            <Button x:Name="SendButton"
+                                    Grid.Column="2"
+                                    IsEnabled="False"
+                                    Style="{StaticResource MicaGoIconButtonStyle}"
+                                    ToolTipService.ToolTip="Send"
+                                    Click="SendButton_Click">
+                                <FontIcon Glyph="&#xE724;"
+                                          FontSize="17"
+                                          Foreground="{StaticResource MicaGoAccentBrush}" />
+                            </Button>
+                        </Grid>
+                    </Border>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Frame x:Name="DetailFrame"
+               Grid.Column="1"
+               Background="{ThemeResource MicaGoChatSurfaceBrush}"
+               Visibility="Collapsed">
+            <Frame.ContentTransitions>
+                <TransitionCollection>
+                    <ContentThemeTransition HorizontalOffset="24" />
+                </TransitionCollection>
+            </Frame.ContentTransitions>
+        </Frame>
+
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="WindowWidthStates">
+                <VisualState x:Name="Wide" />
+                <VisualState x:Name="Compact">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SidebarColumn.Width" Value="300" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Comfortable">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1100" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SidebarColumn.Width" Value="340" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Spacious">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1500" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SidebarColumn.Width" Value="380" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
     </Grid>
 </Page>

@@ -4,7 +4,7 @@ namespace MicaGo.App;
 
 public partial class App : Application
 {
-    private Window? _window;
+    public static Window MainWindow { get; private set; } = null!;
 
     public App()
     {
@@ -13,7 +13,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _window = new MainWindow();
-        _window.Activate();
+        MainWindow = new MainWindow();
+        MainWindow.Activate();
     }
 }

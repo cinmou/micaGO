@@ -75,7 +75,7 @@ public sealed class ConnectionManager : IDisposable
             ActiveWebSocketUrl = selected.Endpoint.WebSocketUrl,
         };
 
-        var api = new MicaGoApi(activated.ActiveBaseUrl, token);
+        var api = new MicaGoApi(activated.ActiveBaseUrl, activated.ActiveWebSocketUrl, token);
         try
         {
             if (persist)

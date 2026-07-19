@@ -1,4 +1,6 @@
 using MicaGo.Core.Connection;
+using MicaGo.Core.Models;
+using MicaGo.Infrastructure.Contacts;
 
 var tests = new (string Name, Action Run)[]
 {
@@ -7,6 +9,12 @@ var tests = new (string Name, Action Run)[]
     ("v3 candidate filtering", ParsesV3),
     ("missing token rejection", RejectsMissingToken),
     ("websocket derivation", DerivesWebSocketUrl),
+    ("attachment placeholder reconciliation", ReconcilesAttachmentPlaceholder),
+    ("ambiguous attachment fallback", RefusesAmbiguousAttachmentFallback),
+    ("stable presentation key", PreservesPresentationKey),
+    ("CSV quoted contacts", ParsesQuotedContactsCsv),
+    ("private and group presentation", PresentsPrivateAndGroupThreads),
+    ("reaction and system merging", MergesReactionAndSystemRows),
 };
 
 var failures = 0;
@@ -23,6 +31,9 @@ foreach (var test in tests)
         Console.Error.WriteLine($"FAIL {test.Name}: {exception.Message}");
     }
 }
+
+try { await RealtimeSyncTests.RunAsync(); Console.WriteLine("PASS realtime delta dedup and websocket hint"); }
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL realtime delta dedup and websocket hint: {exception.Message}");}
 
 return failures == 0 ? 0 : 1;
 
@@ -80,6 +91,57 @@ static void DerivesWebSocketUrl()
 {
     Equal("ws://192.168.1.9:3000/ws", EndpointUrls.DeriveWebSocketUrl("http://192.168.1.9:3000/anything"));
     Equal("wss://go.example.com/ws", EndpointUrls.DeriveWebSocketUrl("https://go.example.com"));
+}
+
+static void ReconcilesAttachmentPlaceholder()
+{
+    var localAttachment = new Attachment("local-a", "photo.heic", "image/heic", 123);
+    var serverAttachment = new Attachment("server-a", "photo.jpg", "image/jpeg", 456);
+    var local = new Message("local-1", "chat", "", "", true, MessageDeliveryState.Sending, DateCreated: 1000, Attachments: [localAttachment], IsPending: true);
+    var server = new Message("server-1", "chat", "\uFFFC", "", true, MessageDeliveryState.Sent, DateCreated: 1200, Attachments: [serverAttachment]);
+    True(MessageSemantics.ShouldReconcile(local, server));
+}
+
+static void RefusesAmbiguousAttachmentFallback()
+{
+    var attachment = new Attachment("a", "first.jpg", "image/jpeg", 100);
+    var one = new Message("local-1", "chat", "", "", true, MessageDeliveryState.Sending, DateCreated: 1000, Attachments: [attachment], IsPending: true);
+    var two = one with { Id = "local-2", DateCreated = 1001, Attachments = [attachment with { FileName = "second.jpg", Size = 101 }] };
+    var server = new Message("server", "chat", "", "", true, MessageDeliveryState.Sent, DateCreated: 1200, Attachments: [attachment with { FileName = "converted.bin", Size = 999 }]);
+    True(MessageSemantics.MatchingPending([one, two], server) is null);
+}
+
+static void PreservesPresentationKey()
+{
+    var pending=new Message("local-1","chat","hello","",true,MessageDeliveryState.Sending,DateCreated:1000,IsPending:true,PresentationId:"row-1");
+    var confirmed=new Message("server-1","chat","hello","",true,MessageDeliveryState.Sent,DateCreated:1100,PresentationId:pending.PresentationKey);
+    Equal("row-1",confirmed.PresentationKey);
+}
+
+static void ParsesQuotedContactsCsv()
+{
+    var rows=CsvContactImporter.Parse("Name,E-mail 1 - Value,Phone 1 - Value\r\n\"Doe, Jane\",jane@example.com,\"+1 555 0100\"\r\n");
+    Equal(2,rows.Count);Equal("Doe, Jane",rows[1][0]);Equal("jane@example.com",rows[1][1]);
+}
+
+static void PresentsPrivateAndGroupThreads()
+{
+    var a=new Message("a","chat","one","10:00",false,MessageDeliveryState.Read,SenderName:"Jane",DateCreated:1000,SenderIdentity:"jane@example.com");
+    var b=a with{Id="b",Text="two",DateCreated=2000};var outgoing=new Message("c","chat","ok","10:01",true,MessageDeliveryState.Delivered,DateCreated:3000);
+    var group=ThreadPresentation.Build([a,b,outgoing],true,"en").Where(row=>!row.IsSeparator).ToArray();
+    True(group[0].ShowSenderLabel);True(!group[0].ShowSenderAvatar);True(!group[1].ShowSenderLabel);True(group[1].ShowSenderAvatar);True(!group[2].ShowFooter);
+    var direct=ThreadPresentation.Build([a,outgoing],false,"en").Where(row=>!row.IsSeparator).ToArray();
+    True(!direct[0].ShowSenderLabel);True(!direct[0].ReserveSenderAvatarSpace);True(direct[1].ShowFooter);
+}
+
+static void MergesReactionAndSystemRows()
+{
+    var target=new Message("target","chat","hello","",false,MessageDeliveryState.Read,DateCreated:1000,SenderIdentity:"jane");
+    var reaction=new Message("reaction","chat","","",true,MessageDeliveryState.Sent,DateCreated:1100,AssociatedMessageGuid:"p:0/target",AssociatedMessageType:2001);
+    var system1=new Message("s1","chat","","",false,MessageDeliveryState.Read,DateCreated:2000,SemanticKind:"service_event");
+    var system2=system1 with{Id="s2",DateCreated=2100};
+    var rows=ThreadPresentation.Build([target,reaction,system1,system2],false,"en").Where(row=>!row.IsSeparator).ToArray();
+    Equal(2,rows.Length);Equal("👍",rows[0].Reactions!.Single());Equal(2,rows[1].MergedSystemCount);True(rows[1].IsPresentationSystem);
 }
 
 static void Equal<T>(T expected, T actual) where T : notnull

@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\micaGO.Core\micaGO.Core.csproj" />
+    <ProjectReference Include="..\..\src\micaGO.Infrastructure\micaGO.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

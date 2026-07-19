@@ -2,7 +2,7 @@
 
 ## 当前事实
 
-这套代码是在 macOS 上编写并完成 XML/XAML 静态解析的，但没有在 Windows 上执行过 WinUI 编译。首次 Windows 构建属于必要的工程验证，不应直接跳到功能测试或发布打包。
+这套代码最初在 macOS 上编写并完成 XML/XAML 静态解析。2026-07-19 已在 Windows 11、Visual Studio Community 2026 18.8、.NET SDK 10.0.302、Debug x64 下完成首次 WinUI 编译和启动：0 warning、0 error，五项 Core 契约测试全部通过。ARM64、Release、浅色/高对比度和跨显示器 DPI 仍待验证。
 
 ## 环境准备
 
