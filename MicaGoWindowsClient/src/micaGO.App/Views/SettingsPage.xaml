@@ -5,13 +5,18 @@
 
     <!-- Styled after the Windows 11 Settings app: a large page title and one
          card per setting (icon | title + description | trailing control). -->
-    <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
+    <Grid Background="{ThemeResource MicaGoSecondaryPageBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid MaxWidth="1000" Padding="36,24,36,8" HorizontalAlignment="Stretch">
+        <Border Background="{ThemeResource MicaGoPageHeaderBackgroundBrush}"
+                BackgroundSizing="InnerBorderEdge"
+                BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
+                BorderThickness="0,0,0,1" />
+
+        <Grid MaxWidth="1000" Padding="36,24,36,12" HorizontalAlignment="Stretch">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -26,6 +31,7 @@
             <TextBlock x:Name="PageTitle"
                        Grid.Column="1"
                        VerticalAlignment="Center"
+                       Foreground="{ThemeResource MicaGoPageHeaderForegroundBrush}"
                        Style="{StaticResource TitleTextBlockStyle}"
                        Text="General" />
         </Grid>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -12,14 +13,21 @@ namespace MicaGo.App.Views;
 
 public sealed partial class ShellPage : Page
 {
+    private const string SidebarWidthRatioKey = "settings.sidebarWidthRatio";
+    private const double MinimumDetailWidth = 380;
     private ShellViewModel? _viewModel;
     private readonly DispatcherTimer _timestampTimer=new(){Interval=TimeSpan.FromMinutes(1)};
+    private double _sidebarWidthBeforeDrag;
+    private double _sidebarPointerStartX;
+    private bool _isSidebarDragging;
+    private double? _preferredSidebarRatio;
 
     public ShellPage()
     {
         InitializeComponent();
         NavigationCacheMode=Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
         Loaded += ShellPage_Loaded;
+        ShellRoot.SizeChanged += ShellRoot_SizeChanged;
         _timestampTimer.Tick+=(_,_)=>_viewModel?.RefreshChatTimestamps();
         Controls.MessageBubble.ReplyJumpRequested += OnReplyJumpRequested;
         Controls.MessageBubble.ScreenEffectRequested += OnScreenEffectRequested;
@@ -29,6 +37,7 @@ public sealed partial class ShellPage : Page
     {
         if(_viewModel is not null)return;
         await AppServices.Current.Cache.InitializeAsync();
+        RestoreSidebarWidth(await AppServices.Current.Cache.GetSettingAsync(SidebarWidthRatioKey));
         var language = await AppServices.Current.Cache.GetSettingAsync("settings.language");
         if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
         ApplyLocalizedText();
@@ -57,6 +66,7 @@ public sealed partial class ShellPage : Page
         ContactSettingsLabel.Text=l["contacts"]; StorageSettingsLabel.Text=l["cache"];
         ToolTipService.SetToolTip(AttachButton,l["attach"]); ToolTipService.SetToolTip(SendButton,l["send"]);
         ToolTipService.SetToolTip(SidebarSettingsButton,l["settings"]);
+        ToolTipService.SetToolTip(ThreadDetailsButton,l["details"]);
     }
 
     private void ViewModel_StateChanged(object? sender, EventArgs e)
@@ -128,37 +138,27 @@ public sealed partial class ShellPage : Page
     private void ShowSettingsSection(string section)
     {
         var context = new ShellNavigationContext(this, null, section);
-        DetailFrame.Navigate(typeof(SettingsPage), context, new DrillInNavigationTransitionInfo());
-    }
-
-    private void ConversationInfoButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel?.SelectedChat is not { } chat) return;
-        ConversationPane.Visibility = Visibility.Collapsed;
-        DetailFrame.Visibility = Visibility.Visible;
-        DetailFrame.Navigate(typeof(ConversationDetailsPage), new ShellNavigationContext(this, chat), new DrillInNavigationTransitionInfo());
+        DetailFrame.Navigate(typeof(SettingsPage), context, ForwardTransition());
     }
 
     private void SidebarSettingsButton_Click(object sender, RoutedEventArgs e) => OpenSettings();
 
     private void ConversationMoreButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button || _viewModel?.SelectedChat is null) return;
-        var flyout = new MenuFlyout();
-        var details = new MenuFlyoutItem { Text = AppServices.Current.Localization["details"], Icon = new SymbolIcon(Symbol.Contact) };
-        details.Click += ConversationInfoButton_Click;
-        flyout.Items.Add(details);
-        flyout.ShowAt(button);
+        if (_viewModel?.SelectedChat is not { } chat) return;
+        ConversationPane.Visibility = Visibility.Collapsed;
+        DetailFrame.Visibility = Visibility.Visible;
+        DetailFrame.Navigate(typeof(ConversationDetailsPage), new ShellNavigationContext(this, chat), ForwardTransition());
     }
 
     public void ExitDetailMode()
     {
+        ConversationPane.Visibility = Visibility.Visible;
         DetailFrame.BackStack.Clear();
         DetailFrame.Content = null;
         DetailFrame.Visibility = Visibility.Collapsed;
         SettingsSidebar.Visibility = Visibility.Collapsed;
         ChatSidebar.Visibility = Visibility.Visible;
-        ConversationPane.Visibility = Visibility.Visible;
         SettingsNavigationList.SelectedItem = null;
     }
 
@@ -279,6 +279,87 @@ public sealed partial class ShellPage : Page
         DetailFrame.Content = null;
         DetailFrame.Visibility = Visibility.Collapsed;
         ConversationPane.Visibility = Visibility.Visible;
+    }
+
+    private static SlideNavigationTransitionInfo ForwardTransition() => new() { Effect = SlideNavigationTransitionEffect.FromRight };
+
+    private void RestoreSidebarWidth(string? rawRatio)
+    {
+        if (double.TryParse(rawRatio, NumberStyles.Float, CultureInfo.InvariantCulture, out var ratio)
+            && double.IsFinite(ratio)
+            && ratio > 0)
+        {
+            _preferredSidebarRatio = ratio;
+        }
+        else
+        {
+            var defaultWidth = ShellRoot.ActualWidth >= 1500 ? 380 : ShellRoot.ActualWidth >= 1100 ? 340 : 300;
+            _preferredSidebarRatio = defaultWidth / Math.Max(1, ShellRoot.ActualWidth);
+        }
+
+        ApplyPreferredSidebarWidth();
+    }
+
+    private void ShellRoot_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_preferredSidebarRatio.HasValue) ApplyPreferredSidebarWidth();
+    }
+
+    private void ApplyPreferredSidebarWidth()
+    {
+        var desired = ShellRoot.ActualWidth * _preferredSidebarRatio.GetValueOrDefault();
+        SidebarColumn.Width = new GridLength(ClampSidebarWidth(desired));
+    }
+
+    private double ClampSidebarWidth(double width)
+    {
+        var availableMaximum = Math.Max(SidebarColumn.MinWidth, ShellRoot.ActualWidth - MinimumDetailWidth);
+        return Math.Clamp(width, SidebarColumn.MinWidth, Math.Min(SidebarColumn.MaxWidth, availableMaximum));
+    }
+
+    private void SidebarResizeGrip_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not UIElement grip) return;
+        _isSidebarDragging = true;
+        _sidebarWidthBeforeDrag = SidebarColumn.ActualWidth;
+        _sidebarPointerStartX = e.GetCurrentPoint(ShellRoot).Position.X;
+        grip.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void SidebarResizeGrip_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isSidebarDragging) return;
+        var delta = e.GetCurrentPoint(ShellRoot).Position.X - _sidebarPointerStartX;
+        var width = ClampSidebarWidth(_sidebarWidthBeforeDrag + delta);
+        SidebarColumn.Width = new GridLength(width);
+        _preferredSidebarRatio = width / Math.Max(1, ShellRoot.ActualWidth);
+        e.Handled = true;
+    }
+
+    private async void SidebarResizeGrip_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isSidebarDragging) return;
+        _isSidebarDragging = false;
+        if (sender is UIElement grip) grip.ReleasePointerCapture(e.Pointer);
+
+        var ratio = SidebarColumn.ActualWidth / Math.Max(1, ShellRoot.ActualWidth);
+        _preferredSidebarRatio = ratio;
+        await AppServices.Current.Cache.SetSettingAsync(SidebarWidthRatioKey, ratio.ToString("R", CultureInfo.InvariantCulture));
+        e.Handled = true;
+    }
+
+    private void SidebarResizeGrip_PointerCanceled(object sender, PointerRoutedEventArgs e) => CancelSidebarResize(e);
+
+    private void SidebarResizeGrip_PointerCaptureLost(object sender, PointerRoutedEventArgs e) => CancelSidebarResize(e);
+
+    private void CancelSidebarResize(PointerRoutedEventArgs e)
+    {
+        if (!_isSidebarDragging) return;
+        _isSidebarDragging = false;
+        SidebarColumn.Width = new GridLength(ClampSidebarWidth(_sidebarWidthBeforeDrag));
+        _preferredSidebarRatio = SidebarColumn.ActualWidth / Math.Max(1, ShellRoot.ActualWidth);
+        e.Handled = true;
     }
     private async void SendButton_Click(object sender, RoutedEventArgs e) => await SendCurrentTextAsync();
     private async void Composer_KeyDown(object sender, KeyRoutedEventArgs e) { if (e.Key == VirtualKey.Enter) { e.Handled = true; await SendCurrentTextAsync(); } }

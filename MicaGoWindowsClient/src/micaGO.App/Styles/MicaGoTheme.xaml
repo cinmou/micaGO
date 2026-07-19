@@ -1,18 +1,37 @@
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MicaGo.App.Controls">
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-            <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="#FFF7F7F7" />
-            <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="#F7FFFFFF" />
+            <StaticResource x:Key="MicaGoChatSurfaceBrush"
+                            ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
+            <AcrylicBrush x:Key="MicaGoContactBarBrush"
+                          FallbackColor="#F9F9F9"
+                          TintColor="#FCFCFC"
+                          TintLuminosityOpacity="0.92"
+                          TintOpacity="0.08" />
+            <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FFF3F3F3" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99000000" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
         </ResourceDictionary>
-        <ResourceDictionary x:Key="Dark">
-            <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="#FF171717" />
-            <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="#F72C2C2C" />
+        <ResourceDictionary x:Key="Default">
+            <StaticResource x:Key="MicaGoChatSurfaceBrush"
+                            ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
+            <AcrylicBrush x:Key="MicaGoContactBarBrush"
+                          FallbackColor="#2C2C2C"
+                          TintColor="#2C2C2C"
+                          TintLuminosityOpacity="0.96"
+                          TintOpacity="0.22" />
+            <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FF202020" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FF171717" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99FFFFFF" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FF2C2C2E" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FF252525" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#16FFFFFF" />
@@ -20,16 +39,13 @@
         <ResourceDictionary x:Key="HighContrast">
             <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-        </ResourceDictionary>
-        <ResourceDictionary x:Key="Default">
-            <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="#FFF7F7F7" />
-            <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="#F7FFFFFF" />
-            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFFFFFFF" />
-            <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FFFFFFFF" />
-            <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
     <CornerRadius x:Key="MicaGoCardCornerRadius">4</CornerRadius>
@@ -41,6 +57,43 @@
         <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Unigram-style splitter: a forgiving transparent hit target with only
+         the native scrollbar thumb colour visible on hover/drag. -->
+    <Style x:Key="MicaGoSidebarResizeGripStyle" TargetType="controls:SidebarResizeGrip">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="controls:SidebarResizeGrip">
+                    <Grid Background="{TemplateBinding Background}">
+                        <Border x:Name="Indicator"
+                                Width="2"
+                                HorizontalAlignment="Center"
+                                Background="{ThemeResource ScrollBarThumbBackground}"
+                                CornerRadius="1"
+                                Opacity="0" />
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="Indicator.Opacity" Value="0.55" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="Indicator.Opacity" Value="1" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled" />
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Windows 11 Settings-style card: icon | title + description | control. -->

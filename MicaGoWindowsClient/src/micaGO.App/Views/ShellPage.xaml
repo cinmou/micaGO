@@ -14,6 +14,11 @@
 
         <!-- The sidebar and thread header intentionally reveal one continuous Mica surface. -->
         <Grid x:Name="ChatSidebar" Grid.Column="0" Background="Transparent">
+            <Grid.Transitions>
+                <TransitionCollection>
+                    <EntranceThemeTransition FromHorizontalOffset="-24" IsStaggeringEnabled="False" />
+                </TransitionCollection>
+            </Grid.Transitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="56" />
                 <RowDefinition Height="*" />
@@ -152,6 +157,11 @@
               Grid.Column="0"
               Background="Transparent"
               Visibility="Collapsed">
+            <Grid.Transitions>
+                <TransitionCollection>
+                    <EntranceThemeTransition FromHorizontalOffset="24" IsStaggeringEnabled="False" />
+                </TransitionCollection>
+            </Grid.Transitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="56" />
                 <RowDefinition Height="*" />
@@ -201,34 +211,38 @@
             </ListView>
         </Grid>
 
-        <Border Grid.Column="0"
-                Width="1"
-                HorizontalAlignment="Right"
-                Background="{ThemeResource DividerStrokeColorDefaultBrush}"
-                IsHitTestVisible="False" />
-
-        <!-- The conversation pane is a distinct rounded surface below the native title bar. -->
-        <Border x:Name="ConversationPane"
+        <!-- Match WinUI NavigationView's native content surface: one rounded,
+             bordered layer owns both the conversation and secondary pages. -->
+        <Border x:Name="ContentSurface"
                 Grid.Column="1"
                 Background="{ThemeResource MicaGoChatSurfaceBrush}"
-                CornerRadius="8,0,0,0">
+                BackgroundSizing="InnerBorderEdge"
+                BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
+                BorderThickness="{ThemeResource NavigationViewContentGridBorderThickness}"
+                CornerRadius="{ThemeResource NavigationViewContentGridCornerRadius}">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+                <Grid x:Name="ConversationPane">
+                    <Grid.Transitions>
+                        <TransitionCollection>
+                            <EntranceThemeTransition FromHorizontalOffset="-32" IsStaggeringEnabled="False" />
+                        </TransitionCollection>
+                    </Grid.Transitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                <!-- Contact information belongs to the conversation, not to the window chrome. -->
-                <Border MinHeight="60"
-                        Background="{ThemeResource MicaGoContactBarBrush}"
-                        BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                        BorderThickness="0,0,0,1"
-                        CornerRadius="8,0,0,0">
+                    <!-- The same backdrop acrylic and content-grid stroke used by
+                         Unigram's native chat sub-header. -->
+                    <Border MinHeight="60"
+                            Background="{ThemeResource MicaGoContactBarBrush}"
+                            BackgroundSizing="InnerBorderEdge"
+                            BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
+                            BorderThickness="0,0,0,1">
                     <Grid Padding="16,8,10,8" ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <PersonPicture x:Name="ThreadAvatar"
@@ -241,32 +255,27 @@
                             <TextBlock x:Name="ThreadTitle"
                                        FontSize="15"
                                        FontWeight="SemiBold"
+                                       Foreground="{ThemeResource MicaGoPageHeaderForegroundBrush}"
                                        Text="Select a conversation"
                                        TextTrimming="CharacterEllipsis" />
                             <TextBlock x:Name="ThreadSubtitle"
                                        FontSize="11"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Foreground="{ThemeResource MicaGoPageHeaderSecondaryBrush}"
                                        Text="Messages stay on this device"
                                        TextTrimming="CharacterEllipsis" />
                         </StackPanel>
-                        <Button Grid.Column="2"
+                        <Button x:Name="ThreadDetailsButton"
+                                Grid.Column="2"
                                 VerticalAlignment="Center"
                                 Style="{StaticResource MicaGoIconButtonStyle}"
-                                ToolTipService.ToolTip="Conversation info"
-                                Click="ConversationInfoButton_Click">
-                            <FontIcon FontSize="16" Glyph="&#xE946;" />
-                        </Button>
-                        <Button Grid.Column="3"
-                                VerticalAlignment="Center"
-                                Style="{StaticResource MicaGoIconButtonStyle}"
-                                ToolTipService.ToolTip="More options"
+                                ToolTipService.ToolTip="Conversation details"
                                 Click="ConversationMoreButton_Click">
                             <FontIcon FontSize="16" Glyph="&#xE712;" />
                         </Button>
                     </Grid>
-                </Border>
+                    </Border>
 
-                <Grid Grid.Row="1">
+                    <Grid Grid.Row="1">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
@@ -372,49 +381,35 @@
                     <Canvas x:Name="EffectCanvas"
                             Grid.RowSpan="2"
                             IsHitTestVisible="False" />
+                    </Grid>
                 </Grid>
+
+                <Frame x:Name="DetailFrame"
+                       Background="Transparent"
+                       Visibility="Collapsed">
+                    <Frame.ContentTransitions>
+                        <TransitionCollection>
+                            <NavigationThemeTransition>
+                                <NavigationThemeTransition.DefaultNavigationTransitionInfo>
+                                    <EntranceNavigationTransitionInfo />
+                                </NavigationThemeTransition.DefaultNavigationTransitionInfo>
+                            </NavigationThemeTransition>
+                        </TransitionCollection>
+                    </Frame.ContentTransitions>
+                </Frame>
             </Grid>
         </Border>
 
-        <Frame x:Name="DetailFrame"
-               Grid.Column="1"
-               Background="{ThemeResource MicaGoChatSurfaceBrush}"
-               Visibility="Collapsed">
-            <Frame.ContentTransitions>
-                <TransitionCollection>
-                    <ContentThemeTransition HorizontalOffset="24" />
-                </TransitionCollection>
-            </Frame.ContentTransitions>
-        </Frame>
-
-        <VisualStateManager.VisualStateGroups>
-            <VisualStateGroup x:Name="WindowWidthStates">
-                <VisualState x:Name="Wide" />
-                <VisualState x:Name="Compact">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0" />
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SidebarColumn.Width" Value="300" />
-                    </VisualState.Setters>
-                </VisualState>
-                <VisualState x:Name="Comfortable">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1100" />
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SidebarColumn.Width" Value="340" />
-                    </VisualState.Setters>
-                </VisualState>
-                <VisualState x:Name="Spacious">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1500" />
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SidebarColumn.Width" Value="380" />
-                    </VisualState.Setters>
-                </VisualState>
-            </VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
+        <controls:SidebarResizeGrip Grid.Column="1"
+                                    Width="12"
+                                    Margin="-6,0,0,0"
+                                    HorizontalAlignment="Left"
+                                    Canvas.ZIndex="20"
+                                    Style="{StaticResource MicaGoSidebarResizeGripStyle}"
+                                    PointerPressed="SidebarResizeGrip_PointerPressed"
+                                    PointerMoved="SidebarResizeGrip_PointerMoved"
+                                    PointerReleased="SidebarResizeGrip_PointerReleased"
+                                    PointerCanceled="SidebarResizeGrip_PointerCanceled"
+                                    PointerCaptureLost="SidebarResizeGrip_PointerCaptureLost" />
     </Grid>
 </Page>

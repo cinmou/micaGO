@@ -5,13 +5,18 @@
 
     <!-- Windows 11 Settings-style detail page: hero identity block, then one
          card per option, then the shared-media grid. -->
-    <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
+    <Grid Background="{ThemeResource MicaGoSecondaryPageBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid MaxWidth="1000" Padding="36,24,36,8" HorizontalAlignment="Stretch">
+        <Border Background="{ThemeResource MicaGoPageHeaderBackgroundBrush}"
+                BackgroundSizing="InnerBorderEdge"
+                BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
+                BorderThickness="0,0,0,1" />
+
+        <Grid MaxWidth="1000" Padding="36,24,36,12" HorizontalAlignment="Stretch">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -26,6 +31,7 @@
             <TextBlock x:Name="PageTitle"
                        Grid.Column="1"
                        VerticalAlignment="Center"
+                       Foreground="{ThemeResource MicaGoPageHeaderForegroundBrush}"
                        Style="{StaticResource TitleTextBlockStyle}"
                        Text="Conversation details" />
         </Grid>
@@ -44,7 +50,7 @@
                                    Style="{StaticResource SubtitleTextBlockStyle}" />
                         <TextBlock x:Name="ServiceText"
                                    HorizontalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                   Foreground="{ThemeResource MicaGoPageHeaderSecondaryBrush}" />
                     </StackPanel>
                 </Border>
 

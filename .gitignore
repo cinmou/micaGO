@@ -20,6 +20,9 @@ dist/
 *.test
 *.out
 
+# Windows unpackaged self-contained publish bundles are local deliverables.
+MicaGoWindowsClient/artifacts/
+
 # --- Go coverage and profiling -----------------------------------------------
 coverage.out
 coverage.html
