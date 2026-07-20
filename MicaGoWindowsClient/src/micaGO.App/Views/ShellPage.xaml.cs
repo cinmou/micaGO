@@ -177,6 +177,23 @@ public sealed partial class ShellPage : Page
 
     private async void ChatList_ItemClick(object sender, ItemClickEventArgs e) { if (e.ClickedItem is ChatSummary chat) await SelectChatAsync(chat); }
 
+    private void ChatList_RightTapped(object sender,RightTappedRoutedEventArgs e)
+    {
+        if(_viewModel is null||(e.OriginalSource as FrameworkElement)?.DataContext is not ChatSummary chat)return;
+        var menu=new MenuFlyout();
+        var hide=new MenuFlyoutItem{Text=AppServices.Current.Localization["hide"],Icon=new FontIcon{Glyph="\uED1A"}};
+        hide.Click+=async(_,_)=>
+        {
+            var wasSelected=_viewModel.SelectedChat is{} selected&&(selected.Id==chat.Id||chat.RouteIds?.Contains(selected.Id)==true);
+            await _viewModel.HideChatAsync(chat);
+            if(!wasSelected)return;
+            ChatList.SelectedItem=null;
+            if(_viewModel.Chats.FirstOrDefault() is{} next){ChatList.SelectedItem=next;await SelectChatAsync(next);return;}
+            EmptyState.Visibility=Visibility.Visible;Composer.IsEnabled=false;VoiceButton.IsEnabled=false;SendButton.IsEnabled=false;
+        };
+        menu.Items.Add(hide);menu.ShowAt(ChatList,e.GetPosition(ChatList));e.Handled=true;
+    }
+
     private async Task SelectChatAsync(ChatSummary chat)
     {
         if (_viewModel is null) return;
@@ -244,6 +261,17 @@ public sealed partial class ShellPage : Page
     {
         var context = new ShellNavigationContext(this, null, section);
         DetailFrame.Navigate(typeof(SettingsPage), context, ForwardTransition());
+    }
+
+    public void OpenHiddenContacts()
+    {
+        DetailFrame.Navigate(typeof(HiddenContactsPage),new ShellNavigationContext(this,null,"contacts"),ForwardTransition());
+    }
+
+    public void GoBackInDetail()
+    {
+        if(DetailFrame.CanGoBack)DetailFrame.GoBack(new SlideNavigationTransitionInfo{Effect=SlideNavigationTransitionEffect.FromLeft});
+        else ShowSettingsSection("contacts");
     }
 
     private void SidebarSettingsButton_Click(object sender, RoutedEventArgs e) => OpenSettings();
@@ -392,9 +420,13 @@ public sealed partial class ShellPage : Page
 
     public async Task RefreshContactsAsync()
     {
-        if(_viewModel is null)return;await _viewModel.RefreshContactsAsync();ChatList.ItemsSource=_viewModel.Chats;
+        if(_viewModel is null)return;await _viewModel.RefreshContactsAsync();
         if(_viewModel.SelectedChat is{} chat){ThreadAvatar.DisplayName=chat.Title;ThreadAvatar.ProfilePicture=Ui.Image(chat.AvatarPath);ThreadTitle.Text=chat.Title;}
     }
+
+    public int HiddenChatCount=>_viewModel?.HiddenChatCount??0;
+    public IReadOnlyList<ChatSummary> HiddenChats=>_viewModel?.HiddenChats??[];
+    public async Task<int> RestoreHiddenChatsAsync(IEnumerable<string> chatIds)=>_viewModel is null?0:await _viewModel.RestoreHiddenChatsAsync(chatIds);
 
     private void ShowConversationPane()
     {
@@ -734,12 +766,20 @@ public sealed partial class ShellPage : Page
     {
         if (_viewModel?.Messages.Count is not > 0) return;
         await Task.Yield();
-        MessageList.UpdateLayout();
         var last = _viewModel.Messages[^1];
-        MessageList.ScrollIntoView(last);
+        if (MessageList.ContainerFromItem(last) is null)
+            MessageList.ScrollIntoView(last);
         await Task.Delay(16);
         MessageList.UpdateLayout();
-        _messageScroller?.ChangeView(null, _messageScroller.ScrollableHeight, null, true);
+        if (_messageScroller is not null)
+        {
+            _messageScroller.ChangeView(null, _messageScroller.ScrollableHeight, null, true);
+            await Task.Yield();
+            MessageList.UpdateLayout();
+            if (_messageScroller.ScrollableHeight - _messageScroller.VerticalOffset > 0.5)
+                _messageScroller.ChangeView(null, _messageScroller.ScrollableHeight, null, true);
+        }
+        JumpToBottomButton.Visibility = Visibility.Collapsed;
     }
 }
 

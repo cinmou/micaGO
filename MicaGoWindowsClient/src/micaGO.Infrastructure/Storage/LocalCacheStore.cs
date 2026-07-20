@@ -58,6 +58,10 @@ public sealed class LocalCacheStore : IDisposable
                     guid TEXT PRIMARY KEY,
                     hidden_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS hidden_chats (
+                    guid TEXT PRIMARY KEY,
+                    hidden_at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS pending_uploads (
                     temp_id TEXT PRIMARY KEY,
                     chat_guid TEXT NOT NULL,
@@ -199,6 +203,58 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
+    public async Task HideChatsAsync(IEnumerable<string> guids, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
+            await using var tx = db.BeginTransaction();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            foreach (var guid in guids.Where(value => !string.IsNullOrWhiteSpace(value)))
+            {
+                await using var cmd = db.CreateCommand(); cmd.Transaction = tx;
+                cmd.CommandText = "INSERT INTO hidden_chats(guid,hidden_at) VALUES($id,$at) ON CONFLICT(guid) DO NOTHING";
+                cmd.Parameters.AddWithValue("$id", guid); cmd.Parameters.AddWithValue("$at", now);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await tx.CommitAsync(cancellationToken);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<int> RestoreHiddenChatsAsync(IEnumerable<string> guids,CancellationToken cancellationToken=default)
+    {
+        var ids=guids.Where(value=>!string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if(ids.Length==0)return 0;
+        await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var tx=db.BeginTransaction();var restored=0;
+            foreach(var guid in ids)
+            {
+                await using var cmd=db.CreateCommand();cmd.Transaction=tx;cmd.CommandText="DELETE FROM hidden_chats WHERE guid=$id";cmd.Parameters.AddWithValue("$id",guid);restored+=await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await tx.CommitAsync(cancellationToken);return restored;
+        }
+        finally{_gate.Release();}
+    }
+
+    public async Task<IReadOnlySet<string>> GetHiddenChatGuidsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
+            await using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT guid FROM hidden_chats";
+            var rows = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) rows.Add(reader.GetString(0));
+            return rows;
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task<IReadOnlyDictionary<string, string>> GetAllSettingsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
@@ -254,7 +310,7 @@ public sealed class LocalCacheStore : IDisposable
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
-        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await ExecuteAsync(db, "DELETE FROM messages; DELETE FROM chats; DELETE FROM settings; DELETE FROM contacts; DELETE FROM hidden_messages; DELETE FROM pending_uploads;", cancellationToken); }
+        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await ExecuteAsync(db, "DELETE FROM messages; DELETE FROM chats; DELETE FROM settings; DELETE FROM contacts; DELETE FROM hidden_messages; DELETE FROM hidden_chats; DELETE FROM pending_uploads;", cancellationToken); }
         finally { _gate.Release(); }
     }
 

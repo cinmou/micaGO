@@ -40,6 +40,8 @@ internal static class RealtimeSyncTests
         public Task<Message> SendTextAsync(string chatId,string text,string? tempId=null,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         public Task<AttachmentUploadResult> SendAttachmentAsync(string chatId,string tempId,string filePath,bool isAudioMessage=false,IProgress<double>? progress=null,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         public Task<byte[]> GetAttachmentBytesAsync(string attachmentId,bool preview=false,bool playable=false,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
+        public Task<bool> GetTestContactEnabledAsync(CancellationToken cancellationToken=default)=>Task.FromResult(false);
+        public Task SetTestContactEnabledAsync(bool enabled,CancellationToken cancellationToken=default)=>Task.CompletedTask;
         public Task<MessageActionCapabilities> GetMessageActionCapabilitiesAsync(CancellationToken cancellationToken=default)=>Task.FromResult(new MessageActionCapabilities(false,false,false));
         public Task EditMessageAsync(string chatId,string messageId,string text,int partIndex=0,CancellationToken cancellationToken=default)=>Task.CompletedTask;
         public Task RetractMessageAsync(string chatId,string messageId,int partIndex=0,CancellationToken cancellationToken=default)=>Task.CompletedTask;

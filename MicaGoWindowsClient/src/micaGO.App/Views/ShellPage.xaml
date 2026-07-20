@@ -56,6 +56,7 @@
                       Background="Transparent"
                       IsItemClickEnabled="True"
                       ItemClick="ChatList_ItemClick"
+                      RightTapped="ChatList_RightTapped"
                       SelectionMode="Single"
                       ItemContainerStyle="{StaticResource MicaGoChatListStyle}">
                 <ListView.ItemContainerTransitions>
@@ -318,6 +319,9 @@
                               Background="Transparent"
                               IsTabStop="False"
                               ItemContainerStyle="{StaticResource MicaGoMessageListStyle}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              ScrollViewer.HorizontalScrollMode="Disabled"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                               SelectionMode="None"
                               Loaded="MessageList_Loaded"
                               RightTapped="MessageList_RightTapped">
@@ -369,8 +373,7 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Name="AttachButton"
                                         VerticalAlignment="Bottom"
-                                        Style="{StaticResource MicaGoIconButtonStyle}"
-                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
                                         ToolTipService.ToolTip="Attach"
                                         Click="AttachButton_Click">
                                     <FontIcon FontSize="16" Glyph="&#xE723;" />
@@ -378,8 +381,7 @@
                                 <Button x:Name="VoiceButton"
                                         Grid.Column="1"
                                         VerticalAlignment="Bottom"
-                                        Style="{StaticResource MicaGoIconButtonStyle}"
-                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
                                         ToolTipService.ToolTip="Voice message"
                                         IsEnabled="False"
                                         Click="VoiceButton_Click">

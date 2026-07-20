@@ -19,6 +19,7 @@ public sealed class ShellViewModel : IAsyncDisposable
     private readonly Dictionary<string,CancellationTokenSource> _uploadCancellations=[];
     private CancellationTokenSource? _selectionCts;
     private IReadOnlySet<string> _hiddenMessageGuids = new HashSet<string>();
+    private IReadOnlySet<string> _hiddenChatGuids = new HashSet<string>();
     private int _loadedMessageCount;
     private string _activeFilter=string.Empty;
     private const int MessagePageSize = 50;
@@ -34,6 +35,8 @@ public sealed class ShellViewModel : IAsyncDisposable
     public string SyncStatus { get; private set; } = "Cached";
     public bool IsLoadingOlder { get; private set; }
     public bool HasMoreMessages { get; private set; }
+    public int HiddenChatCount => _allChats.Count(IsChatHidden);
+    public IReadOnlyList<ChatSummary> HiddenChats => _allChats.Where(IsChatHidden).OrderByDescending(chat=>chat.UpdatedAt).ToArray();
     public MessageActionCapabilities ActionCapabilities { get; private set; }=new(false,false,false);
 
     public event EventHandler? StateChanged;
@@ -42,6 +45,7 @@ public sealed class ShellViewModel : IAsyncDisposable
     {
         await _services.Cache.InitializeAsync(cancellationToken);
         _hiddenMessageGuids = await _services.Cache.GetHiddenMessageGuidsAsync(cancellationToken);
+        _hiddenChatGuids = await _services.Cache.GetHiddenChatGuidsAsync(cancellationToken);
         var cached = await _services.Cache.GetChatsAsync(cancellationToken);
         ReplaceChats(await ApplyContactNamesAsync(cached, cancellationToken));
         try
@@ -62,8 +66,8 @@ public sealed class ShellViewModel : IAsyncDisposable
     public void ApplyFilter(string query)
     {
         _activeFilter=query;
-        var rows = _allChats.Where(chat => string.IsNullOrWhiteSpace(query) || chat.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase) || chat.Preview.Contains(query, StringComparison.CurrentCultureIgnoreCase)).ToArray();
-        Chats.Clear(); foreach (var row in rows) Chats.Add(row);
+        var rows = _allChats.Where(chat => !IsChatHidden(chat) && (string.IsNullOrWhiteSpace(query) || chat.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase) || chat.Preview.Contains(query, StringComparison.CurrentCultureIgnoreCase))).ToArray();
+        SyncChats(rows);
     }
 
     public void RefreshChatTimestamps()
@@ -79,6 +83,27 @@ public sealed class ShellViewModel : IAsyncDisposable
         if(SelectedChat is not{} selected)return;
         var updated=_allChats.FirstOrDefault(chat=>chat.Id==selected.Id||chat.RouteIds?.Contains(selected.Id)==true);if(updated is not null)SelectedChat=updated;
         ReplaceMessages(await DecorateMessageSendersAsync(_rawMessages,SelectedChat?.IsGroup==true,cancellationToken));
+    }
+
+    public async Task HideChatAsync(ChatSummary chat,CancellationToken cancellationToken=default)
+    {
+        var routes=chat.RouteIds is{Count:>0}?chat.RouteIds:[chat.Id];
+        await _services.Cache.HideChatsAsync(routes,cancellationToken);
+        _hiddenChatGuids=new HashSet<string>(_hiddenChatGuids.Concat(routes),StringComparer.OrdinalIgnoreCase);
+        if(SelectedChat is{} selected&&(selected.Id==chat.Id||routes.Contains(selected.Id)||selected.RouteIds?.Any(routes.Contains)==true))
+        {
+            SelectedChat=null;_rawMessages=[];SyncMessages([]);
+        }
+        ApplyFilter(_activeFilter);StateChanged?.Invoke(this,EventArgs.Empty);
+    }
+
+    public async Task<int> RestoreHiddenChatsAsync(IEnumerable<string> chatIds,CancellationToken cancellationToken=default)
+    {
+        var requested=chatIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var routes=_allChats.Where(chat=>requested.Contains(chat.Id)).SelectMany(chat=>chat.RouteIds is{Count:>0}?chat.RouteIds:[chat.Id]).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var restored=await _services.Cache.RestoreHiddenChatsAsync(routes,cancellationToken);
+        _hiddenChatGuids=new HashSet<string>(_hiddenChatGuids.Except(routes,StringComparer.OrdinalIgnoreCase),StringComparer.OrdinalIgnoreCase);
+        ApplyFilter(_activeFilter);StateChanged?.Invoke(this,EventArgs.Empty);return restored;
     }
 
     public async Task SelectChatAsync(ChatSummary chat, CancellationToken cancellationToken = default)
@@ -250,6 +275,7 @@ public sealed class ShellViewModel : IAsyncDisposable
         Dispatch(() =>
         {
             var raw = _rawMessages.ToList();
+            var needsChatReload=false;
             foreach (var message in decorated)
             {
                 var isSelected=SelectedChat is{} selected&&(selected.Id==message.ChatId||(selected.RouteIds?.Contains(message.ChatId)??false));
@@ -264,23 +290,60 @@ public sealed class ShellViewModel : IAsyncDisposable
                         else raw.Add(message);
                     }
                 }
-                UpdateChatForMessage(message,isSelected);
+                if(!_allChats.Any(chat=>chat.Id==message.ChatId||chat.RouteIds?.Contains(message.ChatId)==true))needsChatReload=true;
+                else UpdateChatForMessage(message,isSelected);
             }
             ReplaceMessages(raw);
             StateChanged?.Invoke(this, EventArgs.Empty);
+            if(needsChatReload)_=ReloadChatsAsync();
         });
     }
 
     private void UpdateChatForMessage(Message message,bool isSelected)
     {
-        var rows=_allChats.ToArray();var index=Array.FindIndex(rows,chat=>chat.Id==message.ChatId);if(index<0)return;var chat=rows[index];
+        var rows=_allChats.ToArray();var index=Array.FindIndex(rows,chat=>chat.Id==message.ChatId||chat.RouteIds?.Contains(message.ChatId)==true);if(index<0)return;var chat=rows[index];
         var preview=MessageSemantics.VisibleText(message.Text);if(string.IsNullOrEmpty(preview))preview=message.AttachmentLabel??"Attachment";
         var incomingUnseen=!message.IsOutgoing&&!isSelected;rows[index]=chat with{Preview=preview,Time=message.SentAt,UpdatedAt=message.DateCreated,UnreadCount=incomingUnseen?chat.UnreadCount+1:chat.UnreadCount,HasUnread=incomingUnseen||chat.HasUnread,LatestFromMe=message.IsOutgoing};
         ReplaceChats(rows.OrderByDescending(item=>item.IsPinned).ThenByDescending(item=>item.UpdatedAt));
         if(!message.IsOutgoing&&!isSelected&&!chat.IsMuted)_services.Notifications.Show(chat.Title,preview,message.ChatId);
     }
 
-    private void ReplaceChats(IEnumerable<ChatSummary> rows) { _allChats = rows.ToArray(); ApplyFilter(string.Empty); }
+    private void ReplaceChats(IEnumerable<ChatSummary> rows)
+    {
+        _allChats=rows.ToArray();
+        if(SelectedChat is{} selected)
+        {
+            var updated=_allChats.FirstOrDefault(chat=>chat.Id==selected.Id||chat.RouteIds?.Contains(selected.Id)==true||selected.RouteIds?.Contains(chat.Id)==true);
+            if(updated is not null)SelectedChat=updated;
+        }
+        ApplyFilter(_activeFilter);
+    }
+
+    private bool IsChatHidden(ChatSummary chat)
+    {
+        if(_hiddenChatGuids.Contains(chat.Id))return true;
+        return chat.RouteIds?.Any(_hiddenChatGuids.Contains)==true;
+    }
+
+    private void SyncChats(IReadOnlyList<ChatSummary> target)
+    {
+        var keys=new HashSet<string>(target.Select(chat=>chat.Id),StringComparer.OrdinalIgnoreCase);
+        for(var i=Chats.Count-1;i>=0;i--)if(!keys.Contains(Chats[i].Id))Chats.RemoveAt(i);
+        for(var i=0;i<target.Count;i++)
+        {
+            var desired=target[i];
+            if(i<Chats.Count&&string.Equals(Chats[i].Id,desired.Id,StringComparison.OrdinalIgnoreCase))
+            {
+                if(!Chats[i].Equals(desired))Chats[i]=desired;
+                continue;
+            }
+            var existing=-1;
+            for(var j=i+1;j<Chats.Count;j++)if(string.Equals(Chats[j].Id,desired.Id,StringComparison.OrdinalIgnoreCase)){existing=j;break;}
+            if(existing>=0){Chats.Move(existing,i);if(!Chats[i].Equals(desired))Chats[i]=desired;}
+            else Chats.Insert(i,desired);
+        }
+        while(Chats.Count>target.Count)Chats.RemoveAt(Chats.Count-1);
+    }
     private async Task<IReadOnlyList<ChatSummary>> ApplyContactNamesAsync(IReadOnlyList<ChatSummary> rows, CancellationToken cancellationToken)
     {
         var result = new List<ChatSummary>(rows.Count);

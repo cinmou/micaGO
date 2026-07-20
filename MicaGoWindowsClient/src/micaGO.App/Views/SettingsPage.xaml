@@ -311,6 +311,34 @@
                             </StackPanel>
                         </Grid>
                     </Border>
+                    <Button x:Name="HiddenContactsButton"
+                            MinHeight="64"
+                            Padding="16,12"
+                            HorizontalContentAlignment="Stretch"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Click="HiddenContactsButton_Click">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE77B;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="HiddenContactsLabel" Text="Hidden contacts" />
+                                <TextBlock x:Name="HiddenContactsStatus"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <FontIcon Grid.Column="2"
+                                      VerticalAlignment="Center"
+                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                      Glyph="&#xE76C;" />
+                        </Grid>
+                    </Button>
                 </StackPanel>
 
                 <StackPanel x:Name="StorageSection" Spacing="4" Visibility="Collapsed">

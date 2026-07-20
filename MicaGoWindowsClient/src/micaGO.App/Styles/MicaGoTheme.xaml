@@ -59,6 +59,18 @@
         <Setter Property="BorderThickness" Value="0" />
     </Style>
 
+    <!-- Unigram composer actions: a 48-DIP slot with a transparent 40-DIP
+         native button surface; WinUI supplies the hover/pressed fills. -->
+    <Style x:Key="MicaGoComposerGlyphButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource MicaGoIconButtonStyle}">
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="Margin" Value="4" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+
     <!-- Unigram-style splitter: a forgiving transparent hit target with only
          the native scrollbar thumb colour visible on hover/drag. -->
     <Style x:Key="MicaGoSidebarResizeGripStyle" TargetType="controls:SidebarResizeGrip">
@@ -112,11 +124,16 @@
 
     <Style x:Key="MicaGoChatListStyle" TargetType="ListViewItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="Margin" Value="8,1" />
-        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+        <Setter Property="Margin" Value="4,2" />
+        <Setter Property="CornerRadius" Value="4" />
         <Setter Property="MinHeight" Value="64" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
         <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="FocusVisualMargin" Value="0" />
     </Style>
 
     <Style x:Key="MicaGoMessageListStyle" TargetType="ListViewItem">

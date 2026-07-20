@@ -36,6 +36,8 @@ foreach (var test in tests)
 
 try { await RealtimeSyncTests.RunAsync(); Console.WriteLine("PASS realtime delta dedup and websocket hint"); }
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL realtime delta dedup and websocket hint: {exception.Message}");}
+try { await HiddenChatStoreTests.RunAsync(); Console.WriteLine("PASS hidden contact persistence and selective restore"); }
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL hidden contact persistence and selective restore: {exception.Message}");}
 
 return failures == 0 ? 0 : 1;
 

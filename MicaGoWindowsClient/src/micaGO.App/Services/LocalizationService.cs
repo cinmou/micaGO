@@ -39,6 +39,12 @@ public sealed class LocalizationService
         values["forward"] = traditional ? "轉發" : chinese ? "转发" : "Forward";
         values["forwardTo"] = traditional ? "轉發到…" : chinese ? "转发到…" : "Forward to…";
         values["hide"] = traditional ? "隱藏" : chinese ? "隐藏" : "Hide";
+        values["hiddenContacts"] = traditional ? "隱藏的聯絡人" : chinese ? "隐藏的联系人" : "Hidden contacts";
+        values["hiddenContactsCount"] = traditional ? "已隱藏 {0} 個聯絡人" : chinese ? "已隐藏 {0} 个联系人" : "{0} contacts hidden";
+        values["noHiddenContacts"] = traditional ? "沒有隱藏的聯絡人" : chinese ? "没有隐藏的联系人" : "No hidden contacts";
+        values["restoreSelected"] = traditional ? "還原所選項目" : chinese ? "恢复所选项目" : "Restore selected";
+        values["releasedContacts"] = traditional ? "已還原 {0} 個隱藏的聯絡人" : chinese ? "已恢复 {0} 个隐藏的联系人" : "Restored {0} hidden contacts";
+        values["selectAll"] = traditional ? "全選" : chinese ? "全选" : "Select all";
         values["selectedCount"] = traditional ? "已選取 {0} 則訊息" : chinese ? "已选择 {0} 条消息" : "{0} selected";
         values["voiceMessage"] = traditional ? "語音訊息" : chinese ? "语音消息" : "Voice message";
         values["jumpToBottom"] = traditional ? "跳到最新訊息" : chinese ? "跳到最新消息" : "Jump to latest";
