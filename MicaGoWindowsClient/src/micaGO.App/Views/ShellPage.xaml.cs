@@ -28,6 +28,10 @@ public sealed partial class ShellPage : Page
     private ScrollViewer? _messageScroller;
     private bool _autoLoadingOlder;
     private bool _keepingMessageBottom;
+    private readonly VoiceRecorderService _voiceRecorder = new();
+    private readonly DispatcherTimer _voiceTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private DateTimeOffset _voiceStartedAt;
+    private bool _selectMode;
 
     public ShellPage()
     {
@@ -38,6 +42,12 @@ public sealed partial class ShellPage : Page
         _timestampTimer.Tick+=(_,_)=>_viewModel?.RefreshChatTimestamps();
         Controls.MessageBubble.ReplyJumpRequested += OnReplyJumpRequested;
         Controls.MessageBubble.ScreenEffectRequested += OnScreenEffectRequested;
+        MessageList.SelectionChanged += MessageList_SelectionChanged;
+        _voiceTimer.Tick += (_, _) =>
+        {
+            var elapsed = DateTimeOffset.Now - _voiceStartedAt;
+            VoiceTimerText.Text = $"{(int)elapsed.TotalMinutes}:{elapsed.Seconds:00}";
+        };
     }
 
     private async void ShellPage_Loaded(object sender, RoutedEventArgs e)
@@ -92,6 +102,11 @@ public sealed partial class ShellPage : Page
         ToolTipService.SetToolTip(AttachButton,l["attach"]); ToolTipService.SetToolTip(SendButton,l["send"]);
         ToolTipService.SetToolTip(SidebarSettingsButton,l["settings"]);
         ToolTipService.SetToolTip(ThreadDetailsButton,l["details"]);
+        ToolTipService.SetToolTip(VoiceButton,l["voiceMessage"]);
+        ToolTipService.SetToolTip(JumpToBottomButton,l["jumpToBottom"]);
+        VoiceCancelButton.Content=l["cancel"];
+        SelectionForwardButton.Content=l["forward"];
+        SelectionHideButton.Content=l["hide"];
     }
 
     private void ViewModel_StateChanged(object? sender, EventArgs e)
@@ -114,8 +129,19 @@ public sealed partial class ShellPage : Page
 
     private async void MessageScroller_ViewChanged(object? sender,ScrollViewerViewChangedEventArgs e)
     {
+        if (_messageScroller is not null)
+        {
+            var fromBottom = _messageScroller.ScrollableHeight - _messageScroller.VerticalOffset;
+            JumpToBottomButton.Visibility = fromBottom > 420 ? Visibility.Visible : Visibility.Collapsed;
+        }
         if(_keepingMessageBottom||_messageScroller is null||_messageScroller.VerticalOffset>160)return;
         await LoadOlderAutomaticallyAsync();
+    }
+
+    private void JumpToBottomButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_messageScroller is null) return;
+        _messageScroller.ChangeView(null, _messageScroller.ScrollableHeight, null, false);
     }
 
     private async Task LoadOlderAutomaticallyAsync()
@@ -166,6 +192,7 @@ public sealed partial class ShellPage : Page
             await _viewModel.SelectChatAsync(chat);
             EmptyState.Visibility = Visibility.Collapsed;
             Composer.IsEnabled = chat.CanSendText;
+            VoiceButton.IsEnabled = chat.CanSendText;
             Composer.PlaceholderText = chat.CanSendText ? AppServices.Current.Localization["message"] : "—";
             SendButton.IsEnabled = !string.IsNullOrWhiteSpace(Composer.Text);
             UpdateThreadSubtitle();
@@ -259,6 +286,8 @@ public sealed partial class ShellPage : Page
     public async Task ShutdownAsync()
     {
         _timestampTimer.Stop();
+        _voiceTimer.Stop();
+        _voiceRecorder.Dispose();
         AppServices.Current.Appearance.AppearanceChanged -= Appearance_AppearanceChanged;
         Controls.MessageBubble.ReplyJumpRequested -= OnReplyJumpRequested;
         Controls.MessageBubble.ScreenEffectRequested -= OnScreenEffectRequested;
@@ -353,6 +382,12 @@ public sealed partial class ShellPage : Page
         }
         storyboard.Completed += (_, _) => EffectCanvas.Children.Clear();
         storyboard.Begin();
+    }
+
+    /// <summary>Re-fetches the chat list (used after toggling the offline test contact).</summary>
+    public async Task RefreshChatListAsync()
+    {
+        if (_viewModel is not null) await _viewModel.ReloadChatsAsync();
     }
 
     public async Task RefreshContactsAsync()
@@ -543,7 +578,149 @@ public sealed partial class ShellPage : Page
             if(_viewModel.ActionCapabilities.CanRetract){var retract = new MenuFlyoutItem { Text = AppServices.Current.Localization["unsend"] }; retract.Click += async (_, _) => await _viewModel.RetractAsync(message); menu.Items.Add(retract);}
         }
         if(message.IsPending||_viewModel.ActionCapabilities.CanDelete){var delete = new MenuFlyoutItem { Text = AppServices.Current.Localization["delete"] }; delete.Click += async (_, _) => await _viewModel.DeleteAsync(message); menu.Items.Add(delete);}
+        if(!message.IsSeparator&&!message.IsPresentationSystem)
+        {
+            if(!message.IsPending)
+            {
+                var hide=new MenuFlyoutItem{Text=AppServices.Current.Localization["hide"],Icon=new FontIcon{Glyph="\uED1A"}};
+                hide.Click+=async(_,_)=>await _viewModel.HideMessagesAsync([message]);
+                menu.Items.Add(hide);
+            }
+            var select=new MenuFlyoutItem{Text=AppServices.Current.Localization["select"],Icon=new FontIcon{Glyph="\uE762"}};
+            select.Click+=(_,_)=>EnterSelectMode(message);
+            menu.Items.Add(select);
+        }
         menu.ShowAt(MessageList, e.GetPosition(MessageList));
+    }
+
+    // ----- voice messages -----
+
+    private async void VoiceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.SelectedChat is null || _voiceRecorder.IsRecording) return;
+        try
+        {
+            await _voiceRecorder.StartAsync();
+        }
+        catch (Exception exception)
+        {
+            ConnectionStatusText.Text = $"Microphone unavailable: {exception.Message}";
+            return;
+        }
+        _voiceStartedAt = DateTimeOffset.Now;
+        VoiceTimerText.Text = "0:00";
+        _voiceTimer.Start();
+        ComposerBorder.Visibility = Visibility.Collapsed;
+        VoiceBar.Visibility = Visibility.Visible;
+    }
+
+    private async void VoiceCancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        _voiceTimer.Stop();
+        await _voiceRecorder.CancelAsync();
+        VoiceBar.Visibility = Visibility.Collapsed;
+        ComposerBorder.Visibility = Visibility.Visible;
+    }
+
+    private async void VoiceSendButton_Click(object sender, RoutedEventArgs e)
+    {
+        _voiceTimer.Stop();
+        var path = await _voiceRecorder.StopAsync();
+        VoiceBar.Visibility = Visibility.Collapsed;
+        ComposerBorder.Visibility = Visibility.Visible;
+        if (path is null || _viewModel is null) return;
+        _keepingMessageBottom = true;
+        try
+        {
+            var send = _viewModel.SendAttachmentsAsync([path], isAudioMessage: true);
+            await ScrollToLastMessageAsync();
+            await send;
+            await ScrollToLastMessageAsync();
+        }
+        finally { _keepingMessageBottom = false; }
+    }
+
+    // ----- multi-select (forward / hide) -----
+
+    private void EnterSelectMode(Message? initial)
+    {
+        if (_selectMode) return;
+        _selectMode = true;
+        MessageList.SelectionMode = ListViewSelectionMode.Multiple;
+        ComposerBorder.Visibility = Visibility.Collapsed;
+        VoiceBar.Visibility = Visibility.Collapsed;
+        SelectionBar.Visibility = Visibility.Visible;
+        if (initial is not null) MessageList.SelectedItems.Add(initial);
+        UpdateSelectionBar();
+    }
+
+    private void ExitSelectMode()
+    {
+        if (!_selectMode) return;
+        _selectMode = false;
+        MessageList.SelectedItems.Clear();
+        MessageList.SelectionMode = ListViewSelectionMode.None;
+        SelectionBar.Visibility = Visibility.Collapsed;
+        ComposerBorder.Visibility = Visibility.Visible;
+    }
+
+    private void MessageList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_selectMode) UpdateSelectionBar();
+    }
+
+    private IReadOnlyList<Message> SelectedMessages() =>
+        MessageList.SelectedItems.OfType<Message>()
+            .Where(message => !message.IsSeparator && !message.IsPresentationSystem)
+            .OrderBy(message => message.DateCreated)
+            .ToArray();
+
+    private void UpdateSelectionBar()
+    {
+        var count = SelectedMessages().Count;
+        var l = AppServices.Current.Localization;
+        SelectionCountText.Text = string.Format(l["selectedCount"], count);
+        SelectionForwardButton.Content = $"{l["forward"]} ({count})";
+        SelectionHideButton.Content = $"{l["hide"]} ({count})";
+        SelectionForwardButton.IsEnabled = count > 0;
+        SelectionHideButton.IsEnabled = count > 0;
+    }
+
+    private void SelectionCancelButton_Click(object sender, RoutedEventArgs e) => ExitSelectMode();
+
+    private async void SelectionForwardButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var selected = SelectedMessages();
+        if (selected.Count == 0) return;
+        var l = AppServices.Current.Localization;
+        var picker = new ListView
+        {
+            ItemsSource = _viewModel.Chats,
+            DisplayMemberPath = "Title",
+            SelectionMode = ListViewSelectionMode.Single,
+            MaxHeight = 380,
+        };
+        var dialog = new ContentDialog
+        {
+            Title = l["forwardTo"],
+            Content = picker,
+            PrimaryButtonText = l["forward"],
+            CloseButtonText = l["cancel"],
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || picker.SelectedItem is not ChatSummary target) return;
+        ExitSelectMode();
+        await _viewModel.ForwardMessagesAsync(target, selected);
+    }
+
+    private async void SelectionHideButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var selected = SelectedMessages();
+        ExitSelectMode();
+        if (selected.Count > 0) await _viewModel.HideMessagesAsync(selected);
     }
 
     private void UpdateThreadSubtitle()

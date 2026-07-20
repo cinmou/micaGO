@@ -15,5 +15,7 @@ public interface IMicaGoApi : IDisposable
     Task EditMessageAsync(string chatId, string messageId, string text, int partIndex = 0, CancellationToken cancellationToken = default);
     Task RetractMessageAsync(string chatId, string messageId, int partIndex = 0, CancellationToken cancellationToken = default);
     Task DeleteMessageAsync(string chatId, string messageId, CancellationToken cancellationToken = default);
+    Task<bool> GetTestContactEnabledAsync(CancellationToken cancellationToken = default);
+    Task SetTestContactEnabledAsync(bool enabled, CancellationToken cancellationToken = default);
     IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync(CancellationToken cancellationToken = default);
 }

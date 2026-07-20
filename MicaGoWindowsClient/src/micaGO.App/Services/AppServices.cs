@@ -21,6 +21,7 @@ public sealed class AppServices : IDisposable
         Appearance = new AppearanceService(Cache);
         secrets.Delete("google-contacts-refresh-token");
         VcfContacts = new VcfContactImporter(Cache);
+        Backup = new SettingsBackupService(Cache);
     }
 
     public ConnectionManager Connection { get; }
@@ -30,6 +31,7 @@ public sealed class AppServices : IDisposable
     public NotificationService Notifications { get; }
     public AppearanceService Appearance { get; }
     public VcfContactImporter VcfContacts { get; }
+    public SettingsBackupService Backup { get; }
 
     public async Task RemoveLegacyGoogleContactsAsync(CancellationToken cancellationToken = default)
     {

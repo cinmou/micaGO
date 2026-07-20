@@ -125,6 +125,11 @@
                                                Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
                                                Text="{x:Bind app:Ui.CountLabel(UnreadCount)}" />
                                 </Border>
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         HorizontalAlignment="Right"
+                                         Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                         Visibility="{x:Bind app:Ui.DotVisibility(HasUnread, UnreadCount)}" />
                                 <FontIcon HorizontalAlignment="Right"
                                           FontSize="11"
                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
@@ -323,16 +328,35 @@
                         </ListView.ItemTemplate>
                     </ListView>
 
+                    <Button x:Name="JumpToBottomButton"
+                            Width="40"
+                            Height="40"
+                            Margin="0,0,22,84"
+                            Padding="0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
+                            BorderThickness="1"
+                            Canvas.ZIndex="2"
+                            CornerRadius="20"
+                            Visibility="Collapsed"
+                            Click="JumpToBottomButton_Click">
+                        <FontIcon FontSize="14" Glyph="&#xE74B;" />
+                    </Button>
+
                     <Grid Padding="16,8,16,14"
                           VerticalAlignment="Bottom"
                           Canvas.ZIndex="2">
-                        <Border MinHeight="46"
+                        <Border x:Name="ComposerBorder"
+                                MinHeight="46"
                                 MaxWidth="920"
                                 HorizontalAlignment="Stretch"
                                 Background="Transparent"
                                 BorderThickness="0">
                             <Grid Padding="5" ColumnSpacing="4">
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
@@ -345,8 +369,18 @@
                                         Click="AttachButton_Click">
                                     <FontIcon FontSize="16" Glyph="&#xE723;" />
                                 </Button>
+                                <Button x:Name="VoiceButton"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Bottom"
+                                        Style="{StaticResource MicaGoIconButtonStyle}"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        ToolTipService.ToolTip="Voice message"
+                                        IsEnabled="False"
+                                        Click="VoiceButton_Click">
+                                    <FontIcon FontSize="16" Glyph="&#xE720;" />
+                                </Button>
                                 <TextBox x:Name="Composer"
-                                         Grid.Column="1"
+                                         Grid.Column="2"
                                          MinHeight="36"
                                          MaxHeight="128"
                                          Padding="12,8,12,7"
@@ -362,7 +396,7 @@
                                          TextChanged="Composer_TextChanged"
                                          PreviewKeyDown="Composer_KeyDown" />
                                 <Button x:Name="SendButton"
-                                        Grid.Column="2"
+                                        Grid.Column="3"
                                         Width="36"
                                         Height="36"
                                         Padding="0"
@@ -376,6 +410,94 @@
                                     <FontIcon FontSize="15"
                                               Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
                                               Glyph="&#xE724;" />
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <!-- Voice recording bar (swaps in for the composer). -->
+                        <Border x:Name="VoiceBar"
+                                MinHeight="46"
+                                MaxWidth="920"
+                                HorizontalAlignment="Stretch"
+                                Background="{ThemeResource MicaGoComposerBrush}"
+                                BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
+                                BorderThickness="1"
+                                CornerRadius="23"
+                                Visibility="Collapsed">
+                            <Grid Padding="14,5,5,5" ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Width="10"
+                                         Height="10"
+                                         VerticalAlignment="Center"
+                                         Fill="{ThemeResource SystemFillColorCriticalBrush}" />
+                                <TextBlock x:Name="VoiceTimerText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           FontSize="13"
+                                           Text="0:00" />
+                                <Button x:Name="VoiceCancelButton"
+                                        Grid.Column="2"
+                                        VerticalAlignment="Center"
+                                        Content="Cancel"
+                                        Click="VoiceCancelButton_Click" />
+                                <Button x:Name="VoiceSendButton"
+                                        Grid.Column="3"
+                                        Width="36"
+                                        Height="36"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        BorderThickness="0"
+                                        CornerRadius="18"
+                                        Click="VoiceSendButton_Click">
+                                    <FontIcon FontSize="15"
+                                              Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                              Glyph="&#xE724;" />
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <!-- Multi-select action bar (swaps in for the composer). -->
+                        <Border x:Name="SelectionBar"
+                                MinHeight="46"
+                                MaxWidth="920"
+                                HorizontalAlignment="Stretch"
+                                Background="{ThemeResource MicaGoComposerBrush}"
+                                BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
+                                BorderThickness="1"
+                                CornerRadius="23"
+                                Visibility="Collapsed">
+                            <Grid Padding="14,5,5,5" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="SelectionCountText"
+                                           VerticalAlignment="Center"
+                                           FontSize="13" />
+                                <Button x:Name="SelectionForwardButton"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Content="Forward"
+                                        Click="SelectionForwardButton_Click" />
+                                <Button x:Name="SelectionHideButton"
+                                        Grid.Column="2"
+                                        VerticalAlignment="Center"
+                                        Content="Hide"
+                                        Click="SelectionHideButton_Click" />
+                                <Button x:Name="SelectionCancelButton"
+                                        Grid.Column="3"
+                                        VerticalAlignment="Center"
+                                        Style="{StaticResource MicaGoIconButtonStyle}"
+                                        Click="SelectionCancelButton_Click">
+                                    <FontIcon FontSize="14" Glyph="&#xE711;" />
                                 </Button>
                             </Grid>
                         </Border>

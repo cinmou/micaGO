@@ -180,6 +180,34 @@
                             </Button>
                         </Grid>
                     </Border>
+
+                    <TextBlock x:Name="TestingHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Testing" />
+                    <Border x:Name="TestContactCard" Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEBE8;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="TestContactLabel" Text="Offline test contact" />
+                                <TextBlock x:Name="TestContactHint"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="TestContactToggle"
+                                          Grid.Column="2"
+                                          MinWidth="0"
+                                          VerticalAlignment="Center"
+                                          OffContent=""
+                                          OnContent=""
+                                          Toggled="TestContactToggle_Toggled" />
+                        </Grid>
+                    </Border>
                 </StackPanel>
 
                 <StackPanel x:Name="ContactsSection" Spacing="4" Visibility="Collapsed">
@@ -256,6 +284,31 @@
                                     VerticalAlignment="Center"
                                     Content="Clear cache"
                                     Click="ClearCacheButton_Click" />
+                        </Grid>
+                    </Border>
+
+                    <TextBlock x:Name="BackupHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Backup &amp; restore" />
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE777;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="BackupLabel" Text="Settings backup (.micagobak)" />
+                                <TextBlock x:Name="BackupStatus"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="ExportBackupButton" Content="Export…" Click="ExportBackupButton_Click" />
+                                <Button x:Name="ImportBackupButton" Content="Import…" Click="ImportBackupButton_Click" />
+                            </StackPanel>
                         </Grid>
                     </Border>
                 </StackPanel>

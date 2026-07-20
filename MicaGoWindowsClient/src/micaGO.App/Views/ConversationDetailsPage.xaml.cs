@@ -47,6 +47,7 @@ public sealed partial class ConversationDetailsPage : Page
 
         MuteToggle.IsOn = await IsEnabledAsync("chat.muted.");
         PinToggle.IsOn = await IsEnabledAsync("chat.pinned.");
+        await LoadRoutesCardAsync(l);
 
         var messages = await AppServices.Current.Cache.GetMessagesAsync(_chat.Id, 500);
         var items = messages
@@ -80,6 +81,37 @@ public sealed partial class ConversationDetailsPage : Page
             item.PreviewBrush = new ImageBrush { ImageSource = bitmap, Stretch = Stretch.UniformToFill };
         }
         catch { }
+    }
+
+    private bool _loadingMergeToggle;
+
+    /// <summary>
+    /// Merged-view opt-out (Flutter C68 beta): a 1:1 contact whose messages
+    /// arrive over several routes can be split back into separate chats.
+    /// </summary>
+    private async Task LoadRoutesCardAsync(Services.LocalizationService l)
+    {
+        if (_chat is null || _chat.IsGroup) return;
+        var mergeKey = "chat.mergeRoutes." + _chat.Title.Trim().ToLowerInvariant();
+        var stored = await AppServices.Current.Cache.GetSettingAsync(mergeKey);
+        var routes = _chat.RouteIds;
+        if ((routes?.Count ?? 0) <= 1 && stored != "0") return;
+        RoutesHeader.Visibility = Visibility.Visible;
+        RoutesCard.Visibility = Visibility.Visible;
+        RoutesHeader.Text = l["routes"];
+        MergeRoutesLabel.Text = l["mergeRoutes"];
+        RoutesListText.Text = string.Join('\n', routes is { Count: > 0 } ? routes : [_chat.Id]);
+        _loadingMergeToggle = true;
+        MergeRoutesToggle.IsOn = stored != "0";
+        _loadingMergeToggle = false;
+    }
+
+    private async void MergeRoutesToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingMergeToggle || _chat is null) return;
+        var mergeKey = "chat.mergeRoutes." + _chat.Title.Trim().ToLowerInvariant();
+        await AppServices.Current.Cache.SetSettingAsync(mergeKey, MergeRoutesToggle.IsOn ? "1" : "0");
+        if (_context is not null) await _context.Host.RefreshContactsAsync();
     }
 
     private async Task<bool> IsEnabledAsync(string prefix) =>

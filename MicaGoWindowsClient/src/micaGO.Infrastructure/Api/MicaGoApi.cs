@@ -126,6 +126,15 @@ public sealed class MicaGoApi : IMicaGoApi
     public Task DeleteMessageAsync(string chatId, string messageId, CancellationToken cancellationToken = default) =>
         SendActionAsync(HttpMethod.Delete, $"api/chats/{Uri.EscapeDataString(chatId)}/messages/{Uri.EscapeDataString(messageId)}", null, cancellationToken);
 
+    public async Task<bool> GetTestContactEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        using var document = await GetJsonAsync("api/test-contact", cancellationToken);
+        return GetBoolean(document.RootElement, "enabled") ?? false;
+    }
+
+    public Task SetTestContactEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
+        SendActionAsync(HttpMethod.Put, "api/test-contact", new { enabled }, cancellationToken);
+
     public async IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var socket = new ClientWebSocket();
@@ -149,7 +158,21 @@ public sealed class MicaGoApi : IMicaGoApi
                 using var json = JsonDocument.Parse(payload.ToArray());
                 var root = json.RootElement;
                 var data = root.TryGetProperty("data", out var nested) && nested.ValueKind == JsonValueKind.Object ? nested : root;
-                realtimeEvent = new RealtimeEvent(GetString(root, "type") ?? "message:updated", GetString(data, "chatGuid"), GetString(data, "guid") ?? GetString(data, "messageGuid"));
+                var type = GetString(root, "type") ?? "message:updated";
+                var chatGuid = GetString(data, "chatGuid");
+                var messageGuid = GetString(data, "guid") ?? GetString(data, "messageGuid");
+                // message:* frames carry the full message JSON — parse it so read
+                // receipts / edits / unsends apply even when the rowid-based
+                // delta cursor never re-surfaces the row.
+                Message? parsed = null;
+                if (type.StartsWith("message:", StringComparison.OrdinalIgnoreCase)
+                    && messageGuid is not null
+                    && chatGuid is not null
+                    && data.TryGetProperty("text", out _))
+                {
+                    parsed = MapMessage(data, chatGuid);
+                }
+                realtimeEvent = new RealtimeEvent(type, chatGuid, messageGuid, parsed);
             }
             catch (JsonException)
             {
@@ -202,7 +225,7 @@ public sealed class MicaGoApi : IMicaGoApi
         var preview = GetString(json, "latestRenderablePreview") ?? GetString(json, "lastMessagePreview") ?? GetString(json, "lastMessage") ?? string.Empty;
         var timestamp = GetLong(json, "latestRenderableAt") ?? GetLong(json, "lastMessageAt") ?? GetLong(json, "lastMessageDate") ?? 0;
         var service = GetString(json, "effectiveService") ?? GetString(json, "serviceCategory") ?? GetString(json, "serviceName") ?? "unknown";
-        return new ChatSummary(id, string.IsNullOrWhiteSpace(title) ? "Conversation" : title, string.IsNullOrWhiteSpace(preview) ? "[Attachment]" : preview, string.Empty, GetInt(json, "unreadCount") ?? 0, BuildInitials(title), GetBoolean(json, "isMuted") ?? false, FormatService(service), GetBoolean(json, "canSendText") ?? service.Equals("imessage", StringComparison.OrdinalIgnoreCase), GetBoolean(json, "isPinned") ?? false, isGroup, timestamp, participants);
+        return new ChatSummary(id, string.IsNullOrWhiteSpace(title) ? "Conversation" : title, string.IsNullOrWhiteSpace(preview) ? "[Attachment]" : preview, string.Empty, GetInt(json, "unreadCount") ?? 0, BuildInitials(title), GetBoolean(json, "isMuted") ?? false, FormatService(service), GetBoolean(json, "canSendText") ?? service.Equals("imessage", StringComparison.OrdinalIgnoreCase), GetBoolean(json, "isPinned") ?? false, isGroup, timestamp, participants, LatestFromMe: GetBoolean(json, "latestRenderableFromMe") ?? false);
     }
 
     private static Message MapMessage(JsonElement json, string chatId)

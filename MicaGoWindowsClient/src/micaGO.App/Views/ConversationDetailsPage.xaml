@@ -90,6 +90,37 @@
                     </Grid>
                 </Border>
 
+                <TextBlock x:Name="RoutesHeader"
+                           Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                           Text="Routes"
+                           Visibility="Collapsed" />
+                <Border x:Name="RoutesCard"
+                        Style="{StaticResource MicaGoSettingsCardStyle}"
+                        Visibility="Collapsed">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon VerticalAlignment="Top" Margin="0,3,0,0" FontSize="18" Glyph="&#xE8AB;" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                            <TextBlock x:Name="MergeRoutesLabel" Text="Merge all routes of this contact" />
+                            <TextBlock x:Name="RoutesListText"
+                                       FontSize="11"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="MergeRoutesToggle"
+                                      Grid.Column="2"
+                                      MinWidth="0"
+                                      VerticalAlignment="Top"
+                                      OffContent=""
+                                      OnContent=""
+                                      Toggled="MergeRoutesToggle_Toggled" />
+                    </Grid>
+                </Border>
+
                 <TextBlock x:Name="ParticipantsHeader"
                            Style="{StaticResource MicaGoSettingsHeaderStyle}"
                            Text="Participants" />

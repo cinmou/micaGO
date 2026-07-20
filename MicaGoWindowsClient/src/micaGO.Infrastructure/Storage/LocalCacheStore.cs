@@ -164,6 +164,56 @@ public sealed class LocalCacheStore : IDisposable
         await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="DELETE FROM pending_uploads WHERE temp_id=$id";cmd.Parameters.AddWithValue("$id",tempId);await cmd.ExecuteNonQueryAsync(cancellationToken);}finally{_gate.Release();}
     }
 
+    public async Task HideMessagesAsync(IEnumerable<string> guids, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
+            await using var tx = db.BeginTransaction();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            foreach (var guid in guids.Where(value => !string.IsNullOrWhiteSpace(value)))
+            {
+                await using var cmd = db.CreateCommand(); cmd.Transaction = tx;
+                cmd.CommandText = "INSERT INTO hidden_messages(guid,hidden_at) VALUES($id,$at) ON CONFLICT(guid) DO NOTHING";
+                cmd.Parameters.AddWithValue("$id", guid); cmd.Parameters.AddWithValue("$at", now);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await tx.CommitAsync(cancellationToken);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<IReadOnlySet<string>> GetHiddenMessageGuidsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
+            await using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT guid FROM hidden_messages";
+            var rows = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) rows.Add(reader.GetString(0));
+            return rows;
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>> GetAllSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
+            await using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT key,value FROM settings";
+            var rows = new Dictionary<string, string>();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) rows[reader.GetString(0)] = reader.GetString(1);
+            return rows;
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task UpsertContactsAsync(IEnumerable<ContactMatch> contacts, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);

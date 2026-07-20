@@ -53,8 +53,16 @@ public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) :
                 await CatchUpAsync(cancellationToken);
                 StatusChanged?.Invoke(this, "Live");
                 attempt = 0;
-                await foreach (var _ in api.ListenRealtimeAsync(cancellationToken))
+                await foreach (var realtimeEvent in api.ListenRealtimeAsync(cancellationToken))
                 {
+                    // Frames that carry the full message JSON apply immediately —
+                    // read receipts and edits update rows the rowid-based delta
+                    // cursor never re-surfaces.
+                    if (realtimeEvent.Message is { } message)
+                    {
+                        await cache.UpsertMessagesAsync([message], cancellationToken);
+                        MessagesChanged?.Invoke(this, [message]);
+                    }
                     await CatchUpAsync(cancellationToken);
                 }
             }

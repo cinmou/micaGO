@@ -20,4 +20,8 @@ public static class Ui
         pinned && unread == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public static string CountLabel(int count) => count > 99 ? "99+" : count.ToString();
+
+    /// <summary>Plain unread dot: watermark says unread but the live counter is 0 (C43 rule).</summary>
+    public static Visibility DotVisibility(bool hasUnread, int unreadCount) =>
+        hasUnread && unreadCount == 0 ? Visibility.Visible : Visibility.Collapsed;
 }

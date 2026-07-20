@@ -32,6 +32,16 @@ Three components:
   Border/Grid CornerRadius does NOT clip child Images). Settings/details pages
   use `MicaGoSettingsCardStyle`. **Not yet compiled on Windows** — needs a
   Debug x64 build pass.
+- W-UI5: eight-feature Flutter parity batch — WS `message:*` payloads parsed
+  into `RealtimeEvent.Message` and applied directly (read receipts/edits no
+  longer depend on the delta cursor); watermark-derived unread dot
+  (`ChatSummary.HasUnread`, `read.watermark.<route>`); native multi-select →
+  Forward (re-upload from media cache under original names) / Hide
+  (`hidden_messages` tombstones filtered in `ReplaceMessages`); voice messages
+  (`VoiceRecorderService`, MediaCapture m4a, `isAudioMessage`); `.micagobak`
+  settings backup (`SettingsBackupService`, token never included); offline
+  test-contact toggle (card hidden on old servers); per-contact merged-view
+  opt-out (`chat.mergeRoutes.<title>`); jump-to-latest floating button.
 - W-UI4: `ShellViewModel.SyncMessages` — the bound Messages collection is
   updated as a keyed diff (never Clear+readd: that reset the ListView scroll,
   the "send jumps to top" bug). Launch goes straight to MainWindow when a

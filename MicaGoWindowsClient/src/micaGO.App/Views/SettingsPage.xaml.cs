@@ -34,6 +34,101 @@ public sealed partial class SettingsPage : Page
         UpdateBackgroundStatus();
         _loading=false;services.Notifications.Enabled=NotificationToggle.IsOn;ApplyText();ApplySection(_context?.Section??"general");
         await RestoreVcfSummaryAsync();
+        await LoadTestContactStateAsync();
+    }
+
+    /// <summary>Old servers without the test-contact endpoints just hide the card.</summary>
+    private async Task LoadTestContactStateAsync()
+    {
+        var api = AppServices.Current.Connection.Api;
+        if (api is null) { TestingHeader.Visibility = Visibility.Collapsed; TestContactCard.Visibility = Visibility.Collapsed; return; }
+        try
+        {
+            var enabled = await api.GetTestContactEnabledAsync();
+            _loadingTestContact = true;
+            TestContactToggle.IsOn = enabled;
+            _loadingTestContact = false;
+        }
+        catch
+        {
+            TestingHeader.Visibility = Visibility.Collapsed;
+            TestContactCard.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private bool _loadingTestContact;
+
+    private async void TestContactToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _loadingTestContact) return;
+        var api = AppServices.Current.Connection.Api;
+        if (api is null) return;
+        try
+        {
+            await api.SetTestContactEnabledAsync(TestContactToggle.IsOn);
+            if (_context is not null) await _context.Host.RefreshChatListAsync();
+        }
+        catch (Exception exception)
+        {
+            TestContactHint.Text = exception.Message;
+        }
+    }
+
+    private async void ExportBackupButton_Click(object sender, RoutedEventArgs e)
+    {
+        var l = AppServices.Current.Localization;
+        var picker = new Windows.Storage.Pickers.FileSavePicker { SuggestedFileName = $"micaGO-{DateTime.Now:yyyyMMdd}" };
+        picker.FileTypeChoices.Add("micaGO backup", [".micagobak"]);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        var file = await picker.PickSaveFileAsync();
+        if (file is null) return;
+        try
+        {
+            var version = typeof(SettingsPage).Assembly.GetName().Version?.ToString(3) ?? "?";
+            var summary = await AppServices.Current.Backup.ExportAsync(file.Path, version);
+            BackupStatus.Text = string.Format(l["backupSaved"], summary.SettingCount);
+        }
+        catch (Exception exception)
+        {
+            BackupStatus.Text = string.Format(l["backupFailed"], exception.Message);
+        }
+    }
+
+    private async void ImportBackupButton_Click(object sender, RoutedEventArgs e)
+    {
+        var l = AppServices.Current.Localization;
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add(".micagobak");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        try
+        {
+            var summary = await AppServices.Current.Backup.ImportAsync(file.Path);
+            BackupStatus.Text = string.Format(l["backupRestored"], summary.SettingCount);
+            // Re-apply restored preferences immediately.
+            _loading = true;
+            await LoadStateAfterRestoreAsync();
+            _loading = false;
+            ApplySettings();
+            if (_context is not null) await _context.Host.RefreshAppearanceAsync();
+        }
+        catch (Exception exception)
+        {
+            BackupStatus.Text = string.Format(l["backupFailed"], exception.Message);
+        }
+    }
+
+    private async Task LoadStateAfterRestoreAsync()
+    {
+        var services = AppServices.Current;
+        NotificationToggle.IsOn = (await services.Cache.GetSettingAsync("settings.notifications")) != "false";
+        TrayToggle.IsOn = (await services.Cache.GetSettingAsync("settings.tray")) == "true";
+        await App.SetTrayEnabledAsync(TrayToggle.IsOn);
+        var theme = await services.Cache.GetSettingAsync("settings.theme") ?? "system";
+        ThemePicker.SelectedIndex = theme == "light" ? 1 : theme == "dark" ? 2 : 0;
+        var language = await services.Cache.GetSettingAsync("settings.language") ?? "system";
+        LanguagePicker.SelectedIndex = language == "en" ? 1 : language == "zh-Hans" ? 2 : language == "zh-Hant" ? 3 : 0;
     }
 
     private const string VcfSummaryKey = "contacts.vcfSummary";
@@ -49,7 +144,7 @@ public sealed partial class SettingsPage : Page
             VcfImportStatus.Text = string.Format(AppServices.Current.Localization["vcfImported"], parts[0], parts[1], parts[2]);
     }
     private void ApplySettings(){var s=AppServices.Current;s.Notifications.Enabled=NotificationToggle.IsOn;var lang=LanguagePicker.SelectedIndex switch{1=>"en",2=>"zh-Hans",3=>"zh-Hant",_=>"system"};s.Localization.SetLanguage(lang);var root=App.MainWindow.Content as FrameworkElement;if(root is not null)root.RequestedTheme=ThemePicker.SelectedIndex switch{1=>ElementTheme.Light,2=>ElementTheme.Dark,_=>ElementTheme.Default};ApplyText();}
-    private void ApplyText(){var l=AppServices.Current.Localization;ConnectionHeader.Text=l["connection"];BehaviorHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];TrayLabel.Text=l["tray"];AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LanguageLabel.Text=l["language"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];TwemojiAttribution.Text=l["twemojiAttribution"];TwemojiDisclaimer.Text=l["twemojiDisclaimer"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleFollowSystemToggle.Header=l["followSystemAccent"];BubbleColorButton.Content=l["choose"];ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];StorageHeader.Text=l["cache"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutOpenSourceLabel.Text=l["openSource"];AboutAttributionText.Text=l["twemojiAttribution"];AboutDisclaimerText.Text=l["twemojiDisclaimer"];UpdateBackgroundStatus();}
+    private void ApplyText(){var l=AppServices.Current.Localization;ConnectionHeader.Text=l["connection"];BehaviorHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];TrayLabel.Text=l["tray"];AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LanguageLabel.Text=l["language"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];TwemojiAttribution.Text=l["twemojiAttribution"];TwemojiDisclaimer.Text=l["twemojiDisclaimer"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleFollowSystemToggle.Header=l["followSystemAccent"];BubbleColorButton.Content=l["choose"];ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];StorageHeader.Text=l["cache"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];TestingHeader.Text=l["testing"];TestContactLabel.Text=l["testContact"];TestContactHint.Text=l["testContactHint"];BackupHeader.Text=l["backupRestore"];BackupLabel.Text=l["backupLabel"];ExportBackupButton.Content=l["exportBackup"];ImportBackupButton.Content=l["importBackup"];AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutOpenSourceLabel.Text=l["openSource"];AboutAttributionText.Text=l["twemojiAttribution"];AboutDisclaimerText.Text=l["twemojiDisclaimer"];UpdateBackgroundStatus();}
     private async void NotificationToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.notifications",NotificationToggle.IsOn?"true":"false");ApplySettings();}
     private async void TrayToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await App.SetTrayEnabledAsync(TrayToggle.IsOn);}
     private async void ThemePicker_SelectionChanged(object sender,SelectionChangedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.theme",ThemePicker.SelectedIndex switch{1=>"light",2=>"dark",_=>"system"});ApplySettings();}
