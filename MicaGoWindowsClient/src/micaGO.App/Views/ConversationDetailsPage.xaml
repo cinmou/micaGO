@@ -5,24 +5,44 @@
 
     <!-- Windows 11 Settings-style detail page: hero identity block, then one
          card per option, then the shared-media grid. -->
-    <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
+    <Grid Background="Transparent">
         <ScrollViewer>
             <StackPanel MaxWidth="1000" Margin="36,12,36,40" HorizontalAlignment="Stretch" Spacing="4">
+                <StackPanel.ChildrenTransitions>
+                    <TransitionCollection>
+                        <EntranceThemeTransition FromVerticalOffset="24" IsStaggeringEnabled="True" />
+                        <RepositionThemeTransition />
+                    </TransitionCollection>
+                </StackPanel.ChildrenTransitions>
 
-                <Border Padding="24,20" Style="{StaticResource MicaGoSettingsCardStyle}">
-                    <Grid>
-                        <Button HorizontalAlignment="Left" VerticalAlignment="Top"
-                                Style="{StaticResource MicaGoIconButtonStyle}"
-                                ToolTipService.ToolTip="Back" Click="BackButton_Click">
-                            <FontIcon FontSize="16" Glyph="&#xE72B;" />
-                        </Button>
-                        <StackPanel HorizontalAlignment="Center" Spacing="10">
-                            <PersonPicture x:Name="HeroAvatar" Width="88" Height="88" HorizontalAlignment="Center" />
-                            <TextBlock x:Name="TitleText" HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" />
-                            <TextBlock x:Name="ServiceText" HorizontalAlignment="Center" Foreground="{ThemeResource MicaGoPageHeaderSecondaryBrush}" />
-                        </StackPanel>
-                    </Grid>
-                </Border>
+                <!-- Unigram-style profile header: back | avatar | name + status. -->
+                <Grid Margin="0,4,0,8" ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button VerticalAlignment="Center"
+                            Style="{StaticResource MicaGoIconButtonStyle}"
+                            ToolTipService.ToolTip="Back"
+                            Click="BackButton_Click">
+                        <FontIcon FontSize="16" Glyph="&#xE72B;" />
+                    </Button>
+                    <PersonPicture x:Name="HeroAvatar"
+                                   Grid.Column="1"
+                                   Width="64"
+                                   Height="64"
+                                   VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Name="TitleText"
+                                   Style="{StaticResource SubtitleTextBlockStyle}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="ServiceText"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
 
                 <TextBlock x:Name="ConversationHeader"
                            Style="{StaticResource MicaGoSettingsHeaderStyle}"

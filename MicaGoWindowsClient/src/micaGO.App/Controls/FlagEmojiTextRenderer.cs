@@ -23,18 +23,31 @@ internal static class FlagEmojiTextRenderer
                 }
 
                 var folder = segment.IsEmoji17 ? "TwemojiEmoji17" : "TwemojiFlags";
-                target.Inlines.Add(new InlineUIContainer
+                var source = new SvgImageSource(new Uri($"ms-appx:///Assets/{folder}/{segment.AssetKey}.svg"));
+                var image = new Image
                 {
-                    Child = new Image
+                    Width = iconSize,
+                    Height = iconSize,
+                    Margin = new Thickness(1, 0, 1, -Math.Max(1, iconSize * 0.08)),
+                    Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
+                    Source = source,
+                    IsHitTestVisible = false,
+                };
+                var container = new InlineUIContainer { Child = image };
+                // SvgImageSource fails asynchronously (a missing asset never
+                // reaches the catch below) — swap the platform glyph back in so
+                // an unmapped sequence renders as text instead of a blank gap.
+                var fallbackText = segment.Text;
+                source.OpenFailed += (_, _) =>
+                {
+                    container.Child = new TextBlock
                     {
-                        Width = iconSize,
-                        Height = iconSize,
-                        Margin = new Thickness(1, 0, 1, -Math.Max(1, iconSize * 0.08)),
-                        Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
-                        Source = new SvgImageSource(new Uri($"ms-appx:///Assets/{folder}/{segment.AssetKey}.svg")),
+                        Text = fallbackText,
+                        FontSize = iconSize,
                         IsHitTestVisible = false,
-                    },
-                });
+                    };
+                };
+                target.Inlines.Add(container);
             }
         }
         catch

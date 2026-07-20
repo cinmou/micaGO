@@ -257,8 +257,50 @@ public sealed class ShellViewModel : IAsyncDisposable
     private void ReplaceMessages(IEnumerable<Message> rows)
     {
         _rawMessages=rows.Where(row=>!row.IsSeparator).OrderBy(row=>row.DateCreated).ToList();
-        Messages.Clear();
-        foreach(var row in ThreadPresentation.Build(_rawMessages,SelectedChat?.IsGroup==true,_services.Localization.Language))Messages.Add(row);
+        SyncMessages(ThreadPresentation.Build(_rawMessages,SelectedChat?.IsGroup==true,_services.Localization.Language));
+    }
+
+    /// <summary>
+    /// Applies the freshly built presentation list to the bound collection as a
+    /// keyed diff (update in place / insert / move / trim) instead of
+    /// Clear()+Add(): a full reset makes the ListView drop its scroll position,
+    /// which is why sending a message used to jump the thread to the top.
+    /// </summary>
+    private void SyncMessages(IReadOnlyList<Message> target)
+    {
+        var targetKeys = new HashSet<string>(target.Select(row => row.PresentationKey));
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            if (!targetKeys.Contains(Messages[i].PresentationKey)) Messages.RemoveAt(i);
+        }
+
+        for (var i = 0; i < target.Count; i++)
+        {
+            var desired = target[i];
+            if (i < Messages.Count && Messages[i].PresentationKey == desired.PresentationKey)
+            {
+                if (!Messages[i].Equals(desired)) Messages[i] = desired;
+                continue;
+            }
+
+            var existing = -1;
+            for (var j = i + 1; j < Messages.Count; j++)
+            {
+                if (Messages[j].PresentationKey == desired.PresentationKey) { existing = j; break; }
+            }
+
+            if (existing >= 0)
+            {
+                Messages.Move(existing, i);
+                if (!Messages[i].Equals(desired)) Messages[i] = desired;
+            }
+            else
+            {
+                Messages.Insert(i, desired);
+            }
+        }
+
+        while (Messages.Count > target.Count) Messages.RemoveAt(Messages.Count - 1);
     }
     private async Task RestorePendingUploadsAsync(string chatId,CancellationToken token)
     {

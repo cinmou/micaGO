@@ -35,6 +35,11 @@ public sealed class LocalizationService
         values["twemojiFlagsDescription"] = traditional ? "開啟時以 SVG 替換旗幟；Emoji 17 會一律使用內建向量圖作為 Windows 缺字備援。" : chinese ? "开启时以 SVG 替换旗帜；Emoji 17 始终使用内置矢量图作为 Windows 缺字兜底。" : "When enabled, flags use SVG artwork. Emoji 17 always uses bundled vectors as a Windows fallback.";
         values["twemojiAttribution"] = traditional ? "Twemoji 圖形 © Twitter, Inc. 與貢獻者 · CC-BY 4.0" : chinese ? "Twemoji 图形 © Twitter, Inc. 与贡献者 · CC-BY 4.0" : "Twemoji graphics © Twitter, Inc. and contributors · CC-BY 4.0";
         values["twemojiDisclaimer"] = traditional ? "這是獨立的相容性選項。micaGO 與 X Corp. 或 Twitter 無隸屬、認可、贊助或背書關係。" : chinese ? "这是独立的兼容性选项。micaGO 与 X Corp. 或 Twitter 不存在隶属、认可、赞助或背书关系。" : "Independent compatibility option. micaGO is not affiliated with, endorsed by, or sponsored by X Corp. or Twitter.";
+        values["about"] = traditional ? "關於" : chinese ? "关于" : "About";
+        values["aboutSubtitle"] = traditional ? "iMessage 的 Windows 伴侶用戶端" : chinese ? "iMessage 的 Windows 伴侣客户端" : "The Windows companion client for iMessage";
+        values["version"] = traditional ? "版本 {0}" : chinese ? "版本 {0}" : "Version {0}";
+        values["viewOnGitHub"] = traditional ? "在 GitHub 上檢視專案" : chinese ? "在 GitHub 上查看项目" : "View the project on GitHub";
+        values["openSource"] = traditional ? "開源與致謝" : chinese ? "开源与致谢" : "Open source & attributions";
         return values;
     }
 

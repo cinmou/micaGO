@@ -21,6 +21,10 @@ public sealed class ConnectionManager : IDisposable
     public IMicaGoApi? Api { get; private set; }
     public bool IsConnected => Api is not null;
 
+    /// <summary>Fast local check (connection file + Credential Manager) — no network.</summary>
+    public async Task<bool> HasSavedProfileAsync(CancellationToken cancellationToken = default) =>
+        await _store.LoadAsync(cancellationToken) is not null;
+
     public async Task<bool> TryRestoreAsync(CancellationToken cancellationToken = default)
     {
         var saved = await _store.LoadAsync(cancellationToken);

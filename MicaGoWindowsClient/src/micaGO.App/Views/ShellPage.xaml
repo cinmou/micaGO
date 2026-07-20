@@ -208,6 +208,12 @@
                         <TextBlock x:Name="StorageSettingsLabel" VerticalAlignment="Center" Text="Storage" />
                     </StackPanel>
                 </ListViewItem>
+                <ListViewItem Tag="about">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <FontIcon FontSize="16" Glyph="&#xE946;" />
+                        <TextBlock x:Name="AboutSettingsLabel" VerticalAlignment="Center" Text="About" />
+                    </StackPanel>
+                </ListViewItem>
             </ListView>
         </Grid>
 

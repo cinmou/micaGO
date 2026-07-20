@@ -33,9 +33,23 @@ public sealed partial class SettingsPage : Page
         TwemojiFlagsToggle.IsOn=services.Appearance.TwemojiFlagsEnabled;
         UpdateBackgroundStatus();
         _loading=false;services.Notifications.Enabled=NotificationToggle.IsOn;ApplyText();ApplySection(_context?.Section??"general");
+        await RestoreVcfSummaryAsync();
+    }
+
+    private const string VcfSummaryKey = "contacts.vcfSummary";
+
+    /// <summary>The last import result is persisted so the Contacts page still
+    /// shows it after an app restart (the contacts themselves already survive).</summary>
+    private async Task RestoreVcfSummaryAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(VcfImportStatus.Text)) return;
+        var summary = await AppServices.Current.Cache.GetSettingAsync(VcfSummaryKey);
+        var parts = (summary ?? string.Empty).Split('|');
+        if (parts.Length >= 3)
+            VcfImportStatus.Text = string.Format(AppServices.Current.Localization["vcfImported"], parts[0], parts[1], parts[2]);
     }
     private void ApplySettings(){var s=AppServices.Current;s.Notifications.Enabled=NotificationToggle.IsOn;var lang=LanguagePicker.SelectedIndex switch{1=>"en",2=>"zh-Hans",3=>"zh-Hant",_=>"system"};s.Localization.SetLanguage(lang);var root=App.MainWindow.Content as FrameworkElement;if(root is not null)root.RequestedTheme=ThemePicker.SelectedIndex switch{1=>ElementTheme.Light,2=>ElementTheme.Dark,_=>ElementTheme.Default};ApplyText();}
-    private void ApplyText(){var l=AppServices.Current.Localization;ConnectionHeader.Text=l["connection"];BehaviorHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];TrayLabel.Text=l["tray"];AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LanguageLabel.Text=l["language"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];TwemojiAttribution.Text=l["twemojiAttribution"];TwemojiDisclaimer.Text=l["twemojiDisclaimer"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleFollowSystemToggle.Header=l["followSystemAccent"];BubbleColorButton.Content=l["choose"];ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];StorageHeader.Text=l["cache"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];UpdateBackgroundStatus();}
+    private void ApplyText(){var l=AppServices.Current.Localization;ConnectionHeader.Text=l["connection"];BehaviorHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];TrayLabel.Text=l["tray"];AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LanguageLabel.Text=l["language"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];TwemojiAttribution.Text=l["twemojiAttribution"];TwemojiDisclaimer.Text=l["twemojiDisclaimer"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleFollowSystemToggle.Header=l["followSystemAccent"];BubbleColorButton.Content=l["choose"];ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];StorageHeader.Text=l["cache"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutOpenSourceLabel.Text=l["openSource"];AboutAttributionText.Text=l["twemojiAttribution"];AboutDisclaimerText.Text=l["twemojiDisclaimer"];UpdateBackgroundStatus();}
     private async void NotificationToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.notifications",NotificationToggle.IsOn?"true":"false");ApplySettings();}
     private async void TrayToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await App.SetTrayEnabledAsync(TrayToggle.IsOn);}
     private async void ThemePicker_SelectionChanged(object sender,SelectionChangedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.theme",ThemePicker.SelectedIndex switch{1=>"light",2=>"dark",_=>"system"});ApplySettings();}
@@ -60,7 +74,7 @@ public sealed partial class SettingsPage : Page
         WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
         var files=await picker.PickMultipleFilesAsync();if(files.Count==0)return;
         ImportVcfButton.IsEnabled=false;VcfImportStatus.Text=AppServices.Current.Localization["importingVcf"];
-        try{var contacts=0;var identities=0;var skipped=0;foreach(var file in files){var result=await AppServices.Current.VcfContacts.ImportAsync(file.Path);contacts+=result.ContactCount;identities+=result.IdentityCount;skipped+=result.SkippedCards;}if(_context is not null)await _context.Host.RefreshContactsAsync();VcfImportStatus.Text=string.Format(AppServices.Current.Localization["vcfImported"],contacts,identities,skipped);}
+        try{var contacts=0;var identities=0;var skipped=0;foreach(var file in files){var result=await AppServices.Current.VcfContacts.ImportAsync(file.Path);contacts+=result.ContactCount;identities+=result.IdentityCount;skipped+=result.SkippedCards;}if(_context is not null)await _context.Host.RefreshContactsAsync();VcfImportStatus.Text=string.Format(AppServices.Current.Localization["vcfImported"],contacts,identities,skipped);await AppServices.Current.Cache.SetSettingAsync(VcfSummaryKey,$"{contacts}|{identities}|{skipped}");}
         catch(Exception exception){VcfImportStatus.Text=string.Format(AppServices.Current.Localization["vcfImportFailed"],exception.Message);}
         finally{ImportVcfButton.IsEnabled=true;}
     }
@@ -69,10 +83,10 @@ public sealed partial class SettingsPage : Page
         var l=AppServices.Current.Localization;var dialog=new ContentDialog{XamlRoot=XamlRoot,Title=l["clearContactsTitle"],Content=l["clearContactsConfirm"],PrimaryButtonText=l["clearContacts"],CloseButtonText=l["cancel"],DefaultButton=ContentDialogButton.Close};
         if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
         ImportVcfButton.IsEnabled=false;ClearVcfButton.IsEnabled=false;
-        try{await AppServices.Current.VcfContacts.ClearAllAsync();if(_context is not null)await _context.Host.RefreshContactsAsync();VcfImportStatus.Text=l["contactsCleared"];}
+        try{await AppServices.Current.VcfContacts.ClearAllAsync();await AppServices.Current.Cache.SetSettingAsync(VcfSummaryKey,string.Empty);if(_context is not null)await _context.Host.RefreshContactsAsync();VcfImportStatus.Text=l["contactsCleared"];}
         finally{ImportVcfButton.IsEnabled=true;ClearVcfButton.IsEnabled=true;}
     }
     private async void ClearCacheButton_Click(object sender,RoutedEventArgs e){await AppServices.Current.Cache.ClearAsync();await AppServices.Current.Media.ClearAsync();}
-    private void ApplySection(string section){GeneralSection.Visibility=section=="general"?Visibility.Visible:Visibility.Collapsed;ContactsSection.Visibility=section=="contacts"?Visibility.Visible:Visibility.Collapsed;StorageSection.Visibility=section=="storage"?Visibility.Visible:Visibility.Collapsed;}
+    private void ApplySection(string section){GeneralSection.Visibility=section=="general"?Visibility.Visible:Visibility.Collapsed;ContactsSection.Visibility=section=="contacts"?Visibility.Visible:Visibility.Collapsed;StorageSection.Visibility=section=="storage"?Visibility.Visible:Visibility.Collapsed;AboutSection.Visibility=section=="about"?Visibility.Visible:Visibility.Collapsed;}
     private async void DisconnectButton_Click(object sender,RoutedEventArgs e){var d=new ContentDialog{XamlRoot=XamlRoot,Title="Disconnect this PC?",Content="The saved server route and token will be removed from Windows Credential Manager.",PrimaryButtonText="Disconnect",CloseButtonText="Cancel",DefaultButton=ContentDialogButton.Close};if(await d.ShowAsync()!=ContentDialogResult.Primary)return;await AppServices.Current.Connection.DisconnectAsync();_context?.Host.NavigateToConnection();}
 }

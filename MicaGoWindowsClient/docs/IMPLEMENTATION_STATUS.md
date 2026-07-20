@@ -20,7 +20,7 @@
 | 未读/置顶/静音/隐藏 | 部分 | 本地 read watermark、实时未读递增、当前会话通知抑制、置顶/静音设置 | 已读回执写回、隐藏管理和同步规则接口 |
 | 媒体 | 已接入 | 原生图片缩放/前后切换、WinUI 音视频播放、HEVC playable 回退、另存/系统打开、缓存与详情缩略图 | Share Contract、视频加载骨架和完整媒体页筛选 |
 | 附件发送 | 已接入 | 文件多选、批量乐观气泡、顺序上传、进度、取消、失败重试、SQLite 重启自动恢复、安全对账 | 后台传输 API（当前随应用生命周期） |
-| 通知与托盘 | 已接入 | AppNotification、关闭到托盘、设置持久化 | 通知点击精准打开会话、启动/退出菜单 |
+| 通知与托盘 | 已接入 | AppNotification、点通知打开对应会话、关闭到托盘、托盘最近联系人菜单、设置持久化 | 启动/退出菜单 |
 | MSIX | 未开始 | 当前 unpackaged self-contained | 连接稳定后加入 x64/ARM64 MSIX |
 | 自动化测试 | 部分 | 8 个 Core 契约测试通过（含 U+FFFC、歧义附件对账、稳定展示标识） | Windows CI、API fake、ViewModel 与 UI 测试 |
 
@@ -68,3 +68,13 @@
 - **发送效果播放**：点 "Sent with …" 标签 —— 气泡效果（Slam 回弹缩放+倾斜、Loud 关键帧抖动、Gentle 从小到大）用 Storyboard 作用于 `BubbleTransform`；屏幕效果经 `ScreenEffectRequested` → ShellPage `EffectCanvas` 播 32 个 emoji 粒子（🎉❤️🎈🎆⚡✨ 按效果映射，升/降向 + 透明度关键帧，完成后清空画布）。**Invisible Ink**：`InkCover` 遮罩默认盖住消息，点遮罩显形、点标签重新遮住（`RevealedInkKeys`）。
 - **动画**：新消息入场（<15s 新 key，240ms 淡入+12px 上升）；网络加载的媒体 180ms 淡入（内存缓存命中直渲，C51 规则）；footer 文案变化 160ms 淡入（C72 近似，无行高滑动）。防历史动画：`ResetTransientState()`（ShellPage 每次开会话调用）+ 700ms 开场宽限期。
 - 仍未迁移（交互功能非显示）：多选/批量转发/隐藏（C64）、消息 tombstone、合并视图 beta、Echo/Spotlight 全屏原版粒子系统。
+
+## 消息流增量刷新 + 启动直达 + 设置/详情 Mica（W-UI4，Windows 待验证）
+
+- **发送后跳回顶部的根因**：`ShellViewModel.ReplaceMessages` 每次 `Messages.Clear()`+全量重加，ListView 丢滚动位置。已改为 `SyncMessages` 按 presentation key 做增量 diff（原位替换 / Insert / Move / 截尾），滚动位置保持；未变化的行靠 record 相等性跳过（附件列表引用未变即相等）。
+- **启动不再闪配对窗口**：`ConnectionManager.HasSavedProfileAsync`（本地文件+凭据，无网络）；`App.LaunchAsync` 有保存配对 → 直接开主窗口，`ShellPage_Loaded` 在 Api 为空时后台 `TryRestoreAsync`（15s），失败才切配对窗口。托盘恢复与通知注册也移到 LaunchAsync。
+- **通知点击直达会话**：`NotificationService.ChatActivated`（`NotificationInvoked` 里解析 `chat` 参数）→ App 调度到 UI 线程 → 显示当前窗口 + `OpenChatAsync`。
+- **设置/详情 Mica**：两页根背景改 Transparent，透出 ShellPage 的 NavigationView 式 ContentSurface（Layer over Mica）；两页 section 加 `EntranceThemeTransition`（stagger）+`RepositionThemeTransition`；详情页头部改 Unigram 风（返回|64px 头像|名称+状态 左对齐，弃中置 hero）。
+- **设置新增"关于"**：侧栏第 4 项（E946）；`AboutSection`＝应用卡（logo/副标题/程序集版本 0.66.0）+ GitHub 链接卡（github.com/cinmou/MicaGo）+ 开源致谢卡（Twemoji CC-BY 4.0 + 非隶属声明），l10n 键 `about/aboutSubtitle/version/viewOnGitHub/openSource`。
+- **vCard 导入状态持久化**：导入成功写 `contacts.vcfSummary`（`n|n|n`），清除时清空；Contacts 页加载时 `RestoreVcfSummaryAsync` 还原文案——修复"重启后设置页导入信息消失"。
+- **Twemoji 渲染兜底**：`SvgImageSource` 异步失败（缺资产）时经 `OpenFailed` 把 InlineUIContainer 换回系统字形文本，不再留白。

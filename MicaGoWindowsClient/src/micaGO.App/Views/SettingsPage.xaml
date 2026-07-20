@@ -5,11 +5,17 @@
 
     <!-- Styled after the Windows 11 Settings app: a large page title and one
          card per setting (icon | title + description | trailing control). -->
-    <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
+    <Grid Background="Transparent">
         <ScrollViewer>
             <Grid MaxWidth="1000" Margin="36,12,36,40" HorizontalAlignment="Stretch">
 
                 <StackPanel x:Name="GeneralSection" Spacing="4">
+                    <StackPanel.ChildrenTransitions>
+                        <TransitionCollection>
+                            <EntranceThemeTransition FromVerticalOffset="24" IsStaggeringEnabled="True" />
+                            <RepositionThemeTransition />
+                        </TransitionCollection>
+                    </StackPanel.ChildrenTransitions>
                     <TextBlock x:Name="ConnectionHeader"
                                Style="{StaticResource MicaGoSettingsHeaderStyle}"
                                Text="Connection" />
@@ -177,6 +183,12 @@
                 </StackPanel>
 
                 <StackPanel x:Name="ContactsSection" Spacing="4" Visibility="Collapsed">
+                    <StackPanel.ChildrenTransitions>
+                        <TransitionCollection>
+                            <EntranceThemeTransition FromVerticalOffset="24" IsStaggeringEnabled="True" />
+                            <RepositionThemeTransition />
+                        </TransitionCollection>
+                    </StackPanel.ChildrenTransitions>
                     <TextBlock x:Name="ContactsHeader"
                                Style="{StaticResource MicaGoSettingsHeaderStyle}"
                                Text="Contacts" />
@@ -215,6 +227,12 @@
                 </StackPanel>
 
                 <StackPanel x:Name="StorageSection" Spacing="4" Visibility="Collapsed">
+                    <StackPanel.ChildrenTransitions>
+                        <TransitionCollection>
+                            <EntranceThemeTransition FromVerticalOffset="24" IsStaggeringEnabled="True" />
+                            <RepositionThemeTransition />
+                        </TransitionCollection>
+                    </StackPanel.ChildrenTransitions>
                     <TextBlock x:Name="StorageHeader"
                                Style="{StaticResource MicaGoSettingsHeaderStyle}"
                                Text="Storage" />
@@ -238,6 +256,79 @@
                                     VerticalAlignment="Center"
                                     Content="Clear cache"
                                     Click="ClearCacheButton_Click" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel x:Name="AboutSection" Spacing="4" Visibility="Collapsed">
+                    <StackPanel.ChildrenTransitions>
+                        <TransitionCollection>
+                            <EntranceThemeTransition FromVerticalOffset="24" IsStaggeringEnabled="True" />
+                            <RepositionThemeTransition />
+                        </TransitionCollection>
+                    </StackPanel.ChildrenTransitions>
+                    <TextBlock x:Name="AboutHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="About" />
+                    <Border Padding="20,16" Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Image Width="56"
+                                   Height="56"
+                                   VerticalAlignment="Center"
+                                   Source="ms-appx:///Assets/micaGO.Windows.png" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Text="micaGO" />
+                                <TextBlock x:Name="AboutSubtitleText"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock x:Name="AboutVersionText"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE774;" />
+                            <TextBlock x:Name="AboutGitHubLabel"
+                                       Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Text="View the project on GitHub" />
+                            <HyperlinkButton x:Name="AboutGitHubLink"
+                                             Grid.Column="2"
+                                             VerticalAlignment="Center"
+                                             Content="github.com/cinmou/MicaGo"
+                                             NavigateUri="https://github.com/cinmou/MicaGo" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Top" Margin="0,3,0,0" FontSize="18" Glyph="&#xE90F;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                <TextBlock x:Name="AboutOpenSourceLabel" FontWeight="SemiBold" Text="Open source &amp; attributions" />
+                                <TextBlock x:Name="AboutAttributionText"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock x:Name="AboutDisclaimerText"
+                                           FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
                         </Grid>
                     </Border>
                 </StackPanel>

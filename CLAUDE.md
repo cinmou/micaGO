@@ -32,6 +32,16 @@ Three components:
   Border/Grid CornerRadius does NOT clip child Images). Settings/details pages
   use `MicaGoSettingsCardStyle`. **Not yet compiled on Windows** — needs a
   Debug x64 build pass.
+- W-UI4: `ShellViewModel.SyncMessages` — the bound Messages collection is
+  updated as a keyed diff (never Clear+readd: that reset the ListView scroll,
+  the "send jumps to top" bug). Launch goes straight to MainWindow when a
+  saved pairing exists (`HasSavedProfileAsync`; ShellPage finishes the
+  reconnect in-background, pairing window only on failure). Notification
+  clicks open the chat (`NotificationService.ChatActivated`). Settings/details
+  pages are transparent over the ContentSurface layer (no solid bg), with
+  staggered entrance transitions; Settings has an About section; vCard import
+  summary persists in `contacts.vcfSummary`. Twemoji SVG failures fall back to
+  the system glyph via `SvgImageSource.OpenFailed`.
 - W-UI3: bubble-logic gap fill — reply jump (static `ReplyJumpRequested` →
   shell scroll+flash), location open-in-maps, URL preview card (single-URL
   body, async `<title>`), interactive-app card (balloon rows no longer

@@ -35,21 +35,43 @@ public partial class App : Application
 
     internal static void ReportStartupFailure(Exception exception) => WriteStartupFailure(exception);
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override void OnLaunched(LaunchActivatedEventArgs args) => _ = LaunchAsync();
+
+    private static async Task LaunchAsync()
     {
-        // The pairing window doubles as the launch splash: it silently tries
-        // the saved connection first and promotes itself to the chat window.
-        ShowConnectionWindow();
-        _ = RestoreTrayAsync();
+        try
+        {
+            await AppServices.Current.Cache.InitializeAsync();
+            AppServices.Current.Notifications.ChatActivated += OnNotificationChatActivated;
+            AppServices.Current.Notifications.Register();
+            if (await AppServices.Current.Cache.GetSettingAsync("settings.tray") == "true") await SetTrayEnabledAsync(true);
+            // An already-paired PC goes straight to the chat window (which
+            // finishes the reconnect in the background) — the pairing window
+            // only appears when nothing is saved or the restore fails.
+            var paired = false;
+            try { paired = await AppServices.Current.Connection.HasSavedProfileAsync(); }
+            catch { }
+            if (paired) ShowMainWindow();
+            else ShowConnectionWindow();
+        }
+        catch (Exception exception)
+        {
+            WriteStartupFailure(exception);
+            ShowConnectionWindow();
+        }
+    }
+
+    private static void OnNotificationChatActivated(object? sender, string chatId)
+    {
+        var window = MainWindow ?? (Window?)_connectionWindow;
+        window?.DispatcherQueue.TryEnqueue(async () =>
+        {
+            ShowCurrentWindow();
+            if (MainWindow is MainWindow main) await main.OpenChatAsync(chatId);
+        });
     }
 
     public static bool ShouldHideWindowOnClose => !_switchingWindows && !_isExiting && _tray is not null;
-
-    private static async Task RestoreTrayAsync()
-    {
-        await AppServices.Current.Cache.InitializeAsync();
-        if (await AppServices.Current.Cache.GetSettingAsync("settings.tray") == "true") await SetTrayEnabledAsync(true);
-    }
 
     public static async Task SetTrayEnabledAsync(bool enabled)
     {

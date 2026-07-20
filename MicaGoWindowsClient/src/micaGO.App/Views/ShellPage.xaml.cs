@@ -53,7 +53,20 @@ public sealed partial class ShellPage : Page
         if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
         ApplyLocalizedText();
         var api = AppServices.Current.Connection.Api;
-        if (api is null) { App.ShowConnectionWindow(); return; }
+        if (api is null)
+        {
+            // Launched straight into the chat window with a saved pairing —
+            // finish the reconnect here instead of flashing the pairing window.
+            ConnectionStatusText.Text = AppServices.Current.Localization["connChecking"];
+            try
+            {
+                using var restoreTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                await AppServices.Current.Connection.TryRestoreAsync(restoreTimeout.Token);
+            }
+            catch { }
+            api = AppServices.Current.Connection.Api;
+            if (api is null) { App.ShowConnectionWindow(); return; }
+        }
         _viewModel = new ShellViewModel(DispatcherQueue, api, AppServices.Current);
         _viewModel.StateChanged += ViewModel_StateChanged;
         ChatList.ItemsSource = _viewModel.Chats;
@@ -75,7 +88,7 @@ public sealed partial class ShellPage : Page
         SearchBox.PlaceholderText=l["search"]; Composer.PlaceholderText=l["message"];
         ThreadTitle.Text=l["selectConversation"]; ThreadSubtitle.Text=l["localOnly"]; EmptyStateText.Text=l["chooseConversation"];
         SettingsSidebarTitle.Text=l["settings"]; GeneralSettingsLabel.Text=l["appearance"];
-        ContactSettingsLabel.Text=l["contacts"]; StorageSettingsLabel.Text=l["cache"];
+        ContactSettingsLabel.Text=l["contacts"]; StorageSettingsLabel.Text=l["cache"]; AboutSettingsLabel.Text=l["about"];
         ToolTipService.SetToolTip(AttachButton,l["attach"]); ToolTipService.SetToolTip(SendButton,l["send"]);
         ToolTipService.SetToolTip(SidebarSettingsButton,l["settings"]);
         ToolTipService.SetToolTip(ThreadDetailsButton,l["details"]);
