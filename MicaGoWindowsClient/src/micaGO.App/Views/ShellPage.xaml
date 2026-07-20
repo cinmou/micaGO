@@ -382,11 +382,7 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Name="AttachButton"
                                         VerticalAlignment="Bottom"
-<<<<<<< Updated upstream
-                                        Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
-=======
                                         Style="{StaticResource MicaGoComposerIconButtonStyle}"
->>>>>>> Stashed changes
                                         ToolTipService.ToolTip="Attach"
                                         Click="AttachButton_Click">
                                     <FontIcon FontSize="16" Glyph="&#xE723;" />
@@ -394,11 +390,7 @@
                                 <Button x:Name="VoiceButton"
                                         Grid.Column="1"
                                         VerticalAlignment="Bottom"
-<<<<<<< Updated upstream
-                                        Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
-=======
                                         Style="{StaticResource MicaGoComposerIconButtonStyle}"
->>>>>>> Stashed changes
                                         ToolTipService.ToolTip="Voice message"
                                         IsEnabled="False"
                                         Click="VoiceButton_Click">

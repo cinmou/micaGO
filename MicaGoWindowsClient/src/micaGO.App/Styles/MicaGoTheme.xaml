@@ -135,21 +135,13 @@
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Padding" Value="0" />
-<<<<<<< Updated upstream
-        <Setter Property="Margin" Value="4,2" />
-        <Setter Property="CornerRadius" Value="4" />
-=======
         <Setter Property="Margin" Value="8,1" />
         <Setter Property="CornerRadius" Value="8" />
->>>>>>> Stashed changes
         <Setter Property="MinHeight" Value="64" />
         <Setter Property="MinWidth" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="UseSystemFocusVisuals" Value="True" />
-<<<<<<< Updated upstream
-        <Setter Property="FocusVisualMargin" Value="0" />
-=======
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListViewItem">
@@ -173,7 +165,6 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
->>>>>>> Stashed changes
     </Style>
 
     <Style x:Key="MicaGoMessageListStyle" TargetType="ListViewItem">
