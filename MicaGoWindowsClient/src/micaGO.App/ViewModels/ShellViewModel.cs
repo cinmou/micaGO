@@ -69,6 +69,8 @@ public sealed class ShellViewModel : IAsyncDisposable
         _allChats=_allChats.Select(chat=>chat with{Time=ChatTimestamp(chat.UpdatedAt)}).ToArray();ApplyFilter(_activeFilter);
     }
 
+    public string FormatActivityTimestamp(long milliseconds) => ChatTimestamp(milliseconds);
+
     public async Task RefreshContactsAsync(CancellationToken cancellationToken=default)
     {
         ReplaceChats(await ApplyContactNamesAsync(await _services.Cache.GetChatsAsync(cancellationToken),cancellationToken));

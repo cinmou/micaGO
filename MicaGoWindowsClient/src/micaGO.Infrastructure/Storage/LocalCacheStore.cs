@@ -194,6 +194,13 @@ public sealed class LocalCacheStore : IDisposable
         finally{_gate.Release();}
     }
 
+    public async Task ClearImportedContactsAsync(CancellationToken cancellationToken=default)
+    {
+        await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);
+        try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="DELETE FROM contacts WHERE source='vcf' OR source='csv' OR source LIKE 'vcf:%'";await cmd.ExecuteNonQueryAsync(cancellationToken);}
+        finally{_gate.Release();}
+    }
+
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);

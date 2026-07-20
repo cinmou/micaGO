@@ -13,7 +13,9 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.2.1" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.2.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.1.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\micaGO.Core\micaGO.Core.csproj" />
@@ -22,5 +24,9 @@
   <ItemGroup>
     <Content Include="Assets\micaGO.Windows.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\micaGO.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\TwemojiFlags\*.svg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\TwemojiEmoji17\*.svg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\TWEMOJI-LICENSE-GRAPHICS.txt" Link="TWEMOJI-LICENSE-GRAPHICS.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

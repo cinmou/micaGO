@@ -15,6 +15,8 @@ var tests = new (string Name, Action Run)[]
     ("vCard folded and escaped contacts", ParsesVCardContacts),
     ("private and group presentation", PresentsPrivateAndGroupThreads),
     ("reaction and system merging", MergesReactionAndSystemRows),
+    ("Twemoji flag-only segmentation", SegmentsOnlyFlagEmoji),
+    ("Twemoji Emoji 17 fallback segmentation", SegmentsEmoji17Fallback),
 };
 
 var failures = 0;
@@ -120,8 +122,8 @@ static void PreservesPresentationKey()
 
 static void ParsesVCardContacts()
 {
-    var cards=VcfContactImporter.Parse("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Doe\\, Jane\r\nEMAIL:jane@example.com\r\nTEL;TYPE=CELL:+1 555\r\n 0100\r\nEND:VCARD\r\n");
-    Equal(1,cards.Count);Equal("Doe, Jane",cards[0].DisplayName);Equal("jane@example.com",cards[0].Identities[0]);Equal("+1 5550100",cards[0].Identities[1]);
+    var cards=VcfContactImporter.Parse("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Doe\\, Jane\r\nEMAIL:jane@example.com\r\nTEL;TYPE=CELL:+1 555\r\n 0100\r\nPHOTO;ENCODING=b;TYPE=PNG:AQID\r\n BA==\r\nEND:VCARD\r\n");
+    Equal(1,cards.Count);Equal("Doe, Jane",cards[0].DisplayName);Equal("jane@example.com",cards[0].Identities[0]);Equal("+1 5550100",cards[0].Identities[1]);Equal("image/png",cards[0].PhotoMimeType!);Equal(4,cards[0].PhotoBytes!.Length);
 }
 
 static void PresentsPrivateAndGroupThreads()
@@ -142,6 +144,26 @@ static void MergesReactionAndSystemRows()
     var system2=system1 with{Id="s2",DateCreated=2100};
     var rows=ThreadPresentation.Build([target,reaction,system1,system2],false,"en").Where(row=>!row.IsSeparator).ToArray();
     Equal(2,rows.Length);Equal("👍",rows[0].Reactions!.Single());Equal(2,rows[1].MergedSystemCount);True(rows[1].IsPresentationSystem);
+}
+
+static void SegmentsOnlyFlagEmoji()
+{
+    var segments = FlagEmojiSemantics.Split("A🇮🇪🏳️‍🌈🏳️‍⚧️🏴‍☠️🏁💀😀Z");
+    Equal("1f1ee-1f1ea", segments.Single(item => item.Text == "🇮🇪").AssetKey!);
+    Equal("1f3f3-fe0f-200d-1f308", segments.Single(item => item.Text == "🏳️‍🌈").AssetKey!);
+    Equal("1f3f3-fe0f-200d-26a7-fe0f", segments.Single(item => item.Text == "🏳️‍⚧️").AssetKey!);
+    Equal("1f3f4-200d-2620-fe0f", segments.Single(item => item.Text == "🏴‍☠️").AssetKey!);
+    Equal("1f3c1", segments.Single(item => item.Text == "🏁").AssetKey!);
+    True(segments.Single(item => item.Text.Contains("💀😀", StringComparison.Ordinal)).AssetKey is null);
+}
+
+static void SegmentsEmoji17Fallback()
+{
+    var segments = FlagEmojiSemantics.Split("A🇮🇪🫪🧑‍🩰😀Z", includeFlags: false, includeEmoji17: true);
+    True(segments.Single(item => item.Text.Contains("🇮🇪", StringComparison.Ordinal)).AssetKey is null);
+    Equal("1faea", segments.Single(item => item.Text == "🫪").AssetKey!);
+    Equal("1f9d1-200d-1fa70", segments.Single(item => item.Text == "🧑‍🩰").AssetKey!);
+    True(segments.Single(item => item.Text.Contains("😀", StringComparison.Ordinal)).AssetKey is null);
 }
 
 static void Equal<T>(T expected, T actual) where T : notnull

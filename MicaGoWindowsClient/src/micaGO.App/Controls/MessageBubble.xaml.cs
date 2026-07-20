@@ -80,6 +80,7 @@ public sealed partial class MessageBubble : UserControl
     {
         if (_message is not { } message || message.IsSeparator || message.IsPresentationSystem) return;
         var body = MessageSemantics.VisibleText(message.Text);
+        ApplyReply(message);
         ApplyBubble(message, body, body.Length > 0, message.Media.Count > 0, message.IsOutgoing);
     }
 
@@ -189,14 +190,13 @@ public sealed partial class MessageBubble : UserControl
     {
         var hasReply = !string.IsNullOrWhiteSpace(message.ReplyPreview);
         ReplyPanel.Visibility = hasReply ? Visibility.Visible : Visibility.Collapsed;
-        ReplyText.Text = message.ReplyPreview ?? string.Empty;
+        FlagEmojiTextRenderer.SetText(ReplyText, message.ReplyPreview ?? string.Empty, 14,
+            AppServices.Current.Appearance.TwemojiFlagsEnabled);
     }
 
     private void ApplyBubble(Message message, string body, bool hasBody, bool hasMedia, bool outgoing)
     {
         Bubble.Visibility = hasBody ? Visibility.Visible : Visibility.Collapsed;
-        BodyText.Text = body;
-
         if (message.IsBigEmoji)
         {
             Bubble.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
@@ -206,6 +206,8 @@ public sealed partial class MessageBubble : UserControl
             BodyText.FontSize = count <= 1 ? 84 : count == 2 ? 64 : 52;
             BodyText.LineHeight = BodyText.FontSize * 1.1;
             BodyText.Foreground = ThemeBrush("TextFillColorPrimaryBrush");
+            FlagEmojiTextRenderer.SetText(BodyText, body, BodyText.FontSize,
+                AppServices.Current.Appearance.TwemojiFlagsEnabled);
             return;
         }
 
@@ -239,6 +241,8 @@ public sealed partial class MessageBubble : UserControl
             BodyText.Foreground = ThemeBrush("TextFillColorPrimaryBrush");
             Bubble.CornerRadius = tail ? new CornerRadius(18, 18, 18, 4) : new CornerRadius(18);
         }
+        FlagEmojiTextRenderer.SetText(BodyText, body, 17,
+            AppServices.Current.Appearance.TwemojiFlagsEnabled);
     }
 
     // ----- media -----

@@ -19,7 +19,7 @@ public sealed class AppServices : IDisposable
         Localization = new LocalizationService();
         Notifications = new NotificationService();
         Appearance = new AppearanceService(Cache);
-        GoogleContacts = new GoogleContactsService(Cache, secrets);
+        secrets.Delete("google-contacts-refresh-token");
         VcfContacts = new VcfContactImporter(Cache);
     }
 
@@ -29,8 +29,15 @@ public sealed class AppServices : IDisposable
     public LocalizationService Localization { get; }
     public NotificationService Notifications { get; }
     public AppearanceService Appearance { get; }
-    public GoogleContactsService GoogleContacts { get; }
     public VcfContactImporter VcfContacts { get; }
+
+    public async Task RemoveLegacyGoogleContactsAsync(CancellationToken cancellationToken = default)
+    {
+        await Cache.InitializeAsync();
+        await Cache.ClearContactsBySourceAsync("google", cancellationToken);
+        foreach (var key in new[] { "google.clientId", "google.syncToken", "google.lastSync" })
+            await Cache.SetSettingAsync(key, string.Empty, cancellationToken);
+    }
 
     public void Dispose()
     {

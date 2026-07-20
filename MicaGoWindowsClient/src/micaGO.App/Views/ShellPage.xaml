@@ -227,14 +227,11 @@
                             <EntranceThemeTransition FromHorizontalOffset="-32" IsStaggeringEnabled="False" />
                         </TransitionCollection>
                     </Grid.Transitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
                     <!-- The same backdrop acrylic and content-grid stroke used by
                          Unigram's native chat sub-header. -->
                     <Border MinHeight="60"
+                            VerticalAlignment="Top"
+                            Canvas.ZIndex="3"
                             Background="{ThemeResource MicaGoContactBarBrush}"
                             BackgroundSizing="InnerBorderEdge"
                             BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
@@ -275,7 +272,7 @@
                     </Grid>
                     </Border>
 
-                    <Grid Grid.Row="1">
+                    <Grid>
                     <Image x:Name="ChatBackgroundImage"
                            Stretch="UniformToFill"
                            IsHitTestVisible="False"
@@ -300,7 +297,7 @@
                                    Text="Choose a conversation to start" />
                     </StackPanel>
                     <ListView x:Name="MessageList"
-                              Padding="4,14,4,94"
+                              Padding="4,74,4,94"
                               Background="Transparent"
                               IsTabStop="False"
                               ItemContainerStyle="{StaticResource MicaGoMessageListStyle}"
@@ -337,6 +334,7 @@
                                 <Button x:Name="AttachButton"
                                         VerticalAlignment="Bottom"
                                         Style="{StaticResource MicaGoIconButtonStyle}"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                         ToolTipService.ToolTip="Attach"
                                         Click="AttachButton_Click">
                                     <FontIcon FontSize="16" Glyph="&#xE723;" />
@@ -356,7 +354,7 @@
                                          PlaceholderText="Message"
                                          TextWrapping="Wrap"
                                          TextChanged="Composer_TextChanged"
-                                         KeyDown="Composer_KeyDown" />
+                                         PreviewKeyDown="Composer_KeyDown" />
                                 <Button x:Name="SendButton"
                                         Grid.Column="2"
                                         Width="36"

@@ -10,8 +10,8 @@
             <AcrylicBrush x:Key="MicaGoContactBarBrush"
                           FallbackColor="#F9F9F9"
                           TintColor="#FCFCFC"
-                          TintLuminosityOpacity="0.92"
-                          TintOpacity="0.08" />
+                          TintLuminosityOpacity="0.82"
+                          TintOpacity="0.04" />
             <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FFF3F3F3" />
             <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FF000000" />
@@ -26,8 +26,8 @@
             <AcrylicBrush x:Key="MicaGoContactBarBrush"
                           FallbackColor="#2C2C2C"
                           TintColor="#2C2C2C"
-                          TintLuminosityOpacity="0.96"
-                          TintOpacity="0.22" />
+                          TintLuminosityOpacity="0.88"
+                          TintOpacity="0.12" />
             <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FF202020" />
             <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FF171717" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FFFFFFFF" />

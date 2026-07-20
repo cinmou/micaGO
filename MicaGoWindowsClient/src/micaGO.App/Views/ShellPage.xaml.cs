@@ -27,6 +27,7 @@ public sealed partial class ShellPage : Page
     private double? _preferredSidebarRatio;
     private ScrollViewer? _messageScroller;
     private bool _autoLoadingOlder;
+    private bool _keepingMessageBottom;
 
     public ShellPage()
     {
@@ -43,6 +44,7 @@ public sealed partial class ShellPage : Page
     {
         if(_viewModel is not null)return;
         await AppServices.Current.Cache.InitializeAsync();
+        await AppServices.Current.RemoveLegacyGoogleContactsAsync();
         await AppServices.Current.Appearance.InitializeAsync();
         AppServices.Current.Appearance.AppearanceChanged += Appearance_AppearanceChanged;
         ApplyChatAppearance();
@@ -85,6 +87,7 @@ public sealed partial class ShellPage : Page
         ConnectionStatusText.Text = $"{_viewModel.SyncStatus} · {AppServices.Current.Connection.Api?.BaseUrl}";
         OlderMessagesProgress.IsActive=_viewModel.IsLoadingOlder;
         OlderMessagesProgress.Visibility=_viewModel.IsLoadingOlder?Visibility.Visible:Visibility.Collapsed;
+        UpdateThreadSubtitle();
         UpdateTrayContacts();
     }
     private void UpdateTrayContacts(){if(_viewModel is null)return;App.UpdateTrayContacts(_viewModel.Chats.Take(6).Select(chat=>new TrayContact(chat.Id,chat.Title)));}
@@ -98,7 +101,7 @@ public sealed partial class ShellPage : Page
 
     private async void MessageScroller_ViewChanged(object? sender,ScrollViewerViewChangedEventArgs e)
     {
-        if(_messageScroller is null||_messageScroller.VerticalOffset>160)return;
+        if(_keepingMessageBottom||_messageScroller is null||_messageScroller.VerticalOffset>160)return;
         await LoadOlderAutomaticallyAsync();
     }
 
@@ -143,13 +146,19 @@ public sealed partial class ShellPage : Page
         ThreadAvatar.DisplayName = chat.Title;
         ThreadAvatar.ProfilePicture = Ui.Image(chat.AvatarPath);
         ThreadTitle.Text = chat.Title;
-        ThreadSubtitle.Text = chat.IsMuted ? $"{chat.ServiceLabel} · Notifications muted" : chat.ServiceLabel;
-        await _viewModel.SelectChatAsync(chat);
-        EmptyState.Visibility = Visibility.Collapsed;
-        Composer.IsEnabled = chat.CanSendText;
-        Composer.PlaceholderText = chat.CanSendText ? AppServices.Current.Localization["message"] : $"{chat.ServiceLabel} · —";
-        SendButton.IsEnabled = !string.IsNullOrWhiteSpace(Composer.Text);
-        ScrollToLastMessage();
+        ThreadSubtitle.Text = chat.Time;
+        _keepingMessageBottom = true;
+        try
+        {
+            await _viewModel.SelectChatAsync(chat);
+            EmptyState.Visibility = Visibility.Collapsed;
+            Composer.IsEnabled = chat.CanSendText;
+            Composer.PlaceholderText = chat.CanSendText ? AppServices.Current.Localization["message"] : "—";
+            SendButton.IsEnabled = !string.IsNullOrWhiteSpace(Composer.Text);
+            UpdateThreadSubtitle();
+            await ScrollToLastMessageAsync();
+        }
+        finally { _keepingMessageBottom = false; }
     }
 
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -472,7 +481,17 @@ public sealed partial class ShellPage : Page
     private async Task SendCurrentTextAsync()
     {
         var text = Composer.Text.Trim(); if (_viewModel is null || string.IsNullOrEmpty(text)) return;
-        Composer.Text = string.Empty; SendButton.IsEnabled = false; await _viewModel.SendTextAsync(text); ScrollToLastMessage();
+        Composer.Text = string.Empty; SendButton.IsEnabled = false;
+        _keepingMessageBottom = true;
+        try
+        {
+            var send = _viewModel.SendTextAsync(text);
+            await ScrollToLastMessageAsync();
+            await send;
+            UpdateThreadSubtitle();
+            await ScrollToLastMessageAsync();
+        }
+        finally { _keepingMessageBottom = false; }
     }
 
     private async void AttachButton_Click(object sender, RoutedEventArgs e)
@@ -483,7 +502,17 @@ public sealed partial class ShellPage : Page
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
         var files = await picker.PickMultipleFilesAsync();
-        if (files.Count > 0) { await _viewModel.SendAttachmentsAsync(files.Select(file => file.Path)); ScrollToLastMessage(); }
+        if (files.Count == 0) return;
+        _keepingMessageBottom = true;
+        try
+        {
+            var send = _viewModel.SendAttachmentsAsync(files.Select(file => file.Path));
+            await ScrollToLastMessageAsync();
+            await send;
+            UpdateThreadSubtitle();
+            await ScrollToLastMessageAsync();
+        }
+        finally { _keepingMessageBottom = false; }
     }
 
     private async void MessageList_RightTapped(object sender, RightTappedRoutedEventArgs e)
@@ -504,7 +533,24 @@ public sealed partial class ShellPage : Page
         menu.ShowAt(MessageList, e.GetPosition(MessageList));
     }
 
-    private void ScrollToLastMessage() { if (_viewModel?.Messages.Count > 0) MessageList.ScrollIntoView(_viewModel.Messages[^1]); }
+    private void UpdateThreadSubtitle()
+    {
+        if (_viewModel?.SelectedChat is not { } chat) return;
+        var latestMessage = _viewModel.Messages.Where(message => !message.IsSeparator).Select(message => message.DateCreated).DefaultIfEmpty(0).Max();
+        ThreadSubtitle.Text = _viewModel.FormatActivityTimestamp(Math.Max(chat.UpdatedAt, latestMessage));
+    }
+
+    private async Task ScrollToLastMessageAsync()
+    {
+        if (_viewModel?.Messages.Count is not > 0) return;
+        await Task.Yield();
+        MessageList.UpdateLayout();
+        var last = _viewModel.Messages[^1];
+        MessageList.ScrollIntoView(last);
+        await Task.Delay(16);
+        MessageList.UpdateLayout();
+        _messageScroller?.ChangeView(null, _messageScroller.ScrollableHeight, null, true);
+    }
 }
 
 public sealed record ShellNavigationContext(ShellPage Host, ChatSummary? Chat = null, string Section = "general");

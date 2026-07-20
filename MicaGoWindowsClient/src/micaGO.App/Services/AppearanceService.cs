@@ -8,6 +8,7 @@ public sealed class AppearanceService(LocalCacheStore cache)
     private const string BackgroundKey = "appearance.chatBackground";
     private const string BubbleModeKey = "appearance.bubbleMode";
     private const string BubbleColorKey = "appearance.bubbleColor";
+    private const string TwemojiFlagsKey = "appearance.twemojiFlags";
     private bool _initialized;
 
     public event EventHandler? AppearanceChanged;
@@ -15,6 +16,7 @@ public sealed class AppearanceService(LocalCacheStore cache)
     public string? ChatBackgroundPath { get; private set; }
     public bool BubbleFollowsSystem { get; private set; } = true;
     public Color BubbleColor { get; private set; } = Color.FromArgb(0xFF, 0x0A, 0x84, 0xFF);
+    public bool TwemojiFlagsEnabled { get; private set; }
 
     public async Task InitializeAsync()
     {
@@ -23,6 +25,7 @@ public sealed class AppearanceService(LocalCacheStore cache)
         ChatBackgroundPath = await cache.GetSettingAsync(BackgroundKey);
         BubbleFollowsSystem = !string.Equals(await cache.GetSettingAsync(BubbleModeKey), "custom", StringComparison.Ordinal);
         if (TryParseColor(await cache.GetSettingAsync(BubbleColorKey), out var color)) BubbleColor = color;
+        TwemojiFlagsEnabled = string.Equals(await cache.GetSettingAsync(TwemojiFlagsKey), "true", StringComparison.Ordinal);
         _initialized = true;
     }
 
@@ -71,6 +74,14 @@ public sealed class AppearanceService(LocalCacheStore cache)
         await InitializeAsync();
         BubbleColor = Color.FromArgb(0xFF, color.R, color.G, color.B);
         await cache.SetSettingAsync(BubbleColorKey, $"#{BubbleColor.R:X2}{BubbleColor.G:X2}{BubbleColor.B:X2}");
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task SetTwemojiFlagsEnabledAsync(bool enabled)
+    {
+        await InitializeAsync();
+        TwemojiFlagsEnabled = enabled;
+        await cache.SetSettingAsync(TwemojiFlagsKey, enabled ? "true" : "false");
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 

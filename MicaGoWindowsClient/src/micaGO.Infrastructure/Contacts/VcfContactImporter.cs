@@ -1,14 +1,18 @@
 using System.Text;
+using System.Security.Cryptography;
 using MicaGo.Core.Models;
 using MicaGo.Infrastructure.Storage;
 
 namespace MicaGo.Infrastructure.Contacts;
 
-public sealed record VcfContactCard(string DisplayName, IReadOnlyList<string> Identities);
+public sealed record VcfContactCard(string DisplayName, IReadOnlyList<string> Identities, byte[]? PhotoBytes = null, string? PhotoMimeType = null);
 public sealed record VcfContactImportResult(int ContactCount, int IdentityCount, int SkippedCards);
 
 public sealed class VcfContactImporter(LocalCacheStore cache)
 {
+    private static readonly string AvatarDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "micaGO", "contact_avatars");
+
     public async Task<VcfContactImportResult> ImportAsync(string path, CancellationToken cancellationToken = default)
     {
         var text = await File.ReadAllTextAsync(path, Encoding.UTF8, cancellationToken);
@@ -24,16 +28,28 @@ public sealed class VcfContactImporter(LocalCacheStore cache)
             var identities = card.Identities.Where(IsUsableIdentity).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (identities.Length == 0) { skipped++; continue; }
             var displayName = string.IsNullOrWhiteSpace(card.DisplayName) ? identities[0] : card.DisplayName.Trim();
-            foreach (var identity in identities) contacts[identity] = new ContactMatch(identity, displayName, null, "vcf", now);
+            var avatarPath = await SavePhotoAsync(card.PhotoBytes, card.PhotoMimeType, cancellationToken);
+            foreach (var identity in identities) contacts[identity] = new ContactMatch(identity, displayName, avatarPath, "vcf", now);
         }
         if (contacts.Count == 0) throw new InvalidDataException("The vCard file contains no usable phone numbers or email addresses.");
 
-        // A VCF import replaces only earlier file imports. Google rows remain source-scoped.
-        await cache.ClearContactsBySourceAsync("vcf", cancellationToken);
-        await cache.ClearContactsBySourceAsync("csv", cancellationToken);
+        // Imports are additive so users can select several address books. A
+        // repeated identity is updated by the newest card without disturbing
+        // unrelated contacts imported from earlier files.
         await cache.UpsertContactsAsync(contacts.Values, cancellationToken);
         await cache.SetSettingAsync("contacts.vcf.lastImport", now.ToString(), cancellationToken);
         return new(cards.Count - skipped, contacts.Count, skipped);
+    }
+
+    public async Task ClearAllAsync(CancellationToken cancellationToken = default)
+    {
+        await cache.ClearImportedContactsAsync(cancellationToken);
+        if (!Directory.Exists(AvatarDirectory)) return;
+        foreach (var path in Directory.EnumerateFiles(AvatarDirectory))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
     }
 
     public static IReadOnlyList<VcfContactCard> Parse(string text)
@@ -77,7 +93,50 @@ public sealed class VcfContactImporter(LocalCacheStore cache)
             .Select(row => row.Value.Trim())
             .Select(value => value.StartsWith("tel:", StringComparison.OrdinalIgnoreCase) ? value[4..] : value.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase) ? value[7..] : value)
             .Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
-        return new(Unescape(displayName ?? string.Empty), identities.Select(Unescape).ToArray());
+        var photo = DecodePhoto(rows.FirstOrDefault(row => row.Name == "PHOTO"));
+        return new(Unescape(displayName ?? string.Empty), identities.Select(Unescape).ToArray(), photo.Bytes, photo.MimeType);
+    }
+
+    private static (byte[]? Bytes, string? MimeType) DecodePhoto((string Name, string Parameters, string Value) row)
+    {
+        if (string.IsNullOrWhiteSpace(row.Value)) return (null, null);
+        var value = row.Value.Trim();
+        string? mimeType = null;
+        if (value.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var comma = value.IndexOf(',');
+            if (comma <= 5 || !value[..comma].Contains(";base64", StringComparison.OrdinalIgnoreCase)) return (null, null);
+            mimeType = value[5..comma].Split(';')[0];
+            value = value[(comma + 1)..];
+        }
+        else
+        {
+            var type = row.Parameters.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault(part => part.StartsWith("TYPE=", StringComparison.OrdinalIgnoreCase) || part.StartsWith("MEDIATYPE=", StringComparison.OrdinalIgnoreCase));
+            if (type is not null)
+            {
+                var raw = type[(type.IndexOf('=') + 1)..].Trim('"');
+                mimeType = raw.Contains('/') ? raw : "image/" + raw.ToLowerInvariant().Replace("jpg", "jpeg");
+            }
+        }
+        try { return (Convert.FromBase64String(string.Concat(value.Where(ch => !char.IsWhiteSpace(ch)))), mimeType); }
+        catch (FormatException) { return (null, null); }
+    }
+
+    private static async Task<string?> SavePhotoAsync(byte[]? bytes, string? mimeType, CancellationToken cancellationToken)
+    {
+        if (bytes is not { Length: > 0 }) return null;
+        Directory.CreateDirectory(AvatarDirectory);
+        var extension = mimeType?.ToLowerInvariant() switch
+        {
+            "image/png" => ".png",
+            "image/gif" => ".gif",
+            "image/webp" => ".webp",
+            _ => ".jpg",
+        };
+        var path = Path.Combine(AvatarDirectory, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() + extension);
+        if (!File.Exists(path)) await File.WriteAllBytesAsync(path, bytes, cancellationToken);
+        return path;
     }
 
     private static IReadOnlyList<string> Unfold(string text)

@@ -103,6 +103,29 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Top" Margin="0,3,0,0" FontSize="18" Glyph="&#xE7C1;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                <TextBlock x:Name="TwemojiFlagsLabel" FontWeight="SemiBold" Text="Use Twemoji for flags" />
+                                <TextBlock x:Name="TwemojiFlagsDescription" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                <TextBlock x:Name="TwemojiAttribution" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
+                                <TextBlock x:Name="TwemojiDisclaimer" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="TwemojiFlagsToggle"
+                                          Grid.Column="2"
+                                          MinWidth="0"
+                                          VerticalAlignment="Top"
+                                          OffContent=""
+                                          OnContent=""
+                                          Toggled="TwemojiFlagsToggle_Toggled" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xF2B7;" />
                             <TextBlock x:Name="LanguageLabel"
                                        Grid.Column="1"
@@ -177,34 +200,17 @@
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
-                            <Button x:Name="ImportVcfButton"
-                                    Grid.Column="2"
-                                    VerticalAlignment="Center"
-                                    Content="Browse…"
-                                    Click="ImportVcfButton_Click" />
-                        </Grid>
-                    </Border>
-                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
-                        <StackPanel Spacing="10">
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE77B;" />
-                                <TextBlock VerticalAlignment="Center" Text="Google Contacts" />
-                            </Grid>
-                            <TextBox x:Name="GoogleClientId" PlaceholderText="OAuth desktop client ID" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="GoogleSignInButton" Content="Sign in" Click="GoogleSignInButton_Click" />
-                                <Button x:Name="GoogleSyncButton" Content="Sync" Click="GoogleSyncButton_Click" />
-                                <Button x:Name="GoogleSignOutButton" Content="Sign out" Click="GoogleSignOutButton_Click" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="ImportVcfButton"
+                                        VerticalAlignment="Center"
+                                        Content="Browse…"
+                                        Click="ImportVcfButton_Click" />
+                                <Button x:Name="ClearVcfButton"
+                                        VerticalAlignment="Center"
+                                        Content="Clear all"
+                                        Click="ClearVcfButton_Click" />
                             </StackPanel>
-                            <TextBlock x:Name="GoogleStatus"
-                                       FontSize="12"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
+                        </Grid>
                     </Border>
                 </StackPanel>
 

@@ -3,3 +3,6 @@
 .vs/
 *.user
 *.suo
+src/micaGO.App/Assets/TwemojiFlags/*.png
+src/micaGO.App/Assets/TwemojiEmoji17/*.png
+.emoji-source/

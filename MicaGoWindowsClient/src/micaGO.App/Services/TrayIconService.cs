@@ -12,6 +12,8 @@ public sealed class TrayIconService : IDisposable
     private const uint WmRButtonUp = 0x0205;
     private const uint NimAdd = 0;
     private const uint NimDelete = 2;
+    private const uint NimSetVersion = 4;
+    private const uint NotifyIconVersion4 = 4;
     private const uint NifMessage = 1;
     private const uint NifIcon = 2;
     private const uint NifTip = 4;
@@ -49,6 +51,8 @@ public sealed class TrayIconService : IDisposable
         if (_icon == IntPtr.Zero) throw new InvalidOperationException("Unable to load the micaGO tray icon.");
         var data = IconData(NifMessage | NifIcon | NifTip);
         if (!Shell_NotifyIconW(NimAdd, ref data)) throw new InvalidOperationException("Unable to add the micaGO tray icon.");
+        data.TimeoutOrVersion = NotifyIconVersion4;
+        Shell_NotifyIconW(NimSetVersion, ref data);
     }
 
     public void UpdateRecentContacts(IEnumerable<TrayContact> contacts) => _contacts = contacts.Where(x => !string.IsNullOrWhiteSpace(x.Id)).Take(6).ToArray();
@@ -57,7 +61,7 @@ public sealed class TrayIconService : IDisposable
     {
         if (message == CallbackMessage)
         {
-            var mouseMessage = unchecked((uint)lParam.ToInt64());
+            var mouseMessage = unchecked((uint)lParam.ToInt64()) & 0xffff;
             if (mouseMessage == WmLButtonUp) OpenRequested?.Invoke(this, EventArgs.Empty);
             else if (mouseMessage == WmRButtonUp) ShowMenu();
             return IntPtr.Zero;
