@@ -766,6 +766,7 @@ public sealed partial class ShellPage : Page
     {
         if (_viewModel?.Messages.Count is not > 0) return;
         await Task.Yield();
+<<<<<<< Updated upstream
         var last = _viewModel.Messages[^1];
         if (MessageList.ContainerFromItem(last) is null)
             MessageList.ScrollIntoView(last);
@@ -780,6 +781,19 @@ public sealed partial class ShellPage : Page
                 _messageScroller.ChangeView(null, _messageScroller.ScrollableHeight, null, true);
         }
         JumpToBottomButton.Visibility = Visibility.Collapsed;
+=======
+        MessageList.UpdateLayout();
+        // One single scroll pass — the old ScrollIntoView + delay + second
+        // ChangeView sequence produced a visible double-jump on every send.
+        if (_messageScroller is { } scroller)
+        {
+            scroller.ChangeView(null, scroller.ScrollableHeight, null, true);
+        }
+        else
+        {
+            MessageList.ScrollIntoView(_viewModel.Messages[^1]);
+        }
+>>>>>>> Stashed changes
     }
 }
 
