@@ -276,10 +276,10 @@
                     </Border>
 
                     <Grid Grid.Row="1">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+                    <Image x:Name="ChatBackgroundImage"
+                           Stretch="UniformToFill"
+                           IsHitTestVisible="False"
+                           Visibility="Collapsed" />
                     <StackPanel x:Name="EmptyState"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
@@ -300,18 +300,18 @@
                                    Text="Choose a conversation to start" />
                     </StackPanel>
                     <ListView x:Name="MessageList"
-                              Padding="4,14,4,8"
+                              Padding="4,14,4,94"
                               Background="Transparent"
                               IsTabStop="False"
                               ItemContainerStyle="{StaticResource MicaGoMessageListStyle}"
                               SelectionMode="None"
+                              Loaded="MessageList_Loaded"
                               RightTapped="MessageList_RightTapped">
                         <ListView.Header>
-                            <Button x:Name="LoadOlderButton"
-                                    Margin="0,0,0,12"
-                                    HorizontalAlignment="Center"
-                                    Content="Load earlier messages"
-                                    Click="LoadOlderButton_Click" />
+                            <ProgressRing x:Name="OlderMessagesProgress"
+                                          Width="20" Height="20" Margin="0,0,0,10"
+                                          HorizontalAlignment="Center"
+                                          IsActive="False" Visibility="Collapsed" />
                         </ListView.Header>
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="models:Message">
@@ -320,14 +320,14 @@
                         </ListView.ItemTemplate>
                     </ListView>
 
-                    <Grid Grid.Row="1" Padding="16,8,16,14">
+                    <Grid Padding="16,8,16,14"
+                          VerticalAlignment="Bottom"
+                          Canvas.ZIndex="2">
                         <Border MinHeight="46"
                                 MaxWidth="920"
                                 HorizontalAlignment="Stretch"
-                                Background="{ThemeResource MicaGoComposerBrush}"
-                                BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
-                                BorderThickness="1"
-                                CornerRadius="23">
+                                Background="Transparent"
+                                BorderThickness="0">
                             <Grid Padding="5" ColumnSpacing="4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -345,12 +345,13 @@
                                          Grid.Column="1"
                                          MinHeight="36"
                                          MaxHeight="128"
-                                         Padding="8,8,8,7"
+                                         Padding="12,8,12,7"
                                          VerticalAlignment="Center"
                                          AcceptsReturn="True"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         CornerRadius="0"
+                                         Background="{ThemeResource MicaGoComposerBrush}"
+                                         BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
+                                         BorderThickness="1"
+                                         CornerRadius="18"
                                          IsEnabled="False"
                                          PlaceholderText="Message"
                                          TextWrapping="Wrap"
@@ -379,7 +380,6 @@
                     <!-- Full-screen send effects (confetti, hearts, …) play on
                          top of the whole conversation area. -->
                     <Canvas x:Name="EffectCanvas"
-                            Grid.RowSpan="2"
                             IsHitTestVisible="False" />
                     </Grid>
                 </Grid>

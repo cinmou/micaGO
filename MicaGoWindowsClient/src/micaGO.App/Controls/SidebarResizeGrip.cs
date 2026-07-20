@@ -14,7 +14,15 @@ public sealed class SidebarResizeGrip : Control
 
     public SidebarResizeGrip()
     {
-        ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+        // Creating an InputSystemCursor while XAML is still activating the
+        // control can fail with E_FAIL on unpackaged Release builds. Defer it
+        // until the control is connected to a XamlRoot; dragging itself does
+        // not depend on the optional cursor hint.
+        Loaded += (_, _) =>
+        {
+            try { ProtectedCursor ??= InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast); }
+            catch (Exception) { }
+        };
     }
 
     protected override void OnPointerEntered(PointerRoutedEventArgs e)

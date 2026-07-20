@@ -2,12 +2,16 @@ using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 using MicaGo.App.Services;
 using MicaGo.App.ViewModels;
 using MicaGo.Core.Models;
 using Windows.System;
+using Windows.UI.Core;
 
 namespace MicaGo.App.Views;
 
@@ -21,6 +25,8 @@ public sealed partial class ShellPage : Page
     private double _sidebarPointerStartX;
     private bool _isSidebarDragging;
     private double? _preferredSidebarRatio;
+    private ScrollViewer? _messageScroller;
+    private bool _autoLoadingOlder;
 
     public ShellPage()
     {
@@ -37,6 +43,9 @@ public sealed partial class ShellPage : Page
     {
         if(_viewModel is not null)return;
         await AppServices.Current.Cache.InitializeAsync();
+        await AppServices.Current.Appearance.InitializeAsync();
+        AppServices.Current.Appearance.AppearanceChanged += Appearance_AppearanceChanged;
+        ApplyChatAppearance();
         RestoreSidebarWidth(await AppServices.Current.Cache.GetSettingAsync(SidebarWidthRatioKey));
         var language = await AppServices.Current.Cache.GetSettingAsync("settings.language");
         if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
@@ -52,6 +61,7 @@ public sealed partial class ShellPage : Page
         try
         {
             await _viewModel.InitializeAsync();
+            UpdateTrayContacts();
             if (_viewModel.Chats.Count > 0) { ChatList.SelectedIndex = 0; await SelectChatAsync(_viewModel.Chats[0]); }
         }
         catch (Exception exception) { ConnectionStatusText.Text = $"Could not initialize: {exception.Message}"; }
@@ -73,9 +83,55 @@ public sealed partial class ShellPage : Page
     {
         if (_viewModel is null) return;
         ConnectionStatusText.Text = $"{_viewModel.SyncStatus} · {AppServices.Current.Connection.Api?.BaseUrl}";
-        LoadOlderButton.Visibility=_viewModel.HasMoreMessages?Visibility.Visible:Visibility.Collapsed;LoadOlderButton.IsEnabled=!_viewModel.IsLoadingOlder;
+        OlderMessagesProgress.IsActive=_viewModel.IsLoadingOlder;
+        OlderMessagesProgress.Visibility=_viewModel.IsLoadingOlder?Visibility.Visible:Visibility.Collapsed;
+        UpdateTrayContacts();
     }
-    private async void LoadOlderButton_Click(object sender,RoutedEventArgs e){if(_viewModel is null)return;var anchor=_viewModel.Messages.FirstOrDefault();await _viewModel.LoadOlderMessagesAsync();if(anchor is not null)MessageList.ScrollIntoView(anchor);}
+    private void UpdateTrayContacts(){if(_viewModel is null)return;App.UpdateTrayContacts(_viewModel.Chats.Take(6).Select(chat=>new TrayContact(chat.Id,chat.Title)));}
+
+    private void MessageList_Loaded(object sender,RoutedEventArgs e)
+    {
+        if(_messageScroller is not null)return;
+        _messageScroller=FindDescendant<ScrollViewer>(MessageList);
+        if(_messageScroller is not null)_messageScroller.ViewChanged+=MessageScroller_ViewChanged;
+    }
+
+    private async void MessageScroller_ViewChanged(object? sender,ScrollViewerViewChangedEventArgs e)
+    {
+        if(_messageScroller is null||_messageScroller.VerticalOffset>160)return;
+        await LoadOlderAutomaticallyAsync();
+    }
+
+    private async Task LoadOlderAutomaticallyAsync()
+    {
+        if(_autoLoadingOlder||_viewModel is null||!_viewModel.HasMoreMessages||_viewModel.IsLoadingOlder)return;
+        _autoLoadingOlder=true;
+        try
+        {
+            var anchor=_viewModel.Messages.FirstOrDefault();
+            var anchorKey=anchor?.PresentationKey;
+            var oldY=anchor is not null&&MessageList.ContainerFromItem(anchor) is FrameworkElement oldContainer
+                ? oldContainer.TransformToVisual(MessageList).TransformPoint(new Windows.Foundation.Point()).Y : double.NaN;
+            await _viewModel.LoadOlderMessagesAsync();
+            if(anchorKey is null)return;
+            var restored=_viewModel.Messages.FirstOrDefault(item=>item.PresentationKey==anchorKey);
+            if(restored is null)return;
+            MessageList.UpdateLayout();
+            if(!double.IsNaN(oldY)&&MessageList.ContainerFromItem(restored) is FrameworkElement newContainer&&_messageScroller is not null)
+            {
+                var newY=newContainer.TransformToVisual(MessageList).TransformPoint(new Windows.Foundation.Point()).Y;
+                _messageScroller.ChangeView(null,_messageScroller.VerticalOffset+(newY-oldY),null,true);
+            }
+            else MessageList.ScrollIntoView(restored,ScrollIntoViewAlignment.Leading);
+        }
+        finally{_autoLoadingOlder=false;}
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T:DependencyObject
+    {
+        for(var i=0;i<VisualTreeHelper.GetChildrenCount(root);i++){var child=VisualTreeHelper.GetChild(root,i);if(child is T match)return match;var nested=FindDescendant<T>(child);if(nested is not null)return nested;}
+        return null;
+    }
 
     private async void ChatList_ItemClick(object sender, ItemClickEventArgs e) { if (e.ClickedItem is ChatSummary chat) await SelectChatAsync(chat); }
 
@@ -151,6 +207,15 @@ public sealed partial class ShellPage : Page
         DetailFrame.Navigate(typeof(ConversationDetailsPage), new ShellNavigationContext(this, chat), ForwardTransition());
     }
 
+    public async Task OpenChatAsync(string chatId)
+    {
+        if(_viewModel is null)return;
+        var chat=_viewModel.Chats.FirstOrDefault(item=>item.Id==chatId||(item.RouteIds?.Contains(chatId)??false));
+        if(chat is null)return;
+        ChatList.SelectedItem=chat;
+        await SelectChatAsync(chat);
+    }
+
     public void ExitDetailMode()
     {
         ConversationPane.Visibility = Visibility.Visible;
@@ -172,8 +237,10 @@ public sealed partial class ShellPage : Page
     public async Task ShutdownAsync()
     {
         _timestampTimer.Stop();
+        AppServices.Current.Appearance.AppearanceChanged -= Appearance_AppearanceChanged;
         Controls.MessageBubble.ReplyJumpRequested -= OnReplyJumpRequested;
         Controls.MessageBubble.ScreenEffectRequested -= OnScreenEffectRequested;
+        if(_messageScroller is not null){_messageScroller.ViewChanged-=MessageScroller_ViewChanged;_messageScroller=null;}
         if (_viewModel is { } viewModel)
         {
             _viewModel = null;
@@ -281,6 +348,39 @@ public sealed partial class ShellPage : Page
         ConversationPane.Visibility = Visibility.Visible;
     }
 
+    public async Task RefreshAppearanceAsync()
+    {
+        await AppServices.Current.Appearance.InitializeAsync();
+        ApplyChatAppearance();
+        Controls.MessageBubble.RefreshAppearance();
+    }
+
+    private void Appearance_AppearanceChanged(object? sender, EventArgs e)
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            DispatcherQueue.TryEnqueue(ApplyChatAppearance);
+            return;
+        }
+        ApplyChatAppearance();
+    }
+
+    private void ApplyChatAppearance()
+    {
+        var path = AppServices.Current.Appearance.ChatBackgroundPath;
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            ChatBackgroundImage.Source = new BitmapImage(new Uri(path, UriKind.Absolute));
+            ChatBackgroundImage.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ChatBackgroundImage.Source = null;
+            ChatBackgroundImage.Visibility = Visibility.Collapsed;
+        }
+        Controls.MessageBubble.RefreshAppearance();
+    }
+
     private static SlideNavigationTransitionInfo ForwardTransition() => new() { Effect = SlideNavigationTransitionEffect.FromRight };
 
     private void RestoreSidebarWidth(string? rawRatio)
@@ -362,7 +462,11 @@ public sealed partial class ShellPage : Page
         e.Handled = true;
     }
     private async void SendButton_Click(object sender, RoutedEventArgs e) => await SendCurrentTextAsync();
-    private async void Composer_KeyDown(object sender, KeyRoutedEventArgs e) { if (e.Key == VirtualKey.Enter) { e.Handled = true; await SendCurrentTextAsync(); } }
+    private async void Composer_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var shift=(InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)&CoreVirtualKeyStates.Down)!=0;
+        if(e.Key==VirtualKey.Enter&&!shift){e.Handled=true;await SendCurrentTextAsync();}
+    }
     private void Composer_TextChanged(object sender, TextChangedEventArgs e) => SendButton.IsEnabled = _viewModel?.SelectedChat is not null && !string.IsNullOrWhiteSpace(Composer.Text);
 
     private async Task SendCurrentTextAsync()

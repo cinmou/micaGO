@@ -26,7 +26,6 @@ public sealed partial class ConversationDetailsPage : Page
         }
 
         var l = AppServices.Current.Localization;
-        PageTitle.Text = l["details"];
         ParticipantsHeader.Text = l["participants"];
         ConversationHeader.Text = l["conversation"];
         MediaHeader.Text = l["sharedMedia"];

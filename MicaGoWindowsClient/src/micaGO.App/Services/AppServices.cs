@@ -18,8 +18,9 @@ public sealed class AppServices : IDisposable
         Media = new MediaCache();
         Localization = new LocalizationService();
         Notifications = new NotificationService();
+        Appearance = new AppearanceService(Cache);
         GoogleContacts = new GoogleContactsService(Cache, secrets);
-        CsvContacts = new CsvContactImporter(Cache);
+        VcfContacts = new VcfContactImporter(Cache);
     }
 
     public ConnectionManager Connection { get; }
@@ -27,8 +28,9 @@ public sealed class AppServices : IDisposable
     public MediaCache Media { get; }
     public LocalizationService Localization { get; }
     public NotificationService Notifications { get; }
+    public AppearanceService Appearance { get; }
     public GoogleContactsService GoogleContacts { get; }
-    public CsvContactImporter CsvContacts { get; }
+    public VcfContactImporter VcfContacts { get; }
 
     public void Dispose()
     {

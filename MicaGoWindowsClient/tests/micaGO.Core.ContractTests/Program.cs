@@ -12,7 +12,7 @@ var tests = new (string Name, Action Run)[]
     ("attachment placeholder reconciliation", ReconcilesAttachmentPlaceholder),
     ("ambiguous attachment fallback", RefusesAmbiguousAttachmentFallback),
     ("stable presentation key", PreservesPresentationKey),
-    ("CSV quoted contacts", ParsesQuotedContactsCsv),
+    ("vCard folded and escaped contacts", ParsesVCardContacts),
     ("private and group presentation", PresentsPrivateAndGroupThreads),
     ("reaction and system merging", MergesReactionAndSystemRows),
 };
@@ -118,10 +118,10 @@ static void PreservesPresentationKey()
     Equal("row-1",confirmed.PresentationKey);
 }
 
-static void ParsesQuotedContactsCsv()
+static void ParsesVCardContacts()
 {
-    var rows=CsvContactImporter.Parse("Name,E-mail 1 - Value,Phone 1 - Value\r\n\"Doe, Jane\",jane@example.com,\"+1 555 0100\"\r\n");
-    Equal(2,rows.Count);Equal("Doe, Jane",rows[1][0]);Equal("jane@example.com",rows[1][1]);
+    var cards=VcfContactImporter.Parse("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Doe\\, Jane\r\nEMAIL:jane@example.com\r\nTEL;TYPE=CELL:+1 555\r\n 0100\r\nEND:VCARD\r\n");
+    Equal(1,cards.Count);Equal("Doe, Jane",cards[0].DisplayName);Equal("jane@example.com",cards[0].Identities[0]);Equal("+1 5550100",cards[0].Identities[1]);
 }
 
 static void PresentsPrivateAndGroupThreads()

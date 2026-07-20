@@ -5,53 +5,23 @@
 
     <!-- Windows 11 Settings-style detail page: hero identity block, then one
          card per option, then the shared-media grid. -->
-    <Grid Background="{ThemeResource MicaGoSecondaryPageBrush}">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <Border Background="{ThemeResource MicaGoPageHeaderBackgroundBrush}"
-                BackgroundSizing="InnerBorderEdge"
-                BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
-                BorderThickness="0,0,0,1" />
-
-        <Grid MaxWidth="1000" Padding="36,24,36,12" HorizontalAlignment="Stretch">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Button Margin="0,0,8,0"
-                    VerticalAlignment="Center"
-                    Style="{StaticResource MicaGoIconButtonStyle}"
-                    ToolTipService.ToolTip="Back"
-                    Click="BackButton_Click">
-                <FontIcon FontSize="16" Glyph="&#xE72B;" />
-            </Button>
-            <TextBlock x:Name="PageTitle"
-                       Grid.Column="1"
-                       VerticalAlignment="Center"
-                       Foreground="{ThemeResource MicaGoPageHeaderForegroundBrush}"
-                       Style="{StaticResource TitleTextBlockStyle}"
-                       Text="Conversation details" />
-        </Grid>
-
-        <ScrollViewer Grid.Row="1">
-            <StackPanel MaxWidth="1000" Margin="36,0,36,40" HorizontalAlignment="Stretch" Spacing="4">
+    <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
+        <ScrollViewer>
+            <StackPanel MaxWidth="1000" Margin="36,12,36,40" HorizontalAlignment="Stretch" Spacing="4">
 
                 <Border Padding="24,20" Style="{StaticResource MicaGoSettingsCardStyle}">
-                    <StackPanel HorizontalAlignment="Center" Spacing="10">
-                        <PersonPicture x:Name="HeroAvatar"
-                                       Width="88"
-                                       Height="88"
-                                       HorizontalAlignment="Center" />
-                        <TextBlock x:Name="TitleText"
-                                   HorizontalAlignment="Center"
-                                   Style="{StaticResource SubtitleTextBlockStyle}" />
-                        <TextBlock x:Name="ServiceText"
-                                   HorizontalAlignment="Center"
-                                   Foreground="{ThemeResource MicaGoPageHeaderSecondaryBrush}" />
-                    </StackPanel>
+                    <Grid>
+                        <Button HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Style="{StaticResource MicaGoIconButtonStyle}"
+                                ToolTipService.ToolTip="Back" Click="BackButton_Click">
+                            <FontIcon FontSize="16" Glyph="&#xE72B;" />
+                        </Button>
+                        <StackPanel HorizontalAlignment="Center" Spacing="10">
+                            <PersonPicture x:Name="HeroAvatar" Width="88" Height="88" HorizontalAlignment="Center" />
+                            <TextBlock x:Name="TitleText" HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <TextBlock x:Name="ServiceText" HorizontalAlignment="Center" Foreground="{ThemeResource MicaGoPageHeaderSecondaryBrush}" />
+                        </StackPanel>
+                    </Grid>
                 </Border>
 
                 <TextBlock x:Name="ConversationHeader"

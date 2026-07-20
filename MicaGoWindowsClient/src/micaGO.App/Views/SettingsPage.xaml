@@ -5,39 +5,9 @@
 
     <!-- Styled after the Windows 11 Settings app: a large page title and one
          card per setting (icon | title + description | trailing control). -->
-    <Grid Background="{ThemeResource MicaGoSecondaryPageBrush}">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <Border Background="{ThemeResource MicaGoPageHeaderBackgroundBrush}"
-                BackgroundSizing="InnerBorderEdge"
-                BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
-                BorderThickness="0,0,0,1" />
-
-        <Grid MaxWidth="1000" Padding="36,24,36,12" HorizontalAlignment="Stretch">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Button Margin="0,0,8,0"
-                    VerticalAlignment="Center"
-                    Style="{StaticResource MicaGoIconButtonStyle}"
-                    ToolTipService.ToolTip="Back"
-                    Click="BackButton_Click">
-                <FontIcon FontSize="16" Glyph="&#xE72B;" />
-            </Button>
-            <TextBlock x:Name="PageTitle"
-                       Grid.Column="1"
-                       VerticalAlignment="Center"
-                       Foreground="{ThemeResource MicaGoPageHeaderForegroundBrush}"
-                       Style="{StaticResource TitleTextBlockStyle}"
-                       Text="General" />
-        </Grid>
-
-        <ScrollViewer Grid.Row="1">
-            <Grid MaxWidth="1000" Margin="36,0,36,40" HorizontalAlignment="Stretch">
+    <Grid Background="{ThemeResource MicaGoChatSurfaceBrush}">
+        <ScrollViewer>
+            <Grid MaxWidth="1000" Margin="36,12,36,40" HorizontalAlignment="Stretch">
 
                 <StackPanel x:Name="GeneralSection" Spacing="4">
                     <TextBlock x:Name="ConnectionHeader"
@@ -91,6 +61,14 @@
                                           Toggled="NotificationToggle_Toggled" />
                         </Grid>
                     </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE7F4;" />
+                            <TextBlock x:Name="TrayLabel" Grid.Column="1" VerticalAlignment="Center" Text="Keep micaGO in the system tray" />
+                            <ToggleSwitch x:Name="TrayToggle" Grid.Column="2" MinWidth="0" OffContent="" OnContent="" Toggled="TrayToggle_Toggled" />
+                        </Grid>
+                    </Border>
 
                     <TextBlock x:Name="AppearanceHeader"
                                Style="{StaticResource MicaGoSettingsHeaderStyle}"
@@ -142,6 +120,37 @@
                             </ComboBox>
                         </Grid>
                     </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEB9F;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="ChatBackgroundLabel" Text="Chat background" />
+                                <TextBlock x:Name="ChatBackgroundStatus" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="ChooseBackgroundButton" Content="Choose…" Click="ChooseBackgroundButton_Click" />
+                                <Button x:Name="ClearBackgroundButton" Content="Clear" Click="ClearBackgroundButton_Click" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE2B1;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                <TextBlock x:Name="BubbleColorLabel" Text="Outgoing bubble color" />
+                                <ToggleSwitch x:Name="BubbleFollowSystemToggle" Header="Follow system accent" Toggled="BubbleFollowSystemToggle_Toggled" />
+                            </StackPanel>
+                            <Button x:Name="BubbleColorButton" Grid.Column="2" Content="Choose…">
+                                <Button.Flyout>
+                                    <Flyout>
+                                        <ColorPicker x:Name="BubbleColorPicker" IsAlphaEnabled="False" ColorSpectrumShape="Ring" ColorChanged="BubbleColorPicker_ColorChanged" />
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
+                    </Border>
                 </StackPanel>
 
                 <StackPanel x:Name="ContactsSection" Spacing="4" Visibility="Collapsed">
@@ -162,17 +171,17 @@
                             </Grid.ColumnDefinitions>
                             <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEDE1;" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock x:Name="ImportCsvLabel" Text="Import contacts from CSV" />
-                                <TextBlock x:Name="CsvImportStatus"
+                                <TextBlock x:Name="ImportVcfLabel" Text="Import contacts from vCard" />
+                                <TextBlock x:Name="VcfImportStatus"
                                            FontSize="12"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
-                            <Button x:Name="ImportCsvButton"
+                            <Button x:Name="ImportVcfButton"
                                     Grid.Column="2"
                                     VerticalAlignment="Center"
                                     Content="Browse…"
-                                    Click="ImportCsvButton_Click" />
+                                    Click="ImportVcfButton_Click" />
                         </Grid>
                     </Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}">

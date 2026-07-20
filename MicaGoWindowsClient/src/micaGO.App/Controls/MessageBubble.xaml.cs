@@ -51,6 +51,10 @@ public sealed partial class MessageBubble : UserControl
     /// <summary>Raised when a full-screen send effect should play; payload is the effect id.</summary>
     public static event EventHandler<string>? ScreenEffectRequested;
 
+    private static event EventHandler? AppearanceChanged;
+
+    public static void RefreshAppearance() => AppearanceChanged?.Invoke(null, EventArgs.Empty);
+
     /// <summary>Called by the shell when a chat is opened, so history rows never animate.</summary>
     public static void ResetTransientState()
     {
@@ -68,6 +72,15 @@ public sealed partial class MessageBubble : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        Loaded += (_, _) => AppearanceChanged += OnAppearanceChanged;
+        Unloaded += (_, _) => AppearanceChanged -= OnAppearanceChanged;
+    }
+
+    private void OnAppearanceChanged(object? sender, EventArgs e)
+    {
+        if (_message is not { } message || message.IsSeparator || message.IsPresentationSystem) return;
+        var body = MessageSemantics.VisibleText(message.Text);
+        ApplyBubble(message, body, body.Length > 0, message.Media.Count > 0, message.IsOutgoing);
     }
 
     private void OnDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
@@ -204,8 +217,20 @@ public sealed partial class MessageBubble : UserControl
         var tail = message.ShowBubbleTail || (message.Reactions?.Count ?? 0) > 0;
         if (outgoing)
         {
-            Bubble.Background = ThemeBrush("AccentFillColorDefaultBrush");
-            BodyText.Foreground = ThemeBrush("TextOnAccentFillColorPrimaryBrush");
+            var appearance = AppServices.Current.Appearance;
+            if (appearance.BubbleFollowsSystem)
+            {
+                Bubble.Background = ThemeBrush("AccentFillColorDefaultBrush");
+                BodyText.Foreground = ThemeBrush("TextOnAccentFillColorPrimaryBrush");
+            }
+            else
+            {
+                Bubble.Background = new SolidColorBrush(appearance.BubbleColor);
+                BodyText.Foreground = new SolidColorBrush(
+                    AppearanceService.ShouldUseDarkText(appearance.BubbleColor)
+                        ? Windows.UI.Color.FromArgb(0xFF, 0x00, 0x00, 0x00)
+                        : Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+            }
             Bubble.CornerRadius = tail ? new CornerRadius(18, 18, 4, 18) : new CornerRadius(18);
         }
         else

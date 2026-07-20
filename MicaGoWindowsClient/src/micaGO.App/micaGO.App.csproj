@@ -5,6 +5,7 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>MicaGo.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\micaGO.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
@@ -17,5 +18,9 @@
   <ItemGroup>
     <ProjectReference Include="..\micaGO.Core\micaGO.Core.csproj" />
     <ProjectReference Include="..\micaGO.Infrastructure\micaGO.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\micaGO.Windows.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\micaGO.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
