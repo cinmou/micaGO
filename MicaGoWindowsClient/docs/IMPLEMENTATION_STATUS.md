@@ -98,3 +98,10 @@
 - **群聊/私聊判定对齐 Flutter**（chat_summary.dart 同款优先级）：服务器 `isGroup` → guid 含 `;+;` → **displayName 非空** → participants>1。此前缺 displayName 信号。
 - **详情页**：Participants 区块只在群聊显示（Flutter details 同语义）；1:1 联系人恒显 Routes 卡（列出地址/路由），合并开关只在多路由或已关闭合并时出现。`ParticipantsCard` 命名以便隐藏。
 - **设置界面重组**（对照 Flutter 设置结构：连接/通用/通知/备份恢复/更多）：侧栏五项 **通用 | 外观 | 联系人 | 存储 | 关于**。通用＝连接卡+通知+托盘+备份恢复+测试；外观（新分区）＝主题/Twemoji/语言/聊天背景/气泡颜色；存储＝缓存。卡片解剖统一为 图标(垂直居中)|标题+描述|尾部控件：Twemoji 卡去掉法务两行（在关于页保留）、气泡颜色拆成"跟随系统强调色"开关卡 + `BubbleColorCard`（自定义时才显示）。新 l10n：`general`/`customColor`。
+
+## 旗帜真因（TextBlock 不支持 InlineUIContainer）+ 流畅度 + Unigram 侧栏 + Flutter 底栏（W-UI7，Windows 待验证）
+
+- **国旗仍显示为字母的真因**：WinUI 的 `TextBlock.Inlines` 根本**不支持 `InlineUIContainer`**（仅 `RichTextBlock` 支持）——运行时抛异常被渲染器的 catch 吃掉，静默回退成纯文本字母（截图里 84px 的 "CN/US" 就是大 emoji 路径的字母回退）。修复：`BodyText`/`ReplyText` 改为 `RichTextBlock`，`FlagEmojiTextRenderer` 改建 `Paragraph`（Run + InlineUIContainer）写入 `Blocks`。注意规则：**任何要内嵌 Twemoji 图片的文本都必须用 RichTextBlock**（SenderText/会话预览等仍是 TextBlock，旗帜在那里仍显示为字母——可接受）。
+- **每次发送"刷新一下"**：三处根因一起修——① 会话侧栏 `ApplyFilter` 原来每条消息 `Chats.Clear()`+重建（整个左栏闪烁+丢滚动），改为 `SyncChats` 按 Id 增量 diff（排序变化走 `Move`，配合 RepositionThemeTransition 平滑上移）；② `ScrollToLastMessageAsync` 原来 `ScrollIntoView`+16ms 延迟+二次 `UpdateLayout`+`ChangeView` 造成可见的二段跳，改为单次 `ChangeView`；③ `MessageList` 加 `ItemsStackPanel.ItemsUpdatingScrollMode="KeepLastItemInView"`（贴底时新消息自动跟随的原生聊天行为）。
+- **侧栏 Unigram 化**：`MicaGoChatListStyle` 换 `ListViewItemPresenter` 模板——8px 圆角 hover/选中面、左缘强调色选中指示条（`SelectionIndicatorVisualEnabled` Inline 模式，即 NavigationView 同款 pill）、禁用勾选标记。
+- **底栏 Flutter 化**：composer 从"透明容器+独立胶囊输入框"改为**一个完整胶囊**（`MicaGoComposerBrush` 底+描边+圆角 24），内含透明无边框 TextBox 与 `MicaGoComposerIconButtonStyle` 圆形按钮（SubtleFill 附件/麦克风 + 强调色发送），对应 Flutter 底栏的外层圆角容器结构。

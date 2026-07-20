@@ -74,11 +74,16 @@
                         CornerRadius="8"
                         Visibility="Collapsed"
                         Tapped="ReplyPanel_Tapped">
-                    <TextBlock x:Name="ReplyText"
-                               MaxWidth="420"
-                               FontSize="11"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               TextTrimming="CharacterEllipsis" />
+                    <!-- RichTextBlock, not TextBlock: only RichTextBlock can host
+                         InlineUIContainer (the Twemoji flag images). -->
+                    <RichTextBlock x:Name="ReplyText"
+                                   MaxWidth="420"
+                                   FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   IsTextSelectionEnabled="False"
+                                   MaxLines="1"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" />
                 </Border>
 
                 <Grid x:Name="BubbleStack"
@@ -94,11 +99,13 @@
                                 HorizontalAlignment="Left"
                                 Background="{ThemeResource MicaGoIncomingMessageBrush}"
                                 CornerRadius="18,18,18,4">
-                            <TextBlock x:Name="BodyText"
-                                       FontSize="14"
-                                       IsTextSelectionEnabled="True"
-                                       LineHeight="20"
-                                       TextWrapping="Wrap" />
+                            <!-- RichTextBlock, not TextBlock: only RichTextBlock can
+                                 host InlineUIContainer (the Twemoji flag images). -->
+                            <RichTextBlock x:Name="BodyText"
+                                           FontSize="14"
+                                           IsTextSelectionEnabled="True"
+                                           LineHeight="20"
+                                           TextWrapping="Wrap" />
                         </Border>
                     </StackPanel>
 

@@ -6,19 +6,25 @@ using MicaGo.Core.Models;
 
 namespace MicaGo.App.Controls;
 
+/// <summary>
+/// Renders message text with Twemoji SVGs substituted for flag / Emoji-17
+/// sequences. The target must be a RichTextBlock: WinUI's plain TextBlock
+/// silently rejects InlineUIContainer, which is why flags used to fall back
+/// to bare regional-indicator letters.
+/// </summary>
 internal static class FlagEmojiTextRenderer
 {
-    public static void SetText(TextBlock target, string text, double iconSize, bool replaceFlags)
+    public static void SetText(RichTextBlock target, string text, double iconSize, bool replaceFlags)
     {
+        var paragraph = new Paragraph();
         try
         {
-            target.Inlines.Clear();
             var segments = FlagEmojiSemantics.Split(text, replaceFlags, includeEmoji17: true);
             foreach (var segment in segments)
             {
                 if (!segment.HasAsset)
                 {
-                    target.Inlines.Add(new Run { Text = segment.Text });
+                    paragraph.Inlines.Add(new Run { Text = segment.Text });
                     continue;
                 }
 
@@ -47,15 +53,18 @@ internal static class FlagEmojiTextRenderer
                         IsHitTestVisible = false,
                     };
                 };
-                target.Inlines.Add(container);
+                paragraph.Inlines.Add(container);
             }
         }
         catch
         {
             // A malformed third-party asset must never take down the message
-            // surface. Fall back to the platform glyph for this text block.
-            target.Inlines.Clear();
-            target.Inlines.Add(new Run { Text = text });
+            // surface. Fall back to the platform glyphs for this block.
+            paragraph = new Paragraph();
+            paragraph.Inlines.Add(new Run { Text = text });
         }
+
+        target.Blocks.Clear();
+        target.Blocks.Add(paragraph);
     }
 }

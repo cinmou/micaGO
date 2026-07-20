@@ -66,8 +66,55 @@ public sealed class ShellViewModel : IAsyncDisposable
     public void ApplyFilter(string query)
     {
         _activeFilter=query;
+<<<<<<< Updated upstream
         var rows = _allChats.Where(chat => !IsChatHidden(chat) && (string.IsNullOrWhiteSpace(query) || chat.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase) || chat.Preview.Contains(query, StringComparison.CurrentCultureIgnoreCase))).ToArray();
         SyncChats(rows);
+=======
+        var rows = _allChats.Where(chat => string.IsNullOrWhiteSpace(query) || chat.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase) || chat.Preview.Contains(query, StringComparison.CurrentCultureIgnoreCase)).ToArray();
+        SyncChats(rows);
+    }
+
+    /// <summary>
+    /// Keyed diff for the chat list (same reason as <see cref="SyncMessages"/>):
+    /// a Clear()+Add() reset made the whole sidebar flicker and drop its scroll
+    /// position on every incoming message.
+    /// </summary>
+    private void SyncChats(IReadOnlyList<ChatSummary> target)
+    {
+        var targetIds = new HashSet<string>(target.Select(chat => chat.Id));
+        for (var i = Chats.Count - 1; i >= 0; i--)
+        {
+            if (!targetIds.Contains(Chats[i].Id)) Chats.RemoveAt(i);
+        }
+
+        for (var i = 0; i < target.Count; i++)
+        {
+            var desired = target[i];
+            if (i < Chats.Count && Chats[i].Id == desired.Id)
+            {
+                if (!Chats[i].Equals(desired)) Chats[i] = desired;
+                continue;
+            }
+
+            var existing = -1;
+            for (var j = i + 1; j < Chats.Count; j++)
+            {
+                if (Chats[j].Id == desired.Id) { existing = j; break; }
+            }
+
+            if (existing >= 0)
+            {
+                Chats.Move(existing, i);
+                if (!Chats[i].Equals(desired)) Chats[i] = desired;
+            }
+            else
+            {
+                Chats.Insert(i, desired);
+            }
+        }
+
+        while (Chats.Count > target.Count) Chats.RemoveAt(Chats.Count - 1);
+>>>>>>> Stashed changes
     }
 
     public void RefreshChatTimestamps()

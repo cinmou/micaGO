@@ -325,6 +325,13 @@
                               SelectionMode="None"
                               Loaded="MessageList_Loaded"
                               RightTapped="MessageList_RightTapped">
+                        <ListView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <!-- Chat behavior: stay pinned to the newest
+                                     message while appends arrive at the bottom. -->
+                                <ItemsStackPanel ItemsUpdatingScrollMode="KeepLastItemInView" />
+                            </ItemsPanelTemplate>
+                        </ListView.ItemsPanel>
                         <ListView.Header>
                             <ProgressRing x:Name="OlderMessagesProgress"
                                           Width="20" Height="20" Margin="0,0,0,10"
@@ -359,12 +366,14 @@
                           VerticalAlignment="Bottom"
                           Canvas.ZIndex="2">
                         <Border x:Name="ComposerBorder"
-                                MinHeight="46"
+                                MinHeight="48"
                                 MaxWidth="920"
                                 HorizontalAlignment="Stretch"
-                                Background="Transparent"
-                                BorderThickness="0">
-                            <Grid Padding="5" ColumnSpacing="4">
+                                Background="{ThemeResource MicaGoComposerBrush}"
+                                BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
+                                BorderThickness="1"
+                                CornerRadius="24">
+                            <Grid Padding="5,4" ColumnSpacing="4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
@@ -373,7 +382,11 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Name="AttachButton"
                                         VerticalAlignment="Bottom"
+<<<<<<< Updated upstream
                                         Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
+=======
+                                        Style="{StaticResource MicaGoComposerIconButtonStyle}"
+>>>>>>> Stashed changes
                                         ToolTipService.ToolTip="Attach"
                                         Click="AttachButton_Click">
                                     <FontIcon FontSize="16" Glyph="&#xE723;" />
@@ -381,7 +394,11 @@
                                 <Button x:Name="VoiceButton"
                                         Grid.Column="1"
                                         VerticalAlignment="Bottom"
+<<<<<<< Updated upstream
                                         Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
+=======
+                                        Style="{StaticResource MicaGoComposerIconButtonStyle}"
+>>>>>>> Stashed changes
                                         ToolTipService.ToolTip="Voice message"
                                         IsEnabled="False"
                                         Click="VoiceButton_Click">
@@ -391,13 +408,12 @@
                                          Grid.Column="2"
                                          MinHeight="36"
                                          MaxHeight="128"
-                                         Padding="12,8,12,7"
+                                         Padding="10,8,10,7"
                                          VerticalAlignment="Center"
                                          AcceptsReturn="True"
-                                         Background="{ThemeResource MicaGoComposerBrush}"
-                                         BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
-                                         BorderThickness="1"
-                                         CornerRadius="18"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         CornerRadius="0"
                                          IsEnabled="False"
                                          PlaceholderText="Message"
                                          TextWrapping="Wrap"

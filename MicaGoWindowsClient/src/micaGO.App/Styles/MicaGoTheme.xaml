@@ -122,18 +122,58 @@
         <Setter Property="Margin" Value="1,16,0,4" />
     </Style>
 
+    <!-- Circular subtle icon button inside the composer pill (Flutter parity). -->
+    <Style x:Key="MicaGoComposerIconButtonStyle" TargetType="Button" BasedOn="{StaticResource MicaGoIconButtonStyle}">
+        <Setter Property="CornerRadius" Value="18" />
+        <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+    </Style>
+
+    <!-- Unigram-style chat rows: 8px rounded hover/selection surfaces plus the
+         accent selection pill on the left edge (native ListViewItemPresenter
+         selection indicator). -->
     <Style x:Key="MicaGoChatListStyle" TargetType="ListViewItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Padding" Value="0" />
+<<<<<<< Updated upstream
         <Setter Property="Margin" Value="4,2" />
         <Setter Property="CornerRadius" Value="4" />
+=======
+        <Setter Property="Margin" Value="8,1" />
+        <Setter Property="CornerRadius" Value="8" />
+>>>>>>> Stashed changes
         <Setter Property="MinHeight" Value="64" />
         <Setter Property="MinWidth" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="UseSystemFocusVisuals" Value="True" />
+<<<<<<< Updated upstream
         <Setter Property="FocusVisualMargin" Value="0" />
+=======
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <ListViewItemPresenter
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                        ContentMargin="{TemplateBinding Padding}"
+                        ContentTransitions="{TemplateBinding ContentTransitions}"
+                        CornerRadius="8"
+                        CheckMode="Overlay"
+                        SelectionCheckMarkVisualEnabled="False"
+                        SelectionIndicatorVisualEnabled="True"
+                        SelectionIndicatorMode="Inline"
+                        SelectionIndicatorBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                        PointerOverBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        PressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
+                        SelectedBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        SelectedPointerOverBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
+                        SelectedPressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
+                        RevealBackgroundShowsAboveContent="False" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+>>>>>>> Stashed changes
     </Style>
 
     <Style x:Key="MicaGoMessageListStyle" TargetType="ListViewItem">
