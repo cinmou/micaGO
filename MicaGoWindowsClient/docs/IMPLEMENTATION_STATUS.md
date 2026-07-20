@@ -1,6 +1,6 @@
 # 功能完成度
 
-更新时间：2026-07-19。
+更新时间：2026-07-20。当前 Windows 产品版本：`0.66.0`。
 
 “代码完成”表示源码路径已经实现；“Windows 待验证”表示尚未通过 Windows 编译或运行，不能视为验收通过。
 
@@ -68,4 +68,3 @@
 - **发送效果播放**：点 "Sent with …" 标签 —— 气泡效果（Slam 回弹缩放+倾斜、Loud 关键帧抖动、Gentle 从小到大）用 Storyboard 作用于 `BubbleTransform`；屏幕效果经 `ScreenEffectRequested` → ShellPage `EffectCanvas` 播 32 个 emoji 粒子（🎉❤️🎈🎆⚡✨ 按效果映射，升/降向 + 透明度关键帧，完成后清空画布）。**Invisible Ink**：`InkCover` 遮罩默认盖住消息，点遮罩显形、点标签重新遮住（`RevealedInkKeys`）。
 - **动画**：新消息入场（<15s 新 key，240ms 淡入+12px 上升）；网络加载的媒体 180ms 淡入（内存缓存命中直渲，C51 规则）；footer 文案变化 160ms 淡入（C72 近似，无行高滑动）。防历史动画：`ResetTransientState()`（ShellPage 每次开会话调用）+ 700ms 开场宽限期。
 - 仍未迁移（交互功能非显示）：多选/批量转发/隐藏（C64）、消息 tombstone、合并视图 beta、Echo/Spotlight 全屏原版粒子系统。
-

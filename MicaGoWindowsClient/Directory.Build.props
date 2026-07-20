@@ -3,5 +3,10 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <MicaGoVersion>0.66.0</MicaGoVersion>
+    <Version>$(MicaGoVersion)</Version>
+    <AssemblyVersion>0.66.0.0</AssemblyVersion>
+    <FileVersion>0.66.0.0</FileVersion>
+    <InformationalVersion>$(MicaGoVersion)</InformationalVersion>
   </PropertyGroup>
 </Project>
