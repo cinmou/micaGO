@@ -97,7 +97,7 @@ public sealed partial class ShellPage : Page
         var l=AppServices.Current.Localization;
         SearchBox.PlaceholderText=l["search"]; Composer.PlaceholderText=l["message"];
         ThreadTitle.Text=l["selectConversation"]; ThreadSubtitle.Text=l["localOnly"]; EmptyStateText.Text=l["chooseConversation"];
-        SettingsSidebarTitle.Text=l["settings"]; GeneralSettingsLabel.Text=l["appearance"];
+        SettingsSidebarTitle.Text=l["settings"]; GeneralSettingsLabel.Text=l["general"]; AppearanceSettingsLabel.Text=l["appearance"];
         ContactSettingsLabel.Text=l["contacts"]; StorageSettingsLabel.Text=l["cache"]; AboutSettingsLabel.Text=l["about"];
         ToolTipService.SetToolTip(AttachButton,l["attach"]); ToolTipService.SetToolTip(SendButton,l["send"]);
         ToolTipService.SetToolTip(SidebarSettingsButton,l["settings"]);

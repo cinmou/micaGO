@@ -37,13 +37,23 @@ public sealed partial class ConversationDetailsPage : Page
         TitleText.Text = _chat.Title;
         ServiceText.Text = _chat.ServiceLabel;
 
-        var participants = new List<string>();
-        foreach (var identity in _chat.Participants ?? [])
+        // Participants are a group-chat concept (Flutter's details sheet does
+        // the same); a 1:1 contact shows its routes/handles instead.
+        if (_chat.IsGroup && (_chat.Participants?.Count ?? 0) > 0)
         {
-            var contact = await AppServices.Current.Cache.ResolveContactAsync(identity);
-            participants.Add(contact is null ? identity : $"{contact.DisplayName}  ·  {identity}");
+            var participants = new List<string>();
+            foreach (var identity in _chat.Participants!)
+            {
+                var contact = await AppServices.Current.Cache.ResolveContactAsync(identity);
+                participants.Add(contact is null ? identity : $"{contact.DisplayName}  ·  {identity}");
+            }
+            ParticipantsList.ItemsSource = participants;
         }
-        ParticipantsList.ItemsSource = participants;
+        else
+        {
+            ParticipantsHeader.Visibility = Visibility.Collapsed;
+            ParticipantsCard.Visibility = Visibility.Collapsed;
+        }
 
         MuteToggle.IsOn = await IsEnabledAsync("chat.muted.");
         PinToggle.IsOn = await IsEnabledAsync("chat.pinned.");
@@ -95,12 +105,16 @@ public sealed partial class ConversationDetailsPage : Page
         var mergeKey = "chat.mergeRoutes." + _chat.Title.Trim().ToLowerInvariant();
         var stored = await AppServices.Current.Cache.GetSettingAsync(mergeKey);
         var routes = _chat.RouteIds;
-        if ((routes?.Count ?? 0) <= 1 && stored != "0") return;
         RoutesHeader.Visibility = Visibility.Visible;
         RoutesCard.Visibility = Visibility.Visible;
         RoutesHeader.Text = l["routes"];
         MergeRoutesLabel.Text = l["mergeRoutes"];
-        RoutesListText.Text = string.Join('\n', routes is { Count: > 0 } ? routes : [_chat.Id]);
+        RoutesListText.Text = string.Join('\n',
+            routes is { Count: > 0 } ? routes : [_chat.Participants?.FirstOrDefault() ?? _chat.Id]);
+        // The merge toggle only matters when this contact actually has (or
+        // had) more than one route.
+        var toggleRelevant = (routes?.Count ?? 0) > 1 || stored == "0";
+        MergeRoutesToggle.Visibility = toggleRelevant ? Visibility.Visible : Visibility.Collapsed;
         _loadingMergeToggle = true;
         MergeRoutesToggle.IsOn = stored != "0";
         _loadingMergeToggle = false;

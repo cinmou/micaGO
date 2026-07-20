@@ -54,6 +54,8 @@ public sealed class LocalizationService
         values["backupFailed"] = traditional ? "備份操作失敗：{0}" : chinese ? "备份操作失败：{0}" : "Backup operation failed: {0}";
         values["routes"] = traditional ? "路由" : chinese ? "路由" : "Routes";
         values["mergeRoutes"] = traditional ? "合併此聯絡人的全部路由" : chinese ? "合并此联系人的全部路由" : "Merge all routes of this contact";
+        values["general"] = traditional ? "一般" : chinese ? "通用" : "General";
+        values["customColor"] = traditional ? "自訂色彩" : chinese ? "自定义颜色" : "Custom color";
         values["about"] = traditional ? "關於" : chinese ? "关于" : "About";
         values["aboutSubtitle"] = traditional ? "iMessage 的 Windows 伴侶用戶端" : chinese ? "iMessage 的 Windows 伴侣客户端" : "The Windows companion client for iMessage";
         values["version"] = traditional ? "版本 {0}" : chinese ? "版本 {0}" : "Version {0}";

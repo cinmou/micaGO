@@ -124,7 +124,7 @@
                 <TextBlock x:Name="ParticipantsHeader"
                            Style="{StaticResource MicaGoSettingsHeaderStyle}"
                            Text="Participants" />
-                <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                <Border x:Name="ParticipantsCard" Style="{StaticResource MicaGoSettingsCardStyle}">
                     <ItemsControl x:Name="ParticipantsList">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>

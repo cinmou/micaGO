@@ -91,3 +91,10 @@
 8. **跳到最新消息**：列表右下 40px 浮动圆钮（距底 >420px 时出现，`ViewChanged` 驱动），点按动画滚动到底。
 
 新 l10n 键 ×3 语言：select/forward/forwardTo/hide/selectedCount/voiceMessage/jumpToBottom/testing/testContact(+Hint)/backupRestore/backupLabel/export/importBackup/backupSaved/Restored/Failed/routes/mergeRoutes。
+
+## 旗帜识别修复 + 群聊判定 + 设置重组（W-UI6，Windows 待验证）
+
+- **国旗不显示的修复**：`FlagEmojiSemantics.Split` 不再依赖字素切分实现——`TextElements()` 先枚举文本元素，再把**相邻的孤立 Regional Indicator 手动合并成对**（无论 .NET 把 🇺🇸 切成一个还是两个元素都能识别）。同时 **Twemoji 旗帜默认改为开启**（`appearance.twemojiFlags` 缺省视为 true，开关变 opt-out）：Windows 本身不带国旗字形（RI 渲染为字母），不替换就是坏的。
+- **群聊/私聊判定对齐 Flutter**（chat_summary.dart 同款优先级）：服务器 `isGroup` → guid 含 `;+;` → **displayName 非空** → participants>1。此前缺 displayName 信号。
+- **详情页**：Participants 区块只在群聊显示（Flutter details 同语义）；1:1 联系人恒显 Routes 卡（列出地址/路由），合并开关只在多路由或已关闭合并时出现。`ParticipantsCard` 命名以便隐藏。
+- **设置界面重组**（对照 Flutter 设置结构：连接/通用/通知/备份恢复/更多）：侧栏五项 **通用 | 外观 | 联系人 | 存储 | 关于**。通用＝连接卡+通知+托盘+备份恢复+测试；外观（新分区）＝主题/Twemoji/语言/聊天背景/气泡颜色；存储＝缓存。卡片解剖统一为 图标(垂直居中)|标题+描述|尾部控件：Twemoji 卡去掉法务两行（在关于页保留）、气泡颜色拆成"跟随系统强调色"开关卡 + `BubbleColorCard`（自定义时才显示）。新 l10n：`general`/`customColor`。

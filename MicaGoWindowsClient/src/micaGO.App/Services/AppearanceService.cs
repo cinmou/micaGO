@@ -25,7 +25,10 @@ public sealed class AppearanceService(LocalCacheStore cache)
         ChatBackgroundPath = await cache.GetSettingAsync(BackgroundKey);
         BubbleFollowsSystem = !string.Equals(await cache.GetSettingAsync(BubbleModeKey), "custom", StringComparison.Ordinal);
         if (TryParseColor(await cache.GetSettingAsync(BubbleColorKey), out var color)) BubbleColor = color;
-        TwemojiFlagsEnabled = string.Equals(await cache.GetSettingAsync(TwemojiFlagsKey), "true", StringComparison.Ordinal);
+        // Windows ships no flag glyphs at all (regional indicators render as
+        // bare letters), so the Twemoji flag fallback defaults to ON; the
+        // toggle remains an opt-out.
+        TwemojiFlagsEnabled = !string.Equals(await cache.GetSettingAsync(TwemojiFlagsKey), "false", StringComparison.Ordinal);
         _initialized = true;
     }
 

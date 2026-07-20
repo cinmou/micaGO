@@ -197,8 +197,14 @@
                       SelectionChanged="SettingsNavigationList_SelectionChanged">
                 <ListViewItem Tag="general">
                     <StackPanel Orientation="Horizontal" Spacing="12">
-                        <FontIcon FontSize="16" Glyph="&#xE771;" />
+                        <FontIcon FontSize="16" Glyph="&#xE713;" />
                         <TextBlock x:Name="GeneralSettingsLabel" VerticalAlignment="Center" Text="General" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem Tag="appearance">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <FontIcon FontSize="16" Glyph="&#xE771;" />
+                        <TextBlock x:Name="AppearanceSettingsLabel" VerticalAlignment="Center" Text="Appearance" />
                     </StackPanel>
                 </ListViewItem>
                 <ListViewItem Tag="contacts">

@@ -220,7 +220,13 @@ public sealed class MicaGoApi : IMicaGoApi
         var displayName = GetString(json, "displayName");
         var identifier = GetString(json, "chatIdentifier");
         var participants = GetStringArray(json, "participants");
-        var isGroup = GetBoolean(json, "isGroup") ?? id.Contains(";+;", StringComparison.Ordinal) || participants.Count > 1;
+        // Same heuristic as the Flutter client (chat_summary.dart): trust the
+        // server's isGroup; else `;+;` guid marker, an explicit display name,
+        // or 2+ participants all mean "group".
+        var isGroup = GetBoolean(json, "isGroup")
+            ?? (id.Contains(";+;", StringComparison.Ordinal)
+                || !string.IsNullOrWhiteSpace(displayName)
+                || participants.Count > 1);
         var title = !string.IsNullOrWhiteSpace(displayName) ? displayName : isGroup && participants.Count > 0 ? BuildGroupTitle(participants) : identifier ?? id;
         var preview = GetString(json, "latestRenderablePreview") ?? GetString(json, "lastMessagePreview") ?? GetString(json, "lastMessage") ?? string.Empty;
         var timestamp = GetLong(json, "latestRenderableAt") ?? GetLong(json, "lastMessageAt") ?? GetLong(json, "lastMessageDate") ?? 0;

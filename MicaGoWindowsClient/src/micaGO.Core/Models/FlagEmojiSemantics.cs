@@ -20,10 +20,8 @@ public static class FlagEmojiSemantics
         if (string.IsNullOrEmpty(text)) return [];
         var result = new List<FlagEmojiSegment>();
         var plain = new StringBuilder();
-        var elements = StringInfo.GetTextElementEnumerator(text);
-        while (elements.MoveNext())
+        foreach (var element in TextElements(text))
         {
-            var element = elements.GetTextElement();
             var asset = includeFlags ? AssetKey(element) : null;
             var isEmoji17 = false;
             if (asset is null && includeEmoji17)
@@ -47,6 +45,41 @@ public static class FlagEmojiSemantics
 
         if (plain.Length > 0) result.Add(new FlagEmojiSegment(plain.ToString(), null));
         return result;
+    }
+
+    /// <summary>
+    /// Text elements with country-flag pairing done manually: depending on the
+    /// segmentation implementation a flag ("🇺🇸") may arrive as one grapheme or
+    /// as two lone regional indicators — merge consecutive lone RIs into a
+    /// pair so detection never depends on the splitter's UAX #29 coverage.
+    /// </summary>
+    private static IEnumerable<string> TextElements(string text)
+    {
+        var raw = new List<string>();
+        var enumerator = StringInfo.GetTextElementEnumerator(text);
+        while (enumerator.MoveNext()) raw.Add(enumerator.GetTextElement());
+
+        for (var i = 0; i < raw.Count; i++)
+        {
+            if (IsLoneRegionalIndicator(raw[i]) && i + 1 < raw.Count && IsLoneRegionalIndicator(raw[i + 1]))
+            {
+                yield return raw[i] + raw[i + 1];
+                i++;
+                continue;
+            }
+            yield return raw[i];
+        }
+    }
+
+    private static bool IsLoneRegionalIndicator(string element)
+    {
+        var count = 0;
+        foreach (var rune in element.EnumerateRunes())
+        {
+            if (rune.Value is < 0x1F1E6 or > 0x1F1FF) return false;
+            if (++count > 1) return false;
+        }
+        return count == 1;
     }
 
     public static string? AssetKey(string element)

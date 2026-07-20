@@ -32,6 +32,14 @@ Three components:
   Border/Grid CornerRadius does NOT clip child Images). Settings/details pages
   use `MicaGoSettingsCardStyle`. **Not yet compiled on Windows** — needs a
   Debug x64 build pass.
+- W-UI6: flag fix + settings reorg — `FlagEmojiSemantics.TextElements` merges
+  adjacent lone regional indicators manually (never trust the segmenter for
+  🇺🇸 pairing); Twemoji flags default ON (Windows has no flag glyphs — the
+  toggle is an opt-out). isGroup heuristic = Flutter's (server flag → `;+;` →
+  displayName → participants>1). Details: Participants only for groups, 1:1
+  always shows the Routes card. Settings nav is 通用|外观|联系人|存储|关于;
+  every card is icon(center)|title+desc|trailing control (bubble color split
+  into follow-accent toggle card + conditional BubbleColorCard).
 - W-UI5: eight-feature Flutter parity batch — WS `message:*` payloads parsed
   into `RealtimeEvent.Message` and applied directly (read receipts/edits no
   longer depend on the delta cursor); watermark-derived unread dot

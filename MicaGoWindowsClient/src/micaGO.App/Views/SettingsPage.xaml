@@ -76,6 +76,67 @@
                         </Grid>
                     </Border>
 
+                    <TextBlock x:Name="BackupHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Backup &amp; restore" />
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE777;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="BackupLabel" Text="Settings backup (.micagobak)" />
+                                <TextBlock x:Name="BackupStatus"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="ExportBackupButton" Content="Export…" Click="ExportBackupButton_Click" />
+                                <Button x:Name="ImportBackupButton" Content="Import…" Click="ImportBackupButton_Click" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock x:Name="TestingHeader"
+                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
+                               Text="Testing" />
+                    <Border x:Name="TestContactCard" Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEBE8;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="TestContactLabel" Text="Offline test contact" />
+                                <TextBlock x:Name="TestContactHint"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="TestContactToggle"
+                                          Grid.Column="2"
+                                          MinWidth="0"
+                                          VerticalAlignment="Center"
+                                          OffContent=""
+                                          OnContent=""
+                                          Toggled="TestContactToggle_Toggled" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel x:Name="AppearanceSection" Spacing="4" Visibility="Collapsed">
+                    <StackPanel.ChildrenTransitions>
+                        <TransitionCollection>
+                            <EntranceThemeTransition FromVerticalOffset="24" IsStaggeringEnabled="True" />
+                            <RepositionThemeTransition />
+                        </TransitionCollection>
+                    </StackPanel.ChildrenTransitions>
                     <TextBlock x:Name="AppearanceHeader"
                                Style="{StaticResource MicaGoSettingsHeaderStyle}"
                                Text="Appearance" />
@@ -109,17 +170,15 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon VerticalAlignment="Top" Margin="0,3,0,0" FontSize="18" Glyph="&#xE7C1;" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
-                                <TextBlock x:Name="TwemojiFlagsLabel" FontWeight="SemiBold" Text="Use Twemoji for flags" />
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE7C1;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="TwemojiFlagsLabel" Text="Use Twemoji for flags" />
                                 <TextBlock x:Name="TwemojiFlagsDescription" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                <TextBlock x:Name="TwemojiAttribution" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
-                                <TextBlock x:Name="TwemojiDisclaimer" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
                             </StackPanel>
                             <ToggleSwitch x:Name="TwemojiFlagsToggle"
                                           Grid.Column="2"
                                           MinWidth="0"
-                                          VerticalAlignment="Top"
+                                          VerticalAlignment="Center"
                                           OffContent=""
                                           OnContent=""
                                           Toggled="TwemojiFlagsToggle_Toggled" />
@@ -165,47 +224,47 @@
                     </Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}">
                         <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE2B1;" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                 <TextBlock x:Name="BubbleColorLabel" Text="Outgoing bubble color" />
-                                <ToggleSwitch x:Name="BubbleFollowSystemToggle" Header="Follow system accent" Toggled="BubbleFollowSystemToggle_Toggled" />
+                                <TextBlock x:Name="BubbleFollowSystemLabel"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="Follow system accent" />
                             </StackPanel>
-                            <Button x:Name="BubbleColorButton" Grid.Column="2" Content="Choose…">
-                                <Button.Flyout>
-                                    <Flyout>
-                                        <ColorPicker x:Name="BubbleColorPicker" IsAlphaEnabled="False" ColorSpectrumShape="Ring" ColorChanged="BubbleColorPicker_ColorChanged" />
-                                    </Flyout>
-                                </Button.Flyout>
-                            </Button>
+                            <ToggleSwitch x:Name="BubbleFollowSystemToggle"
+                                          Grid.Column="2"
+                                          MinWidth="0"
+                                          VerticalAlignment="Center"
+                                          OffContent=""
+                                          OnContent=""
+                                          Toggled="BubbleFollowSystemToggle_Toggled" />
                         </Grid>
                     </Border>
-
-                    <TextBlock x:Name="TestingHeader"
-                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
-                               Text="Testing" />
-                    <Border x:Name="TestContactCard" Style="{StaticResource MicaGoSettingsCardStyle}">
+                    <Border x:Name="BubbleColorCard" Style="{StaticResource MicaGoSettingsCardStyle}">
                         <Grid ColumnSpacing="16">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEBE8;" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock x:Name="TestContactLabel" Text="Offline test contact" />
-                                <TextBlock x:Name="TestContactHint"
-                                           FontSize="12"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                            <ToggleSwitch x:Name="TestContactToggle"
-                                          Grid.Column="2"
-                                          MinWidth="0"
-                                          VerticalAlignment="Center"
-                                          OffContent=""
-                                          OnContent=""
-                                          Toggled="TestContactToggle_Toggled" />
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE790;" />
+                            <TextBlock x:Name="BubbleColorPickLabel"
+                                       Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Text="Custom color" />
+                            <Button x:Name="BubbleColorButton" Grid.Column="2" VerticalAlignment="Center" Content="Choose…">
+                                <Button.Flyout>
+                                    <Flyout>
+                                        <ColorPicker x:Name="BubbleColorPicker" IsAlphaEnabled="False" ColorSpectrumShape="Ring" ColorChanged="BubbleColorPicker_ColorChanged" />
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
                         </Grid>
                     </Border>
                 </StackPanel>
@@ -287,30 +346,6 @@
                         </Grid>
                     </Border>
 
-                    <TextBlock x:Name="BackupHeader"
-                               Style="{StaticResource MicaGoSettingsHeaderStyle}"
-                               Text="Backup &amp; restore" />
-                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE777;" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock x:Name="BackupLabel" Text="Settings backup (.micagobak)" />
-                                <TextBlock x:Name="BackupStatus"
-                                           FontSize="12"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="ExportBackupButton" Content="Export…" Click="ExportBackupButton_Click" />
-                                <Button x:Name="ImportBackupButton" Content="Import…" Click="ImportBackupButton_Click" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
                 </StackPanel>
 
                 <StackPanel x:Name="AboutSection" Spacing="4" Visibility="Collapsed">
