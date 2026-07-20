@@ -32,6 +32,16 @@ Three components:
   Border/Grid CornerRadius does NOT clip child Images). Settings/details pages
   use `MicaGoSettingsCardStyle`. **Not yet compiled on Windows** — needs a
   Debug x64 build pass.
+- W-UI7: flags REAL root cause — WinUI `TextBlock.Inlines` does NOT accept
+  `InlineUIContainer` (RichTextBlock only); the renderer's catch silently fell
+  back to letters. `BodyText`/`ReplyText` are RichTextBlocks now; any text
+  that must inline Twemoji images must be a RichTextBlock. Send-flicker fixes:
+  `SyncChats` keyed diff for the sidebar (was Clear+readd per message), single
+  ChangeView in `ScrollToLastMessageAsync` (was a visible double-jump), and
+  `ItemsStackPanel.ItemsUpdatingScrollMode=KeepLastItemInView` on the thread
+  list. Chat rows use a `ListViewItemPresenter` template (8px radius, accent
+  Inline selection pill); composer is one Flutter-style pill
+  (`MicaGoComposerIconButtonStyle` circles inside).
 - W-UI6: flag fix + settings reorg — `FlagEmojiSemantics.TextElements` merges
   adjacent lone regional indicators manually (never trust the segmenter for
   🇺🇸 pairing); Twemoji flags default ON (Windows has no flag glyphs — the
