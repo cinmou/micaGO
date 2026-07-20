@@ -21,6 +21,8 @@ public sealed class ConnectionWindow : Window
     public ConnectionWindow()
     {
         Title = "micaGO";
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "micaGO.ico");
+        if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
         Content = BuildContent();
         if (AppWindowTitleBar.IsCustomizationSupported())
         {

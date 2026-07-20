@@ -3,6 +3,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using MicaGo.App.Services;
 using MicaGo.App.Views;
 using Windows.Graphics;
@@ -24,6 +25,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = "micaGO";
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "micaGO.ico");
+        if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
         _shellPage = new ShellPage();
         Content = BuildContent();
         AppWindow.Closing += AppWindow_Closing;
@@ -45,15 +48,29 @@ public sealed class MainWindow : Window
     {
         _windowRoot.RowDefinitions.Add(_titleBarRow);
         _windowRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _appTitleBar.Children.Add(new TextBlock
+        var titleContent = new StackPanel
+        {
+            Margin = new Thickness(12, 0, 0, 0),
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+            Spacing = 7,
+        };
+        titleContent.Children.Add(new Image
+        {
+            Width = 20,
+            Height = 20,
+            Stretch = Stretch.Uniform,
+            Source = new BitmapImage(new Uri("ms-appx:///Assets/micaGO.Windows.png")),
+        });
+        titleContent.Children.Add(new TextBlock
         {
             Text = "micaGO",
-            Margin = new Thickness(16, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             FontSize = 12,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            IsHitTestVisible = false,
         });
+        _appTitleBar.Children.Add(titleContent);
         _windowRoot.Children.Add(_appTitleBar);
         Grid.SetRow(_shellPage, 1);
         _windowRoot.Children.Add(_shellPage);
