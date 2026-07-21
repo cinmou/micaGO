@@ -159,3 +159,8 @@ firebase-service-account*.json
 !**/*.example.json
 RELEASE.md
 /.vs
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
