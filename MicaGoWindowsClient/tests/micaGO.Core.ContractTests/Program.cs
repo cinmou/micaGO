@@ -1,6 +1,7 @@
 using MicaGo.Core.Connection;
 using MicaGo.Core.Models;
 using MicaGo.Infrastructure.Contacts;
+using MicaGo.Infrastructure.Connection;
 
 var tests = new (string Name, Action Run)[]
 {
@@ -17,6 +18,7 @@ var tests = new (string Name, Action Run)[]
     ("reaction and system merging", MergesReactionAndSystemRows),
     ("Twemoji flag-only segmentation", SegmentsOnlyFlagEmoji),
     ("Twemoji Emoji 17 fallback segmentation", SegmentsEmoji17Fallback),
+    ("native Windows device registration", BuildsWindowsDeviceRegistration),
 };
 
 var failures = 0;
@@ -166,6 +168,15 @@ static void SegmentsEmoji17Fallback()
     Equal("1faea", segments.Single(item => item.Text == "🫪").AssetKey!);
     Equal("1f9d1-200d-1fa70", segments.Single(item => item.Text == "🧑‍🩰").AssetKey!);
     True(segments.Single(item => item.Text.Contains("😀", StringComparison.Ordinal)).AssetKey is null);
+}
+
+static void BuildsWindowsDeviceRegistration()
+{
+    var profile=new ConnectionProfile("micaGO","http://192.168.1.2:3000","ws://192.168.1.2:3000/ws",ConnectionMode.LanFirst,"",[
+        new ConnectionEndpoint(EndpointKind.Lan,"http://192.168.1.2:3000","ws://192.168.1.2:3000/ws"),
+        new ConnectionEndpoint(EndpointKind.Public,"https://go.example.com","wss://go.example.com/ws")]);
+    var registration=DevicePresenceService.CreateRegistration(profile,"windows-test",true);
+    Equal("windows-test",registration.Id);Equal("windows",registration.Platform);Equal("native",registration.ClientType);Equal("none",registration.PushProvider);Equal("lan_public",registration.Mode);True(registration.Background);True(!registration.PushEnabled);
 }
 
 static void Equal<T>(T expected, T actual) where T : notnull

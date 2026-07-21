@@ -135,6 +135,21 @@ public sealed class MicaGoApi : IMicaGoApi
     public Task SetTestContactEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
         SendActionAsync(HttpMethod.Put, "api/test-contact", new { enabled }, cancellationToken);
 
+    public async Task<string> RegisterDeviceAsync(DeviceRegistration registration, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync("api/devices/register", registration, cancellationToken);
+        using var document = await ReadJsonResponseAsync(response, cancellationToken);
+        var root = document.RootElement;
+        var data = root.TryGetProperty("data", out var nested) && nested.ValueKind == JsonValueKind.Object ? nested : root;
+        return GetString(data, "id") ?? registration.Id;
+    }
+
+    public async Task HeartbeatDeviceAsync(string deviceId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync($"api/devices/{Uri.EscapeDataString(deviceId)}/heartbeat", null, cancellationToken);
+        using var _ = await ReadJsonResponseAsync(response, cancellationToken);
+    }
+
     public async IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var socket = new ClientWebSocket();

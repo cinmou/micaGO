@@ -15,6 +15,7 @@ public sealed class AppServices : IDisposable
             new ConnectionStore(secrets),
             new EndpointSelector());
         Cache = new LocalCacheStore();
+        DevicePresence = new DevicePresenceService(Connection, Cache);
         Media = new MediaCache();
         Localization = new LocalizationService();
         Notifications = new NotificationService();
@@ -26,6 +27,7 @@ public sealed class AppServices : IDisposable
 
     public ConnectionManager Connection { get; }
     public LocalCacheStore Cache { get; }
+    public DevicePresenceService DevicePresence { get; }
     public MediaCache Media { get; }
     public LocalizationService Localization { get; }
     public NotificationService Notifications { get; }
@@ -43,6 +45,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        DevicePresence.Dispose();
         Connection.Dispose();
         Cache.Dispose();
         Notifications.Dispose();

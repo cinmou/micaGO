@@ -20,6 +20,7 @@ public sealed class ConnectionManager : IDisposable
     public EndpointProbeResult? ActiveEndpoint { get; private set; }
     public IMicaGoApi? Api { get; private set; }
     public bool IsConnected => Api is not null;
+    public event EventHandler? ConnectionChanged;
 
     /// <summary>Fast local check (connection file + Credential Manager) — no network.</summary>
     public async Task<bool> HasSavedProfileAsync(CancellationToken cancellationToken = default) =>
@@ -41,6 +42,9 @@ public sealed class ConnectionManager : IDisposable
         catch (ConnectionException)
         {
             DisposeApi();
+            Profile = null;
+            ActiveEndpoint = null;
+            ConnectionChanged?.Invoke(this, EventArgs.Empty);
             return false;
         }
     }
@@ -64,6 +68,7 @@ public sealed class ConnectionManager : IDisposable
         Profile = null;
         ActiveEndpoint = null;
         await _store.ClearAsync(cancellationToken);
+        ConnectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private async Task ActivateAsync(
@@ -91,6 +96,7 @@ public sealed class ConnectionManager : IDisposable
             Profile = activated;
             ActiveEndpoint = selected;
             Api = api;
+            ConnectionChanged?.Invoke(this, EventArgs.Empty);
         }
         catch
         {

@@ -17,5 +17,7 @@ public interface IMicaGoApi : IDisposable
     Task DeleteMessageAsync(string chatId, string messageId, CancellationToken cancellationToken = default);
     Task<bool> GetTestContactEnabledAsync(CancellationToken cancellationToken = default);
     Task SetTestContactEnabledAsync(bool enabled, CancellationToken cancellationToken = default);
+    Task<string> RegisterDeviceAsync(DeviceRegistration registration, CancellationToken cancellationToken = default);
+    Task HeartbeatDeviceAsync(string deviceId, CancellationToken cancellationToken = default);
     IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync(CancellationToken cancellationToken = default);
 }
