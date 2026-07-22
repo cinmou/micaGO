@@ -13,6 +13,8 @@ var tests = new (string Name, Action Run)[]
     ("attachment placeholder reconciliation", ReconcilesAttachmentPlaceholder),
     ("ambiguous attachment fallback", RefusesAmbiguousAttachmentFallback),
     ("stable presentation key", PreservesPresentationKey),
+    ("attachment preview normalization", NormalizesAttachmentPreviews),
+    ("stable chat row notifications", UpdatesChatRowInPlace),
     ("vCard folded and escaped contacts", ParsesVCardContacts),
     ("private and group presentation", PresentsPrivateAndGroupThreads),
     ("reaction and system merging", MergesReactionAndSystemRows),
@@ -120,8 +122,33 @@ static void RefusesAmbiguousAttachmentFallback()
 static void PreservesPresentationKey()
 {
     var pending=new Message("local-1","chat","hello","",true,MessageDeliveryState.Sending,DateCreated:1000,IsPending:true,PresentationId:"row-1");
-    var confirmed=new Message("server-1","chat","hello","",true,MessageDeliveryState.Sent,DateCreated:1100,PresentationId:pending.PresentationKey);
+    var server=new Message("server-1","chat","hello","",true,MessageDeliveryState.Sent,DateCreated:1100);
+    var confirmed=MessageSemantics.ReconcilePresentation(pending,server);
     Equal("row-1",confirmed.PresentationKey);
+    Equal(1000L,confirmed.DateCreated);
+    Equal("server-1",confirmed.Id);
+    Equal(MessageDeliveryState.Sent,confirmed.DeliveryState);
+}
+
+static void NormalizesAttachmentPreviews()
+{
+    Equal("[Attachment]", MessageSemantics.PreviewText("obj"));
+    Equal("[Attachment]", MessageSemantics.PreviewText("\uFFFC"));
+    Equal("hello", MessageSemantics.PreviewText(" hello "));
+    var attachment = new Attachment("a", "photo.heic", "image/heic", 123);
+    var message = new Message("m", "chat", "object", "", false, MessageDeliveryState.Read, Attachments: [attachment]);
+    Equal("[Attachment]", MessageSemantics.PreviewText(message));
+}
+
+static void UpdatesChatRowInPlace()
+{
+    var row = new ChatSummary("chat", "Jane", "old", "1m", 0, "J");
+    var changed = new HashSet<string>();
+    row.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+    row.UpdateFrom(row with { Preview = "new", Time = "now", UnreadCount = 1, HasUnread = true });
+    Equal("new", row.Preview);
+    Equal(1, row.UnreadCount);
+    True(changed.SetEquals([nameof(ChatSummary.Preview), nameof(ChatSummary.Time), nameof(ChatSummary.UnreadCount), nameof(ChatSummary.HasUnread)]));
 }
 
 static void ParsesVCardContacts()

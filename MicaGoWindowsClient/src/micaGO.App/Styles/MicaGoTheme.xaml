@@ -16,7 +16,7 @@
             <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99000000" />
-            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFF1F1F1" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
         </ResourceDictionary>
@@ -32,7 +32,7 @@
             <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FF171717" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99FFFFFF" />
-            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FF2C2C2E" />
+            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FF242426" />
             <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FF252525" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#16FFFFFF" />
         </ResourceDictionary>

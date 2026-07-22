@@ -4,12 +4,34 @@ namespace MicaGo.Core.Models;
 
 public static partial class MessageSemantics
 {
+    private static readonly HashSet<string> AttachmentPlaceholders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "message", "attachment", "file", "obj", "object", "null",
+    };
+
     public static string VisibleText(string? value)
     {
         var text=Whitespace().Replace((value??string.Empty).Replace('\uFFFC',' ').Replace('\uFFFD',' ').Trim()," ");
         if(text.Length==0)return string.Empty;
         var real=text.Any(character=>char.IsLetterOrDigit(character)||character>0x7f);
         return real?text:string.Empty;
+    }
+
+    /// <summary>Flutter-compatible text for a conversation-list preview.</summary>
+    public static string PreviewText(string? value, bool hasMessage = true)
+    {
+        var text = VisibleText(value);
+        return text.Length == 0 || AttachmentPlaceholders.Contains(text)
+            ? hasMessage ? "[Attachment]" : string.Empty
+            : text;
+    }
+
+    public static string PreviewText(Message message)
+    {
+        var text = VisibleText(message.Text);
+        if (text.Length > 0 && !AttachmentPlaceholders.Contains(text)) return text;
+        if (message.Media.Count > 0 || !string.IsNullOrWhiteSpace(message.AttachmentLabel)) return "[Attachment]";
+        return message.IsRetracted ? "Message unsent" : PreviewText(text);
     }
 
     public static bool AttachmentSendMatches(Message local, Message server)
@@ -47,6 +69,18 @@ public static partial class MessageSemantics
         var fallback = pending.Where(row => row.IsOutgoing && row.Media.Count > 0 && VisibleText(row.Text).Length == 0 && row.DateCreated > 0 && Math.Abs(row.DateCreated - server.DateCreated) <= TimeSpan.FromMinutes(5).TotalMilliseconds).ToArray();
         return fallback.Length == 1 ? fallback[0] : null;
     }
+
+    /// <summary>
+    /// Applies server-authoritative content to an already presented row without
+    /// changing that row's identity or chronological slot. Server confirmation
+    /// timestamps routinely differ by a few milliseconds from optimistic send
+    /// timestamps; adopting them caused ListView.Move and recycled the bubble.
+    /// </summary>
+    public static Message ReconcilePresentation(Message presented, Message server) => server with
+    {
+        PresentationId = presented.PresentationKey,
+        DateCreated = presented.DateCreated > 0 ? presented.DateCreated : server.DateCreated,
+    };
 
     private static string Stem(string value) => Path.GetFileNameWithoutExtension(value);
     [GeneratedRegex(@"\s+")]

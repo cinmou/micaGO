@@ -59,11 +59,6 @@
                       RightTapped="ChatList_RightTapped"
                       SelectionMode="Single"
                       ItemContainerStyle="{StaticResource MicaGoChatListStyle}">
-                <ListView.ItemContainerTransitions>
-                    <TransitionCollection>
-                        <RepositionThemeTransition />
-                    </TransitionCollection>
-                </ListView.ItemContainerTransitions>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="models:ChatSummary">
                         <Grid MinHeight="64" Padding="10,8" ColumnSpacing="10">
@@ -75,8 +70,8 @@
                             <PersonPicture Width="42"
                                            Height="42"
                                            VerticalAlignment="Center"
-                                           DisplayName="{x:Bind Title}"
-                                           ProfilePicture="{x:Bind app:Ui.Image(AvatarPath)}" />
+                                           DisplayName="{x:Bind Title, Mode=OneWay}"
+                                           ProfilePicture="{x:Bind app:Ui.Image(AvatarPath), Mode=OneWay}" />
                             <StackPanel Grid.Column="1"
                                         VerticalAlignment="Center"
                                         Spacing="2">
@@ -88,19 +83,19 @@
                                     <TextBlock HorizontalAlignment="Left"
                                                FontSize="14"
                                                FontWeight="SemiBold"
-                                               Text="{x:Bind Title}"
+                                               Text="{x:Bind Title, Mode=OneWay}"
                                                TextTrimming="CharacterEllipsis" />
                                     <FontIcon Grid.Column="1"
                                               FontSize="11"
                                               VerticalAlignment="Center"
                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                               Glyph="&#xE74F;"
-                                              Visibility="{x:Bind app:Ui.BoolVisibility(IsMuted)}" />
+                                              Visibility="{x:Bind app:Ui.BoolVisibility(IsMuted), Mode=OneWay}" />
                                 </Grid>
                                 <TextBlock FontSize="12"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            MaxLines="1"
-                                           Text="{x:Bind Preview}"
+                                           Text="{x:Bind Preview, Mode=OneWay}"
                                            TextTrimming="CharacterEllipsis"
                                            TextWrapping="NoWrap" />
                             </StackPanel>
@@ -112,30 +107,30 @@
                                 <TextBlock HorizontalAlignment="Right"
                                            FontSize="11"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           Text="{x:Bind Time}" />
+                                           Text="{x:Bind Time, Mode=OneWay}" />
                                 <Border MinWidth="18"
                                         Height="18"
                                         Padding="5,0"
                                         HorizontalAlignment="Right"
                                         Background="{ThemeResource AccentFillColorDefaultBrush}"
                                         CornerRadius="9"
-                                        Visibility="{x:Bind app:Ui.CountVisibility(UnreadCount)}">
+                                        Visibility="{x:Bind app:Ui.CountVisibility(UnreadCount), Mode=OneWay}">
                                     <TextBlock HorizontalAlignment="Center"
                                                VerticalAlignment="Center"
                                                FontSize="10"
                                                Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                               Text="{x:Bind app:Ui.CountLabel(UnreadCount)}" />
+                                               Text="{x:Bind app:Ui.CountLabel(UnreadCount), Mode=OneWay}" />
                                 </Border>
                                 <Ellipse Width="8"
                                          Height="8"
                                          HorizontalAlignment="Right"
                                          Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                         Visibility="{x:Bind app:Ui.DotVisibility(HasUnread, UnreadCount)}" />
+                                         Visibility="{x:Bind app:Ui.DotVisibility(HasUnread, UnreadCount), Mode=OneWay}" />
                                 <FontIcon HorizontalAlignment="Right"
                                           FontSize="11"
                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                           Glyph="&#xE718;"
-                                          Visibility="{x:Bind app:Ui.PinVisibility(IsPinned, UnreadCount)}" />
+                                          Visibility="{x:Bind app:Ui.PinVisibility(IsPinned, UnreadCount), Mode=OneWay}" />
                             </StackPanel>
                         </Grid>
                     </DataTemplate>

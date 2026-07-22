@@ -50,9 +50,6 @@
                         Grid.Column="1"
                         MaxWidth="560"
                         HorizontalAlignment="Left">
-                <StackPanel.RenderTransform>
-                    <TranslateTransform x:Name="EntranceTransform" />
-                </StackPanel.RenderTransform>
 
                 <TextBlock x:Name="SenderText"
                            Margin="12,2,12,2"

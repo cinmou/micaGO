@@ -20,6 +20,8 @@ public sealed class ShellViewModel : IAsyncDisposable
     private CancellationTokenSource? _selectionCts;
     private IReadOnlySet<string> _hiddenMessageGuids = new HashSet<string>();
     private IReadOnlySet<string> _hiddenChatGuids = new HashSet<string>();
+    private readonly HashSet<string> _seenRealtimeMessageIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<string> _seenRealtimeMessageOrder = new();
     private int _loadedMessageCount;
     private string _activeFilter=string.Empty;
     private const int MessagePageSize = 50;
@@ -157,7 +159,7 @@ public sealed class ShellViewModel : IAsyncDisposable
         try
         {
             var confirmed = await _api.SendTextAsync(SelectedChat.Id, text.Trim(), tempId, cancellationToken);
-            var index = _rawMessages.FindIndex(item=>item.PresentationKey==pending.PresentationKey); if (index >= 0){var raw=_rawMessages.ToList();raw[index]=confirmed with { PresentationId = pending.PresentationKey };ReplaceMessages(raw);}
+            var index = _rawMessages.FindIndex(item=>item.PresentationKey==pending.PresentationKey); if (index >= 0){var raw=_rawMessages.ToList();raw[index]=MessageSemantics.ReconcilePresentation(raw[index],confirmed);ReplaceMessages(raw);}
             await _services.Cache.UpsertMessagesAsync([confirmed], cancellationToken);
         }
         catch (Exception exception)
@@ -275,37 +277,74 @@ public sealed class ShellViewModel : IAsyncDisposable
         Dispatch(() =>
         {
             var raw = _rawMessages.ToList();
-            var needsChatReload=false;
+            var selectedMessagesChanged = false;
             foreach (var message in decorated)
             {
                 var isSelected=SelectedChat is{} selected&&(selected.Id==message.ChatId||(selected.RouteIds?.Contains(message.ChatId)??false));
                 if(isSelected)
                 {
                     var existing = raw.FirstOrDefault(item => item.Id == message.Id);
-                    if (existing is not null) raw[raw.IndexOf(existing)] = message with { PresentationId = existing.PresentationId };
+                    if (existing is not null)
+                    {
+                        var updated = MessageSemantics.ReconcilePresentation(existing, message);
+                        if (!existing.Equals(updated)) { raw[raw.IndexOf(existing)] = updated; selectedMessagesChanged = true; }
+                    }
                     else
                     {
                         var pending = MessageSemantics.MatchingPending(raw, message);
-                        if (pending is not null){var index=raw.IndexOf(pending);raw[index]=message with{PresentationId=pending.PresentationKey};_pendingAttachmentPaths.Remove(pending.PresentationKey);_=_services.Cache.DeletePendingUploadAsync(pending.PresentationKey);}
+                        if (pending is not null){var index=raw.IndexOf(pending);raw[index]=MessageSemantics.ReconcilePresentation(pending,message);_pendingAttachmentPaths.Remove(pending.PresentationKey);_=_services.Cache.DeletePendingUploadAsync(pending.PresentationKey);}
                         else raw.Add(message);
+                        selectedMessagesChanged = true;
                     }
                 }
-                if(!_allChats.Any(chat=>chat.Id==message.ChatId||chat.RouteIds?.Contains(message.ChatId)==true))needsChatReload=true;
-                else UpdateChatForMessage(message,isSelected);
             }
-            ReplaceMessages(raw);
+            if (selectedMessagesChanged) ReplaceMessages(raw);
+            var needsChatReload = UpdateChatsForMessages(decorated);
             StateChanged?.Invoke(this, EventArgs.Empty);
             if(needsChatReload)_=ReloadChatsAsync();
         });
     }
 
-    private void UpdateChatForMessage(Message message,bool isSelected)
+    private bool UpdateChatsForMessages(IEnumerable<Message> messages)
     {
-        var rows=_allChats.ToArray();var index=Array.FindIndex(rows,chat=>chat.Id==message.ChatId||chat.RouteIds?.Contains(message.ChatId)==true);if(index<0)return;var chat=rows[index];
-        var preview=MessageSemantics.VisibleText(message.Text);if(string.IsNullOrEmpty(preview))preview=message.AttachmentLabel??"Attachment";
-        var incomingUnseen=!message.IsOutgoing&&!isSelected;rows[index]=chat with{Preview=preview,Time=message.SentAt,UpdatedAt=message.DateCreated,UnreadCount=incomingUnseen?chat.UnreadCount+1:chat.UnreadCount,HasUnread=incomingUnseen||chat.HasUnread,LatestFromMe=message.IsOutgoing};
+        var rows = _allChats.ToArray();
+        var changed = false;
+        var needsReload = false;
+        foreach (var message in messages)
+        {
+            var index=Array.FindIndex(rows,chat=>chat.Id==message.ChatId||chat.RouteIds?.Contains(message.ChatId)==true);
+            if(index<0){needsReload=true;continue;}
+            var chat=rows[index];
+            var isSelected=SelectedChat is{} selected&&(selected.Id==message.ChatId||(selected.RouteIds?.Contains(message.ChatId)??false));
+            var firstObservation = RememberRealtimeMessage(message.Id);
+            var advancesChat = message.DateCreated > chat.UpdatedAt;
+            var updatesLatest = message.DateCreated >= chat.UpdatedAt;
+            var incomingUnseen=firstObservation&&advancesChat&&!message.IsOutgoing&&!isSelected;
+            var preview=MessageSemantics.PreviewText(message);
+            rows[index]=chat with
+            {
+                Preview=updatesLatest?preview:chat.Preview,
+                Time=updatesLatest?message.SentAt:chat.Time,
+                UpdatedAt=Math.Max(chat.UpdatedAt,message.DateCreated),
+                UnreadCount=incomingUnseen?chat.UnreadCount+1:chat.UnreadCount,
+                HasUnread=incomingUnseen||chat.HasUnread,
+                LatestFromMe=updatesLatest?message.IsOutgoing:chat.LatestFromMe,
+            };
+            changed = true;
+            if(incomingUnseen&&!chat.IsMuted)_services.Notifications.Show(chat.Title,preview,message.ChatId);
+        }
+        if (!changed) return needsReload;
         ReplaceChats(rows.OrderByDescending(item=>item.IsPinned).ThenByDescending(item=>item.UpdatedAt));
-        if(!message.IsOutgoing&&!isSelected&&!chat.IsMuted)_services.Notifications.Show(chat.Title,preview,message.ChatId);
+        return needsReload;
+    }
+
+    private bool RememberRealtimeMessage(string id)
+    {
+        if (!_seenRealtimeMessageIds.Add(id)) return false;
+        _seenRealtimeMessageOrder.Enqueue(id);
+        while (_seenRealtimeMessageOrder.Count > 2048)
+            _seenRealtimeMessageIds.Remove(_seenRealtimeMessageOrder.Dequeue());
+        return true;
     }
 
     private void ReplaceChats(IEnumerable<ChatSummary> rows)
@@ -334,12 +373,12 @@ public sealed class ShellViewModel : IAsyncDisposable
             var desired=target[i];
             if(i<Chats.Count&&string.Equals(Chats[i].Id,desired.Id,StringComparison.OrdinalIgnoreCase))
             {
-                if(!Chats[i].Equals(desired))Chats[i]=desired;
+                Chats[i].UpdateFrom(desired);
                 continue;
             }
             var existing=-1;
             for(var j=i+1;j<Chats.Count;j++)if(string.Equals(Chats[j].Id,desired.Id,StringComparison.OrdinalIgnoreCase)){existing=j;break;}
-            if(existing>=0){Chats.Move(existing,i);if(!Chats[i].Equals(desired))Chats[i]=desired;}
+            if(existing>=0){Chats.Move(existing,i);Chats[i].UpdateFrom(desired);}
             else Chats.Insert(i,desired);
         }
         while(Chats.Count>target.Count)Chats.RemoveAt(Chats.Count-1);
@@ -393,23 +432,41 @@ public sealed class ShellViewModel : IAsyncDisposable
     }
     private void ReplaceMessages(IEnumerable<Message> rows)
     {
-        _rawMessages=rows.Where(row=>!row.IsSeparator).OrderBy(row=>row.DateCreated).ToList();
+        // Cache, REST and websocket models do not persist PresentationId. Before
+        // replacing the raw snapshot, carry the identity/time slot of every row
+        // already shown in this thread across by server identity. Without this,
+        // a cache refresh changes every key back to Message.Id and ListView drops
+        // all realized containers at once (insert=N/remove=N).
+        var presented = _rawMessages
+            .Where(row => !row.IsSeparator)
+            .GroupBy(row => (row.ChatId, row.Id))
+            .ToDictionary(group => group.Key, group => group.Last());
+        _rawMessages=rows
+            .Where(row=>!row.IsSeparator)
+            .Select(row => presented.TryGetValue((row.ChatId, row.Id), out var existing)
+                ? MessageSemantics.ReconcilePresentation(existing, row)
+                : row)
+            .OrderBy(row=>row.DateCreated)
+            .ToList();
         var visible=_hiddenMessageGuids.Count==0?_rawMessages:_rawMessages.Where(row=>!_hiddenMessageGuids.Contains(row.Id)).ToList();
         SyncMessages(ThreadPresentation.Build(visible,SelectedChat?.IsGroup==true,_services.Localization.Language));
     }
 
     /// <summary>
     /// Applies the freshly built presentation list to the bound collection as a
-    /// keyed diff (update in place / insert / move / trim) instead of
+    /// stable keyed diff (update in place / insert / trim) instead of
     /// Clear()+Add(): a full reset makes the ListView drop its scroll position,
     /// which is why sending a message used to jump the thread to the top.
     /// </summary>
     private void SyncMessages(IReadOnlyList<Message> target)
     {
+        var inserted = 0;
+        var updated = 0;
+        var removed = 0;
         var targetKeys = new HashSet<string>(target.Select(row => row.PresentationKey));
         for (var i = Messages.Count - 1; i >= 0; i--)
         {
-            if (!targetKeys.Contains(Messages[i].PresentationKey)) Messages.RemoveAt(i);
+            if (!targetKeys.Contains(Messages[i].PresentationKey)) { Messages.RemoveAt(i); removed++; }
         }
 
         for (var i = 0; i < target.Count; i++)
@@ -417,28 +474,49 @@ public sealed class ShellViewModel : IAsyncDisposable
             var desired = target[i];
             if (i < Messages.Count && Messages[i].PresentationKey == desired.PresentationKey)
             {
-                if (!Messages[i].Equals(desired)) Messages[i] = desired;
+                desired = PreserveStructurallyEqualCollections(Messages[i], desired);
+                if (!Messages[i].Equals(desired)) { Messages[i] = desired; updated++; }
                 continue;
             }
 
             var existing = -1;
-            for (var j = i + 1; j < Messages.Count; j++)
+            for (var j = 0; j < Messages.Count; j++)
             {
                 if (Messages[j].PresentationKey == desired.PresentationKey) { existing = j; break; }
             }
 
             if (existing >= 0)
             {
-                Messages.Move(existing, i);
-                if (!Messages[i].Equals(desired)) Messages[i] = desired;
+                // Existing message rows never move during refresh. New rows and
+                // separators are inserted at their target positions, which shifts
+                // stable containers naturally; moving an existing row recycles its
+                // WinUI container and produces the visible white flash.
+                desired = PreserveStructurallyEqualCollections(Messages[existing], desired);
+                if (!Messages[existing].Equals(desired)) { Messages[existing] = desired; updated++; }
             }
             else
             {
                 Messages.Insert(i, desired);
+                inserted++;
             }
         }
 
-        while (Messages.Count > target.Count) Messages.RemoveAt(Messages.Count - 1);
+        while (Messages.Count > target.Count) { Messages.RemoveAt(Messages.Count - 1); removed++; }
+        System.Diagnostics.Debug.WriteLine($"[MessageTimeline] insert={inserted} update={updated} remove={removed} rows={Messages.Count}");
+    }
+
+    /// <summary>
+    /// ThreadPresentation deliberately creates fresh immutable records. Record equality is
+    /// reference-based for IReadOnlyList properties, however, so an otherwise identical
+    /// presentation pass used to replace every visible row. Keep the already-bound list
+    /// instances when their contents are equal; WinUI then receives changes only for rows
+    /// whose visible state actually changed.
+    /// </summary>
+    private static Message PreserveStructurallyEqualCollections(Message current, Message desired)
+    {
+        var media = current.Media.SequenceEqual(desired.Media) ? current.Attachments : desired.Attachments;
+        var reactions = (current.Reactions ?? []).SequenceEqual(desired.Reactions ?? []) ? current.Reactions : desired.Reactions;
+        return desired with { Attachments = media, Reactions = reactions };
     }
     private async Task RestorePendingUploadsAsync(string chatId,CancellationToken token)
     {
