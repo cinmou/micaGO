@@ -33,17 +33,16 @@ public sealed partial class MessageBubble : UserControl
     private static readonly LinkedList<string> ThumbnailLru = [];
     private static readonly object ThumbnailGate = new();
 
-    // Transient per-thread presentation state (mirrors the Flutter client's
-    // entrance tracker / invisible-ink reveal / footer transition memory).
+    // Transient per-thread presentation state (invisible-ink reveal / footer
+    // transition memory). Message-row entrance animation is intentionally not
+    // tracked: recycled WinUI containers made it indistinguishable from a new
+    // row and exposed the transparent canvas during rapid sends.
     // Reset by the shell whenever another chat is opened.
-    private static readonly HashSet<string> SeenEntranceKeys = [];
     private static readonly HashSet<string> RevealedInkKeys = [];
-    private static readonly Dictionary<string, string> FooterMemory = [];
     private static readonly Dictionary<string, string?> LinkTitleCache = [];
     private static readonly HttpClient LinkHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
     private static readonly Regex UrlRegex = new(
         @"https?://[^\s<>""']+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static DateTime _threadOpenedAt = DateTime.MinValue;
 
     /// <summary>Raised when a reply preview is tapped; payload is the target message guid.</summary>
     public static event EventHandler<string>? ReplyJumpRequested;
@@ -55,16 +54,11 @@ public sealed partial class MessageBubble : UserControl
 
     public static void RefreshAppearance() => AppearanceChanged?.Invoke(null, EventArgs.Empty);
 
-    /// <summary>Called by the shell when a chat is opened, so history rows never animate.</summary>
+    /// <summary>Clears transient per-thread effect state when another chat opens.</summary>
     public static void ResetTransientState()
     {
-        SeenEntranceKeys.Clear();
-        FooterMemory.Clear();
-        _threadOpenedAt = DateTime.UtcNow;
+        RevealedInkKeys.Clear();
     }
-
-    private static bool InThreadOpenGracePeriod =>
-        (DateTime.UtcNow - _threadOpenedAt) < TimeSpan.FromMilliseconds(700);
 
     private Message? _message;
 
@@ -91,6 +85,12 @@ public sealed partial class MessageBubble : UserControl
             return;
         }
 
+        var previous = _message;
+        var isSameRow = previous?.PresentationKey == message.PresentationKey;
+        var mediaUnchanged = isSameRow && previous is not null && previous.Media.SequenceEqual(message.Media);
+        var linkUnchanged = isSameRow && previous is not null
+            && string.Equals(previous.Text, message.Text, StringComparison.Ordinal)
+            && previous.Media.SequenceEqual(message.Media);
         _message = message;
 
         if (message.IsSeparator)
@@ -128,19 +128,30 @@ public sealed partial class MessageBubble : UserControl
         var hasBody = body.Length > 0;
         var hasMedia = message.Media.Count > 0;
 
-        ResetTransientVisuals();
+        // A same-key assignment is an in-place state update (delivery, reaction,
+        // grouping, etc.), not a recycled container. Resetting opacity/translation
+        // here caused already-visible bubbles to flash and replay their entrance.
+        if (!isSameRow)
+        {
+            ResetTransientVisuals();
+        }
         ApplyDirection(outgoing);
         ApplySenderRow(message, outgoing);
         ApplyReply(message);
         ApplyBubble(message, body, hasBody, hasMedia, outgoing);
-        BuildMediaPanel(message, hasMedia, hasBody);
-        ApplyLinkPreview(message, body);
+        if (!mediaUnchanged)
+        {
+            BuildMediaPanel(message, hasMedia, hasBody);
+        }
+        if (!linkUnchanged)
+        {
+            ApplyLinkPreview(message, body);
+        }
         ApplyReactions(message, outgoing);
         ApplyEffectAndFooter(message, outgoing);
         ApplyPendingOverlays(message);
         ApplyInvisibleInk(message);
         ApplyTimestampToolTip(message);
-        PlayEntranceIfNew(message);
     }
 
     /// <summary>Recycled containers must never keep a previous row's animation state.</summary>
@@ -150,7 +161,6 @@ public sealed partial class MessageBubble : UserControl
         BubbleTransform.ScaleY = 1;
         BubbleTransform.Rotation = 0;
         BubbleTransform.TranslateY = 0;
-        EntranceTransform.Y = 0;
         ContentColumn.Opacity = 1;
         FooterText.Opacity = 1;
     }
@@ -327,10 +337,6 @@ public sealed partial class MessageBubble : UserControl
         _ = LoadTileImageAsync(message, attachment, (bitmap, fromCache) =>
         {
             image.Source = bitmap;
-            if (!fromCache)
-            {
-                FadeIn(image);
-            }
         });
         return host;
     }
@@ -395,10 +401,6 @@ public sealed partial class MessageBubble : UserControl
             surface.Width = Math.Max(44, width * scale);
             surface.Height = Math.Max(44, height * scale);
             surface.Fill = new ImageBrush { ImageSource = bitmap, Stretch = Stretch.UniformToFill };
-            if (!fromCache)
-            {
-                FadeIn(surface);
-            }
         });
 
         host.Tapped += async (_, _) => await OpenInViewerAsync(message, attachment);
@@ -571,20 +573,9 @@ public sealed partial class MessageBubble : UserControl
         EffectRow.Visibility = string.IsNullOrWhiteSpace(effect) ? Visibility.Collapsed : Visibility.Visible;
         EffectText.Text = effect ?? string.Empty;
 
-        // C72 approximation: when the footer appears or its label changes on a
-        // row the user is already looking at, fade the new label in instead of
-        // snapping (the row-height glide is not reproduced).
         var footerLabel = message.ShowFooter ? FooterLabel(message) : string.Empty;
-        var previous = FooterMemory.GetValueOrDefault(message.PresentationKey);
-        FooterMemory[message.PresentationKey] = footerLabel;
         FooterText.Visibility = message.ShowFooter ? Visibility.Visible : Visibility.Collapsed;
         FooterText.Text = footerLabel;
-        if (message.ShowFooter && previous != footerLabel && !InThreadOpenGracePeriod)
-        {
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(Animate(FooterText, "Opacity", 0, 1, 160));
-            storyboard.Begin();
-        }
     }
 
     // ----- send effects -----
@@ -780,35 +771,6 @@ public sealed partial class MessageBubble : UserControl
         {
             titleBlock.Text = title;
         }
-    }
-
-    private void PlayEntranceIfNew(Message message)
-    {
-        var key = message.PresentationKey;
-        var isNew = SeenEntranceKeys.Add(key);
-        if (!isNew || InThreadOpenGracePeriod || message.DateCreated <= 0)
-        {
-            return;
-        }
-        var age = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - message.DateCreated;
-        if (age is < 0 or > 15000)
-        {
-            return;
-        }
-        ContentColumn.Opacity = 0;
-        EntranceTransform.Y = 12;
-        var storyboard = new Storyboard();
-        storyboard.Children.Add(Animate(ContentColumn, "Opacity", 0, 1, 240));
-        storyboard.Children.Add(Animate(EntranceTransform, "Y", 12, 0, 240));
-        storyboard.Begin();
-    }
-
-    private static void FadeIn(UIElement element, int milliseconds = 180)
-    {
-        element.Opacity = 0;
-        var storyboard = new Storyboard();
-        storyboard.Children.Add(Animate(element, "Opacity", 0, 1, milliseconds));
-        storyboard.Begin();
     }
 
     private static Timeline Animate(

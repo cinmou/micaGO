@@ -246,7 +246,7 @@ public sealed class MicaGoApi : IMicaGoApi
         var preview = GetString(json, "latestRenderablePreview") ?? GetString(json, "lastMessagePreview") ?? GetString(json, "lastMessage") ?? string.Empty;
         var timestamp = GetLong(json, "latestRenderableAt") ?? GetLong(json, "lastMessageAt") ?? GetLong(json, "lastMessageDate") ?? 0;
         var service = GetString(json, "effectiveService") ?? GetString(json, "serviceCategory") ?? GetString(json, "serviceName") ?? "unknown";
-        return new ChatSummary(id, string.IsNullOrWhiteSpace(title) ? "Conversation" : title, string.IsNullOrWhiteSpace(preview) ? "[Attachment]" : preview, string.Empty, GetInt(json, "unreadCount") ?? 0, BuildInitials(title), GetBoolean(json, "isMuted") ?? false, FormatService(service), GetBoolean(json, "canSendText") ?? service.Equals("imessage", StringComparison.OrdinalIgnoreCase), GetBoolean(json, "isPinned") ?? false, isGroup, timestamp, participants, LatestFromMe: GetBoolean(json, "latestRenderableFromMe") ?? false);
+        return new ChatSummary(id, string.IsNullOrWhiteSpace(title) ? "Conversation" : title, MessageSemantics.PreviewText(preview), string.Empty, GetInt(json, "unreadCount") ?? 0, BuildInitials(title), GetBoolean(json, "isMuted") ?? false, FormatService(service), GetBoolean(json, "canSendText") ?? service.Equals("imessage", StringComparison.OrdinalIgnoreCase), GetBoolean(json, "isPinned") ?? false, isGroup, timestamp, participants, LatestFromMe: GetBoolean(json, "latestRenderableFromMe") ?? false);
     }
 
     private static Message MapMessage(JsonElement json, string chatId)

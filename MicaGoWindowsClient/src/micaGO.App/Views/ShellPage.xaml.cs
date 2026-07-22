@@ -198,6 +198,15 @@ public sealed partial class ShellPage : Page
     {
         if (_viewModel is null) return;
         ShowConversationPane();
+        if (_viewModel.SelectedChat is { } current
+            && _viewModel.Messages.Count > 0
+            && (current.Id == chat.Id || current.RouteIds?.Contains(chat.Id) == true || chat.RouteIds?.Contains(current.Id) == true))
+        {
+            // Clicking the already-open row must not restart cache + REST loading;
+            // doing so replaced the complete timeline twice and recycled every
+            // visible bubble even though the conversation had not changed.
+            return;
+        }
         Controls.MessageBubble.ResetTransientState();
         ThreadAvatar.DisplayName = chat.Title;
         ThreadAvatar.ProfilePicture = Ui.Image(chat.AvatarPath);
@@ -565,11 +574,12 @@ public sealed partial class ShellPage : Page
         _keepingMessageBottom = true;
         try
         {
-            var send = _viewModel.SendTextAsync(text);
-            await ScrollToLastMessageAsync();
-            await send;
+            // ItemsStackPanel.KeepLastItemInView owns the append scroll. A
+            // manual scroll both before and after confirmation forced three
+            // competing layout passes during rapid sends and exposed the
+            // transparent message canvas between container realizations.
+            await _viewModel.SendTextAsync(text);
             UpdateThreadSubtitle();
-            await ScrollToLastMessageAsync();
         }
         finally { _keepingMessageBottom = false; }
     }
@@ -586,11 +596,8 @@ public sealed partial class ShellPage : Page
         _keepingMessageBottom = true;
         try
         {
-            var send = _viewModel.SendAttachmentsAsync(files.Select(file => file.Path));
-            await ScrollToLastMessageAsync();
-            await send;
+            await _viewModel.SendAttachmentsAsync(files.Select(file => file.Path));
             UpdateThreadSubtitle();
-            await ScrollToLastMessageAsync();
         }
         finally { _keepingMessageBottom = false; }
     }
@@ -664,10 +671,7 @@ public sealed partial class ShellPage : Page
         _keepingMessageBottom = true;
         try
         {
-            var send = _viewModel.SendAttachmentsAsync([path], isAudioMessage: true);
-            await ScrollToLastMessageAsync();
-            await send;
-            await ScrollToLastMessageAsync();
+            await _viewModel.SendAttachmentsAsync([path], isAudioMessage: true);
         }
         finally { _keepingMessageBottom = false; }
     }
