@@ -8,6 +8,7 @@ import '../../core/l10n/app_localizations.dart';
 import '../../core/theme_controller.dart';
 import '../contacts/contacts_service.dart';
 import 'message_display_controller.dart';
+import 'settings_dialog_actions.dart';
 
 /// Shared "Backup & Restore" flows (C54) used by both Settings and the pairing
 /// screen. Export writes an unencrypted `.micagobak` zip (contains the bearer
@@ -24,22 +25,11 @@ Future<void> exportSettingsBackup(BuildContext context) async {
       title: Text(MicaLocalizations.of(ctx).t('backup.exportTitle')),
       content: Text(MicaLocalizations.of(ctx).t('backup.tokenWarning')),
       actions: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text(MicaLocalizations.of(ctx).t('settings.cancel')),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(MicaLocalizations.of(ctx).t('backup.export')),
-              ),
-            ),
-          ],
+        SettingsDialogActionRow(
+          cancelLabel: MicaLocalizations.of(ctx).t('settings.cancel'),
+          onCancel: () => Navigator.pop(ctx, false),
+          confirmLabel: MicaLocalizations.of(ctx).t('backup.export'),
+          onConfirm: () => Navigator.pop(ctx, true),
         ),
       ],
     ),
@@ -133,13 +123,11 @@ Future<bool> importSettingsBackup(BuildContext context) async {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(s.t('settings.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(s.t('backup.restore')),
+          SettingsDialogActionRow(
+            cancelLabel: s.t('settings.cancel'),
+            onCancel: () => Navigator.pop(ctx, false),
+            confirmLabel: s.t('backup.restore'),
+            onConfirm: () => Navigator.pop(ctx, true),
           ),
         ],
       );

@@ -53,6 +53,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 /// Shared sidebar selection so deep views can switch tabs.
 @MainActor final class NavState: ObservableObject {
+    static let shared = NavState()
     @Published var selection: SidebarItem? = .dashboard
 }
 
@@ -60,7 +61,7 @@ struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var runtime: RuntimeMonitor
     @EnvironmentObject var backend: BackendController
-    @StateObject private var nav = NavState()
+    @StateObject private var nav = NavState.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -599,8 +600,7 @@ private struct TutorialsPage: View {
 
 private struct AboutPage: View {
     private let repoURL = URL(string: "https://github.com/cinmou/MicaGo")!
-    private let releasesURL = URL(string: "https://github.com/cinmou/MicaGo/releases")!
-    @StateObject private var updates = UpdateChecker.shared
+    @StateObject private var updates = SparkleUpdater.shared
 
     var body: some View {
         SectionCard(title: "") {
@@ -624,25 +624,19 @@ private struct AboutPage: View {
             AboutInfoButton(
                 icon: "chevron.left.forwardslash.chevron.right",
                 title: "Open Source",
-                value: "GitHub"
+                value: "GitHub",
+                accessoryIcon: "arrow.up.right.square"
             ) {
                 NSWorkspace.shared.open(repoURL)
             }
             Divider()
-            // C74: really asks GitHub whether a newer release exists instead of
-            // just opening the releases page.
             AboutInfoButton(
                 icon: "square.and.arrow.down",
                 title: "Check for Updates",
-                value: updateLabel
+                value: "Open updater",
+                accessoryIcon: "arrow.clockwise"
             ) {
-                if case .updateAvailable(_, let url) = updates.status {
-                    NSWorkspace.shared.open(url)
-                } else if case .checking = updates.status {
-                    // A check is already in flight.
-                } else {
-                    updates.check()
-                }
+                updates.checkForUpdates()
             }
         }
 
@@ -652,24 +646,14 @@ private struct AboutPage: View {
             .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private var updateLabel: String {
-        switch updates.status {
-        case .idle: return "Check now"
-        case .checking: return "Checking…"
-        case .upToDate: return "Up to date"
-        case .updateAvailable(let version, _): return "Version \(version) available"
-        case .unknown: return "Check failed — click to retry"
-        }
-    }
-
     private var companionVersionLabel: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         let cleanVersion = (version?.isEmpty == false ? version : nil) ?? "0.0.0"
         if let build, !build.isEmpty, build != cleanVersion {
-            return "Lepidolite v\(cleanVersion) (\(build))"
+            return "Iolite v\(cleanVersion) (\(build))"
         }
-        return "Lepidolite v\(cleanVersion)"
+        return "Iolite v\(cleanVersion)"
     }
 }
 
@@ -702,6 +686,7 @@ private struct AboutInfoButton: View {
     let icon: String
     let title: String
     let value: String
+    var accessoryIcon = "chevron.right"
     var action: (() -> Void)? = nil
 
     var body: some View {
@@ -726,7 +711,7 @@ private struct AboutInfoButton: View {
             }
             Spacer()
             if action != nil {
-                Image(systemName: "arrow.up.right.square")
+                Image(systemName: accessoryIcon)
                     .foregroundStyle(.secondary)
             }
         }

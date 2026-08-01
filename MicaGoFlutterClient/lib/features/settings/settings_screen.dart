@@ -29,6 +29,7 @@ import '../contacts/people_screen.dart';
 import '../debug/debug_log_panel.dart';
 import 'backup_restore_ui.dart';
 import 'message_display_page.dart';
+import 'settings_dialog_actions.dart';
 
 /// Settings tab: shows the current connection (token masked), and lets the user
 /// edit the connection or disconnect. Kept minimal for C1.
@@ -85,7 +86,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   if (profile != null)
-                    _RouteSwitcher(app: app, profile: profile)
+                    _RouteSwitcher(
+                      app: app,
+                      profile: profile,
+                      onEdit: () => context.push(Routes.connection),
+                    )
                   else
                     Card(
                       child: ListTile(
@@ -161,18 +166,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                   ),
+                  // C76: one destructive action, styled as such. "Edit
+                  // connection" was removed — it opened the same page as the
+                  // connection card above, so two equal-looking buttons led to
+                  // very different places (one reversible, one wiping the
+                  // pairing + local cache).
                   if (profile != null) ...[
                     const SizedBox(height: 20),
-                    _TwoActionRow(
-                      primary: OutlinedButton.icon(
-                        onPressed: () => context.push(Routes.connection),
-                        icon: const Icon(Icons.edit_outlined),
-                        label: Text(strings.t('settings.editConnection')),
-                      ),
-                      secondary: OutlinedButton.icon(
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
                         onPressed: () => _confirmDisconnect(context, app),
-                        icon: const Icon(Icons.logout),
-                        label: Text(strings.t('settings.disconnect')),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: scheme.error,
+                          side: BorderSide(
+                            color: scheme.error.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        icon: const Icon(Icons.link_off),
+                        label: Text(strings.t('settings.unpair')),
                       ),
                     ),
                   ],
@@ -221,36 +233,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     AppController app,
   ) async {
+    final scheme = Theme.of(context).colorScheme;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(
-          MicaLocalizations.of(context).t('settings.disconnectTitle'),
-        ),
-        content: Text(
-          MicaLocalizations.of(context).t('settings.disconnectBody'),
-        ),
+        icon: Icon(Icons.link_off, color: scheme.error),
+        title: Text(MicaLocalizations.of(ctx).t('settings.unpairTitle')),
+        content: Text(MicaLocalizations.of(ctx).t('settings.unpairBody')),
         actions: [
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(
-                    MicaLocalizations.of(context).t('settings.cancel'),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(
-                    MicaLocalizations.of(context).t('settings.disconnect'),
-                  ),
-                ),
-              ),
-            ],
+          SettingsDialogActionRow(
+            cancelLabel: MicaLocalizations.of(ctx).t('settings.cancel'),
+            onCancel: () => Navigator.pop(ctx, false),
+            confirmLabel: MicaLocalizations.of(ctx).t('settings.unpairConfirm'),
+            onConfirm: () => Navigator.pop(ctx, true),
+            destructive: true,
           ),
         ],
       ),
@@ -292,7 +288,15 @@ class _TwoActionRow extends StatelessWidget {
 class _RouteSwitcher extends StatelessWidget {
   final AppController app;
   final ConnectionProfile profile;
-  const _RouteSwitcher({required this.app, required this.profile});
+
+  /// C76: the connection card is the single entry point for editing the
+  /// pairing (the old duplicate "Edit connection" button is gone).
+  final VoidCallback onEdit;
+  const _RouteSwitcher({
+    required this.app,
+    required this.profile,
+    required this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -342,6 +346,14 @@ class _RouteSwitcher extends StatelessWidget {
                     : null,
                 dense: true,
               ),
+            const Divider(height: 1),
+            ListTile(
+              leading: _leadingIcon(Icons.edit_outlined),
+              title: Text(strings.t('settings.editConnection')),
+              subtitle: Text(strings.t('settings.editConnectionBody')),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onEdit,
+            ),
           ],
         ),
       ),
@@ -850,7 +862,11 @@ class _SettingsSubPage extends StatelessWidget {
   final Widget child;
   final List<Widget>? actions;
 
-  const _SettingsSubPage({required this.title, required this.child, this.actions});
+  const _SettingsSubPage({
+    required this.title,
+    required this.child,
+    this.actions,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1770,7 +1786,7 @@ class _AboutBodyState extends State<_AboutBody> {
               _AboutInfoTile(
                 icon: Icons.auto_awesome_rounded,
                 title: strings.t('settings.version'),
-                value: 'Lepidolite v$kAppVersion',
+                value: 'Iolite v$kAppVersion',
                 onTap: _handleVersionTap,
               ),
               const Divider(height: 1),
@@ -1845,13 +1861,11 @@ class _AboutBodyState extends State<_AboutBody> {
         title: Text(strings.t('settings.disableDebugTitle')),
         content: Text(strings.t('settings.disableDebugBody')),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(strings.t('settings.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(strings.t('settings.disableDebugConfirm')),
+          SettingsDialogActionRow(
+            cancelLabel: strings.t('settings.cancel'),
+            onCancel: () => Navigator.pop(ctx, false),
+            confirmLabel: strings.t('settings.disableDebugConfirm'),
+            onConfirm: () => Navigator.pop(ctx, true),
           ),
         ],
       ),

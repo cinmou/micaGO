@@ -13,13 +13,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.66.0}"
+VERSION="${VERSION:-0.68.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED_DATA="${DERIVED_DATA:-$COMPANION_DIR/build/DerivedData}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
 BACKEND_DIR="$ARTIFACT_DIR/backend"
 APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/MicaGoCompanion.app"
 DMG_PATH="$ARTIFACT_DIR/micaGO-$VERSION-mac.dmg"
+APPCAST_PATH="$ARTIFACT_DIR/appcast.xml"
+APPCAST_STAGING_DIR="$ARTIFACT_DIR/appcast-staging"
 DMG_STAGING_DIR="$ARTIFACT_DIR/dmg-staging"
 DMG_BACKGROUND_PATH="$ARTIFACT_DIR/dmg-background.png"
 SWIFT_MODULE_CACHE_DIR="$ARTIFACT_DIR/swift-module-cache"
@@ -30,6 +32,11 @@ DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-}"
 DMG_WINDOW_SCALE="${DMG_WINDOW_SCALE:-100}"
 
 mkdir -p "$BACKEND_DIR" "$ARTIFACT_DIR"
+
+if [ "${GENERATE_APPCAST:-0}" = "1" ] && [ -z "${SIGN_IDENTITY:-}" ]; then
+  echo "error: GENERATE_APPCAST=1 requires a Developer ID SIGN_IDENTITY" >&2
+  exit 1
+fi
 
 COMMIT="$(cd "$SERVER_DIR" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 if [ -n "$(cd "$SERVER_DIR" && git status --porcelain 2>/dev/null)" ]; then
@@ -94,7 +101,8 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   if [ -f "$APP_PATH/Contents/Resources/micago-imcore-helper" ]; then
     codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago-imcore-helper"
   fi
-  codesign --force --deep --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH"
+  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH"
+  codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 else
   echo "==> SIGN_IDENTITY not set; leaving app unsigned for local testing"
 fi
@@ -151,6 +159,7 @@ rm -rf "$DMG_STAGING_DIR"
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
   codesign --force "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$DMG_PATH"
+  codesign --verify --strict --verbose=2 "$DMG_PATH"
 fi
 
 if [ "${NOTARIZE:-0}" = "1" ]; then
@@ -164,6 +173,36 @@ if [ "${NOTARIZE:-0}" = "1" ]; then
     --password "$APPLE_APP_PASSWORD" \
     --wait
   xcrun stapler staple "$DMG_PATH"
+fi
+
+if [ "${GENERATE_APPCAST:-0}" = "1" ]; then
+  GENERATE_APPCAST_TOOL="$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast"
+  if [ ! -x "$GENERATE_APPCAST_TOOL" ]; then
+    echo "error: Sparkle generate_appcast tool not found at $GENERATE_APPCAST_TOOL" >&2
+    exit 1
+  fi
+
+  echo "==> Generating signed Sparkle appcast"
+  rm -rf "$APPCAST_STAGING_DIR"
+  mkdir -p "$APPCAST_STAGING_DIR"
+  cp "$DMG_PATH" "$APPCAST_STAGING_DIR/"
+
+  APPCAST_ARGS=(
+    --download-url-prefix "https://github.com/cinmou/MicaGo/releases/download/v$VERSION/"
+    --link "https://github.com/cinmou/MicaGo/releases/latest"
+    --maximum-versions 1
+    --maximum-deltas 0
+    -o "$APPCAST_STAGING_DIR/appcast.xml"
+    "$APPCAST_STAGING_DIR"
+  )
+  if [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
+    print -rn -- "$SPARKLE_PRIVATE_KEY" | "$GENERATE_APPCAST_TOOL" --ed-key-file - "${APPCAST_ARGS[@]}"
+  else
+    "$GENERATE_APPCAST_TOOL" "${APPCAST_ARGS[@]}"
+  fi
+  cp "$APPCAST_STAGING_DIR/appcast.xml" "$APPCAST_PATH"
+  rm -rf "$APPCAST_STAGING_DIR"
+  echo "Appcast: $APPCAST_PATH"
 fi
 
 echo "DMG: $DMG_PATH"

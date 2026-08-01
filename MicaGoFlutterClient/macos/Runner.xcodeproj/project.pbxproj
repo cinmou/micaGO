@@ -486,9 +486,9 @@
 			baseConfigurationReference = C24606633AD0D59DDF19EEEF /* Pods-RunnerTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.66.0;
+				MARKETING_VERSION = 0.68.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.message.micaGo.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -501,9 +501,9 @@
 			baseConfigurationReference = 2F6EE2408AEF611A6C2815BC /* Pods-RunnerTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.66.0;
+				MARKETING_VERSION = 0.68.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.message.micaGo.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -516,9 +516,9 @@
 			baseConfigurationReference = 019B5AC87F9A35BB99088A7B /* Pods-RunnerTests.profile.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.66.0;
+				MARKETING_VERSION = 0.68.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.message.micaGo.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;

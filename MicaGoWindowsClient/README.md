@@ -2,7 +2,7 @@
 
 micaGO 的原生 Windows 客户端，使用 C#、.NET 10、WinUI 3 和 Windows App SDK 2.2。
 
-当前产品版本：`0.66.0`，与 Flutter 客户端、Go 服务端和 macOS Companion 对齐。
+当前产品版本：`0.68.0`，与 Flutter 客户端、Go 服务端和 macOS Companion 对齐。
 
 当前版本已经建立 WinUI 3 双栏聊天界面和真实服务器连接链路，包括配对 JSON、LAN/Public 线路探测、Windows Credential Manager 凭据存储、会话列表、历史消息和文本发送。2026-07-19 已在 Windows 11、Visual Studio 2026、.NET 10.0.302、Debug x64 下完成首次编译和启动验证；仍属于开发中的连接版 MVP，不能视为可发布版本。
 

@@ -16,6 +16,7 @@
 #   APPLE_ID              Apple ID email used for notarization
 #   APPLE_TEAM_ID         10-char team id
 #   APPLE_APP_PASSWORD    app-specific password (appleid.apple.com -> Sign-In & Security)
+#   SPARKLE_PRIVATE_KEY    Sparkle EdDSA private key exported by generate_keys -x
 #
 # The version comes from MicaGoFlutterClient/pubspec.yaml; a tag build fails
 # early if the tag doesn't match it (prevents shipping a stale version).
@@ -208,6 +209,7 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -253,11 +255,20 @@ jobs:
             export NOTARIZE=1
             echo "Notarization enabled"
           fi
+          if [ -n "$SPARKLE_PRIVATE_KEY" ] && [ -n "$MACOS_SIGN_IDENTITY" ]; then
+            export GENERATE_APPCAST=1
+            echo "Sparkle appcast signing enabled"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "::error::SPARKLE_PRIVATE_KEY and MACOS_SIGN_IDENTITY are required for a tagged macOS release"
+            exit 1
+          fi
           scripts/package-dmg.sh
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: MicaGoServer/micago-mac-companion/build/release/micaGO-${{ needs.meta.outputs.version }}-mac.dmg
+          path: |
+            MicaGoServer/micago-mac-companion/build/release/micaGO-${{ needs.meta.outputs.version }}-mac.dmg
+            MicaGoServer/micago-mac-companion/build/release/appcast.xml
           if-no-files-found: error
 
   publish:

@@ -12,6 +12,7 @@ struct MicaGoCompanionApp: App {
     @StateObject private var backend = BackendController.shared
     @StateObject private var contacts = ContactsStore()
     @StateObject private var tunnel = TunnelController.shared
+    @StateObject private var updates = SparkleUpdater.shared
 
     var body: some Scene {
         WindowGroup(id: "dashboard") {
@@ -41,6 +42,23 @@ struct MicaGoCompanionApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .appInfo) {
+                Button(L10n.tr("menu.aboutApp")) {
+                    presentDashboardFromAppKit(selection: .about)
+                }
+            }
+            CommandGroup(after: .appInfo) {
+                Button(L10n.tr("menu.checkUpdates")) {
+                    updates.checkForUpdates()
+                }
+                .disabled(!updates.canCheckForUpdates)
+            }
+            CommandGroup(replacing: .appSettings) {
+                Button(L10n.tr("menu.settings")) {
+                    presentDashboardFromAppKit(selection: .advanced)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
 
     }
@@ -370,18 +388,11 @@ func applyActivationPolicy() {
     }
 }
 
-/// Brings the app to the foreground and opens the dashboard window. Used by the
-/// menu-bar "Open Dashboard" action and after a silent launch. Always restores
-/// the regular activation policy first so the window can take focus.
 @MainActor
-func presentDashboard(openWindow: OpenWindowAction) {
-    NSApp.setActivationPolicy(.regular)
-    NSApp.activate(ignoringOtherApps: true)
-    openWindow(id: "dashboard")
-}
-
-@MainActor
-func presentDashboardFromAppKit() {
+func presentDashboardFromAppKit(selection: SidebarItem? = nil) {
+    if let selection {
+        NavState.shared.selection = selection
+    }
     NSApp.setActivationPolicy(.regular)
     NSApp.activate(ignoringOtherApps: true)
 

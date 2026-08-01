@@ -75,6 +75,9 @@ class MicaGoTheme {
               : null,
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+      ),
     );
   }
 

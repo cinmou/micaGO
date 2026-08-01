@@ -1,6 +1,6 @@
 # 功能完成度
 
-更新时间：2026-07-20。当前 Windows 产品版本：`0.66.0`。
+更新时间：2026-07-20。当前 Windows 产品版本：`0.68.0`。
 
 “代码完成”表示源码路径已经实现；“Windows 待验证”表示尚未通过 Windows 编译或运行，不能视为验收通过。
 
@@ -75,7 +75,7 @@
 - **启动不再闪配对窗口**：`ConnectionManager.HasSavedProfileAsync`（本地文件+凭据，无网络）；`App.LaunchAsync` 有保存配对 → 直接开主窗口，`ShellPage_Loaded` 在 Api 为空时后台 `TryRestoreAsync`（15s），失败才切配对窗口。托盘恢复与通知注册也移到 LaunchAsync。
 - **通知点击直达会话**：`NotificationService.ChatActivated`（`NotificationInvoked` 里解析 `chat` 参数）→ App 调度到 UI 线程 → 显示当前窗口 + `OpenChatAsync`。
 - **设置/详情 Mica**：两页根背景改 Transparent，透出 ShellPage 的 NavigationView 式 ContentSurface（Layer over Mica）；两页 section 加 `EntranceThemeTransition`（stagger）+`RepositionThemeTransition`；详情页头部改 Unigram 风（返回|64px 头像|名称+状态 左对齐，弃中置 hero）。
-- **设置新增"关于"**：侧栏第 4 项（E946）；`AboutSection`＝应用卡（logo/副标题/程序集版本 0.66.0）+ GitHub 链接卡（github.com/cinmou/MicaGo）+ 开源致谢卡（Twemoji CC-BY 4.0 + 非隶属声明），l10n 键 `about/aboutSubtitle/version/viewOnGitHub/openSource`。
+- **设置新增"关于"**：侧栏第 4 项（E946）；`AboutSection`＝应用卡（logo/副标题/程序集版本 0.68.0、代号 Iolite）+ GitHub 链接卡（github.com/cinmou/MicaGo）+ 开源致谢卡（Twemoji CC-BY 4.0 + 非隶属声明），l10n 键 `about/aboutSubtitle/version/viewOnGitHub/openSource`。
 - **vCard 导入状态持久化**：导入成功写 `contacts.vcfSummary`（`n|n|n`），清除时清空；Contacts 页加载时 `RestoreVcfSummaryAsync` 还原文案——修复"重启后设置页导入信息消失"。
 - **Twemoji 渲染兜底**：`SvgImageSource` 异步失败（缺资产）时经 `OpenFailed` 把 InlineUIContainer 换回系统字形文本，不再留白。
 

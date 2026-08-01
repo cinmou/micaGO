@@ -64,7 +64,7 @@ public sealed class LocalizationService
         values["customColor"] = traditional ? "自訂色彩" : chinese ? "自定义颜色" : "Custom color";
         values["about"] = traditional ? "關於" : chinese ? "关于" : "About";
         values["aboutSubtitle"] = traditional ? "iMessage 的 Windows 伴侶用戶端" : chinese ? "iMessage 的 Windows 伴侣客户端" : "The Windows companion client for iMessage";
-        values["version"] = traditional ? "版本 {0}" : chinese ? "版本 {0}" : "Version {0}";
+        values["version"] = traditional ? "版本 {0} · Iolite" : chinese ? "版本 {0} · Iolite" : "Version {0} · Iolite";
         values["viewOnGitHub"] = traditional ? "在 GitHub 上檢視專案" : chinese ? "在 GitHub 上查看项目" : "View the project on GitHub";
         values["openSource"] = traditional ? "開源與致謝" : chinese ? "开源与致谢" : "Open source & attributions";
         // C74: GitHub release update check.
