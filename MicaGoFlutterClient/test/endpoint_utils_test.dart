@@ -1,7 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mica_go/core/models/connection_profile.dart';
+import 'package:mica_go/core/network/connection_candidate.dart';
 import 'package:mica_go/core/network/endpoint_utils.dart';
 
 void main() {
+  _lanRoutePersistenceTests();
   group('normalizeBaseUrl', () {
     test('adds http scheme when missing', () {
       expect(normalizeBaseUrl('192.168.1.5:3000'), 'http://192.168.1.5:3000');
@@ -82,6 +85,51 @@ void main() {
 
     test('rejects empty', () {
       expect(isValidHttpUrl(''), isFalse);
+    });
+  });
+}
+
+// C75: LAN routes vanished from Settings because an empty `/api/server/urls`
+// LAN list was written straight through to the stored profile.
+void _lanRoutePersistenceTests() {
+  group('LAN route persistence (C75)', () {
+    const stored = [
+      EndpointRef(baseUrl: 'http://192.168.1.9:3000', wsUrl: ''),
+      EndpointRef(baseUrl: 'http://10.0.0.5:3000', wsUrl: ''),
+    ];
+
+    test('a reported list replaces the stored routes', () {
+      const reported = [EndpointRef(baseUrl: 'http://192.168.1.20:3000', wsUrl: '')];
+      expect(
+        resolvePersistedLanRoutes(
+          reported: reported,
+          previous: stored,
+          serverUsesVisibilityFlags: false,
+        ),
+        reported,
+      );
+    });
+
+    test('an empty report keeps the stored routes (transient gap)', () {
+      expect(
+        resolvePersistedLanRoutes(
+          reported: const [],
+          previous: stored,
+          serverUsesVisibilityFlags: false,
+        ),
+        stored,
+      );
+    });
+
+    test('a visibility-flag server may legitimately report none', () {
+      expect(
+        resolvePersistedLanRoutes(
+          reported: const [],
+          previous: stored,
+          serverUsesVisibilityFlags: true,
+        ),
+        isEmpty,
+      );
     });
   });
 }

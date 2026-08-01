@@ -95,6 +95,15 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   double _timestampRevealDragX = 0;
   double _timestampRevealDragY = 0;
 
+  // C75: the real, measured height of the bottom overlay (staged strip +
+  // composer/voice bar + any open panel). The list padding used a CONSTANT
+  // 104/96 baseline while the composer's height actually varies — it grows up
+  // to 5 lines while typing, the voice bars are a different height, and the two
+  // theme variants differ — so the gap between the newest bubble and the pill
+  // changed constantly (忽远忽近). Measuring keeps that gap fixed by
+  // construction.
+  double _bottomOverlayHeight = 104;
+
   // C63: entrance animation bookkeeping — only genuinely *new* rows animate.
   // The first loaded render (history) is the baseline and never animates.
   final Set<String> _entranceSeenKeys = {};
@@ -805,7 +814,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             padding: EdgeInsets.only(bottom: _keyboardInset(context)),
-            child: _selectMode
+            child: _MeasuredHeight(
+              onChanged: _onBottomOverlayHeightChanged,
+              child: _selectMode
                 ? _SelectionActionBar(
                     count: _selectedGuids.length,
                     onForward: api == null || _selectedGuids.isEmpty
@@ -814,7 +825,8 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
                     onHide: _selectedGuids.isEmpty ? null : _hideSelected,
                     onClose: _exitSelectMode,
                   )
-                : bottomOverlay,
+                  : bottomOverlay,
+            ),
           ),
         ),
         Positioned.fill(
@@ -1146,16 +1158,21 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   }
 
   // C50: the composer + staged strip + any open panel sit in a bottom overlay
-  // stacked over the message list, so the list must reserve matching bottom space
-  // or the newest messages hide behind them (and a scroll-to-bottom lands under
-  // the panel). Reserve the composer baseline plus whatever is currently open.
-  double _bottomInset(BuildContext context) {
-    var inset = (_attachOpen || _emojiOpen) ? 96.0 : 104.0; // composer baseline
-    if (_staged.isNotEmpty) inset += 72;
-    if (_attachOpen) inset += AttachmentPanel.panelHeightFor(context);
-    if (_emojiOpen) inset += EmojiPanel.initialHeightFor(context);
-    inset += _keyboardInset(context);
-    return inset;
+  // stacked over the message list, so the list must reserve matching bottom
+  // space or the newest messages hide behind them.
+  // C75: that space is the overlay's MEASURED height plus one fixed gap, so the
+  // distance from the newest bubble to the pill never changes as the composer
+  // grows/shrinks or the bars swap.
+  static const double _composerGap = 8;
+
+  double _bottomInset(BuildContext context) =>
+      _bottomOverlayHeight + _composerGap + _keyboardInset(context);
+
+  void _onBottomOverlayHeightChanged(double height) {
+    // Sub-pixel churn would rebuild forever; only react to real changes.
+    if ((height - _bottomOverlayHeight).abs() < 0.5) return;
+    if (!mounted) return;
+    setState(() => _bottomOverlayHeight = height);
   }
 
   double _keyboardInset(BuildContext context) {
@@ -1575,6 +1592,50 @@ class _SelectionActionBar extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// C75: reports its child's laid-out height after every layout pass, so the
+/// message list can reserve exactly the space the bottom overlay occupies.
+class _MeasuredHeight extends StatefulWidget {
+  final ValueChanged<double> onChanged;
+  final Widget child;
+  const _MeasuredHeight({required this.onChanged, required this.child});
+
+  @override
+  State<_MeasuredHeight> createState() => _MeasuredHeightState();
+}
+
+class _MeasuredHeightState extends State<_MeasuredHeight> {
+  final GlobalKey _key = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleReport();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MeasuredHeight oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleReport();
+  }
+
+  void _scheduleReport() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _key.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return;
+      widget.onChanged(box.size.height);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Every layout pass re-reports: the composer grows line by line while
+    // typing, and the voice bars swap in at a different height.
+    _scheduleReport();
+    return KeyedSubtree(key: _key, child: widget.child);
   }
 }
 

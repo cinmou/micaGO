@@ -82,6 +82,25 @@ List<ConnectionCandidate> connectionCandidatesForProfile(
   return _dedupe(out);
 }
 
+/// C75: decides which LAN routes to persist after a `/api/server/urls` refresh.
+///
+/// An empty [reported] list means "the server listed no LAN endpoints right
+/// now" — the Mac's Wi-Fi may still be coming up after wake, an interface may
+/// have changed, or the query went through the public tunnel. That is NOT the
+/// same as "the user removed them", so the previously stored routes are kept.
+/// Only a server that actually uses visibility flags (hidden/disabled) is
+/// trusted to say "there are none", because then the empty result is a real
+/// decision rather than a gap in the report.
+List<EndpointRef> resolvePersistedLanRoutes({
+  required List<EndpointRef> reported,
+  required List<EndpointRef> previous,
+  required bool serverUsesVisibilityFlags,
+}) {
+  if (reported.isNotEmpty) return reported;
+  if (serverUsesVisibilityFlags) return reported;
+  return previous;
+}
+
 String? _nonEmpty(String? value) {
   final v = value?.trim() ?? '';
   return v.isEmpty ? null : v;

@@ -105,3 +105,41 @@
 - **每次发送"刷新一下"**：三处根因一起修——① 会话侧栏 `ApplyFilter` 原来每条消息 `Chats.Clear()`+重建（整个左栏闪烁+丢滚动），改为 `SyncChats` 按 Id 增量 diff（排序变化走 `Move`，配合 RepositionThemeTransition 平滑上移）；② `ScrollToLastMessageAsync` 原来 `ScrollIntoView`+16ms 延迟+二次 `UpdateLayout`+`ChangeView` 造成可见的二段跳，改为单次 `ChangeView`；③ `MessageList` 加 `ItemsStackPanel.ItemsUpdatingScrollMode="KeepLastItemInView"`（贴底时新消息自动跟随的原生聊天行为）。
 - **侧栏 Unigram 化**：`MicaGoChatListStyle` 换 `ListViewItemPresenter` 模板——8px 圆角 hover/选中面、左缘强调色选中指示条（`SelectionIndicatorVisualEnabled` Inline 模式，即 NavigationView 同款 pill）、禁用勾选标记。
 - **底栏 Flutter 化**：composer 从"透明容器+独立胶囊输入框"改为**一个完整胶囊**（`MicaGoComposerBrush` 底+描边+圆角 24），内含透明无边框 TextBox 与 `MicaGoComposerIconButtonStyle` 圆形按钮（SubtleFill 附件/麦克风 + 强调色发送），对应 Flutter 底栏的外层圆角容器结构。
+
+## 刷新稳定性修复 + 更新检查（C74，Windows 待验证）
+
+> 本轮改动在 macOS 上编写，**无 .NET SDK 可编译**——请在 Windows 上跑
+> `dotnet build` 与 `dotnet run --project tests/micaGO.Core.ContractTests` 验证。
+
+- **信息流刷新（快照互相覆盖）**：`SelectChatAsync` 会依次产出三份快照（缓存页 →
+  REST 页 → 缓存重读），期间 realtime 帧并发追加消息，而每份快照都**整表替换**
+  `_rawMessages` —— 晚到的快照把刚刚实时收到的消息冲掉（闪现→消失→下一个事件才
+  回来）。合并逻辑抽到 `MessageSemantics.MergeSnapshot`（纯函数，已加契约测试）：
+  快照行优先并继承屏上呈现标识；快照里没有、但仍 pending 或比快照窗口更新的本地行
+  保留；更旧且缺席的行丢弃（服务端删除仍生效）。
+- **取消异常逃逸**：首个缓存读取与 `ThrowIfCancellationRequested` 原来在 try 之外，
+  快速连点两个会话会把 `OperationCanceledException` 直接抛进
+  `async void ChatList_ItemClick`（WinUI 未处理异常）。整个方法体已纳入 try。
+- **联系人列表未读点**：`read.watermark.<route>` 只在选中会话那一刻推进，正在阅读时
+  到达的消息不推进水位线，下一次列表重建（`HasUnread` 由水位线推导）会把**你正在看
+  的会话**重新点亮未读。`AdvanceReadWatermark` 现在对开着的会话的每条到达消息推进。
+- **未读数字闪烁**：服务器不下发 `UnreadCount`，`ReplaceChats` 直接赋值会清零徽标数字，
+  而 `HasUnread` 由水位线推导仍为真 → 数字忽有忽无。现在跨服务端刷新保留本地计数。
+- **更新检查**：`Core/Models/UpdateCheck.cs`（纯逻辑 + `FetchAsync`），设置→关于 新增
+  "检查更新" 卡片：点击查询 GitHub releases，有新版则按钮变为"打开发布页"。只读、
+  不下载不安装；任何失败都归为 unknown。新 l10n 键：`checkUpdates` /
+  `updateCheckNow` / `updateCheckButton` / `updateChecking` / `updateUpToDate` /
+  `updateAvailable` / `updateUnknown` / `updateOpen`。
+- 新增契约测试：`late snapshot keeps live rows` / `snapshot drops server-side deletes` /
+  `update check version compare`。
+
+### 仍未修（审计发现，本轮未动）
+
+- `ApplyContactNamesAsync` 用 `"contact:"+Title` 作合并键 → **两个同名联系人会被并成
+  一个会话**；应改用联系人 id。
+- 每个 WS 帧都触发一次全量 `CatchUpAsync`，且带 message 的帧会让同一条消息被投递两次
+  （靠 `RememberRealtimeMessage` 幂等兜住，但高频时列表重排两轮）；建议去抖。
+- `ApplyContactNamesAsync` 每个会话串行 await 3 次 settings 读取，会话多时一次刷新
+  上千次 SQLite 往返；建议一次性读成字典。
+- `SelectChatAsync` 的 `catch when (cached.Length > 0)` 在无缓存时仍会把异常抛回
+  `async void` 调用方。

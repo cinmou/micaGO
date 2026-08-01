@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/router.dart';
 import '../../core/app_controller.dart';
 import '../../core/network/notification_display.dart';
+import '../../core/network/update_check.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/models/connection_profile.dart';
 import '../../core/network/connection_candidate.dart';
@@ -1694,6 +1695,39 @@ class _AboutBodyState extends State<_AboutBody> {
   static const int _debugUnlockTaps = 7;
 
   int _versionTapCount = 0;
+  bool _checkingUpdate = false;
+  UpdateCheckResult? _updateResult;
+
+  /// Shows the outcome of the last check; tapping runs a new one.
+  String _updateValueLabel(MicaLocalizations strings) {
+    if (_checkingUpdate) return strings.t('settings.updateChecking');
+    final result = _updateResult;
+    if (result == null) return strings.t('settings.updateCheckNow');
+    switch (result.status) {
+      case UpdateCheckStatus.updateAvailable:
+        return strings
+            .t('settings.updateAvailable')
+            .replaceAll('{version}', result.latestVersion ?? '');
+      case UpdateCheckStatus.upToDate:
+        return strings.t('settings.updateUpToDate');
+      case UpdateCheckStatus.unknown:
+        return strings.t('settings.updateUnknown');
+    }
+  }
+
+  Future<void> _runUpdateCheck() async {
+    setState(() => _checkingUpdate = true);
+    final result = await checkForUpdate(kAppVersion);
+    if (!mounted) return;
+    setState(() {
+      _checkingUpdate = false;
+      _updateResult = result;
+    });
+    // A newer build is the only outcome worth interrupting for.
+    if (result.status == UpdateCheckStatus.updateAvailable) {
+      await _openExternal(result.releaseUrl);
+    }
+  }
 
   // C61: developer mode lives on (and is persisted by) the AppController, so
   // it survives leaving Settings and app restarts.
@@ -1756,12 +1790,13 @@ class _AboutBodyState extends State<_AboutBody> {
                 onTap: _debugUnlocked ? _confirmDisableDebugMode : null,
               ),
               const Divider(height: 1),
+              // C74: actually checks GitHub for a newer release instead of just
+              // opening the releases page.
               _AboutInfoTile(
                 icon: Icons.system_update_alt_outlined,
                 title: strings.t('settings.checkUpdates'),
-                value: 'GitHub Releases',
-                onTap: () =>
-                    _openExternal('https://github.com/cinmou/MicaGo/releases'),
+                value: _updateValueLabel(strings),
+                onTap: _checkingUpdate ? null : _runUpdateCheck,
               ),
             ],
           ),

@@ -261,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         BackendController.shared.shutdownForQuitIfNeeded()
         TunnelController.shared.shutdownForQuit()
+        RuntimeMonitor.shared.releaseKeepAwake()
     }
 
     // Keep the app (and menu bar) alive when the Dashboard window closes.

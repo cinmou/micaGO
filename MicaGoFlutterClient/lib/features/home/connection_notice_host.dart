@@ -3,13 +3,18 @@ import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
-import '../../core/network/connection_notice.dart';
-import '../../core/ui/top_banner.dart';
 
-/// Surfaces [AppController.connectionNotice] as the user-visible connection
-/// feedback (C19): a sticky banner while offline / on the public fallback, and
-/// a transient snackbar for recoveries. De-dup happens in the controller's
-/// pure derivation, so this never spams.
+/// C75: the single surface for connection trouble.
+///
+/// Previously three surfaces fought each other — a transient top banner, a
+/// sticky red banner, and a modal dialog — and the banner could appear the
+/// moment you opened the app, before the first connect had a chance to finish.
+///
+/// Now there is one signal ([AppController.connectionProblemConfirmed], set
+/// only after the link has been down for 10 continuous seconds) and one
+/// sequence: **dialog first, then the sticky banner stays** until the
+/// connection recovers. Recovery clears both immediately. Transient
+/// connection banners are gone entirely.
 class ConnectionNoticeHost extends StatefulWidget {
   final Widget child;
   const ConnectionNoticeHost({super.key, required this.child});
@@ -20,46 +25,50 @@ class ConnectionNoticeHost extends StatefulWidget {
 
 class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
   AppController? _app;
-  ConnectionNotice? _sticky;
+  bool _dialogOpen = false;
 
-  bool _cannotConnectDialogOpen = false;
+  /// The sticky banner only appears once the dialog has been presented, so the
+  /// user always gets the explanation before the persistent strip.
+  bool _showStickyBanner = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final app = context.read<AppController>();
     if (identical(app, _app)) return;
-    _app?.connectionNotice.removeListener(_onNotice);
-    _app?.connectionHealthy.removeListener(_onHealthy);
-    _app?.initialConnectFailed.removeListener(_onInitialConnectFailed);
+    _app?.connectionProblemConfirmed.removeListener(_onProblemChanged);
     _app = app;
-    app.connectionNotice.addListener(_onNotice);
-    app.connectionHealthy.addListener(_onHealthy);
-    app.initialConnectFailed.addListener(_onInitialConnectFailed);
+    app.connectionProblemConfirmed.addListener(_onProblemChanged);
   }
 
   @override
   void dispose() {
-    _app?.connectionNotice.removeListener(_onNotice);
-    _app?.connectionHealthy.removeListener(_onHealthy);
-    _app?.initialConnectFailed.removeListener(_onInitialConnectFailed);
+    _app?.connectionProblemConfirmed.removeListener(_onProblemChanged);
     super.dispose();
   }
 
-  /// C29b: when the initial connection can't reach any server in 10s, show ONE
-  /// clear dialog explaining the failure (not an endless "Reconnecting…"). If the
-  /// connection later succeeds the flag clears and we auto-dismiss the dialog.
-  void _onInitialConnectFailed() {
-    final failed = _app?.initialConnectFailed.value ?? false;
-    if (failed && !_cannotConnectDialogOpen) {
-      _showCannotConnectDialog();
-    } else if (!failed && _cannotConnectDialogOpen) {
-      if (mounted) Navigator.of(context, rootNavigator: true).maybePop();
+  void _onProblemChanged() {
+    final problem = _app?.connectionProblemConfirmed.value ?? false;
+    if (!problem) {
+      // Recovered: drop the banner and close the dialog if it is still up.
+      if (_showStickyBanner && mounted) {
+        setState(() => _showStickyBanner = false);
+      }
+      if (_dialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).maybePop();
+      }
+      return;
     }
+    if (!_dialogOpen) unawaitedShowDialog();
+  }
+
+  void unawaitedShowDialog() {
+    // Fire and forget — the dialog's own future flips the sticky banner on.
+    _showCannotConnectDialog();
   }
 
   Future<void> _showCannotConnectDialog() async {
-    _cannotConnectDialogOpen = true;
+    _dialogOpen = true;
     final strings = MicaLocalizations.of(context);
     await showDialog<void>(
       context: context,
@@ -82,52 +91,20 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
         ],
       ),
     );
-    _cannotConnectDialogOpen = false;
-  }
-
-  /// C26: a healthy (connected) connection must never leave a stale problem
-  /// banner up. Clearing here covers the connecting→connected edge that the
-  /// one-shot notice derivation intentionally reports as null.
-  void _onHealthy() {
-    if (_app?.connectionHealthy.value == true && _sticky != null) {
-      setState(() => _sticky = null);
-    }
-  }
-
-  void _onNotice() {
-    final notice = _app?.connectionNotice.value;
-    if (notice == null) return;
-    final message = MicaLocalizations.of(context).t(notice.l10nKey);
-
-    if (notice.isTransient) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        // C21u: surface recoveries/fallback switches as a top banner, not a
-        // bottom snackbar.
-        TopBanner.show(
-          context,
-          message,
-          kind: notice.isProblem ? TopBannerKind.error : TopBannerKind.info,
-          duration: const Duration(seconds: 2),
-        );
-      });
-    }
-    // Never raise a sticky problem banner while the connection is actually
-    // healthy — a late/stale problem notice must not override a live connection.
-    final healthy = _app?.connectionHealthy.value == true;
-    setState(() => _sticky = (notice.isProblem && !healthy) ? notice : null);
-    // Consume the one-shot so the same transition isn't re-handled.
-    _app?.connectionNotice.value = null;
+    _dialogOpen = false;
+    if (!mounted) return;
+    // The banner takes over from the dialog, and only while still broken.
+    final stillBroken = _app?.connectionProblemConfirmed.value ?? false;
+    setState(() => _showStickyBanner = stillBroken);
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final sticky = _sticky;
     final strings = MicaLocalizations.of(context);
     return Column(
       children: [
-        if (sticky != null)
+        if (_showStickyBanner)
           Material(
             color: scheme.errorContainer,
             child: SafeArea(
@@ -147,11 +124,15 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        strings.t(sticky.l10nKey),
+                        strings.t('connection.serverUnavailable'),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onErrorContainer,
                         ),
                       ),
+                    ),
+                    TextButton(
+                      onPressed: () => _app?.retryInitialConnect(),
+                      child: Text(strings.t('common.retry')),
                     ),
                   ],
                 ),

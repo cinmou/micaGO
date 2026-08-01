@@ -12,7 +12,6 @@ import 'models/connection_profile.dart';
 import 'models/server_urls.dart';
 import 'network/api_client.dart';
 import 'network/connection_candidate.dart';
-import 'network/connection_notice.dart';
 import 'network/endpoint_utils.dart';
 import 'network/device_identity.dart';
 import 'network/notification_contact_cache.dart';
@@ -130,10 +129,14 @@ class AppController extends ChangeNotifier {
   /// The realtime client is long-lived; home screen listens to it directly.
   final WebSocketClient ws = WebSocketClient();
 
-  /// C19: one-shot connection notices for the UI (banner/snackbar). Emits only
-  /// on real transitions, de-duplicated, so there are no noisy repeated alerts.
-  final ValueNotifier<ConnectionNotice?> connectionNotice =
-      ValueNotifier<ConnectionNotice?>(null);
+  /// C75: the connection UI is driven by ONE signal. A connection problem must
+  /// persist [_connectionProblemDelay] before anything is shown, so opening the
+  /// app (or a brief reconnect) never flashes a scary banner — the common
+  /// "点进去还没连上就直接报错" case. Cleared the instant the link is healthy.
+  final ValueNotifier<bool> connectionProblemConfirmed =
+      ValueNotifier<bool>(false);
+  static const Duration _connectionProblemDelay = Duration(seconds: 10);
+  Timer? _connectionProblemTimer;
 
   /// C26: whether the realtime connection is currently healthy (WS connected).
   /// The notice host clears any sticky "Reconnecting…"/offline banner the moment
@@ -141,15 +144,7 @@ class AppController extends ChangeNotifier {
   /// banner on screen — independent of whether the one-shot derivation happened
   /// to emit a transition for the connecting→connected edge.
   final ValueNotifier<bool> connectionHealthy = ValueNotifier<bool>(false);
-  ConnectionSnapshot? _lastConnectionSnapshot;
   bool _serverReachable = false;
-  bool _hasCompletedFirstConnectAttempt = false;
-  bool _hasEverConnected = false;
-  DateTime? _connectionNoticeGraceUntil;
-  DateTime _startupConnectionNoticeQuietUntil = DateTime.now().add(
-    const Duration(seconds: 10),
-  );
-  bool _hasSuppressedStartupConnectionNotice = false;
 
   /// C20: the server's authoritative sync settings (incl. allowSmsSend),
   /// fetched on connect. The composer reads [allowSmsSend] from here — the
@@ -326,13 +321,6 @@ class AppController extends ChangeNotifier {
   /// Called by the app shell on foreground resume (lightweight refresh).
   void onResume() {
     if (hasProfile && ws.status != WsStatus.connected) {
-      _connectionNoticeGraceUntil = DateTime.now().add(
-        const Duration(seconds: 10),
-      );
-      _startupConnectionNoticeQuietUntil = DateTime.now().add(
-        const Duration(seconds: 10),
-      );
-      _hasSuppressedStartupConnectionNotice = false;
     }
     _refresh.onResume();
   }
@@ -408,14 +396,6 @@ class AppController extends ChangeNotifier {
         _activeCandidate = connectionCandidatesForProfile(
           _profile!,
         ).firstOrNull;
-        _hasCompletedFirstConnectAttempt = false;
-        _connectionNoticeGraceUntil = DateTime.now().add(
-          const Duration(seconds: 10),
-        );
-        _startupConnectionNoticeQuietUntil = DateTime.now().add(
-          const Duration(seconds: 10),
-        );
-        _hasSuppressedStartupConnectionNotice = false;
         _logConnectionSelection(
           'bootstrap profile mode=${_profile!.mode.name}',
         );
@@ -515,21 +495,12 @@ class AppController extends ChangeNotifier {
     _profile = profile;
     _serverUrls = null;
     _activeCandidate = null;
-    _hasCompletedFirstConnectAttempt = false;
-    _connectionNoticeGraceUntil = DateTime.now().add(
-      const Duration(seconds: 10),
-    );
-    _startupConnectionNoticeQuietUntil = DateTime.now().add(
-      const Duration(seconds: 10),
-    );
-    _hasSuppressedStartupConnectionNotice = false;
     _logConnectionSelection('save profile mode=${profile.mode.name}');
     _logConnectionSelection(
       'candidates: ${connectionCandidatesForProfile(profile).join(' | ')}',
     );
     _rebuildApi();
     // C29b: pairing is a user-visible connect — arm the 10s cannot-connect error.
-    _armInitialConnectWatchdog();
     notifyListeners();
     unawaited(selectReachableCandidate(reason: 'profile'));
   }
@@ -572,11 +543,22 @@ class AppController extends ChangeNotifier {
                 currentLanBases.contains(normalizeBaseUrl(e.baseUrl))))
           EndpointRef(baseUrl: normalizeBaseUrl(e.baseUrl), wsUrl: e.wsUrl),
     ];
+    // C75: an empty LAN result is "the server didn't report any right now"
+    // (Mac's Wi-Fi still coming up after wake, interface switch, or a query
+    // through the public tunnel) — NOT "the user deleted them". Writing the
+    // empty set through wiped the stored LAN routes, which is why LAN
+    // occasionally vanished from the route list. Keep the last known routes
+    // unless the server explicitly marks them hidden/disabled.
+    final effectiveLanRoutes = resolvePersistedLanRoutes(
+      reported: lanRoutes,
+      previous: profile.lanRoutes,
+      serverUsesVisibilityFlags: serverUsesVisibilityFlags,
+    );
     final pub = urls.public?.enabled == true ? urls.public : null;
     // C26: a manual route pin must survive refresh. Keep the selection if its
     // URL still exists in the new candidate set; otherwise drop it (auto).
     final usableUrls = {
-      for (final r in lanRoutes) normalizeBaseUrl(r.baseUrl),
+      for (final r in effectiveLanRoutes) normalizeBaseUrl(r.baseUrl),
       if (pub != null) normalizeBaseUrl(pub.baseUrl),
     };
     final keptSelection =
@@ -588,7 +570,7 @@ class AppController extends ChangeNotifier {
       baseUrl: profile.baseUrl,
       token: profile.token,
       wsUrlOverride: profile.wsUrlOverride,
-      lanRoutes: lanRoutes.isNotEmpty ? lanRoutes : null,
+      lanRoutes: effectiveLanRoutes.isNotEmpty ? effectiveLanRoutes : null,
       selectedBaseUrl: keptSelection,
       publicBaseUrl: pub?.baseUrl,
       publicWsUrl: pub?.wsUrl,
@@ -657,44 +639,11 @@ class AppController extends ChangeNotifier {
   /// actually fails.
   Future<bool> connectForeground({required String reason}) {
     if (hasProfile && ws.status != WsStatus.connected) {
-      _connectionNoticeGraceUntil = DateTime.now().add(
-        const Duration(seconds: 10),
-      );
-      _startupConnectionNoticeQuietUntil = DateTime.now().add(
-        const Duration(seconds: 10),
-      );
-      _hasSuppressedStartupConnectionNotice = false;
       // C29b: this is a user-visible connect attempt — arm the 10s watchdog so
       // the user gets a clear "can't reach the server" error instead of being
       // stuck on "Reconnecting…" forever.
-      _armInitialConnectWatchdog();
-    }
-    return selectReachableCandidate(reason: reason);
-  }
-
-  /// C29b: surfaces a clear, user-visible error when the INITIAL connection
-  /// attempt (startup or just after pairing) can't reach any server candidate
-  /// within 10s. Cleared the moment a connection succeeds. Background reconnects
-  /// never arm this, so it can't spam.
-  final ValueNotifier<bool> initialConnectFailed = ValueNotifier<bool>(false);
-  Timer? _initialConnectWatchdog;
-
-  void _armInitialConnectWatchdog() {
-    _initialConnectWatchdog?.cancel();
-    initialConnectFailed.value = false;
-    if (ws.status == WsStatus.connected || _serverReachable) return;
-    _initialConnectWatchdog = Timer(const Duration(seconds: 10), () {
-      if (ws.status != WsStatus.connected && !_serverReachable) {
-        _logConnectionSelection('initial connect watchdog: no server in 10s');
-        initialConnectFailed.value = true;
       }
-    });
-  }
-
-  void _clearInitialConnectWatchdog() {
-    _initialConnectWatchdog?.cancel();
-    _initialConnectWatchdog = null;
-    if (initialConnectFailed.value) initialConnectFailed.value = false;
+    return selectReachableCandidate(reason: reason);
   }
 
   /// Manual retry from the cannot-connect dialog.
@@ -751,9 +700,7 @@ class AppController extends ChangeNotifier {
     }
     _logConnectionSelection('no reachable candidate');
     _serverReachable = false;
-    _hasCompletedFirstConnectAttempt = true;
-    _connectionNoticeGraceUntil = null;
-    _emitConnectionNotice();
+    _updateConnectionHealth();
     notifyListeners();
     return false;
   }
@@ -869,18 +816,16 @@ class AppController extends ChangeNotifier {
   ) {
     _activeCandidate = candidate;
     _serverReachable = true;
-    _hasCompletedFirstConnectAttempt = true;
-    _connectionNoticeGraceUntil = null;
     _logConnectionSelection('selected ${candidate.label}');
     _rebuildApi();
     // C29b: reached the server → clear any pending cannot-connect error.
-    _clearInitialConnectWatchdog();
+    _clearConnectionProblem();
     // C29: register this device as soon as the server is reachable over REST —
     // not only when the WebSocket connects.
     unawaited(_registerDeviceIfPossible());
     unawaited(_refreshMutedChatsFromServer());
     unawaited(refreshNotificationConfig());
-    _emitConnectionNotice();
+    _updateConnectionHealth();
     notifyListeners();
     connectWebSocket();
     unawaited(catchUp(reason: reason, minInterval: Duration.zero));
@@ -957,6 +902,17 @@ class AppController extends ChangeNotifier {
     final ids = guids.where((g) => g.trim().isNotEmpty).toList(growable: false);
     if (ids.isEmpty) return;
     await cache.markChatsSeen(ids, upTo: upTo);
+    // C75: reading a conversation in-app dismisses its notification too. This
+    // used to happen ONLY when the user tapped the notification itself
+    // (requestOpenChat), so an FCM push stayed in the shade after you opened
+    // the app normally and read the message. markChatsViewed is the single
+    // "user has seen this" authority (C47), so the dismissal belongs here.
+    final clear = clearChatNotification;
+    if (clear != null) {
+      for (final guid in ids) {
+        unawaited(clear(guid));
+      }
+    }
     if (!_chatSeenController.isClosed) _chatSeenController.add(null);
   }
 
@@ -967,6 +923,7 @@ class AppController extends ChangeNotifier {
     final api = _api;
     if (api == null || _deltaInFlight) return;
     _deltaInFlight = true;
+    final freshForegroundAlerts = <(MessageModel, String)>[];
     try {
       _syncCursor ??= int.tryParse(
         await cache.readMetadata('sync_cursor') ?? '',
@@ -995,8 +952,11 @@ class AppController extends ChangeNotifier {
             if (!knownChat && !_chatReloadController.isClosed) {
               _chatReloadController.add(null);
             }
+            // C75: collect instead of alerting per message — a catch-up can
+            // carry a whole backlog, which used to fire one in-app banner per
+            // row ("刷新时疯狂弹出"). One banner per sync pass, below.
             if (isNew) {
-              unawaited(_maybeEmitForegroundMessage(msg, chatGuid));
+              freshForegroundAlerts.add((msg, chatGuid));
             }
           }
           _deltaController.add(msg);
@@ -1013,81 +973,66 @@ class AppController extends ChangeNotifier {
     } finally {
       _deltaInFlight = false;
     }
-  }
-
-  /// Recomputes the connection snapshot and surfaces a one-shot notice on a
-  /// real transition (C19). Called whenever WS status or the active endpoint /
-  /// reachability changes. De-duplicates by only emitting on a non-null
-  /// transition result; the UI clears [connectionNotice] after showing it.
-  void _emitConnectionNotice() {
-    final current = ConnectionSnapshot(
-      ws: ws.status,
-      activeKind: _activeCandidate?.kind,
-      serverReachable: _serverReachable || ws.status == WsStatus.connected,
-    );
-    final notice = connectionNoticeFor(_lastConnectionSnapshot, current);
-    _lastConnectionSnapshot = current;
-    // Keep the healthy flag in lock-step with the live snapshot so the notice
-    // host can clear a stale "Reconnecting…" banner the instant we reconnect,
-    // even on the connecting→connected edge (which the one-shot derivation
-    // intentionally reports as null to stay quiet).
-    connectionHealthy.value =
-        current.ws == WsStatus.connected && current.serverReachable;
-    if (_shouldSuppressConnectionNotice(notice)) return;
-    if (notice != null) connectionNotice.value = notice;
-  }
-
-  bool _shouldSuppressConnectionNotice(ConnectionNotice? notice) {
-    if (notice == null) return false;
-    if (_shouldSuppressStartupConnectionNotice(notice)) return true;
-    if (!notice.isProblem) return false;
-    // C26: a brief reconnect after a background→resume (or a fresh activate)
-    // is expected and self-heals — don't flash "Reconnecting…" during the
-    // grace window even once we've connected before. Other problems (offline,
-    // dropped) still surface immediately.
-    final grace = _connectionNoticeGraceUntil;
-    if (notice == ConnectionNotice.reconnecting &&
-        grace != null &&
-        DateTime.now().isBefore(grace)) {
-      return true;
+    // C75: one in-app banner for the whole sync — the newest message. A
+    // backlog (resume, reconnect, first sync) previously raised a banner per
+    // row, which scrolled the alert stack wildly.
+    if (freshForegroundAlerts.isNotEmpty) {
+      freshForegroundAlerts.sort(
+        (a, b) => (a.$1.dateCreated ?? 0).compareTo(b.$1.dateCreated ?? 0),
+      );
+      final newest = freshForegroundAlerts.last;
+      unawaited(_maybeEmitForegroundMessage(newest.$1, newest.$2));
     }
-    if (_hasEverConnected) return false;
-    if (_hasCompletedFirstConnectAttempt) return false;
-    if (grace == null) return false;
-    return DateTime.now().isBefore(grace);
   }
 
-  bool _shouldSuppressStartupConnectionNotice(ConnectionNotice notice) {
-    if (_hasSuppressedStartupConnectionNotice) return false;
-    if (DateTime.now().isAfter(_startupConnectionNoticeQuietUntil)) {
-      return false;
+  /// C75: recomputes connection health and (de)arms the single problem
+  /// watchdog. Nothing is shown until the problem has lasted
+  /// [_connectionProblemDelay]; recovery clears it immediately.
+  void _updateConnectionHealth() {
+    final healthy =
+        ws.status == WsStatus.connected &&
+        (_serverReachable || ws.status == WsStatus.connected);
+    connectionHealthy.value = healthy;
+    if (healthy) {
+      _clearConnectionProblem();
+      return;
     }
-    final isStartupNoise = switch (notice) {
-      ConnectionNotice.connected ||
-      ConnectionNotice.webSocketRecovered ||
-      ConnectionNotice.disconnected ||
-      ConnectionNotice.serverUnavailable ||
-      ConnectionNotice.webSocketLost ||
-      ConnectionNotice.reconnecting => true,
-      ConnectionNotice.switchedToLan ||
-      ConnectionNotice.switchedToPublic => false,
-    };
-    if (!isStartupNoise) return false;
-    _hasSuppressedStartupConnectionNotice = true;
-    return true;
+    _armConnectionProblemWatchdog();
+  }
+
+  /// Starts (or keeps) the countdown to a confirmed problem. Re-arming while a
+  /// countdown is already running must not restart it, otherwise a flapping
+  /// socket could postpone the warning forever.
+  void _armConnectionProblemWatchdog() {
+    if (connectionProblemConfirmed.value) return;
+    if (_connectionProblemTimer?.isActive ?? false) return;
+    _connectionProblemTimer = Timer(_connectionProblemDelay, () {
+      final stillBroken = ws.status != WsStatus.connected && !_serverReachable;
+      if (!stillBroken) {
+        _clearConnectionProblem();
+        return;
+      }
+      _logConnectionSelection('connection problem confirmed after 10s');
+      connectionProblemConfirmed.value = true;
+    });
+  }
+
+  void _clearConnectionProblem() {
+    _connectionProblemTimer?.cancel();
+    _connectionProblemTimer = null;
+    if (connectionProblemConfirmed.value) {
+      connectionProblemConfirmed.value = false;
+    }
   }
 
   void _onWebSocketStatusChanged() {
     if (ws.status == WsStatus.connected) {
       _serverReachable = true;
-      _hasEverConnected = true;
-      _hasCompletedFirstConnectAttempt = true;
-      _connectionNoticeGraceUntil = null;
-      _clearInitialConnectWatchdog(); // C29b: connected → clear the 10s error
+        _clearConnectionProblem();
     }
     // Surface a user-visible notice for any status transition (connect, lost,
     // reconnecting, disconnect). De-dup is handled in the pure derivation.
-    _emitConnectionNotice();
+    _updateConnectionHealth();
 
     if (ws.status == WsStatus.connected) {
       unawaited(refreshServerUrls());
@@ -1522,6 +1467,15 @@ class AppController extends ChangeNotifier {
     if (!_foreground || guid.isEmpty || msg.isFromMe) return;
     if (isChatActive(guid) || isChatMuted(guid)) return;
     if (isReactionMessage(msg)) return;
+    // C75: only genuinely fresh messages raise an in-app banner. A catch-up
+    // after being offline delivers old rows as "new to this device"; alerting
+    // for those is what made the banner pop for every refreshed message.
+    final sentAt = msg.dateCreated;
+    if (sentAt != null &&
+        DateTime.now().millisecondsSinceEpoch - sentAt >
+            const Duration(minutes: 2).inMilliseconds) {
+      return;
+    }
     final messageGuid = msg.guid.trim();
     if (messageGuid.isNotEmpty && !_rememberForegroundAlertGuid(messageGuid)) {
       return;
@@ -2230,7 +2184,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _heartbeatTimer?.cancel();
-    _initialConnectWatchdog?.cancel();
+    _connectionProblemTimer?.cancel();
     unawaited(_connSub?.cancel());
     _refresh.dispose();
     unawaited(_deltaController.close());
@@ -2240,9 +2194,8 @@ class AppController extends ChangeNotifier {
     ws.removeListener(_onWebSocketStatusChanged);
     ws.dispose();
     _api?.close();
-    connectionNotice.dispose();
+    connectionProblemConfirmed.dispose();
     connectionHealthy.dispose();
-    initialConnectFailed.dispose();
     unawaited(cache.close());
     super.dispose();
   }

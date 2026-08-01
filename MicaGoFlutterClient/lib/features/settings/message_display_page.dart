@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/l10n/app_localizations.dart';
 import '../chats/message_display.dart';
 import 'message_display_controller.dart';
 
 /// Settings → "Message display" (Part I). Local display preferences only — they
 /// never delete or change server data, and never hide failed outgoing messages.
+///
+/// C75: the "Debug details for unsupported messages" section was removed — the
+/// `unsupportedDetails` preference it wrote had no consumer anywhere in the app,
+/// so all three choices did nothing. Everything left is localized.
 class MessageDisplayPage extends StatelessWidget {
   const MessageDisplayPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<MessageDisplayController>();
+    final strings = MicaLocalizations.of(context);
     final p = controller.prefs;
     void set(MessageDisplayPrefs next) => controller.update(next);
 
@@ -19,9 +25,7 @@ class MessageDisplayPage extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          'These settings only change how messages are displayed on this '
-          'device. They never delete messages or change server data, and '
-          'failed messages are always shown.',
+          strings.t('display.note'),
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -29,39 +33,35 @@ class MessageDisplayPage extends StatelessWidget {
           child: Column(
             children: [
               SwitchListTile(
-                title: const Text('Hide unsupported / system debug rows'),
-                subtitle: const Text('Hide rows we can\'t render as content'),
+                title: Text(strings.t('display.hideUnsupported')),
+                subtitle: Text(strings.t('display.hideUnsupportedBody')),
                 value: p.hideUnsupportedRows,
                 onChanged: (v) => set(p.copyWith(hideUnsupportedRows: v)),
               ),
               const Divider(height: 1),
               SwitchListTile(
-                title: const Text('Merge consecutive system messages'),
+                title: Text(strings.t('display.mergeSystem')),
                 value: p.mergeConsecutiveSystem,
                 onChanged: (v) => set(p.copyWith(mergeConsecutiveSystem: v)),
               ),
               const Divider(height: 1),
               SwitchListTile(
-                title: const Text('Merge tapbacks into the target message'),
-                subtitle: const Text(
-                  'Show reactions as chips, not separate rows',
-                ),
+                title: Text(strings.t('display.mergeTapbacks')),
+                subtitle: Text(strings.t('display.mergeTapbacksBody')),
                 value: p.mergeTapbacks,
                 onChanged: (v) => set(p.copyWith(mergeTapbacks: v)),
               ),
               const Divider(height: 1),
               SwitchListTile(
-                title: const Text('Show effect hints'),
-                subtitle: const Text('e.g. "Sent with Slam"'),
+                title: Text(strings.t('display.effectHints')),
+                subtitle: Text(strings.t('display.effectHintsBody')),
                 value: p.showEffectHints,
                 onChanged: (v) => set(p.copyWith(showEffectHints: v)),
               ),
               const Divider(height: 1),
               SwitchListTile(
-                title: const Text('Show debug-only chats'),
-                subtitle: const Text(
-                  'Reveal chats whose only content is system/noise rows',
-                ),
+                title: Text(strings.t('display.debugChats')),
+                subtitle: Text(strings.t('display.debugChatsBody')),
                 value: p.showDebugChats,
                 onChanged: (v) => set(p.copyWith(showDebugChats: v)),
               ),
@@ -70,7 +70,7 @@ class MessageDisplayPage extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Delivery & read labels',
+          strings.t('display.deliveryLabels'),
           style: Theme.of(context).textTheme.titleSmall,
         ),
         const SizedBox(height: 8),
@@ -79,27 +79,9 @@ class MessageDisplayPage extends StatelessWidget {
             children: [
               for (final mode in DeliveryLabelMode.values)
                 _ChoiceTile(
-                  label: _deliveryLabel(mode),
+                  label: strings.t(_deliveryLabelKey(mode)),
                   selected: p.deliveryLabels == mode,
                   onTap: () => set(p.copyWith(deliveryLabels: mode)),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Debug details for unsupported messages',
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Column(
-            children: [
-              for (final mode in UnsupportedDetailMode.values)
-                _ChoiceTile(
-                  label: _detailLabel(mode),
-                  selected: p.unsupportedDetails == mode,
-                  onTap: () => set(p.copyWith(unsupportedDetails: mode)),
                 ),
             ],
           ),
@@ -108,27 +90,11 @@ class MessageDisplayPage extends StatelessWidget {
     );
   }
 
-  String _deliveryLabel(DeliveryLabelMode m) {
-    switch (m) {
-      case DeliveryLabelMode.off:
-        return 'Off';
-      case DeliveryLabelMode.compact:
-        return 'Compact (latest outgoing only)';
-      case DeliveryLabelMode.detailed:
-        return 'Detailed (every outgoing message)';
-    }
-  }
-
-  String _detailLabel(UnsupportedDetailMode m) {
-    switch (m) {
-      case UnsupportedDetailMode.off:
-        return 'Off';
-      case UnsupportedDetailMode.debugOnly:
-        return 'Debug only (tap to inspect)';
-      case UnsupportedDetailMode.always:
-        return 'Always show details';
-    }
-  }
+  String _deliveryLabelKey(DeliveryLabelMode m) => switch (m) {
+    DeliveryLabelMode.off => 'display.deliveryOff',
+    DeliveryLabelMode.compact => 'display.deliveryCompact',
+    DeliveryLabelMode.detailed => 'display.deliveryDetailed',
+  };
 }
 
 /// A single-select list row (avoids the deprecated RadioListTile API).

@@ -9,9 +9,6 @@ import 'models/message_model.dart';
 /// How much outgoing delivery state to show.
 enum DeliveryLabelMode { off, compact, detailed }
 
-/// When to surface debug detail for unsupported rows.
-enum UnsupportedDetailMode { off, debugOnly, always }
-
 /// Local, persisted message-display preferences.
 class MessageDisplayPrefs {
   final bool hideUnsupportedRows; // hide kind==unknown rows
@@ -19,7 +16,6 @@ class MessageDisplayPrefs {
   final bool mergeTapbacks; // attach tapbacks to their target bubble
   final bool showEffectHints; // show "Sent with …" labels
   final DeliveryLabelMode deliveryLabels;
-  final UnsupportedDetailMode unsupportedDetails;
   final bool showDebugChats; // include debug-only/noise-only chats in the list
 
   const MessageDisplayPrefs({
@@ -28,7 +24,6 @@ class MessageDisplayPrefs {
     this.mergeTapbacks = true,
     this.showEffectHints = true,
     this.deliveryLabels = DeliveryLabelMode.compact,
-    this.unsupportedDetails = UnsupportedDetailMode.debugOnly,
     this.showDebugChats = false,
   });
 
@@ -40,7 +35,6 @@ class MessageDisplayPrefs {
     bool? mergeTapbacks,
     bool? showEffectHints,
     DeliveryLabelMode? deliveryLabels,
-    UnsupportedDetailMode? unsupportedDetails,
     bool? showDebugChats,
   }) {
     return MessageDisplayPrefs(
@@ -50,7 +44,6 @@ class MessageDisplayPrefs {
       mergeTapbacks: mergeTapbacks ?? this.mergeTapbacks,
       showEffectHints: showEffectHints ?? this.showEffectHints,
       deliveryLabels: deliveryLabels ?? this.deliveryLabels,
-      unsupportedDetails: unsupportedDetails ?? this.unsupportedDetails,
       showDebugChats: showDebugChats ?? this.showDebugChats,
     );
   }
@@ -61,7 +54,6 @@ class MessageDisplayPrefs {
     'mergeTapbacks': mergeTapbacks ? '1' : '0',
     'showEffectHints': showEffectHints ? '1' : '0',
     'deliveryLabels': deliveryLabels.name,
-    'unsupportedDetails': unsupportedDetails.name,
     'showDebugChats': showDebugChats ? '1' : '0',
   };
 
@@ -71,17 +63,12 @@ class MessageDisplayPrefs {
       (e) => e.name == m['deliveryLabels'],
       orElse: () => DeliveryLabelMode.compact,
     );
-    UnsupportedDetailMode ud = UnsupportedDetailMode.values.firstWhere(
-      (e) => e.name == m['unsupportedDetails'],
-      orElse: () => UnsupportedDetailMode.debugOnly,
-    );
     return MessageDisplayPrefs(
       hideUnsupportedRows: b('hideUnsupportedRows', false),
       mergeConsecutiveSystem: b('mergeConsecutiveSystem', true),
       mergeTapbacks: b('mergeTapbacks', true),
       showEffectHints: b('showEffectHints', true),
       deliveryLabels: dl,
-      unsupportedDetails: ud,
       showDebugChats: b('showDebugChats', false),
     );
   }

@@ -76,6 +76,52 @@ public static partial class MessageSemantics
     /// timestamps routinely differ by a few milliseconds from optimistic send
     /// timestamps; adopting them caused ListView.Move and recycled the bubble.
     /// </summary>
+    /// <summary>
+    /// C74: merges a freshly loaded snapshot into the rows already on screen.
+    ///
+    /// Selecting a chat produces three snapshots in sequence (cache page, REST
+    /// page, cache re-read) while realtime frames append rows concurrently. A
+    /// wholesale replace let a late snapshot wipe messages that had just been
+    /// delivered live — they flickered in and vanished until the next event.
+    ///
+    /// Rules: snapshot rows win (they carry the newest server state, with the
+    /// on-screen presentation identity carried across); local rows the snapshot
+    /// does not contain survive when they are still pending, or newer than the
+    /// snapshot's own window; anything older is dropped so server-side deletes
+    /// still disappear.
+    /// </summary>
+    public static IReadOnlyList<Message> MergeSnapshot(IReadOnlyList<Message> presented, IEnumerable<Message> snapshot)
+    {
+        var byIdentity = new Dictionary<(string, string), Message>();
+        foreach (var row in presented)
+        {
+            if (row.IsSeparator) continue;
+            byIdentity[(row.ChatId, row.Id)] = row;
+        }
+
+        var merged = new List<Message>();
+        var seen = new HashSet<(string, string)>();
+        foreach (var row in snapshot)
+        {
+            if (row.IsSeparator) continue;
+            var key = (row.ChatId, row.Id);
+            merged.Add(byIdentity.TryGetValue(key, out var existing) ? ReconcilePresentation(existing, row) : row);
+            seen.Add(key);
+        }
+
+        if (presented.Count > 0)
+        {
+            var floor = merged.Count == 0 ? long.MinValue : merged.Min(row => row.DateCreated);
+            foreach (var row in presented)
+            {
+                if (row.IsSeparator || seen.Contains((row.ChatId, row.Id))) continue;
+                if (row.IsPending || row.DateCreated >= floor) merged.Add(row);
+            }
+        }
+
+        return merged.OrderBy(row => row.DateCreated).ToList();
+    }
+
     public static Message ReconcilePresentation(Message presented, Message server) => server with
     {
         PresentationId = presented.PresentationKey,

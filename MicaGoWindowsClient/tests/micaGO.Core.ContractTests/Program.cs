@@ -21,6 +21,9 @@ var tests = new (string Name, Action Run)[]
     ("Twemoji flag-only segmentation", SegmentsOnlyFlagEmoji),
     ("Twemoji Emoji 17 fallback segmentation", SegmentsEmoji17Fallback),
     ("native Windows device registration", BuildsWindowsDeviceRegistration),
+    ("late snapshot keeps live rows", MergeSnapshotKeepsLiveRows),
+    ("update check version compare", ComparesReleaseVersions),
+    ("snapshot drops server-side deletes", MergeSnapshotDropsDeletedRows),
 };
 
 var failures = 0;
@@ -204,6 +207,51 @@ static void BuildsWindowsDeviceRegistration()
         new ConnectionEndpoint(EndpointKind.Public,"https://go.example.com","wss://go.example.com/ws")]);
     var registration=DevicePresenceService.CreateRegistration(profile,"windows-test",true);
     Equal("windows-test",registration.Id);Equal("windows",registration.Platform);Equal("native",registration.ClientType);Equal("none",registration.PushProvider);Equal("lan_public",registration.Mode);True(registration.Background);True(!registration.PushEnabled);
+}
+
+// C74: SelectChatAsync loads three snapshots while realtime frames append rows.
+// A wholesale replace let a late snapshot wipe live arrivals (they flickered in
+// and vanished); the merge must keep them, and keep in-flight pending sends.
+static void MergeSnapshotKeepsLiveRows()
+{
+    var older = new Message("m1", "chat", "one", "", false, MessageDeliveryState.Read, DateCreated: 1000);
+    var live = new Message("m2", "chat", "live", "", false, MessageDeliveryState.Read, DateCreated: 3000);
+    var pending = new Message("local-1", "chat", "typing", "", true, MessageDeliveryState.Sending, DateCreated: 3100, IsPending: true, PresentationId: "row-1");
+    // The snapshot was taken before m2/local-1 existed.
+    var merged = MessageSemantics.MergeSnapshot([older, live, pending], [older]);
+    Equal(3, merged.Count);
+    Equal("m1,m2,local-1", string.Join(',', merged.Select(row => row.Id)));
+    Equal("row-1", merged[2].PresentationKey);
+}
+
+static void MergeSnapshotDropsDeletedRows()
+{
+    var kept = new Message("m1", "chat", "one", "", false, MessageDeliveryState.Read, DateCreated: 2000);
+    var deleted = new Message("m0", "chat", "gone", "", false, MessageDeliveryState.Read, DateCreated: 1000);
+    // A row older than the snapshot window that the snapshot no longer lists was
+    // deleted server-side and must not be resurrected.
+    var merged = MessageSemantics.MergeSnapshot([deleted, kept], [kept]);
+    Equal(1, merged.Count);
+    Equal("m1", merged[0].Id);
+}
+
+// C74: the release check must never offer a downgrade, and must degrade to
+// Unknown (not "up to date", not an update) on drafts or junk payloads.
+static void ComparesReleaseVersions()
+{
+    True(UpdateCheck.IsNewer("v0.65.0", "0.64.0"));
+    True(!UpdateCheck.IsNewer("v0.64.0", "0.64.0"));
+    True(!UpdateCheck.IsNewer("v0.63.9", "0.64.0"));
+    True(!UpdateCheck.IsNewer("v0.64", "0.64.0"));
+
+    var available = UpdateCheck.FromReleaseJson(@"{""tag_name"":""v0.65.0"",""html_url"":""https://example.com/r""}", "0.64.0");
+    Equal(UpdateCheckStatus.UpdateAvailable, available.Status);
+    Equal("0.65.0", available.LatestVersion!);
+    Equal("https://example.com/r", available.ReleaseUrl);
+
+    Equal(UpdateCheckStatus.UpToDate, UpdateCheck.FromReleaseJson(@"{""tag_name"":""v0.64.0""}", "0.64.0").Status);
+    Equal(UpdateCheckStatus.Unknown, UpdateCheck.FromReleaseJson(@"{""tag_name"":""v9.9.9"",""draft"":true}", "0.64.0").Status);
+    Equal(UpdateCheckStatus.Unknown, UpdateCheck.FromReleaseJson("not json", "0.64.0").Status);
 }
 
 static void Equal<T>(T expected, T actual) where T : notnull

@@ -113,12 +113,19 @@ public sealed class ShellViewModel : IAsyncDisposable
         _selectionCts?.Cancel(); _selectionCts?.Dispose(); _selectionCts=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);var token=_selectionCts.Token;
         SelectedChat = chat;
         _loadedMessageCount=MessagePageSize;
-        var routes=chat.RouteIds is{Count:>0}?chat.RouteIds:[chat.Id];var cached=(await Task.WhenAll(routes.Select(route=>_services.Cache.GetMessagesAsync(route,MessagePageSize,cancellationToken:token)))).SelectMany(row=>row).OrderBy(row=>row.DateCreated).TakeLast(MessagePageSize).ToArray();
-        token.ThrowIfCancellationRequested(); if(SelectedChat?.Id!=chat.Id)return;
-        ReplaceMessages(await DecorateMessageSendersAsync(cached,chat.IsGroup,token));
-        await RestorePendingUploadsAsync(chat.Id,token);
+        var routes=chat.RouteIds is{Count:>0}?chat.RouteIds:[chat.Id];
+        // C74: the whole body is guarded. The first cache read and its
+        // ThrowIfCancellationRequested used to sit OUTSIDE the try, so clicking
+        // two conversations quickly threw OperationCanceledException straight
+        // into `async void ChatList_ItemClick` — an unhandled WinUI exception.
+        var cached = Array.Empty<Message>();
         try
         {
+            cached=(await Task.WhenAll(routes.Select(route=>_services.Cache.GetMessagesAsync(route,MessagePageSize,cancellationToken:token)))).SelectMany(row=>row).OrderBy(row=>row.DateCreated).TakeLast(MessagePageSize).ToArray();
+            token.ThrowIfCancellationRequested(); if(SelectedChat?.Id!=chat.Id)return;
+            ReplaceMessages(await DecorateMessageSendersAsync(cached,chat.IsGroup,token));
+            await RestorePendingUploadsAsync(chat.Id,token);
+
             var remote=(await Task.WhenAll(routes.Select(route=>_api.GetMessagesAsync(route,MessagePageSize,cancellationToken:token)))).SelectMany(row=>row).OrderBy(row=>row.DateCreated).TakeLast(MessagePageSize).ToArray();
             await _services.Cache.UpsertMessagesAsync(remote, token);
             token.ThrowIfCancellationRequested(); if(SelectedChat?.Id!=chat.Id)return;
@@ -127,9 +134,10 @@ public sealed class ShellViewModel : IAsyncDisposable
             await RestorePendingUploadsAsync(chat.Id,token);
             HasMoreMessages=remote.Length==MessagePageSize;
         }
-        catch (OperationCanceledException) when(token.IsCancellationRequested){return;}
+        catch (OperationCanceledException){return;}
         catch when (cached.Length > 0) { HasMoreMessages=cached.Length==MessagePageSize; }
-        await MarkSelectedChatReadAsync(chat,token);
+        try { await MarkSelectedChatReadAsync(chat,token); }
+        catch (OperationCanceledException){return;}
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -283,6 +291,13 @@ public sealed class ShellViewModel : IAsyncDisposable
                 var isSelected=SelectedChat is{} selected&&(selected.Id==message.ChatId||(selected.RouteIds?.Contains(message.ChatId)??false));
                 if(isSelected)
                 {
+                    // C74: the open conversation is the authority on "seen". The
+                    // watermark used to advance only at selection time, so a
+                    // message arriving while you read it left the watermark
+                    // behind — and the next chat-list rebuild (which derives
+                    // HasUnread from the watermark) relit the dot on the chat
+                    // you were looking at.
+                    AdvanceReadWatermark(message);
                     var existing = raw.FirstOrDefault(item => item.Id == message.Id);
                     if (existing is not null)
                     {
@@ -338,6 +353,23 @@ public sealed class ShellViewModel : IAsyncDisposable
         return needsReload;
     }
 
+    /// <summary>Moves the per-route read watermark past a message observed while
+    /// its conversation is open (fire-and-forget: the dot is derived state).</summary>
+    private void AdvanceReadWatermark(Message message)
+    {
+        if (SelectedChat is not { } selected) return;
+        var routes = selected.RouteIds is { Count: > 0 } ids ? ids : [selected.Id];
+        foreach (var route in routes)
+        {
+            _ = _services.Cache.SetSettingAsync("read.watermark." + route, message.DateCreated.ToString());
+        }
+        var index = Array.FindIndex(_allChats.ToArray(), chat => chat.Id == selected.Id);
+        if (index < 0) return;
+        var rows = _allChats.ToArray();
+        rows[index] = rows[index] with { UnreadCount = 0, HasUnread = false };
+        ReplaceChats(rows);
+    }
+
     private bool RememberRealtimeMessage(string id)
     {
         if (!_seenRealtimeMessageIds.Add(id)) return false;
@@ -349,7 +381,20 @@ public sealed class ShellViewModel : IAsyncDisposable
 
     private void ReplaceChats(IEnumerable<ChatSummary> rows)
     {
-        _allChats=rows.ToArray();
+        // C74: the server does not carry UnreadCount, so a plain assignment
+        // zeroed the badge on every chat refresh while HasUnread stayed true
+        // (derived from the watermark) — the number flickered off and on.
+        // Carry the locally tracked count across unless the row reads as seen.
+        var previous = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var chat in _allChats) previous[chat.Id] = chat.UnreadCount;
+        _allChats=rows
+            .Select(chat => chat.UnreadCount == 0
+                && chat.HasUnread
+                && previous.TryGetValue(chat.Id, out var carried)
+                && carried > 0
+                    ? chat with { UnreadCount = carried }
+                    : chat)
+            .ToArray();
         if(SelectedChat is{} selected)
         {
             var updated=_allChats.FirstOrDefault(chat=>chat.Id==selected.Id||chat.RouteIds?.Contains(selected.Id)==true||selected.RouteIds?.Contains(chat.Id)==true);
@@ -430,24 +475,18 @@ public sealed class ShellViewModel : IAsyncDisposable
         }
         return result;
     }
-    private void ReplaceMessages(IEnumerable<Message> rows)
+    private void ReplaceMessages(IEnumerable<Message> rows) => MergeMessages(rows, mergeWithVisible: true);
+
+    /// <summary>
+    /// Rebuilds the visible timeline from <paramref name="rows"/>. The merge
+    /// itself lives in MessageSemantics.MergeSnapshot (pure + contract-tested):
+    /// a late snapshot must not wipe rows that arrived live while it loaded.
+    /// </summary>
+    private void MergeMessages(IEnumerable<Message> rows, bool mergeWithVisible)
     {
-        // Cache, REST and websocket models do not persist PresentationId. Before
-        // replacing the raw snapshot, carry the identity/time slot of every row
-        // already shown in this thread across by server identity. Without this,
-        // a cache refresh changes every key back to Message.Id and ListView drops
-        // all realized containers at once (insert=N/remove=N).
-        var presented = _rawMessages
-            .Where(row => !row.IsSeparator)
-            .GroupBy(row => (row.ChatId, row.Id))
-            .ToDictionary(group => group.Key, group => group.Last());
-        _rawMessages=rows
-            .Where(row=>!row.IsSeparator)
-            .Select(row => presented.TryGetValue((row.ChatId, row.Id), out var existing)
-                ? MessageSemantics.ReconcilePresentation(existing, row)
-                : row)
-            .OrderBy(row=>row.DateCreated)
-            .ToList();
+        _rawMessages = mergeWithVisible
+            ? MessageSemantics.MergeSnapshot(_rawMessages, rows).ToList()
+            : rows.Where(row => !row.IsSeparator).OrderBy(row => row.DateCreated).ToList();
         var visible=_hiddenMessageGuids.Count==0?_rawMessages:_rawMessages.Where(row=>!_hiddenMessageGuids.Contains(row.Id)).ToList();
         SyncMessages(ThreadPresentation.Build(visible,SelectedChat?.IsGroup==true,_services.Localization.Language));
     }

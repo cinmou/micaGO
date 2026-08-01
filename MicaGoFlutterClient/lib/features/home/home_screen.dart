@@ -250,15 +250,16 @@ class _InAppMessageNotification extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final top = MediaQuery.paddingOf(context).top + 10;
+    // C75: sit at the very top, overlaying the title bar. The status-bar inset
+    // was previously applied twice (this offset AND a SafeArea below), which
+    // pushed the card down under the app bar.
+    final top = MediaQuery.paddingOf(context).top + 6;
     final body = (alert.body ?? '').trim();
     return Positioned(
       top: top,
       left: 12,
       right: 12,
-      child: SafeArea(
-        bottom: false,
-        child: Material(
+      child: Material(
           color: Colors.transparent,
           child: Dismissible(
             key: ValueKey(
@@ -336,7 +337,6 @@ class _InAppMessageNotification extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }

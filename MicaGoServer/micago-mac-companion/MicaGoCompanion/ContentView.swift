@@ -600,6 +600,7 @@ private struct TutorialsPage: View {
 private struct AboutPage: View {
     private let repoURL = URL(string: "https://github.com/cinmou/MicaGo")!
     private let releasesURL = URL(string: "https://github.com/cinmou/MicaGo/releases")!
+    @StateObject private var updates = UpdateChecker.shared
 
     var body: some View {
         SectionCard(title: "") {
@@ -628,12 +629,20 @@ private struct AboutPage: View {
                 NSWorkspace.shared.open(repoURL)
             }
             Divider()
+            // C74: really asks GitHub whether a newer release exists instead of
+            // just opening the releases page.
             AboutInfoButton(
                 icon: "square.and.arrow.down",
                 title: "Check for Updates",
-                value: "GitHub Releases"
+                value: updateLabel
             ) {
-                NSWorkspace.shared.open(releasesURL)
+                if case .updateAvailable(_, let url) = updates.status {
+                    NSWorkspace.shared.open(url)
+                } else if case .checking = updates.status {
+                    // A check is already in flight.
+                } else {
+                    updates.check()
+                }
             }
         }
 
@@ -641,6 +650,16 @@ private struct AboutPage: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var updateLabel: String {
+        switch updates.status {
+        case .idle: return "Check now"
+        case .checking: return "Checking…"
+        case .upToDate: return "Up to date"
+        case .updateAvailable(let version, _): return "Version \(version) available"
+        case .unknown: return "Check failed — click to retry"
+        }
     }
 
     private var companionVersionLabel: String {
@@ -898,7 +917,7 @@ private struct RuntimeCard: View {
             )) {
                 Text("Keep this Mac awake while serving")
             }
-            Text("Status: \(runtime.keepAwakeActive ? "active (caffeinate)" : "off")")
+            Text("Status: \(runtime.keepAwakeActive ? "active (power assertion)" : "off")")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }

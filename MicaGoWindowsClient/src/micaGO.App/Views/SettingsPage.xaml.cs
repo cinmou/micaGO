@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using MicaGo.App.Services;
 using MicaGo.Core.Connection;
+using MicaGo.Core.Models;
 
 namespace MicaGo.App.Views;
 
@@ -10,6 +11,9 @@ public sealed partial class SettingsPage : Page
 {
     private bool _loading = true;
     private ShellNavigationContext? _context;
+    private static readonly HttpClient UpdateHttpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private bool _checkingUpdate;
+    private string? _updateUrl;
     public SettingsPage() { InitializeComponent(); Loaded += SettingsPage_Loaded; }
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -145,7 +149,7 @@ public sealed partial class SettingsPage : Page
             VcfImportStatus.Text = string.Format(AppServices.Current.Localization["vcfImported"], parts[0], parts[1], parts[2]);
     }
     private void ApplySettings(){var s=AppServices.Current;s.Notifications.Enabled=NotificationToggle.IsOn;var lang=LanguagePicker.SelectedIndex switch{1=>"en",2=>"zh-Hans",3=>"zh-Hant",_=>"system"};s.Localization.SetLanguage(lang);var root=App.MainWindow.Content as FrameworkElement;if(root is not null)root.RequestedTheme=ThemePicker.SelectedIndex switch{1=>ElementTheme.Light,2=>ElementTheme.Dark,_=>ElementTheme.Default};ApplyText();}
-    private void ApplyText(){var l=AppServices.Current.Localization;ConnectionHeader.Text=l["connection"];BehaviorHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];TrayLabel.Text=l["tray"];AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LanguageLabel.Text=l["language"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleFollowSystemLabel.Text=l["followSystemAccent"];BubbleColorPickLabel.Text=l["customColor"];BubbleColorButton.Content=l["choose"];ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];HiddenContactsLabel.Text=l["hiddenContacts"];StorageHeader.Text=l["cache"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];TestingHeader.Text=l["testing"];TestContactLabel.Text=l["testContact"];TestContactHint.Text=l["testContactHint"];BackupHeader.Text=l["backupRestore"];BackupLabel.Text=l["backupLabel"];ExportBackupButton.Content=l["exportBackup"];ImportBackupButton.Content=l["importBackup"];AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutOpenSourceLabel.Text=l["openSource"];AboutAttributionText.Text=l["twemojiAttribution"];AboutDisclaimerText.Text=l["twemojiDisclaimer"];UpdateBackgroundStatus();UpdateHiddenContactsStatus();}
+    private void ApplyText(){var l=AppServices.Current.Localization;ConnectionHeader.Text=l["connection"];BehaviorHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];TrayLabel.Text=l["tray"];AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LanguageLabel.Text=l["language"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleFollowSystemLabel.Text=l["followSystemAccent"];BubbleColorPickLabel.Text=l["customColor"];BubbleColorButton.Content=l["choose"];ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];HiddenContactsLabel.Text=l["hiddenContacts"];StorageHeader.Text=l["cache"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];TestingHeader.Text=l["testing"];TestContactLabel.Text=l["testContact"];TestContactHint.Text=l["testContactHint"];BackupHeader.Text=l["backupRestore"];BackupLabel.Text=l["backupLabel"];ExportBackupButton.Content=l["exportBackup"];ImportBackupButton.Content=l["importBackup"];AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutUpdateLabel.Text=l["checkUpdates"];if(!_checkingUpdate&&_updateUrl is null)AboutUpdateStatus.Text=l["updateCheckNow"];if(_updateUrl is null&&!_checkingUpdate)AboutUpdateButton.Content=l["updateCheckButton"];AboutOpenSourceLabel.Text=l["openSource"];AboutAttributionText.Text=l["twemojiAttribution"];AboutDisclaimerText.Text=l["twemojiDisclaimer"];UpdateBackgroundStatus();UpdateHiddenContactsStatus();}
     private async void NotificationToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.notifications",NotificationToggle.IsOn?"true":"false");ApplySettings();}
     private async void TrayToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await App.SetTrayEnabledAsync(TrayToggle.IsOn);}
     private async void ThemePicker_SelectionChanged(object sender,SelectionChangedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.theme",ThemePicker.SelectedIndex switch{1=>"light",2=>"dark",_=>"system"});ApplySettings();}
@@ -185,6 +189,49 @@ public sealed partial class SettingsPage : Page
     private void UpdateHiddenContactsStatus(){if(HiddenContactsStatus is null)return;var count=_context?.Host.HiddenChatCount??0;HiddenContactsStatus.Text=string.Format(AppServices.Current.Localization["hiddenContactsCount"],count);}
     private void HiddenContactsButton_Click(object sender,RoutedEventArgs e)=>_context?.Host.OpenHiddenContacts();
     private async void ClearCacheButton_Click(object sender,RoutedEventArgs e){await AppServices.Current.Cache.ClearAsync();await AppServices.Current.Media.ClearAsync();}
+    /// <summary>
+    /// C74: asks GitHub whether a newer release exists. When one does, the
+    /// button turns into "Open release" and links to it — nothing is downloaded
+    /// or installed automatically.
+    /// </summary>
+    private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        var l = AppServices.Current.Localization;
+        if (_updateUrl is { } url)
+        {
+            try { await Windows.System.Launcher.LaunchUriAsync(new Uri(url)); } catch { }
+            return;
+        }
+        if (_checkingUpdate) return;
+        _checkingUpdate = true;
+        AboutUpdateButton.IsEnabled = false;
+        AboutUpdateStatus.Text = l["updateChecking"];
+        try
+        {
+            var current = typeof(SettingsPage).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+            var result = await UpdateCheck.FetchAsync(UpdateHttpClient, current);
+            switch (result.Status)
+            {
+                case UpdateCheckStatus.UpdateAvailable:
+                    _updateUrl = result.ReleaseUrl;
+                    AboutUpdateStatus.Text = string.Format(l["updateAvailable"], result.LatestVersion);
+                    AboutUpdateButton.Content = l["updateOpen"];
+                    break;
+                case UpdateCheckStatus.UpToDate:
+                    AboutUpdateStatus.Text = l["updateUpToDate"];
+                    break;
+                default:
+                    AboutUpdateStatus.Text = l["updateUnknown"];
+                    break;
+            }
+        }
+        finally
+        {
+            _checkingUpdate = false;
+            AboutUpdateButton.IsEnabled = true;
+        }
+    }
+
     private void ApplySection(string section){GeneralSection.Visibility=section=="general"?Visibility.Visible:Visibility.Collapsed;AppearanceSection.Visibility=section=="appearance"?Visibility.Visible:Visibility.Collapsed;ContactsSection.Visibility=section=="contacts"?Visibility.Visible:Visibility.Collapsed;StorageSection.Visibility=section=="storage"?Visibility.Visible:Visibility.Collapsed;AboutSection.Visibility=section=="about"?Visibility.Visible:Visibility.Collapsed;}
     private async void DisconnectButton_Click(object sender,RoutedEventArgs e){var d=new ContentDialog{XamlRoot=XamlRoot,Title="Disconnect this PC?",Content="The saved server route and token will be removed from Windows Credential Manager.",PrimaryButtonText="Disconnect",CloseButtonText="Cancel",DefaultButton=ContentDialogButton.Close};if(await d.ShowAsync()!=ContentDialogResult.Primary)return;await AppServices.Current.Connection.DisconnectAsync();_context?.Host.NavigateToConnection();}
 }

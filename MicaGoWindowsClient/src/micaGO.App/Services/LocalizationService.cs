@@ -67,6 +67,15 @@ public sealed class LocalizationService
         values["version"] = traditional ? "版本 {0}" : chinese ? "版本 {0}" : "Version {0}";
         values["viewOnGitHub"] = traditional ? "在 GitHub 上檢視專案" : chinese ? "在 GitHub 上查看项目" : "View the project on GitHub";
         values["openSource"] = traditional ? "開源與致謝" : chinese ? "开源与致谢" : "Open source & attributions";
+        // C74: GitHub release update check.
+        values["checkUpdates"] = traditional ? "檢查更新" : chinese ? "检查更新" : "Check for updates";
+        values["updateCheckNow"] = traditional ? "點按檢查最新版本" : chinese ? "点按检查最新版本" : "Check GitHub for a newer release";
+        values["updateCheckButton"] = traditional ? "立即檢查" : chinese ? "立即检查" : "Check now";
+        values["updateChecking"] = traditional ? "正在檢查…" : chinese ? "正在检查…" : "Checking…";
+        values["updateUpToDate"] = traditional ? "已是最新版本" : chinese ? "已是最新版本" : "Up to date";
+        values["updateAvailable"] = traditional ? "有新版本 {0}" : chinese ? "有新版本 {0}" : "Version {0} is available";
+        values["updateUnknown"] = traditional ? "檢查失敗，請稍後再試" : chinese ? "检查失败，请稍后重试" : "Check failed — try again later";
+        values["updateOpen"] = traditional ? "開啟發行頁" : chinese ? "打开发布页" : "Open release";
         return values;
     }
 

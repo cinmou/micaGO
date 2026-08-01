@@ -432,6 +432,28 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE895;" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="AboutUpdateLabel" Text="Check for updates" />
+                                <TextBlock x:Name="AboutUpdateStatus"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button x:Name="AboutUpdateButton"
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    Click="CheckForUpdates_Click"
+                                    Content="Check now" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <FontIcon VerticalAlignment="Top" Margin="0,3,0,0" FontSize="18" Glyph="&#xE90F;" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">

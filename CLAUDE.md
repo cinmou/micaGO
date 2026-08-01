@@ -128,6 +128,90 @@ Three components:
   quality and incapable ones self-heal. **Requires rebuilding the bundled
   backend.**
 
+## Connection-UI consolidation + notification/composer/LAN fixes (C75, client-only)
+
+- **断链提醒整合.** Three surfaces used to compete (transient TopBanner, sticky
+  red banner, modal dialog) and the banner could appear the instant the app
+  opened, before the first connect finished. Now ONE signal drives everything:
+  `AppController.connectionProblemConfirmed`, set only after the link has been
+  unhealthy for a continuous 10s (`_armConnectionProblemWatchdog`; re-arming
+  never restarts a running countdown, so a flapping socket can't postpone it
+  forever). Sequence is fixed: **dialog first → sticky banner after it** →
+  both clear the moment the link recovers. Transient connection banners are
+  gone. **Deleted**: `connection_notice.dart` (ConnectionNotice enum +
+  `connectionNoticeFor`), its test, `initialConnectFailed`, the whole
+  grace-window/startup-quiet machinery (`_connectionNoticeGraceUntil`,
+  `_startupConnectionNoticeQuietUntil`, `_hasSuppressedStartupConnectionNotice`,
+  `_lastConnectionSnapshot`, `_hasEverConnected`,
+  `_hasCompletedFirstConnectAttempt`). `_emitConnectionNotice` →
+  `_updateConnectionHealth`.
+- **FCM 通知在应用内读了不消失.** `clearChatNotification` was only ever called
+  from `requestOpenChat` — i.e. only when the user tapped the notification
+  itself. Opening the chat normally left it in the shade. It now fires from
+  `markChatsViewed`, the single "user has seen this" authority (C47).
+- **In-app banner:** sat *below* the title bar because the status-bar inset was
+  applied twice (manual `padding.top` offset **and** a `SafeArea`); the SafeArea
+  is gone so it overlays the very top. It also fired **once per delta message**,
+  so a catch-up backlog scrolled banners wildly — `runDeltaSync` now collects
+  and emits **one banner per sync pass** (the newest), and
+  `_maybeEmitForegroundMessage` drops anything older than 2 minutes.
+- **底部胶囊忽远忽近:** the list reserved a CONSTANT 104/96 bottom inset while
+  the composer's real height varies (grows to 5 lines, voice bars differ, the
+  two theme variants differ), so the gap to the newest bubble changed
+  constantly. `_MeasuredHeight` reports the overlay's laid-out height and
+  `_bottomInset = measured + 8 + keyboardInset` — the gap is now fixed by
+  construction.
+- **LAN 线路消失:** an empty `/api/server/urls` LAN list was written straight
+  into the stored profile, wiping LAN routes (Mac Wi-Fi still coming up after
+  wake, interface change, query through the tunnel). `resolvePersistedLanRoutes`
+  (pure, tested in `endpoint_utils_test.dart`) keeps the previous routes when
+  the report is empty, unless the server actually uses visibility flags — then
+  an empty result is a real decision.
+- **消息显示设置:** removed the dead "Debug details for unsupported messages"
+  section — `unsupportedDetails` had **no consumer anywhere**, so all three
+  choices did nothing (field dropped from `MessageDisplayPrefs` too). The rest
+  is localized via new `display.*` keys ×3 locales.
+
+## Windows refresh fixes + update check + Keep Awake rewrite (C74)
+
+- **Windows信息流刷新 (ShellViewModel):** `SelectChatAsync` produces three
+  snapshots (cache page → REST page → cache re-read) while realtime frames
+  append rows concurrently, and each one **replaced** `_rawMessages` wholesale —
+  a late snapshot wiped messages that had just been delivered live (they
+  flickered in, vanished, came back on the next event). The merge now lives in
+  `MessageSemantics.MergeSnapshot` (pure + contract-tested): snapshot rows win
+  and carry the on-screen presentation identity across; local rows absent from
+  the snapshot survive when pending or newer than the snapshot's own window;
+  older absent rows are dropped so server deletes still disappear.
+- **Cancellation escaped into `async void`:** the first cache read and its
+  `ThrowIfCancellationRequested` sat OUTSIDE the try, so clicking two
+  conversations quickly threw straight into `ChatList_ItemClick`. The whole body
+  is guarded now (including `MarkSelectedChatReadAsync`).
+- **联系人界面刷新 / unread dot:** `read.watermark.<route>` only advanced at
+  selection time, so a message arriving while you read a chat left the watermark
+  behind and the next list rebuild (which derives `HasUnread` from it) relit the
+  dot on the chat you were looking at. `AdvanceReadWatermark` now runs for every
+  arrival in the open conversation. `ReplaceChats` also carries the locally
+  tracked `UnreadCount` across server refreshes (the server never sends it, so a
+  plain assignment zeroed the badge while `HasUnread` stayed true → flicker).
+- **Update check (all three apps):** GitHub releases API → compare tag with the
+  running version → report. Read-only, unauthenticated, nothing downloaded or
+  installed; every failure resolves to *unknown* so an offline/rate-limited check
+  never alarms. Flutter `core/network/update_check.dart` (About row),
+  Companion `Services/UpdateChecker.swift` (About page), Windows
+  `Core/Models/UpdateCheck.cs` (Settings → About card). Version compare ignores
+  a leading `v` and pre-release suffixes and never offers a downgrade.
+- **Keep Awake (Companion) rewrite:** the old `caffeinate` child process was
+  unreliable under hardened runtime, left the toggle stuck "on" when the child
+  died, and `caffeinate -s` only prevents sleep on AC — on battery the Mac slept
+  and the relay dropped. (A leaked `caffeinate` holding an assertion for 69h was
+  found on the dev Mac.) Now the KeepingYouAwake (MIT) approach: in-process
+  `IOPMAssertionCreateWithName` holding **PreventUserIdleSystemSleep** +
+  **NetworkClientActive**, released on toggle-off and `applicationWillTerminate`.
+  The published flag mirrors the assertions actually held, so a refusal shows as
+  "off" instead of a lying switch. Verified live: both assertion types return
+  `kIOReturnSuccess` and register with `pmset -g assertions`.
+
 ## Media loading skeleton — one-bubble placeholder → image (C69, client-only)
 
 - Image, video, and sticker memory misses show one stable rounded
