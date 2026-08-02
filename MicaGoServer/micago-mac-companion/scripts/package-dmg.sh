@@ -6,8 +6,9 @@
 #
 # Signed + notarized build:
 #   SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-#   NOTARIZE=1 APPLE_ID="you@example.com" APPLE_TEAM_ID="TEAMID" \
-#   APPLE_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx" ./scripts/package-dmg.sh
+#   NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE="micaGO-notary" ./scripts/package-dmg.sh
+#
+# CI may instead provide APPLE_ID, APPLE_TEAM_ID, and APPLE_APP_PASSWORD.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -19,7 +20,7 @@ DERIVED_DATA="${DERIVED_DATA:-$COMPANION_DIR/build/DerivedData}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
 BACKEND_DIR="$ARTIFACT_DIR/backend"
 APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/MicaGoCompanion.app"
-DMG_PATH="$ARTIFACT_DIR/micaGO-$VERSION-mac.dmg"
+DMG_PATH="$ARTIFACT_DIR/micaGO-Companion-$VERSION-mac.dmg"
 APPCAST_PATH="$ARTIFACT_DIR/appcast.xml"
 APPCAST_STAGING_DIR="$ARTIFACT_DIR/appcast-staging"
 DMG_STAGING_DIR="$ARTIFACT_DIR/dmg-staging"
@@ -39,7 +40,7 @@ if [ "${GENERATE_APPCAST:-0}" = "1" ] && [ -z "${SIGN_IDENTITY:-}" ]; then
 fi
 
 COMMIT="$(cd "$SERVER_DIR" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-if [ -n "$(cd "$SERVER_DIR" && git status --porcelain 2>/dev/null)" ]; then
+if [ -n "$(cd "$SERVER_DIR" && git status --porcelain -- . 2>/dev/null)" ]; then
   COMMIT="${COMMIT}-dirty"
 fi
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -100,6 +101,26 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago"
   if [ -f "$APP_PATH/Contents/Resources/micago-imcore-helper" ]; then
     codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago-imcore-helper"
+  fi
+  SPARKLE_FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+  if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    echo "==> Re-signing Sparkle components for Developer ID distribution"
+    SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/Current"
+    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" \
+      --preserve-metadata=identifier,entitlements \
+      --sign "$SIGN_IDENTITY" "$SPARKLE_VERSION/XPCServices/Downloader.xpc"
+    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" \
+      --preserve-metadata=identifier,entitlements \
+      --sign "$SIGN_IDENTITY" "$SPARKLE_VERSION/XPCServices/Installer.xpc"
+    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" \
+      --preserve-metadata=identifier,entitlements \
+      --sign "$SIGN_IDENTITY" "$SPARKLE_VERSION/Updater.app"
+    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" \
+      --preserve-metadata=identifier,entitlements \
+      --sign "$SIGN_IDENTITY" "$SPARKLE_VERSION/Autoupdate"
+    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" \
+      --preserve-metadata=identifier,entitlements \
+      --sign "$SIGN_IDENTITY" "$SPARKLE_FRAMEWORK"
   fi
   codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH"
   codesign --verify --deep --strict --verbose=2 "$APP_PATH"
@@ -163,16 +184,24 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
 fi
 
 if [ "${NOTARIZE:-0}" = "1" ]; then
-  : "${APPLE_ID:?APPLE_ID is required when NOTARIZE=1}"
-  : "${APPLE_TEAM_ID:?APPLE_TEAM_ID is required when NOTARIZE=1}"
-  : "${APPLE_APP_PASSWORD:?APPLE_APP_PASSWORD is required when NOTARIZE=1}"
   echo "==> Notarizing DMG"
-  xcrun notarytool submit "$DMG_PATH" \
-    --apple-id "$APPLE_ID" \
-    --team-id "$APPLE_TEAM_ID" \
-    --password "$APPLE_APP_PASSWORD" \
-    --wait
+  if [ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]; then
+    xcrun notarytool submit "$DMG_PATH" \
+      --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
+      --wait
+  else
+    : "${APPLE_ID:?APPLE_ID is required when NOTARIZE=1 without NOTARY_KEYCHAIN_PROFILE}"
+    : "${APPLE_TEAM_ID:?APPLE_TEAM_ID is required when NOTARIZE=1 without NOTARY_KEYCHAIN_PROFILE}"
+    : "${APPLE_APP_PASSWORD:?APPLE_APP_PASSWORD is required when NOTARIZE=1 without NOTARY_KEYCHAIN_PROFILE}"
+    xcrun notarytool submit "$DMG_PATH" \
+      --apple-id "$APPLE_ID" \
+      --team-id "$APPLE_TEAM_ID" \
+      --password "$APPLE_APP_PASSWORD" \
+      --wait
+  fi
   xcrun stapler staple "$DMG_PATH"
+  xcrun stapler validate "$DMG_PATH"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
 fi
 
 if [ "${GENERATE_APPCAST:-0}" = "1" ]; then
