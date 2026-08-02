@@ -225,10 +225,9 @@ jobs:
     needs: meta
     runs-on: macos-15
     timeout-minutes: 60
-    continue-on-error: true
     env:
-      # Presence of these secrets decides signed vs unsigned; all steps below
-      # degrade gracefully when they are empty. Never echo their values.
+      # Tagged releases require every signing, notarization, and Sparkle secret.
+      # Manual workflow runs may still produce an unsigned development artifact.
       MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
       MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
       MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
@@ -271,6 +270,14 @@ jobs:
         run: |
           chmod +x scripts/package-dmg.sh
           export VERSION="${{ needs.meta.outputs.version }}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            for name in MACOS_CERT_P12 MACOS_CERT_PASSWORD MACOS_SIGN_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD SPARKLE_PRIVATE_KEY; do
+              if [ -z "${!name}" ]; then
+                echo "::error::$name is required for a tagged macOS release"
+                exit 1
+              fi
+            done
+          fi
           if [ -n "$MACOS_SIGN_IDENTITY" ]; then
             export SIGN_IDENTITY="$MACOS_SIGN_IDENTITY"
             echo "Signing enabled"
@@ -284,16 +291,13 @@ jobs:
           if [ -n "$SPARKLE_PRIVATE_KEY" ] && [ -n "$MACOS_SIGN_IDENTITY" ]; then
             export GENERATE_APPCAST=1
             echo "Sparkle appcast signing enabled"
-          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            echo "::error::SPARKLE_PRIVATE_KEY and MACOS_SIGN_IDENTITY are required for a tagged macOS release"
-            exit 1
           fi
           scripts/package-dmg.sh
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
           path: |
-            MicaGoServer/micago-mac-companion/build/release/micaGO-${{ needs.meta.outputs.version }}-mac.dmg
+            MicaGoServer/micago-mac-companion/build/release/micaGO-Companion-${{ needs.meta.outputs.version }}-mac.dmg
             MicaGoServer/micago-mac-companion/build/release/appcast.xml
           if-no-files-found: error
 
@@ -320,7 +324,7 @@ jobs:
             ### Downloads
             | Platform | File |
             | --- | --- |
-            | macOS (Companion + server, if available) | `micaGO-${{ needs.meta.outputs.version }}-mac.dmg` |
+            | macOS (Companion + server) | `micaGO-Companion-${{ needs.meta.outputs.version }}-mac.dmg` |
             | Android | `micaGO-${{ needs.meta.outputs.version }}-android.apk` |
             | iOS (unsigned, sideload) | `micaGO-${{ needs.meta.outputs.version }}-ios-unsigned.ipa` |
             | Windows | `micaGO-${{ needs.meta.outputs.version }}-windows-x64.zip` |
