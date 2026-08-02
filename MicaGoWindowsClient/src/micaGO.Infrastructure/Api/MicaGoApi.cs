@@ -79,6 +79,16 @@ public sealed class MicaGoApi : IMicaGoApi
         var payload = new { tempGuid = tempId ?? Guid.NewGuid().ToString("N"), message = text };
         using var response = await _http.PostAsJsonAsync($"api/chats/{encoded}/send", payload, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
+        // Flutter parity: 202 means AppleScript accepted the send but chat.db
+        // confirmation is still pending. It is not a server Message and must
+        // never replace the optimistic row (the payload has no isFromMe/guid).
+        if (response.StatusCode == System.Net.HttpStatusCode.Accepted)
+        {
+            throw new MicaGoApiException(
+                GetString(document.RootElement, "message") ?? "Message sent; confirmation is pending.",
+                (int)response.StatusCode,
+                code: GetString(document.RootElement, "code") ?? "send_confirmation_timeout");
+        }
         return MapMessage(document.RootElement, chatId);
     }
 
@@ -180,7 +190,18 @@ public sealed class MicaGoApi : IMicaGoApi
                 // receipts / edits / unsends apply even when the rowid-based
                 // delta cursor never re-surfaces the row.
                 Message? parsed = null;
-                if (type.StartsWith("message:", StringComparison.OrdinalIgnoreCase)
+                if (type.Equals("send:match", StringComparison.OrdinalIgnoreCase)
+                    && data.TryGetProperty("message", out var matched)
+                    && matched.ValueKind == JsonValueKind.Object)
+                {
+                    chatGuid = GetString(matched, "chatGuid") ?? chatGuid;
+                    messageGuid = GetString(matched, "guid") ?? messageGuid;
+                    if (chatGuid is not null && messageGuid is not null)
+                    {
+                        parsed = MapMessage(matched, chatGuid) with { PresentationId = GetString(data, "tempGuid") };
+                    }
+                }
+                else if (type.StartsWith("message:", StringComparison.OrdinalIgnoreCase)
                     && messageGuid is not null
                     && chatGuid is not null
                     && data.TryGetProperty("text", out _))

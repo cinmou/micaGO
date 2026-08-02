@@ -60,7 +60,9 @@ public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) :
                     // cursor never re-surfaces.
                     if (realtimeEvent.Message is { } message)
                     {
-                        await cache.UpsertMessagesAsync([message], cancellationToken);
+                        // PresentationId on send:match is an in-memory tempGuid
+                        // correlation key. Persist only server identity/content.
+                        await cache.UpsertMessagesAsync([message with { PresentationId = null }], cancellationToken);
                         MessagesChanged?.Invoke(this, [message]);
                     }
                     await CatchUpAsync(cancellationToken);

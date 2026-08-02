@@ -90,22 +90,53 @@ public static partial class MessageSemantics
     /// snapshot's own window; anything older is dropped so server-side deletes
     /// still disappear.
     /// </summary>
-    public static IReadOnlyList<Message> MergeSnapshot(IReadOnlyList<Message> presented, IEnumerable<Message> snapshot)
+    public static IReadOnlyList<Message> MergeSnapshot(
+        IReadOnlyList<Message> presented,
+        IEnumerable<Message> snapshot,
+        IReadOnlySet<string>? allowedChatIds = null)
     {
+        static bool IsAllowed(Message row, IReadOnlySet<string>? allowed) =>
+            allowed is null || allowed.Contains(row.ChatId);
+
         var byIdentity = new Dictionary<(string, string), Message>();
         foreach (var row in presented)
         {
-            if (row.IsSeparator) continue;
+            if (row.IsSeparator || !IsAllowed(row, allowedChatIds)) continue;
             byIdentity[(row.ChatId, row.Id)] = row;
         }
 
         var merged = new List<Message>();
         var seen = new HashSet<(string, string)>();
+        var consumedPending = new HashSet<(string, string)>();
+        var availablePending = presented
+            .Where(row => row.IsPending && IsAllowed(row, allowedChatIds))
+            .ToList();
         foreach (var row in snapshot)
         {
-            if (row.IsSeparator) continue;
+            if (row.IsSeparator || !IsAllowed(row, allowedChatIds)) continue;
             var key = (row.ChatId, row.Id);
-            merged.Add(byIdentity.TryGetValue(key, out var existing) ? ReconcilePresentation(existing, row) : row);
+            if (byIdentity.TryGetValue(key, out var existing))
+            {
+                merged.Add(ReconcilePresentation(existing, row));
+            }
+            else
+            {
+                // Flutter MessageCollection parity: consume at most one pending
+                // row per server row. Removing the match from this candidate set
+                // prevents two rapid identical sends from claiming the same
+                // optimistic bubble.
+                var pending = MatchingPending(availablePending, row);
+                if (pending is null)
+                {
+                    merged.Add(row);
+                }
+                else
+                {
+                    merged.Add(ReconcilePresentation(pending, row));
+                    availablePending.Remove(pending);
+                    consumedPending.Add((pending.ChatId, pending.Id));
+                }
+            }
             seen.Add(key);
         }
 
@@ -114,7 +145,7 @@ public static partial class MessageSemantics
             var floor = merged.Count == 0 ? long.MinValue : merged.Min(row => row.DateCreated);
             foreach (var row in presented)
             {
-                if (row.IsSeparator || seen.Contains((row.ChatId, row.Id))) continue;
+                if (row.IsSeparator || !IsAllowed(row, allowedChatIds) || seen.Contains((row.ChatId, row.Id)) || consumedPending.Contains((row.ChatId, row.Id))) continue;
                 if (row.IsPending || row.DateCreated >= floor) merged.Add(row);
             }
         }

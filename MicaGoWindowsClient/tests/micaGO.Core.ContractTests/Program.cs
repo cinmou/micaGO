@@ -22,6 +22,10 @@ var tests = new (string Name, Action Run)[]
     ("Twemoji Emoji 17 fallback segmentation", SegmentsEmoji17Fallback),
     ("native Windows device registration", BuildsWindowsDeviceRegistration),
     ("late snapshot keeps live rows", MergeSnapshotKeepsLiveRows),
+    ("snapshot rejects rows from another chat", MergeSnapshotRejectsOtherChats),
+    ("snapshot confirms rapid pending rows one-to-one", MergeSnapshotConfirmsPendingOneToOne),
+    ("footer follows latest optimistic send state", FooterFollowsLatestOptimisticSend),
+    ("Flutter-compatible link preview metadata", ParsesLinkPreviewMetadata),
     ("update check version compare", ComparesReleaseVersions),
     ("snapshot drops server-side deletes", MergeSnapshotDropsDeletedRows),
 };
@@ -233,6 +237,73 @@ static void MergeSnapshotDropsDeletedRows()
     var merged = MessageSemantics.MergeSnapshot([deleted, kept], [kept]);
     Equal(1, merged.Count);
     Equal("m1", merged[0].Id);
+}
+
+static void MergeSnapshotRejectsOtherChats()
+{
+    var previous = new Message("a1", "chat-a", "from A", "", false, MessageDeliveryState.Read, DateCreated: 3000);
+    var current = new Message("b1", "chat-b", "from B", "", false, MessageDeliveryState.Read, DateCreated: 2000);
+    var pendingFromPrevious = new Message("local-a", "chat-a", "pending A", "", true, MessageDeliveryState.Sending, DateCreated: 4000, IsPending: true);
+    var allowed = new HashSet<string>(["chat-b"], StringComparer.OrdinalIgnoreCase);
+
+    var merged = MessageSemantics.MergeSnapshot([previous, pendingFromPrevious], [current], allowed);
+
+    Equal(1, merged.Count);
+    Equal("chat-b", merged[0].ChatId);
+    Equal("b1", merged[0].Id);
+}
+
+static void MergeSnapshotConfirmsPendingOneToOne()
+{
+    var first = new Message("local-1", "chat", "same", "", true, MessageDeliveryState.Sending, DateCreated: 1000, IsPending: true, PresentationId: "row-1");
+    var second = new Message("local-2", "chat", "same", "", true, MessageDeliveryState.Sending, DateCreated: 1001, IsPending: true, PresentationId: "row-2");
+    var serverFirst = new Message("server-1", "chat", "same", "", true, MessageDeliveryState.Sent, DateCreated: 1000);
+    var serverSecond = new Message("server-2", "chat", "same", "", true, MessageDeliveryState.Sent, DateCreated: 1001);
+
+    var merged = MessageSemantics.MergeSnapshot([first, second], [serverFirst, serverSecond]);
+
+    Equal(2, merged.Count);
+    Equal("server-1,server-2", string.Join(',', merged.Select(row=>row.Id)));
+    Equal("row-1,row-2", string.Join(',', merged.Select(row=>row.PresentationKey)));
+    True(merged.All(row=>!row.IsPending&&row.DeliveryState==MessageDeliveryState.Sent));
+}
+
+static void FooterFollowsLatestOptimisticSend()
+{
+    var first = new Message("local-1", "chat", "one", "", true, MessageDeliveryState.Sending, DateCreated: 1000, IsPending: true, PresentationId: "row-1");
+    var second = new Message("local-2", "chat", "two", "", true, MessageDeliveryState.Sending, DateCreated: 1001, IsPending: true, PresentationId: "row-2");
+    var sending = ThreadPresentation.Build([first, second], false, "en").Where(row=>!row.IsSeparator).ToArray();
+    True(!sending[0].ShowFooter);
+    True(sending[1].ShowFooter);
+    Equal(MessageDeliveryState.Sending, sending[1].DeliveryState);
+
+    var sentUnconfirmed = second with { DeliveryState = MessageDeliveryState.Sent };
+    var awaitingMatch = ThreadPresentation.Build([first, sentUnconfirmed], false, "en").Where(row=>!row.IsSeparator).ToArray();
+    True(!awaitingMatch[0].ShowFooter);
+    True(awaitingMatch[1].ShowFooter);
+    Equal(MessageDeliveryState.Sent, awaitingMatch[1].DeliveryState);
+    Equal("row-2", awaitingMatch[1].PresentationKey);
+}
+
+static void ParsesLinkPreviewMetadata()
+{
+    var urls = LinkPreviewSemantics.UrlsInText("See www.example.com/story, now");
+    Equal(1, urls.Count);
+    Equal("https://www.example.com/story", urls[0]);
+
+    const string html = """
+        <html><head>
+        <meta content="Example Site" property="og:site_name">
+        <meta name="twitter:title" content="A &amp; B">
+        <meta property="og:description" content="Preview description">
+        <meta content="/images/card.jpg" property="og:image">
+        </head></html>
+        """;
+    var metadata = LinkPreviewSemantics.ParseHtml("https://example.com/posts/1", html);
+    Equal("A & B", metadata.Title!);
+    Equal("Preview description", metadata.Description!);
+    Equal("Example Site", metadata.SiteName!);
+    Equal("https://example.com/images/card.jpg", metadata.ImageUrl!);
 }
 
 // C74: the release check must never offer a downgrade, and must degrade to

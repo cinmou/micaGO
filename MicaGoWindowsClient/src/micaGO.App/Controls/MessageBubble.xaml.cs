@@ -39,10 +39,6 @@ public sealed partial class MessageBubble : UserControl
     // row and exposed the transparent canvas during rapid sends.
     // Reset by the shell whenever another chat is opened.
     private static readonly HashSet<string> RevealedInkKeys = [];
-    private static readonly Dictionary<string, string?> LinkTitleCache = [];
-    private static readonly HttpClient LinkHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
-    private static readonly Regex UrlRegex = new(
-        @"https?://[^\s<>""']+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>Raised when a reply preview is tapped; payload is the target message guid.</summary>
     public static event EventHandler<string>? ReplyJumpRequested;
@@ -316,8 +312,7 @@ public sealed partial class MessageBubble : UserControl
         }
         if (attachment.IsLinkPreview)
         {
-            return CreateCardTile("\uE71B", attachment.FileName, null,
-                onTap: () => LaunchUriAsync(attachment.FileName));
+            return new LinkPreviewCard(attachment.FileName, compact: true);
         }
         return CreateCardTile("\uE8A5", attachment.FileName, SizeLabel(attachment.Size),
             onTap: () => OpenFileAsync(attachment));
@@ -680,97 +675,17 @@ public sealed partial class MessageBubble : UserControl
         {
             return;
         }
-        var matches = UrlRegex.Matches(body);
-        if (matches.Count != 1)
+        var urls = LinkPreviewSemantics.UrlsInText(body);
+        if (urls.Count != 1)
         {
             return;
         }
-        var url = matches[0].Value.TrimEnd('.', ',', ')', ']', '。', '，');
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        var card = new LinkPreviewCard(urls[0])
         {
-            return;
-        }
-
-        var titleBlock = new TextBlock
-        {
-            Text = LinkTitleCache.GetValueOrDefault(url) ?? uri.Host,
-            FontSize = 13,
-            FontWeight = FontWeights.SemiBold,
-            MaxWidth = 250,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        };
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
-        text.Children.Add(titleBlock);
-        text.Children.Add(new TextBlock
-        {
-            Text = uri.Host,
-            FontSize = 11,
-            Foreground = ThemeBrush("TextFillColorSecondaryBrush"),
-        });
-        var layout = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        layout.Children.Add(new Border
-        {
-            Width = 36,
-            Height = 36,
-            CornerRadius = new CornerRadius(18),
-            Background = ThemeBrush("SubtleFillColorSecondaryBrush"),
-            Child = new FontIcon
-            {
-                Glyph = "\uE71B",
-                FontSize = 14,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
-        });
-        layout.Children.Add(text);
-        var card = new Border
-        {
-            MinWidth = 220,
-            MaxWidth = 320,
-            Padding = new Thickness(12, 10, 14, 10),
-            Background = ThemeBrush("CardBackgroundFillColorDefaultBrush"),
-            BorderBrush = ThemeBrush("MicaGoSubtleStrokeBrush"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(14),
             HorizontalAlignment = message.IsOutgoing ? HorizontalAlignment.Right : HorizontalAlignment.Left,
-            Child = layout,
         };
-        card.Tapped += async (_, _) => await LaunchUriAsync(url);
         LinkPreviewHost.Content = card;
         LinkPreviewHost.Visibility = Visibility.Visible;
-        if (!LinkTitleCache.ContainsKey(url))
-        {
-            _ = LoadLinkTitleAsync(message, url, titleBlock);
-        }
-    }
-
-    private async Task LoadLinkTitleAsync(Message message, string url, TextBlock titleBlock)
-    {
-        string? title = null;
-        try
-        {
-            var html = await LinkHttp.GetStringAsync(url);
-            var match = Regex.Match(html, @"<title[^>]*>\s*(.*?)\s*</title>",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            if (match.Success)
-            {
-                title = System.Net.WebUtility.HtmlDecode(match.Groups[1].Value).Trim();
-                if (title.Length > 120)
-                {
-                    title = title[..120];
-                }
-            }
-        }
-        catch { }
-        if (LinkTitleCache.Count > 200)
-        {
-            LinkTitleCache.Clear();
-        }
-        LinkTitleCache[url] = string.IsNullOrWhiteSpace(title) ? null : title;
-        if (title is { Length: > 0 } && _message?.PresentationKey == message.PresentationKey)
-        {
-            titleBlock.Text = title;
-        }
     }
 
     private static Timeline Animate(
@@ -817,10 +732,10 @@ public sealed partial class MessageBubble : UserControl
         var path = AppServices.Current.Media.TryGetPath(attachment.Id)
             ?? await AppServices.Current.Media.GetAsync(api, attachment.Id);
         var text = await File.ReadAllTextAsync(path);
-        var match = UrlRegex.Match(text);
-        if (match.Success)
+        var url = LinkPreviewSemantics.UrlsInText(text).FirstOrDefault();
+        if (url is not null)
         {
-            await LaunchUriAsync(match.Value);
+            await LaunchUriAsync(url);
         }
     }
 

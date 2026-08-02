@@ -1,0 +1,52 @@
+<UserControl
+    x:Class="MicaGo.App.Controls.LinkPreviewCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border x:Name="Card"
+            MinWidth="210"
+            MaxWidth="320"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Tapped="Card_Tapped">
+        <StackPanel>
+            <Border x:Name="ImageClip"
+                    HorizontalAlignment="Left"
+                    CornerRadius="11,11,0,0"
+                    Visibility="Collapsed">
+                <Image x:Name="PreviewImage"
+                       Width="320"
+                       Height="180"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Top"
+                       Stretch="Uniform"
+                       ImageOpened="PreviewImage_ImageOpened"
+                       ImageFailed="PreviewImage_ImageFailed" />
+            </Border>
+            <Grid x:Name="LoadingPanel" Height="50" Padding="10">
+                <ProgressRing Width="18" Height="18" HorizontalAlignment="Left" IsActive="True" />
+            </Grid>
+            <StackPanel x:Name="MetadataPanel" Padding="10" Spacing="4" Visibility="Collapsed">
+                <TextBlock x:Name="TitleText"
+                           FontSize="13"
+                           FontWeight="Bold"
+                           MaxLines="2"
+                           TextTrimming="CharacterEllipsis"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Name="DescriptionText"
+                           FontSize="11"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           MaxLines="3"
+                           TextTrimming="CharacterEllipsis"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Name="SiteText"
+                           Margin="0,1,0,0"
+                           FontSize="11"
+                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                           MaxLines="1"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

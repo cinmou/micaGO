@@ -320,6 +320,12 @@
                               SelectionMode="None"
                               Loaded="MessageList_Loaded"
                               RightTapped="MessageList_RightTapped">
+                        <!-- Recycled message containers must appear atomically. Native
+                             add/delete/reposition transitions flash the transparent
+                             canvas during rapid realtime updates and confirmations. -->
+                        <ListView.ItemContainerTransitions>
+                            <TransitionCollection />
+                        </ListView.ItemContainerTransitions>
                         <ListView.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <!-- Chat behavior: stay pinned to the newest

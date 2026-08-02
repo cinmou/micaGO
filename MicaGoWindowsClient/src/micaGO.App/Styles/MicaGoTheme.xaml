@@ -169,6 +169,14 @@
 
     <Style x:Key="MicaGoMessageListStyle" TargetType="ListViewItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <!-- A same-key message confirmation is delivered as a collection Replace.
+             Disable the presenter's default content transition so WinUI does not
+             expose a blank/white row between the old and new immutable records. -->
+        <Setter Property="ContentTransitions">
+            <Setter.Value>
+                <TransitionCollection />
+            </Setter.Value>
+        </Setter>
         <Setter Property="Padding" Value="0" />
         <Setter Property="Margin" Value="0" />
         <Setter Property="MinHeight" Value="0" />
