@@ -128,6 +128,30 @@ Three components:
   quality and incapable ones self-heal. **Requires rebuilding the bundled
   backend.**
 
+## Settings connection actions + KGP warning finding (C76, client-only)
+
+- **"编辑连接" 和 "断开连接" 撞车.** Two equal-looking `OutlinedButton`s sat side
+  by side: one opened the connection page (reversible), the other ran
+  `signOut()` — which wipes the saved server, the **token**, and the whole
+  local message cache — then landed on the same page. The label
+  ("Disconnect") badly understated that. Now: the bottom row has ONE
+  destructive action, `settings.unpair` ("解除配对并清除数据"), styled with
+  `scheme.error`; its dialog spells out all three consequences and confirms
+  through a red button (`SettingsDialogActionRow(destructive: true)`).
+  Editing moved into the connection card itself (`_RouteSwitcher.onEdit` row),
+  which was already the entry point when unpaired — so there is exactly one
+  edit entry. Dead `settings.disconnect*` keys removed ×3 locales.
+- **KGP build warning — upstream, not fixable here.** Verified by resolving
+  every flagged plugin at its newest version and grepping its
+  `android/build.gradle` for `kotlin-android`: audio_session 0.2.4,
+  device_info_plus 13.2.0, dynamic_color 1.8.1, mobile_scanner 7.4.0,
+  photo_manager 3.11.0 and share_plus 13.3.0 **all still apply KGP**; only
+  record_android 2.1.2 has migrated. A 62-package major upgrade was tried and
+  **reverted** — it would not remove the warning and carries real API-break
+  risk. `android.builtInKotlin=false` is already set (the Flutter template's
+  opt-out), so builds keep working; the warning clears itself when the
+  plugin authors migrate.
+
 ## Connection-UI consolidation + notification/composer/LAN fixes (C75, client-only)
 
 - **断链提醒整合.** Three surfaces used to compete (transient TopBanner, sticky

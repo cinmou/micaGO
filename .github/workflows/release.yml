@@ -17,6 +17,11 @@
 #   APPLE_TEAM_ID         10-char team id
 #   APPLE_APP_PASSWORD    app-specific password (appleid.apple.com -> Sign-In & Security)
 #   SPARKLE_PRIVATE_KEY    Sparkle EdDSA private key exported by generate_keys -x
+# Android release signing is required. Add these repository secrets:
+#   ANDROID_KEYSTORE_BASE64    base64-encoded PKCS12/JKS release keystore
+#   ANDROID_KEYSTORE_PASSWORD  keystore password
+#   ANDROID_KEY_ALIAS          key alias
+#   ANDROID_KEY_PASSWORD       private-key password
 #
 # The version comes from MicaGoFlutterClient/pubspec.yaml; a tag build fails
 # early if the tag doesn't match it (prevents shipping a stale version).
@@ -68,6 +73,11 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -81,6 +91,22 @@ jobs:
       - name: Pub get
         working-directory: MicaGoFlutterClient
         run: flutter pub get
+      - name: Configure release signing
+        run: |
+          for value in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!value}" ]; then
+              echo "::error::$value is required for Android release signing"
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/micago-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          printf '%s\n' \
+            "storeFile=$KEYSTORE_PATH" \
+            "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
+            "keyAlias=$ANDROID_KEY_ALIAS" \
+            "keyPassword=$ANDROID_KEY_PASSWORD" \
+            > MicaGoFlutterClient/android/key.properties
       - name: Analyze
         working-directory: MicaGoFlutterClient
         run: flutter analyze
