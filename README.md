@@ -41,16 +41,16 @@ project.
 
 ## Screenshots
 
-| Android | Android | Android |
+| Android |
 |:---:|:---:|:---:|
 | <img src="docs/assets/Android%201.png" alt="Android conversation list" width="240" /> | <img src="docs/assets/Android%202.png" alt="Android settings" width="240" /> | <img src="docs/assets/Android%203.png" alt="Android message thread" width="240" /> |
 
-| Tablet | Tablet |
+| Android Tablet |
 |:---:|:---:|
 | <img src="docs/assets/Pad%201.png" alt="Tablet split view" width="480" /> | <img src="docs/assets/Pad%202.png" alt="Tablet message thread" width="480" /> |
 | <img src="docs/assets/Pad%203.png" alt="Tablet settings" width="480" /> | |
 
-| Mac Companion | Mac Companion |
+| Mac Companion App |
 |:---:|:---:|
 | <img src="docs/assets/Companion1.png" alt="Mac Companion dashboard" width="480" /> | <img src="docs/assets/Companion2.png" alt="Mac Companion pairing" width="480" /> |
 | <img src="docs/assets/Companion3.png" alt="Mac Companion settings" width="480" /> | |
@@ -93,19 +93,19 @@ project.
 ## 🧩 How it works
 
 ```
-            ┌──────────────────────── your Mac ────────────────────────┐
+            ┌──────────────────────── your Mac ──────────────────────────┐
             │                                                            │
  Messages   │   chat.db ──► sync loop ──► relay.db ──► REST + WebSocket  │
- (iMessage) │      ▲                                        │           │
+ (iMessage) │      ▲                                         │           │
             │      │ AppleScript / optional IMCore helper    │           │
             │   ┌──┴───────────────┐                         │           │
             │   │  Mac Companion   │  runs & manages the server          │
             │   │  (menu‑bar app)  │                         │           │
             │   └──────────────────┘                         │           │
-            └────────────────────────────────────────────────┼──────────┘
-                                                              │
+            └────────────────────────────────────────────────┼───────────┘
+                                                             │
                          LAN (same Wi‑Fi)  ──or──  optional public URL (your tunnel)
-                                                              │
+                                                             │
                                                    ┌──────────▼──────────┐
                                                    │   Android client    │
                                                    │  (Flutter app)      │
