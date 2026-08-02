@@ -41,19 +41,23 @@ project.
 
 ## Screenshots
 
-| Android |
+### Android
+
+|  |  |  |
 |:---:|:---:|:---:|
 | <img src="docs/assets/Android%201.png" alt="Android conversation list" width="240" /> | <img src="docs/assets/Android%202.png" alt="Android settings" width="240" /> | <img src="docs/assets/Android%203.png" alt="Android message thread" width="240" /> |
 
-| Android Tablet |
-|:---:|:---:|
-| <img src="docs/assets/Pad%201.png" alt="Tablet split view" width="480" /> | <img src="docs/assets/Pad%202.png" alt="Tablet message thread" width="480" /> |
-| <img src="docs/assets/Pad%203.png" alt="Tablet settings" width="480" /> | |
+### Android Tablet
 
-| Mac Companion App |
-|:---:|:---:|
-| <img src="docs/assets/Companion1.png" alt="Mac Companion dashboard" width="480" /> | <img src="docs/assets/Companion2.png" alt="Mac Companion pairing" width="480" /> |
-| <img src="docs/assets/Companion3.png" alt="Mac Companion settings" width="480" /> | |
+|  |  |  |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Pad%201.png" alt="Tablet split view" width="320" /> | <img src="docs/assets/Pad%202.png" alt="Tablet message thread" width="320" /> | <img src="docs/assets/Pad%203.png" alt="Tablet settings" width="320" /> |
+
+### Mac Companion App
+
+|  |  |  |
+|:---:|:---:|:---:|
+| <img src="docs/assets/Companion1.png" alt="Mac Companion dashboard" width="320" /> | <img src="docs/assets/Companion2.png" alt="Mac Companion pairing" width="320" /> | <img src="docs/assets/Companion3.png" alt="Mac Companion settings" width="320" /> |
 
 ---
 
