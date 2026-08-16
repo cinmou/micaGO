@@ -88,6 +88,10 @@ Four components:
 
 ## Media loading skeleton — one-bubble placeholder → image (C69, client-only)
 
+- **Inline GIF playback:** `AttachmentModel.isAnimatedGif` recognizes MIME,
+  UTI, and `.gif`; `MediaCache.attachmentPreview` deliberately fetches original
+  GIF bytes under a separate `gif:v1` key so Flutter animates them in the
+  timeline. Do not route GIF rows back through the static PNG thumbnail endpoint.
 - Image, video, and sticker memory misses show one stable rounded
   `_MediaLoadingPlaceholder` with a kind-specific icon. `_MediaLoadSwap` keeps
   that placeholder behind a short media-only fade while `AnimatedSize` eases
