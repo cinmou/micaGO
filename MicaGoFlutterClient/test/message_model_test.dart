@@ -239,6 +239,29 @@ void main() {
       expect(a.displayKind, 'image_needs_preview');
     });
 
+    test('detects animated GIFs from MIME, UTI, and filename', () {
+      final attachments = [
+        AttachmentModel.fromJson({
+          'guid': 'gif-mime',
+          'mimeType': 'image/gif',
+          'downloadUrl': '/x',
+        }),
+        AttachmentModel.fromJson({
+          'guid': 'gif-uti',
+          'uti': 'com.compuserve.gif',
+          'downloadUrl': '/x',
+        }),
+        AttachmentModel.fromJson({
+          'guid': 'gif-name',
+          'transferName': 'reaction.GIF',
+          'downloadUrl': '/x',
+        }),
+      ];
+
+      expect(attachments.every((a) => a.isAnimatedGif), isTrue);
+      expect(attachments.every((a) => a.canRenderInlineImage), isTrue);
+    });
+
     test(
       'MOV poster preview remains a video with incomplete legacy metadata',
       () {

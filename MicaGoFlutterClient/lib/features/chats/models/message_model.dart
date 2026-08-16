@@ -105,6 +105,17 @@ class AttachmentModel {
       uti == 'public.tiff' ||
       displayName.toLowerCase().endsWith('.tif') ||
       displayName.toLowerCase().endsWith('.tiff');
+  bool get isAnimatedGif {
+    final mime = (mimeType ?? '').trim().toLowerCase();
+    final originalMime = (originalMimeType ?? '').trim().toLowerCase();
+    final lowerUti = (uti ?? '').trim().toLowerCase();
+    return mime == 'image/gif' ||
+        originalMime == 'image/gif' ||
+        lowerUti == 'public.gif' ||
+        lowerUti == 'com.compuserve.gif' ||
+        displayName.toLowerCase().endsWith('.gif');
+  }
+
   bool get isAudio =>
       attachmentKind == 'audio' || (mimeType?.startsWith('audio/') ?? false);
   bool get isVideo =>

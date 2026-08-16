@@ -157,6 +157,12 @@ class MediaCache {
   /// Bounded bytes used by message rows and media grids.
   Future<Uint8List> attachmentPreview(ApiClient api, AttachmentModel a) =>
       load(previewMediaKey(a), () {
+        // The bounded server preview is a PNG, which freezes GIFs on their
+        // first frame. Keep the original encoded GIF so Flutter's built-in
+        // multi-frame image codec can animate it directly in the timeline.
+        if (a.isAnimatedGif && !a.guid.startsWith('local-')) {
+          return api.getAttachmentBytes(a.guid);
+        }
         if (a.isStickerLike || a.guid.startsWith('local-')) {
           return api.getAttachmentPreviewBytes(a);
         }
@@ -175,6 +181,7 @@ class MediaCache {
 
   static String previewMediaKey(AttachmentModel attachment) {
     if (attachment.guid.startsWith('local-')) return attachment.guid;
+    if (attachment.isAnimatedGif) return 'gif:v1:${attachment.guid}';
     if (attachment.isStickerLike) {
       return 'sticker:v1:${attachment.previewUrl ?? attachment.guid}';
     }
@@ -182,7 +189,9 @@ class MediaCache {
   }
 
   static String displayMediaKey(AttachmentModel attachment) =>
-      'display:v1:${attachment.previewUrl ?? attachment.guid}';
+      attachment.isAnimatedGif
+      ? previewMediaKey(attachment)
+      : 'display:v1:${attachment.previewUrl ?? attachment.guid}';
 
   Future<void> _writeDisk(String key, Uint8List bytes) async {
     final file = _fileFor(key);

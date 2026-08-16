@@ -129,6 +129,42 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('GIF attachment loads original bytes for inline animation', (
+    tester,
+  ) async {
+    Uri? requestedUri;
+    final gifApi = ApiClient(
+      baseUrl: 'http://localhost:0',
+      token: 't',
+      httpClient: MockClient((request) async {
+        requestedUri = request.url;
+        return http.Response.bytes(_gif1x1, 200);
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AttachmentView(
+            api: gifApi,
+            attachment: _att(
+              guid: 'inline-gif-original',
+              kind: 'image',
+              mime: 'image/gif',
+              name: 'animation.gif',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(requestedUri?.path, '/api/attachments/inline-gif-original');
+    expect(requestedUri?.queryParameters.containsKey('thumbnail'), isFalse);
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('loading media never renders a second progress bubble', (
     tester,
   ) async {
@@ -560,4 +596,50 @@ const _png1x1 = <int>[
   0x42,
   0x60,
   0x82,
+];
+
+const _gif1x1 = <int>[
+  0x47,
+  0x49,
+  0x46,
+  0x38,
+  0x39,
+  0x61,
+  0x01,
+  0x00,
+  0x01,
+  0x00,
+  0x80,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0xFF,
+  0xFF,
+  0xFF,
+  0x21,
+  0xF9,
+  0x04,
+  0x01,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x2C,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x01,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+  0x02,
+  0x02,
+  0x44,
+  0x01,
+  0x00,
+  0x3B,
 ];
