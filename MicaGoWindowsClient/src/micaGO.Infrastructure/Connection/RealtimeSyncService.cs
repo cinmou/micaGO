@@ -4,6 +4,8 @@ using MicaGo.Infrastructure.Storage;
 
 namespace MicaGo.Infrastructure.Connection;
 
+public sealed record RealtimeMessageBatch(IReadOnlyList<Message> Messages, bool AllowNotifications);
+
 public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) : IAsyncDisposable
 {
     private const string CursorKey = "sync.cursor";
@@ -11,7 +13,7 @@ public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) :
     private readonly SemaphoreSlim _catchUpGate = new(1, 1);
     private Task? _loop;
 
-    public event EventHandler<IReadOnlyList<Message>>? MessagesChanged;
+    public event EventHandler<RealtimeMessageBatch>? MessagesChanged;
     public event EventHandler<string>? StatusChanged;
 
     public void Start()
@@ -19,7 +21,7 @@ public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) :
         if (_loop is null) _loop = Task.Run(() => RunAsync(_shutdown.Token));
     }
 
-    public async Task CatchUpAsync(CancellationToken cancellationToken = default)
+    public async Task CatchUpAsync(CancellationToken cancellationToken = default, bool allowNotifications = true)
     {
         await _catchUpGate.WaitAsync(cancellationToken);
         try
@@ -34,7 +36,7 @@ public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) :
                 if (delta.Messages.Count > 0)
                 {
                     await cache.UpsertMessagesAsync(delta.Messages, cancellationToken);
-                    MessagesChanged?.Invoke(this, delta.Messages);
+                    MessagesChanged?.Invoke(this, new RealtimeMessageBatch(delta.Messages, allowNotifications));
                 }
                 if (!delta.HasMore) break;
             } while (!cancellationToken.IsCancellationRequested);
@@ -45,12 +47,19 @@ public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) :
     private async Task RunAsync(CancellationToken cancellationToken)
     {
         var attempt = 0;
+        var completedInitialCatchUp = false;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
                 StatusChanged?.Invoke(this, "Catching up");
-                await CatchUpAsync(cancellationToken);
+                // The first delta pass can contain everything accumulated while
+                // the app was closed (or the complete history when no cursor is
+                // stored). Cache and render it, but never surface it as a new
+                // Windows notification. Reconnect catch-up after this point is
+                // eligible because those messages arrived during this run.
+                await CatchUpAsync(cancellationToken, completedInitialCatchUp);
+                completedInitialCatchUp = true;
                 StatusChanged?.Invoke(this, "Live");
                 attempt = 0;
                 await foreach (var realtimeEvent in api.ListenRealtimeAsync(cancellationToken))
@@ -63,7 +72,7 @@ public sealed class RealtimeSyncService(IMicaGoApi api, LocalCacheStore cache) :
                         // PresentationId on send:match is an in-memory tempGuid
                         // correlation key. Persist only server identity/content.
                         await cache.UpsertMessagesAsync([message with { PresentationId = null }], cancellationToken);
-                        MessagesChanged?.Invoke(this, [message]);
+                        MessagesChanged?.Invoke(this, new RealtimeMessageBatch([message], true));
                     }
                     await CatchUpAsync(cancellationToken);
                 }

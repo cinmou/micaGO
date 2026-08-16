@@ -99,7 +99,6 @@ public sealed class MainWindow : Window
     private async Task LoadPlatformSettingsAsync()
     {
         await AppServices.Current.Cache.InitializeAsync();
-        AppServices.Current.Notifications.Enabled = await AppServices.Current.Cache.GetSettingAsync("settings.notifications") != "false";
         var language = await AppServices.Current.Cache.GetSettingAsync("settings.language");
         if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
         var theme = await AppServices.Current.Cache.GetSettingAsync("settings.theme");

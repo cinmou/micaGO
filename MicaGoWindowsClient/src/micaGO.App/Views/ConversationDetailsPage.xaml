@@ -110,6 +110,14 @@
                                        FontSize="11"
                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                        TextWrapping="Wrap" />
+                            <TextBlock x:Name="SendRouteLabel"
+                                       Margin="0,7,0,0"
+                                       Text="Send using"
+                                       Visibility="Collapsed" />
+                            <ComboBox x:Name="SendRoutePicker"
+                                      HorizontalAlignment="Stretch"
+                                      SelectionChanged="SendRoutePicker_SelectionChanged"
+                                      Visibility="Collapsed" />
                         </StackPanel>
                         <ToggleSwitch x:Name="MergeRoutesToggle"
                                       Grid.Column="2"

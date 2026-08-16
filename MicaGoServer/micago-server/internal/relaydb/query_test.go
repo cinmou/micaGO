@@ -136,6 +136,37 @@ func TestListChatMessagesAndExists(t *testing.T) {
 	}
 }
 
+func TestListMergedMessagesUsesStableRouteCursor(t *testing.T) {
+	db := openTestDB(t)
+	if _, err := db.sqlDB.Exec(`
+INSERT INTO chats (guid, chat_identifier, service_name, is_archived, updated_at) VALUES
+('route-a', 'a@example.com', 'iMessage', 0, 4000),
+('route-b', '+15550100', 'iMessage', 0, 3000);
+INSERT INTO messages (guid, chat_guid, source_rowid, text, service, date_created, is_from_me, is_read, is_delivered, created_at) VALUES
+('m1', 'route-a', 1, 'one',   'iMessage', 1000, 0, 1, 1, 1000),
+('m2', 'route-b', 2, 'two',   'iMessage', 2000, 0, 1, 1, 2000),
+('m3', 'route-a', 3, 'three', 'iMessage', 3000, 0, 1, 1, 3000),
+('m4', 'route-b', 4, 'four',  'iMessage', 4000, 0, 1, 1, 4000);
+`); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	first, err := db.ListMergedMessages(ctx, []string{"route-a", "route-b"}, 2, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 2 || first[0].GUID != "m4" || first[1].GUID != "m3" {
+		t.Fatalf("first page = %#v", first)
+	}
+	second, err := db.ListMergedMessages(ctx, []string{"route-a", "route-b"}, 2, first[1].DateCreated, first[1].SourceRowID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 2 || second[0].GUID != "m2" || second[1].GUID != "m1" {
+		t.Fatalf("second page = %#v", second)
+	}
+}
+
 func TestFindOutgoingMessageMatch(t *testing.T) {
 	db := openTestDB(t)
 	seedRelayData(t, db)

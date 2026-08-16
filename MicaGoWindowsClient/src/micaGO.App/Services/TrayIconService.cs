@@ -27,6 +27,15 @@ public sealed class TrayIconService : IDisposable
     private const int ExitId = 2;
     private const int RecentBaseId = 100;
 
+    private enum PreferredAppMode
+    {
+        Default,
+        AllowDark,
+        ForceDark,
+        ForceLight,
+        Maximum
+    }
+
     private readonly WndProc _wndProc;
     private readonly string _className = $"micaGO.Tray.{Guid.NewGuid():N}";
     private readonly IntPtr _instance;
@@ -79,6 +88,7 @@ public sealed class TrayIconService : IDisposable
 
     private void ShowMenu()
     {
+        RefreshSystemMenuTheme();
         var menu = CreatePopupMenu();
         var recent = CreatePopupMenu();
         try
@@ -95,6 +105,23 @@ public sealed class TrayIconService : IDisposable
         finally
         {
             DestroyMenu(menu);
+        }
+    }
+
+    private static void RefreshSystemMenuTheme()
+    {
+        try
+        {
+            SetPreferredAppMode(PreferredAppMode.AllowDark);
+            FlushMenuThemes();
+        }
+        catch (DllNotFoundException)
+        {
+            // Older Windows versions keep the native light menu.
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // The dark-menu ordinals are unavailable on older Windows versions.
         }
     }
 
@@ -130,4 +157,6 @@ public sealed class TrayIconService : IDisposable
     [DllImport("user32.dll")] private static extern bool TrackPopupMenuEx(IntPtr menu,uint flags,int x,int y,IntPtr window,IntPtr parameters);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("uxtheme.dll", EntryPoint = "#135")] private static extern PreferredAppMode SetPreferredAppMode(PreferredAppMode appMode);
+    [DllImport("uxtheme.dll", EntryPoint = "#136")] private static extern void FlushMenuThemes();
 }

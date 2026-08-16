@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
 
 namespace MicaGo.Core.Models;
 
@@ -26,6 +27,8 @@ public sealed record ChatSummary : INotifyPropertyChanged
     private IReadOnlyList<string>? _routeIds;
     private bool _latestFromMe;
     private bool _hasUnread;
+    private string? _primaryRouteId;
+    private string? _contactId;
 
     public ChatSummary(
         string Id,
@@ -44,7 +47,9 @@ public sealed record ChatSummary : INotifyPropertyChanged
         string? AvatarPath = null,
         IReadOnlyList<string>? RouteIds = null,
         bool LatestFromMe = false,
-        bool HasUnread = false)
+        bool HasUnread = false,
+        string? PrimaryRouteId = null,
+        string? ContactId = null)
     {
         this.Id = Id;
         _title = Title;
@@ -63,6 +68,8 @@ public sealed record ChatSummary : INotifyPropertyChanged
         _routeIds = RouteIds;
         _latestFromMe = LatestFromMe;
         _hasUnread = HasUnread;
+        _primaryRouteId = PrimaryRouteId;
+        _contactId = ContactId;
     }
 
     // A record's generated copy constructor would also copy the
@@ -87,6 +94,8 @@ public sealed record ChatSummary : INotifyPropertyChanged
         _routeIds = source.RouteIds;
         _latestFromMe = source.LatestFromMe;
         _hasUnread = source.HasUnread;
+        _primaryRouteId = source._primaryRouteId;
+        _contactId = source._contactId;
     }
 
     public string Id { get; init; }
@@ -106,6 +115,26 @@ public sealed record ChatSummary : INotifyPropertyChanged
     public IReadOnlyList<string>? RouteIds { get => _routeIds; init => _routeIds = value; }
     public bool LatestFromMe { get => _latestFromMe; init => _latestFromMe = value; }
     public bool HasUnread { get => _hasUnread; init => _hasUnread = value; }
+    [JsonIgnore]
+    public string PrimaryRouteId { get => string.IsNullOrWhiteSpace(_primaryRouteId) ? Id : _primaryRouteId; init => _primaryRouteId = value; }
+    [JsonIgnore]
+    public string? ContactId { get => _contactId; init => _contactId = value; }
+
+    /// <summary>
+    /// Stable identity used only by the visible chat list. A merged contact may
+    /// switch its newest route without becoming a different list row.
+    /// </summary>
+    [JsonIgnore]
+    public string ListKey
+    {
+        get
+        {
+            if(!string.IsNullOrWhiteSpace(ContactId))return "contact:"+ContactId.ToUpperInvariant();
+            var routes = RouteIds is { Count: > 0 } ? RouteIds : [Id];
+            if (routes.Count == 1) return "route:" + routes[0].ToUpperInvariant();
+            return "routes:" + string.Join('\u001f', routes.Order(StringComparer.OrdinalIgnoreCase).Select(route => route.ToUpperInvariant()));
+        }
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -122,16 +151,27 @@ public sealed record ChatSummary : INotifyPropertyChanged
         Set(ref _isPinned, source.IsPinned, nameof(IsPinned));
         Set(ref _isGroup, source.IsGroup, nameof(IsGroup));
         Set(ref _updatedAt, source.UpdatedAt, nameof(UpdatedAt));
-        Set(ref _participants, source.Participants, nameof(Participants));
+        SetSequence(ref _participants, source.Participants, nameof(Participants));
         Set(ref _avatarPath, source.AvatarPath, nameof(AvatarPath));
-        Set(ref _routeIds, source.RouteIds, nameof(RouteIds));
+        SetSequence(ref _routeIds, source.RouteIds, nameof(RouteIds));
         Set(ref _latestFromMe, source.LatestFromMe, nameof(LatestFromMe));
         Set(ref _hasUnread, source.HasUnread, nameof(HasUnread));
+        Set(ref _primaryRouteId, source._primaryRouteId, nameof(PrimaryRouteId));
+        Set(ref _contactId, source._contactId, nameof(ContactId));
     }
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private void SetSequence(ref IReadOnlyList<string>? field, IReadOnlyList<string>? value, string propertyName)
+    {
+        if (ReferenceEquals(field, value)) return;
+        if (field is null && value is null) return;
+        if (field is not null && value is not null && field.SequenceEqual(value, StringComparer.OrdinalIgnoreCase)) return;
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }

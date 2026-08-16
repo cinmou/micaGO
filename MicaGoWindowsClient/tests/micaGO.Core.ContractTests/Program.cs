@@ -13,8 +13,11 @@ var tests = new (string Name, Action Run)[]
     ("attachment placeholder reconciliation", ReconcilesAttachmentPlaceholder),
     ("ambiguous attachment fallback", RefusesAmbiguousAttachmentFallback),
     ("stable presentation key", PreservesPresentationKey),
+    ("route-qualified message identity", KeepsRouteQualifiedMessagesDistinct),
     ("attachment preview normalization", NormalizesAttachmentPreviews),
     ("stable chat row notifications", UpdatesChatRowInPlace),
+    ("stable merged contact reorder", KeepsMergedContactRowStable),
+    ("stable message row notifications", UpdatesMessageRowInPlace),
     ("vCard folded and escaped contacts", ParsesVCardContacts),
     ("private and group presentation", PresentsPrivateAndGroupThreads),
     ("reaction and system merging", MergesReactionAndSystemRows),
@@ -160,8 +163,8 @@ static void UpdatesChatRowInPlace()
 
 static void ParsesVCardContacts()
 {
-    var cards=VcfContactImporter.Parse("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Doe\\, Jane\r\nEMAIL:jane@example.com\r\nTEL;TYPE=CELL:+1 555\r\n 0100\r\nPHOTO;ENCODING=b;TYPE=PNG:AQID\r\n BA==\r\nEND:VCARD\r\n");
-    Equal(1,cards.Count);Equal("Doe, Jane",cards[0].DisplayName);Equal("jane@example.com",cards[0].Identities[0]);Equal("+1 5550100",cards[0].Identities[1]);Equal("image/png",cards[0].PhotoMimeType!);Equal(4,cards[0].PhotoBytes!.Length);
+    var cards=VcfContactImporter.Parse("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:urn:uuid:11111111-2222-3333-4444-555555555555\r\nFN:Doe\\, Jane\r\nEMAIL:jane@example.com\r\nTEL;TYPE=CELL:+1 555\r\n 0100\r\nPHOTO;ENCODING=b;TYPE=PNG:AQID\r\n BA==\r\nEND:VCARD\r\n");
+    Equal(1,cards.Count);Equal("Doe, Jane",cards[0].DisplayName);Equal("jane@example.com",cards[0].Identities[0]);Equal("+1 5550100",cards[0].Identities[1]);Equal("image/png",cards[0].PhotoMimeType!);Equal(4,cards[0].PhotoBytes!.Length);Equal("11111111-2222-3333-4444-555555555555",cards[0].StableId!);
 }
 
 static void PresentsPrivateAndGroupThreads()
@@ -237,6 +240,68 @@ static void MergeSnapshotDropsDeletedRows()
     var merged = MessageSemantics.MergeSnapshot([deleted, kept], [kept]);
     Equal(1, merged.Count);
     Equal("m1", merged[0].Id);
+}
+
+static void KeepsRouteQualifiedMessagesDistinct()
+{
+    var left=new Message("shared","route-a","hello","",false,MessageDeliveryState.Read,DateCreated:1000,SourceRowId:1);
+    var right=new Message("shared","route-b","world","",false,MessageDeliveryState.Read,DateCreated:1001,SourceRowId:2);
+    var merged=MessageSemantics.MergeSnapshot([], [left,right]);
+    Equal(2,merged.Count);True(left.TimelineKey!=right.TimelineKey);
+    var pending=new Message("local","route-a","same","",true,MessageDeliveryState.Sending,DateCreated:2000,IsPending:true);
+    var confirmation=new Message("server","route-b","same","",true,MessageDeliveryState.Sent,DateCreated:2001);
+    True(!MessageSemantics.ShouldReconcile(pending,confirmation));
+}
+
+static void KeepsMergedContactRowStable()
+{
+    var row = new ChatSummary("route-a", "Jane", "old", "1m", 0, "J", UpdatedAt: 100, RouteIds: ["route-a", "route-b"], PrimaryRouteId: "route-a", ContactId:"contact-jane");
+    var refreshed = new ChatSummary("route-b", "Jane Renamed", "new", "now", 0, "J", UpdatedAt: 200, RouteIds: ["route-b", "route-a", "route-c"], PrimaryRouteId: "route-b", ContactId:"contact-jane");
+    Equal(row.ListKey, refreshed.ListKey);
+    row.UpdateFrom(refreshed);
+    Equal("route-a", row.Id);
+    Equal("route-b", row.PrimaryRouteId);
+    Equal("new", row.Preview);Equal("Jane Renamed",row.Title);
+    var json = System.Text.Json.JsonSerializer.Serialize(row);
+    True(!json.Contains("ListKey", StringComparison.Ordinal));
+    True(System.Text.Json.JsonSerializer.Deserialize<ChatSummary>(json) is not null);
+
+    var other = new ChatSummary("route-c", "Alex", "hello", "2m", 0, "A", UpdatedAt: 150);
+    var rows = new ChatListCollection { other, row };
+    var moveCount = 0;
+    var resetOrReplace = 0;
+    ChatListMutationEventArgs? mutation = null;
+    rows.CollectionChanged += (_, args) =>
+    {
+        if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Move) moveCount++;
+        if (args.Action is System.Collections.Specialized.NotifyCollectionChangedAction.Reset or System.Collections.Specialized.NotifyCollectionChangedAction.Replace) resetOrReplace++;
+    };
+    rows.Mutated += (_, args) => mutation = args;
+    rows.Apply([row, other], true);
+
+    True(ReferenceEquals(row, rows[0]));
+    Equal(1, moveCount);
+    Equal(0, resetOrReplace);
+    Equal(1, mutation?.Moves.Count ?? 0);
+    True(mutation?.Animate == true);
+}
+
+static void UpdatesMessageRowInPlace()
+{
+    var pending=new Message("local-1","chat","hello","",true,MessageDeliveryState.Sending,DateCreated:1000,IsPending:true,PresentationId:"row-1");
+    var row=new MessageRow(pending,MessageEntranceKind.LocalSend);
+    var changes=0;
+    row.PropertyChanged+=(_,args)=>{if(args.PropertyName==nameof(MessageRow.Value))changes++;};
+    True(row.Update(pending with{DeliveryState=MessageDeliveryState.Sent}));
+    Equal("row-1",row.PresentationKey);
+    Equal(MessageDeliveryState.Sent,row.Value.DeliveryState);
+    Equal(1,changes);
+    True(!row.Update(row.Value));
+    Equal(1,changes);
+    True(row.TryConsumeEntrance(out var entrance));
+    Equal(MessageEntranceKind.LocalSend,entrance);
+    True(!row.TryConsumeEntrance(out entrance));
+    Equal(MessageEntranceKind.None,entrance);
 }
 
 static void MergeSnapshotRejectsOtherChats()

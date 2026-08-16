@@ -17,6 +17,7 @@ func NewRouter(h *Handlers, hub *realtime.Hub, auth AuthConfig) http.Handler {
 	mux.Handle("POST /api/server/public-url/check", auth.Wrap(http.HandlerFunc(h.CheckPublicURL)))
 	mux.Handle("POST /api/auth/check", auth.Wrap(http.HandlerFunc(h.CheckAuth)))
 	mux.Handle("GET /api/messages/recent", auth.Wrap(http.HandlerFunc(h.GetRecentMessages)))
+	mux.Handle("GET /api/messages/history", auth.Wrap(http.HandlerFunc(h.GetMergedMessageHistory)))
 	mux.Handle("GET /api/messages/delta", auth.Wrap(http.HandlerFunc(h.GetMessagesDelta)))
 	mux.Handle("GET /api/messages/actions/capabilities", auth.Wrap(http.HandlerFunc(h.GetMessageActionCapabilities)))
 	mux.Handle("POST /api/messages/actions/refresh", auth.Wrap(http.HandlerFunc(h.RefreshMessageActionCapabilities)))

@@ -42,6 +42,7 @@ public partial class App : Application
         try
         {
             await AppServices.Current.Cache.InitializeAsync();
+            await LoadNotificationPreferencesAsync();
             AppServices.Current.Notifications.ChatActivated += OnNotificationChatActivated;
             AppServices.Current.Notifications.Register();
             if (await AppServices.Current.Cache.GetSettingAsync("settings.tray") == "true") await SetTrayEnabledAsync(true);
@@ -59,6 +60,16 @@ public partial class App : Application
             WriteStartupFailure(exception);
             ShowConnectionWindow();
         }
+    }
+
+    private static async Task LoadNotificationPreferencesAsync()
+    {
+        var services = AppServices.Current;
+        services.Notifications.Enabled = await services.Cache.GetSettingAsync("settings.notifications") != "false";
+        services.Notifications.ShowMessageText = await services.Cache.GetSettingAsync("settings.notificationPreview") != "false";
+        var language = await services.Cache.GetSettingAsync("settings.language");
+        if (!string.IsNullOrWhiteSpace(language)) services.Localization.SetLanguage(language);
+        services.Notifications.HiddenBodyText = services.Localization["newMessage"];
     }
 
     private static void OnNotificationChatActivated(object? sender, string chatId)

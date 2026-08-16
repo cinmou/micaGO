@@ -1,6 +1,10 @@
+using System.Collections.Specialized;
 using System.Globalization;
+using System.Numerics;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Media;
@@ -10,13 +14,24 @@ using Microsoft.UI.Xaml.Navigation;
 using MicaGo.App.Services;
 using MicaGo.App.ViewModels;
 using MicaGo.Core.Models;
+using System.Runtime.InteropServices;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Graphics.Imaging;
+using Windows.Storage;
+using Windows.Storage.Streams;
 using Windows.System;
 using Windows.UI.Core;
+using Windows.UI.ViewManagement;
+using Windows.UI.ViewManagement.Core;
 
 namespace MicaGo.App.Views;
 
 public sealed partial class ShellPage : Page
 {
+    private const uint InputKeyboard = 1;
+    private const uint KeyEventKeyUp = 0x0002;
+    private const ushort VirtualKeyLeftWindows = 0x5B;
+    private const ushort VirtualKeyOemPeriod = 0xBE;
     private const string SidebarWidthRatioKey = "settings.sidebarWidthRatio";
     private const double MinimumDetailWidth = 380;
     private ShellViewModel? _viewModel;
@@ -32,6 +47,8 @@ public sealed partial class ShellPage : Page
     private readonly DispatcherTimer _voiceTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private DateTimeOffset _voiceStartedAt;
     private bool _selectMode;
+    private readonly List<(MessageRow Row,MessageEntranceKind Kind)> _pendingMessageEntrances=[];
+    private bool _messageEntranceDrainScheduled;
 
     public ShellPage()
     {
@@ -79,6 +96,9 @@ public sealed partial class ShellPage : Page
         }
         _viewModel = new ShellViewModel(DispatcherQueue, api, AppServices.Current);
         _viewModel.StateChanged += ViewModel_StateChanged;
+        _viewModel.RealtimeChanged += ViewModel_RealtimeChanged;
+        _viewModel.Chats.Mutated += ChatRows_Mutated;
+        _viewModel.Messages.CollectionChanged += Messages_CollectionChanged;
         ChatList.ItemsSource = _viewModel.Chats;
         MessageList.ItemsSource = _viewModel.Messages;
         ConnectionStatusText.Text = $"Connected · {api.BaseUrl}";
@@ -98,8 +118,9 @@ public sealed partial class ShellPage : Page
         SearchBox.PlaceholderText=l["search"]; Composer.PlaceholderText=l["message"];
         ThreadTitle.Text=l["selectConversation"]; ThreadSubtitle.Text=l["localOnly"]; EmptyStateText.Text=l["chooseConversation"];
         SettingsSidebarTitle.Text=l["settings"]; GeneralSettingsLabel.Text=l["general"]; AppearanceSettingsLabel.Text=l["appearance"];
-        ContactSettingsLabel.Text=l["contacts"]; StorageSettingsLabel.Text=l["cache"]; AboutSettingsLabel.Text=l["about"];
+        ContactSettingsLabel.Text=l["notifications"]; StorageSettingsLabel.Text=l["data"]; AboutSettingsLabel.Text=l["about"];
         ToolTipService.SetToolTip(AttachButton,l["attach"]); ToolTipService.SetToolTip(SendButton,l["send"]);
+        ToolTipService.SetToolTip(EmojiButton,l["emoji"]);
         ToolTipService.SetToolTip(SidebarSettingsButton,l["settings"]);
         ToolTipService.SetToolTip(ThreadDetailsButton,l["details"]);
         ToolTipService.SetToolTip(VoiceButton,l["voiceMessage"]);
@@ -115,6 +136,12 @@ public sealed partial class ShellPage : Page
         ConnectionStatusText.Text = $"{_viewModel.SyncStatus} · {AppServices.Current.Connection.Api?.BaseUrl}";
         OlderMessagesProgress.IsActive=_viewModel.IsLoadingOlder;
         OlderMessagesProgress.Visibility=_viewModel.IsLoadingOlder?Visibility.Visible:Visibility.Collapsed;
+        UpdateThreadSubtitle();
+        UpdateTrayContacts();
+    }
+
+    private void ViewModel_RealtimeChanged(object? sender,EventArgs e)
+    {
         UpdateThreadSubtitle();
         UpdateTrayContacts();
     }
@@ -189,7 +216,7 @@ public sealed partial class ShellPage : Page
             if(!wasSelected)return;
             ChatList.SelectedItem=null;
             if(_viewModel.Chats.FirstOrDefault() is{} next){ChatList.SelectedItem=next;await SelectChatAsync(next);return;}
-            EmptyState.Visibility=Visibility.Visible;Composer.IsEnabled=false;VoiceButton.IsEnabled=false;SendButton.IsEnabled=false;
+            EmptyState.Visibility=Visibility.Visible;Composer.IsEnabled=false;UpdateComposerActions();
         };
         menu.Items.Add(hide);menu.ShowAt(ChatList,e.GetPosition(ChatList));e.Handled=true;
     }
@@ -218,9 +245,9 @@ public sealed partial class ShellPage : Page
             await _viewModel.SelectChatAsync(chat);
             EmptyState.Visibility = Visibility.Collapsed;
             Composer.IsEnabled = chat.CanSendText;
-            VoiceButton.IsEnabled = chat.CanSendText;
+            EmojiButton.IsEnabled = chat.CanSendText;
             Composer.PlaceholderText = chat.CanSendText ? AppServices.Current.Localization["message"] : "—";
-            SendButton.IsEnabled = !string.IsNullOrWhiteSpace(Composer.Text);
+            UpdateComposerActions();
             UpdateThreadSubtitle();
             await ScrollToLastMessageAsync();
         }
@@ -266,6 +293,178 @@ public sealed partial class ShellPage : Page
         ShowSettingsSection(item.Tag?.ToString() ?? "general");
     }
 
+    private void ChatRows_Mutated(object? sender,ChatListMutationEventArgs e)
+    {
+#if DEBUG
+        System.Diagnostics.Debug.WriteLine($"[ChatList] move={e.Moves.Count} insert={e.Inserted} remove={e.Removed} rows={_viewModel?.Chats.Count??0}");
+#endif
+        if(!e.Animate||e.Inserted!=0||e.Removed!=0||e.Moves.Count!=1)return;
+        var move=e.Moves[0];
+        DispatcherQueue.TryEnqueue(async()=>await AnimateChatMoveAsync(move));
+    }
+
+    private async Task AnimateChatMoveAsync(ChatRowMove move)
+    {
+        await Task.Yield();
+        ChatList.UpdateLayout();
+        if(ChatList.ItemsPanelRoot is not ItemsStackPanel panel||move.NewIndex<0||move.NewIndex>=ChatList.Items.Count)return;
+        bool animationsEnabled;
+        try{animationsEnabled=new UISettings().AnimationsEnabled;}
+        catch{animationsEnabled=true;}
+        if(!animationsEnabled||!IsVisibleMove(move.OldIndex,move.NewIndex,panel))return;
+        if(ChatList.ContainerFromIndex(move.NewIndex) is not ListViewItem target||target.ActualHeight<=0)return;
+
+        var direction=move.NewIndex>move.OldIndex?1:-1;
+        var offset=(float)target.ActualHeight;
+        var start=Math.Max(Math.Min(move.NewIndex+1,move.OldIndex),panel.FirstCacheIndex);
+        var end=Math.Min(Math.Max(move.NewIndex,move.OldIndex+1),panel.LastCacheIndex+1);
+        var targetVisual=ElementCompositionPreview.GetElementVisual(target);
+        var compositor=targetVisual.Compositor;
+        var easing=compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f,0.9f),new Vector2(0.2f,1f));
+        var duration=TimeSpan.FromMilliseconds(167);
+
+        var reveal=compositor.CreateScalarKeyFrameAnimation();
+        reveal.InsertKeyFrame(0,offset);
+        reveal.InsertKeyFrame(1,0,easing);
+        reveal.Duration=duration;
+        targetVisual.Clip??=compositor.CreateInsetClip();
+        targetVisual.Clip.StartAnimation("BottomInset",reveal);
+        if(direction>0)
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(target,true);
+            targetVisual.StartAnimation("Translation.Y",reveal);
+        }
+
+        for(var index=start;index<end;index++)
+        {
+            if(index==move.NewIndex||ChatList.ContainerFromIndex(index) is not ListViewItem container)continue;
+            ElementCompositionPreview.SetIsTranslationEnabled(container,true);
+            var visual=ElementCompositionPreview.GetElementVisual(container);
+            var shift=compositor.CreateScalarKeyFrameAnimation();
+            shift.InsertKeyFrame(0,offset*direction);
+            shift.InsertKeyFrame(1,0,easing);
+            shift.Duration=duration;
+            visual.StartAnimation("Translation.Y",shift);
+        }
+    }
+
+    private static bool IsVisibleMove(int oldIndex,int newIndex,ItemsStackPanel panel)
+    {
+        if(oldIndex<0)return newIndex>=panel.FirstVisibleIndex&&newIndex<=panel.LastVisibleIndex;
+        if(newIndex<0)return oldIndex>=panel.FirstVisibleIndex&&oldIndex<=panel.LastVisibleIndex;
+        return oldIndex>=panel.FirstVisibleIndex||(newIndex>=panel.FirstVisibleIndex&&newIndex<=panel.LastVisibleIndex);
+    }
+
+    private void Messages_CollectionChanged(object? sender,NotifyCollectionChangedEventArgs e)
+    {
+        if(e.Action!=NotifyCollectionChangedAction.Add||e.NewItems is null)return;
+        foreach(var row in e.NewItems.OfType<MessageRow>())
+        {
+            if(row.TryConsumeEntrance(out var kind))_pendingMessageEntrances.Add((row,kind));
+        }
+        if(_pendingMessageEntrances.Count==0||_messageEntranceDrainScheduled)return;
+        _messageEntranceDrainScheduled=true;
+        DispatcherQueue.TryEnqueue(async()=>await AnimatePendingMessageEntrancesAsync());
+    }
+
+    private void MessageList_ContainerContentChanging(ListViewBase sender,ContainerContentChangingEventArgs args)
+    {
+        if(args.InRecycleQueue)
+        {
+            args.ItemContainer.Opacity=1;
+            return;
+        }
+        args.ItemContainer.Opacity=args.Item is MessageRow row&&_pendingMessageEntrances.Any(item=>ReferenceEquals(item.Row,row))?0:1;
+    }
+
+    private async Task AnimatePendingMessageEntrancesAsync()
+    {
+        _messageEntranceDrainScheduled=false;
+        var pending=_pendingMessageEntrances.ToArray();
+        _pendingMessageEntrances.Clear();
+        await Task.Yield();
+        MessageList.UpdateLayout();
+
+        var containers=pending
+            .Select(item=>(item.Row,item.Kind,Index:_viewModel?.Messages.IndexOf(item.Row)??-1,Container:MessageList.ContainerFromItem(item.Row) as ListViewItem))
+            .Where(item=>item.Index>=0&&item.Container is not null)
+            .ToArray();
+        if(containers.Length==0)return;
+
+        bool animationsEnabled;
+        try{animationsEnabled=new UISettings().AnimationsEnabled;}
+        catch{animationsEnabled=true;}
+        var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var actual=containers.Where(item=>!item.Row.Value.IsSeparator
+            && Math.Abs(now-item.Row.Value.DateCreated)<=TimeSpan.FromSeconds(15).TotalMilliseconds)
+            .ToArray();
+        var panel=MessageList.ItemsPanelRoot as ItemsStackPanel;
+        if(!animationsEnabled||panel is null||actual.Length==0)
+        {
+            foreach(var item in containers)item.Container!.Opacity=1;
+            return;
+        }
+
+        var first=actual.Min(item=>item.Index);
+        var last=actual.Max(item=>item.Index);
+        var appendedFrom=(_viewModel?.Messages.Count??0)-containers.Length;
+        var visible=first>=appendedFrom&&last>=panel.FirstVisibleIndex&&first<=panel.LastVisibleIndex;
+        if(!visible)
+        {
+            foreach(var item in containers)item.Container!.Opacity=1;
+            return;
+        }
+
+        var compositor=ElementCompositionPreview.GetElementVisual(actual[0].Container!).Compositor;
+        var easing=compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f,0.9f),new Vector2(0.2f,1f));
+        var duration=TimeSpan.FromMilliseconds(240);
+        var insertedHeight=(float)containers.Sum(item=>item.Container!.ActualHeight);
+
+        // Preserve the pre-insert visual position of rows pushed upward by an
+        // append, then settle them into the layout selected by KeepLastItemInView.
+        for(var index=Math.Max(0,panel.FirstVisibleIndex);index<first;index++)
+        {
+            if(MessageList.ContainerFromIndex(index) is not ListViewItem container)continue;
+            var element=container.ContentTemplateRoot as UIElement??container;
+            ElementCompositionPreview.SetIsTranslationEnabled(element,true);
+            var visual=ElementCompositionPreview.GetElementVisual(element);
+            var shift=compositor.CreateScalarKeyFrameAnimation();
+            shift.InsertKeyFrame(0,insertedHeight);
+            shift.InsertKeyFrame(1,0,easing);
+            shift.Duration=duration;
+            visual.StartAnimation("Translation.Y",shift);
+        }
+
+        foreach(var item in actual)
+        {
+            var container=item.Container!;
+            container.Opacity=1;
+            ElementCompositionPreview.SetIsTranslationEnabled(container,true);
+            var visual=ElementCompositionPreview.GetElementVisual(container);
+            visual.CenterPoint=new Vector3(item.Row.Value.IsOutgoing?(float)container.ActualWidth:0,(float)container.ActualHeight,0);
+
+            var rise=compositor.CreateScalarKeyFrameAnimation();
+            rise.InsertKeyFrame(0,item.Kind==MessageEntranceKind.LocalSend?10:7);
+            rise.InsertKeyFrame(1,0,easing);
+            rise.Duration=duration;
+            var fade=compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0,0);
+            fade.InsertKeyFrame(1,1,easing);
+            fade.Duration=TimeSpan.FromMilliseconds(190);
+            visual.StartAnimation("Translation.Y",rise);
+            visual.StartAnimation("Opacity",fade);
+
+            if(item.Kind==MessageEntranceKind.LocalSend)
+            {
+                var scale=compositor.CreateVector3KeyFrameAnimation();
+                scale.InsertKeyFrame(0,new Vector3(0.985f,0.985f,1));
+                scale.InsertKeyFrame(1,Vector3.One,easing);
+                scale.Duration=TimeSpan.FromMilliseconds(210);
+                visual.StartAnimation("Scale",scale);
+            }
+        }
+    }
+
     private void ShowSettingsSection(string section)
     {
         var context = new ShellNavigationContext(this, null, section);
@@ -277,10 +476,12 @@ public sealed partial class ShellPage : Page
         DetailFrame.Navigate(typeof(HiddenContactsPage),new ShellNavigationContext(this,null,"contacts"),ForwardTransition());
     }
 
+    public void OpenHiddenMessages()=>DetailFrame.Navigate(typeof(HiddenMessagesPage),new ShellNavigationContext(this,null,"data"),ForwardTransition());
+
     public void GoBackInDetail()
     {
         if(DetailFrame.CanGoBack)DetailFrame.GoBack(new SlideNavigationTransitionInfo{Effect=SlideNavigationTransitionEffect.FromLeft});
-        else ShowSettingsSection("contacts");
+        else ShowSettingsSection("data");
     }
 
     private void SidebarSettingsButton_Click(object sender, RoutedEventArgs e) => OpenSettings();
@@ -333,6 +534,9 @@ public sealed partial class ShellPage : Page
         {
             _viewModel = null;
             viewModel.StateChanged -= ViewModel_StateChanged;
+            viewModel.RealtimeChanged -= ViewModel_RealtimeChanged;
+            viewModel.Chats.Mutated -= ChatRows_Mutated;
+            viewModel.Messages.CollectionChanged -= Messages_CollectionChanged;
             await viewModel.DisposeAsync();
         }
     }
@@ -342,9 +546,9 @@ public sealed partial class ShellPage : Page
     {
         if (_viewModel is null) return;
         var row = _viewModel.Messages.FirstOrDefault(item =>
-            !item.IsSeparator
-            && (string.Equals(item.Id, target, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(ThreadPresentation.NormalizeTarget(item.Id), target, StringComparison.OrdinalIgnoreCase)));
+            !item.Value.IsSeparator
+            && (string.Equals(item.Value.Id, target, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ThreadPresentation.NormalizeTarget(item.Value.Id), target, StringComparison.OrdinalIgnoreCase)));
         if (row is null) return;
         MessageList.ScrollIntoView(row);
         await Task.Delay(140);
@@ -434,8 +638,11 @@ public sealed partial class ShellPage : Page
     }
 
     public int HiddenChatCount=>_viewModel?.HiddenChatCount??0;
+    public int HiddenMessageCount=>_viewModel?.HiddenMessageCount??0;
     public IReadOnlyList<ChatSummary> HiddenChats=>_viewModel?.HiddenChats??[];
     public async Task<int> RestoreHiddenChatsAsync(IEnumerable<string> chatIds)=>_viewModel is null?0:await _viewModel.RestoreHiddenChatsAsync(chatIds);
+    public Task<IReadOnlyList<Message>> GetHiddenMessagesAsync()=>_viewModel?.GetHiddenMessagesAsync()??Task.FromResult<IReadOnlyList<Message>>([]);
+    public async Task<int> RestoreHiddenMessagesAsync(IEnumerable<string> messageIds)=>_viewModel is null?0:await _viewModel.RestoreHiddenMessagesAsync(messageIds);
 
     private void ShowConversationPane()
     {
@@ -565,12 +772,167 @@ public sealed partial class ShellPage : Page
         var shift=(InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)&CoreVirtualKeyStates.Down)!=0;
         if(e.Key==VirtualKey.Enter&&!shift){e.Handled=true;await SendCurrentTextAsync();}
     }
-    private void Composer_TextChanged(object sender, TextChangedEventArgs e) => SendButton.IsEnabled = _viewModel?.SelectedChat is not null && !string.IsNullOrWhiteSpace(Composer.Text);
+    private void Composer_TextChanged(object sender, TextChangedEventArgs e) => UpdateComposerActions();
+
+    private async void Composer_Paste(object sender,TextControlPasteEventArgs e)
+    {
+        DataPackageView package;
+        try{package=Clipboard.GetContent();}
+        catch{return;}
+        var hasFiles=package.Contains(StandardDataFormats.StorageItems);
+        var hasBitmap=package.Contains(StandardDataFormats.Bitmap);
+        if(!hasFiles&&!hasBitmap)return;
+
+        // Match Unigram's paste boundary: attachment-shaped clipboard data is
+        // consumed here; ordinary text remains owned by the native TextBox.
+        e.Handled=true;
+        try
+        {
+            var paths=new List<string>();
+            if(hasFiles)
+            {
+                foreach(var file in (await package.GetStorageItemsAsync()).OfType<StorageFile>())
+                {
+                    if(!string.IsNullOrWhiteSpace(file.Path)){paths.Add(file.Path);continue;}
+                    var copied=await file.CopyAsync(ApplicationData.Current.TemporaryFolder,file.Name,NameCollisionOption.GenerateUniqueName);
+                    paths.Add(copied.Path);
+                }
+            }
+            if(paths.Count==0&&hasBitmap)
+            {
+                var bitmap=await package.GetBitmapAsync();
+                using var source=await bitmap.OpenReadAsync();
+                var decoder=await BitmapDecoder.CreateAsync(source);
+                var file=await ApplicationData.Current.TemporaryFolder.CreateFileAsync($"micaGO-paste-{Guid.NewGuid():N}.png",CreationCollisionOption.GenerateUniqueName);
+                using var destination=await file.OpenAsync(FileAccessMode.ReadWrite);
+                var encoder=await BitmapEncoder.CreateForTranscodingAsync(destination,decoder);
+                await encoder.FlushAsync();
+                paths.Add(file.Path);
+            }
+            if(paths.Count==0)return;
+            await SendComposerAttachmentsAsync(paths);
+        }
+        catch(Exception exception)
+        {
+            ConnectionStatusText.Text=$"Could not paste attachment: {exception.Message}";
+        }
+    }
+
+    private async Task SendComposerAttachmentsAsync(IReadOnlyList<string> paths)
+    {
+        if(_viewModel?.SelectedChat is null||paths.Count==0)return;
+        _keepingMessageBottom=true;
+        try
+        {
+            await _viewModel.SendAttachmentsAsync(paths);
+            UpdateThreadSubtitle();
+        }
+        finally{_keepingMessageBottom=false;}
+    }
+
+    private void UpdateComposerActions()
+    {
+        var canSend = _viewModel?.SelectedChat?.CanSendText == true;
+        var hasText = !string.IsNullOrWhiteSpace(Composer.Text);
+        SendButton.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
+        VoiceButton.Visibility = hasText ? Visibility.Collapsed : Visibility.Visible;
+        SendButton.IsEnabled = canSend && hasText;
+        VoiceButton.IsEnabled = canSend;
+        EmojiButton.IsEnabled = canSend;
+    }
+
+    private void EmojiButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!Composer.IsEnabled) return;
+        Composer.Focus(FocusState.Programmatic);
+        var shown = false;
+        try
+        {
+            shown = CoreInputView.GetForCurrentView().TryShow(CoreInputViewKind.Emoji);
+        }
+        catch
+        {
+            // WinUI desktop sessions do not always expose a CoreInputView.
+        }
+        if (!shown) ShowSystemEmojiShortcut();
+    }
+
+    private static void ShowSystemEmojiShortcut()
+    {
+        var inputs = new[]
+        {
+            KeyboardInput(VirtualKeyLeftWindows, keyUp: false),
+            KeyboardInput(VirtualKeyOemPeriod, keyUp: false),
+            KeyboardInput(VirtualKeyOemPeriod, keyUp: true),
+            KeyboardInput(VirtualKeyLeftWindows, keyUp: true),
+        };
+        _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
+    }
+
+    private static Input KeyboardInput(ushort virtualKey, bool keyUp) => new()
+    {
+        Type = InputKeyboard,
+        Union = new InputUnion
+        {
+            Keyboard = new KeyboardInputData
+            {
+                VirtualKey = virtualKey,
+                Flags = keyUp ? KeyEventKeyUp : 0,
+            },
+        },
+    };
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Input
+    {
+        public uint Type;
+        public InputUnion Union;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)] public MouseInputData Mouse;
+        [FieldOffset(0)] public KeyboardInputData Keyboard;
+        [FieldOffset(0)] public HardwareInputData Hardware;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInputData
+    {
+        public int X;
+        public int Y;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public UIntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KeyboardInputData
+    {
+        public ushort VirtualKey;
+        public ushort ScanCode;
+        public uint Flags;
+        public uint Time;
+        public UIntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HardwareInputData
+    {
+        public uint Message;
+        public ushort ParameterLow;
+        public ushort ParameterHigh;
+    }
 
     private async Task SendCurrentTextAsync()
     {
         var text = Composer.Text.Trim(); if (_viewModel is null || string.IsNullOrEmpty(text)) return;
-        Composer.Text = string.Empty; SendButton.IsEnabled = false;
+        Composer.Text = string.Empty; UpdateComposerActions();
         _keepingMessageBottom = true;
         try
         {
@@ -593,18 +955,13 @@ public sealed partial class ShellPage : Page
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
         var files = await picker.PickMultipleFilesAsync();
         if (files.Count == 0) return;
-        _keepingMessageBottom = true;
-        try
-        {
-            await _viewModel.SendAttachmentsAsync(files.Select(file => file.Path));
-            UpdateThreadSubtitle();
-        }
-        finally { _keepingMessageBottom = false; }
+        await SendComposerAttachmentsAsync(files.Select(file=>file.Path).ToArray());
     }
 
     private async void MessageList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        if (_viewModel is null || (e.OriginalSource as FrameworkElement)?.DataContext is not Message message) return;
+        if (_viewModel is null || (e.OriginalSource as FrameworkElement)?.DataContext is not MessageRow row) return;
+        var message=row.Value;
         var menu = new MenuFlyout();
         if(message.IsPending && message.DeliveryState==MessageDeliveryState.Failed && message.Media.Count>0)
         {
@@ -686,7 +1043,11 @@ public sealed partial class ShellPage : Page
         ComposerBorder.Visibility = Visibility.Collapsed;
         VoiceBar.Visibility = Visibility.Collapsed;
         SelectionBar.Visibility = Visibility.Visible;
-        if (initial is not null) MessageList.SelectedItems.Add(initial);
+        if (initial is not null)
+        {
+            var row=_viewModel?.Messages.FirstOrDefault(item=>item.PresentationKey==initial.PresentationKey);
+            if(row is not null)MessageList.SelectedItems.Add(row);
+        }
         UpdateSelectionBar();
     }
 
@@ -706,7 +1067,7 @@ public sealed partial class ShellPage : Page
     }
 
     private IReadOnlyList<Message> SelectedMessages() =>
-        MessageList.SelectedItems.OfType<Message>()
+        MessageList.SelectedItems.OfType<MessageRow>().Select(row=>row.Value)
             .Where(message => !message.IsSeparator && !message.IsPresentationSystem)
             .OrderBy(message => message.DateCreated)
             .ToArray();
@@ -762,7 +1123,7 @@ public sealed partial class ShellPage : Page
     private void UpdateThreadSubtitle()
     {
         if (_viewModel?.SelectedChat is not { } chat) return;
-        var latestMessage = _viewModel.Messages.Where(message => !message.IsSeparator).Select(message => message.DateCreated).DefaultIfEmpty(0).Max();
+        var latestMessage = _viewModel.Messages.Select(row=>row.Value).Where(message => !message.IsSeparator).Select(message => message.DateCreated).DefaultIfEmpty(0).Max();
         ThreadSubtitle.Text = _viewModel.FormatActivityTimestamp(Math.Max(chat.UpdatedAt, latestMessage));
     }
 

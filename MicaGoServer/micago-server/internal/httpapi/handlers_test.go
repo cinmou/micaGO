@@ -63,6 +63,14 @@ func (s *stubQueries) ListChatMessages(_ context.Context, _ string, _ int, _ int
 	return filterStubRows(s.chatMessages, includeDebug), nil
 }
 
+func (s *stubQueries) ListMergedMessages(_ context.Context, _ []string, limit int, _ *int64, _ *int64, includeDebug bool) ([]store.MessageJSON, error) {
+	rows := filterStubRows(s.chatMessages, includeDebug)
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	return rows, nil
+}
+
 func (s *stubQueries) ListMessagesSince(_ context.Context, since int64, _ int) (relaydb.DeltaResult, error) {
 	return relaydb.DeltaResult{Messages: []store.MessageJSON{}, ChatGUIDs: []string{}, Cursor: since}, nil
 }
@@ -254,6 +262,33 @@ func TestGetChatMessagesFiltersDebugOnlyByDefault(t *testing.T) {
 	}
 	if len(resp2.Data) != 2 {
 		t.Fatalf("debug=true should include all rows, got %d", len(resp2.Data))
+	}
+}
+
+func TestGetMergedMessageHistoryReturnsOpaqueCursor(t *testing.T) {
+	date3, row3 := int64(3000), int64(3)
+	date2, row2 := int64(2000), int64(2)
+	routeA, routeB := "route-a", "route-b"
+	queries := &stubQueries{chatMessages: []store.MessageJSON{
+		{GUID: "m3", ChatGUID: &routeB, DateCreated: &date3, SourceRowID: &row3},
+		{GUID: "m2", ChatGUID: &routeA, DateCreated: &date2, SourceRowID: &row2},
+	}}
+	handlers := newTestHandlers(queries)
+	req := httptest.NewRequest(http.MethodGet, "/api/messages/history?chatGuid=route-a&chatGuid=route-b&limit=1", nil)
+	rec := httptest.NewRecorder()
+	handlers.GetMergedMessageHistory(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response store.MessageHistoryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Data) != 1 || response.Data[0].GUID != "m3" || !response.HasMore || response.NextCursor == "" {
+		t.Fatalf("unexpected history response: %+v", response)
+	}
+	if _, _, err := decodeHistoryCursor(response.NextCursor); err != nil {
+		t.Fatalf("cursor is not decodable: %v", err)
 	}
 }
 

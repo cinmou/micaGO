@@ -169,6 +169,7 @@ func (db *DB) Migrate() error {
 	// them. All IF NOT EXISTS — idempotent on every start.
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_messages_chat_date ON messages(chat_guid, date_created)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_chat_date_row ON messages(chat_guid, date_created DESC, source_rowid DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_source_rowid ON messages(source_rowid)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_date_created ON messages(date_created)`,
 		`CREATE INDEX IF NOT EXISTS idx_attachments_message_guid ON attachments(message_guid)`,

@@ -16,6 +16,8 @@ public sealed class SettingsBackupService(LocalCacheStore cache)
 {
     private const string ManifestName = "manifest.json";
     private const string SettingsName = "settings.json";
+    private const string HiddenMessagesName = "hidden-messages.json";
+    private const string HiddenChatsName = "hidden-chats.json";
     private const string BackgroundEntryPrefix = "assets/chat-background";
     private const string FormatId = "micagobak-win";
     private const int FormatVersion = 1;
@@ -45,6 +47,8 @@ public sealed class SettingsBackupService(LocalCacheStore cache)
                 };
                 await WriteEntryAsync(archive, ManifestName, JsonSerializer.Serialize(manifest), cancellationToken);
                 await WriteEntryAsync(archive, SettingsName, JsonSerializer.Serialize(settings), cancellationToken);
+                await WriteEntryAsync(archive,HiddenMessagesName,JsonSerializer.Serialize(await cache.GetHiddenMessageKeysAsync(cancellationToken)),cancellationToken);
+                await WriteEntryAsync(archive,HiddenChatsName,JsonSerializer.Serialize(await cache.GetHiddenChatGuidsAsync(cancellationToken)),cancellationToken);
                 if (hasBackground)
                 {
                     archive.CreateEntryFromFile(backgroundPath!, BackgroundEntryPrefix + Path.GetExtension(backgroundPath));
@@ -101,6 +105,10 @@ public sealed class SettingsBackupService(LocalCacheStore cache)
         {
             await cache.SetSettingAsync(key, value, cancellationToken);
         }
+        if(archive.GetEntry(HiddenMessagesName) is{} hiddenMessages)
+            await cache.HideMessagesAsync(JsonSerializer.Deserialize<string[]>(await ReadEntryAsync(hiddenMessages,cancellationToken))??[],cancellationToken);
+        if(archive.GetEntry(HiddenChatsName) is{} hiddenChats)
+            await cache.HideChatsAsync(JsonSerializer.Deserialize<string[]>(await ReadEntryAsync(hiddenChats,cancellationToken))??[],cancellationToken);
         return new BackupSummary(settings.Count, hasBackground, appVersion);
     }
 

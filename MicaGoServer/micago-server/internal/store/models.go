@@ -121,6 +121,12 @@ type MessageListResponse struct {
 	Meta ListMeta      `json:"meta"`
 }
 
+type MessageHistoryResponse struct {
+	Data       []MessageJSON `json:"data"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+	HasMore    bool          `json:"hasMore"`
+}
+
 type MessageRow struct {
 	ChatGUID            *string
 	SourceRowID         *int64

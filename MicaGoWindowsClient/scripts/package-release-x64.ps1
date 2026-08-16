@@ -19,7 +19,14 @@ if (-not (Test-Path (Join-Path $source "micaGO.App.exe"))) {
 }
 
 New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
-if (Test-Path $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+if (Test-Path $stage) {
+    try { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop }
+    catch {
+        # A user may be running the previous archive directly from this folder.
+        # Preserve that live instance and stage this package independently.
+        $stage = Join-Path $artifacts ("micaGO-release-x64-stage-" + [Guid]::NewGuid().ToString("N"))
+    }
+}
 New-Item -ItemType Directory -Path $stage | Out-Null
 
 # A previous RID publish can leave a self-contained win-x64 child folder under
@@ -49,6 +56,11 @@ Get-ChildItem -LiteralPath $stage -Directory | Where-Object {
 } | Remove-Item -Recurse -Force
 
 Get-ChildItem -LiteralPath $stage -Filter "*.pdb" -File | Remove-Item -Force
+
+$notificationRuntime = Join-Path $stage "Microsoft.WindowsAppRuntime.Insights.Resource.dll"
+if (-not (Test-Path -LiteralPath $notificationRuntime)) {
+    throw "Windows app-notification runtime resource is missing from the release stage."
+}
 
 $flagCount = (Get-ChildItem (Join-Path $stage "Assets\TwemojiFlags") -Filter "*.svg" -File).Count
 if ($flagCount -ne 266) { throw "Expected 266 Twemoji flag SVG assets, found $flagCount." }

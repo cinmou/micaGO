@@ -14,7 +14,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.2.1" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.2.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.2.0" GeneratePathProperty="true" />
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.1.0" />
   </ItemGroup>
   <ItemGroup>
@@ -29,4 +29,26 @@
     <Content Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\TWEMOJI-LICENSE-GRAPHICS.txt" Link="TWEMOJI-LICENSE-GRAPHICS.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- Windows App SDK 2.2 keeps this native notification dependency inside
+       its official framework MSIX, but the component NuGet references do not
+       copy it into unpackaged self-contained output. AppNotificationManager
+       reports IsSupported=true and then Register fails with 0x8007007E when
+       the DLL is absent, so extract the architecture-matched official asset. -->
+  <PropertyGroup>
+    <_AppRuntimeFrameworkMsix>$(PkgMicrosoft_WindowsAppSDK_Runtime)\tools\MSIX\win10-$(Platform)\Microsoft.WindowsAppRuntime.2.msix</_AppRuntimeFrameworkMsix>
+  </PropertyGroup>
+  <Target Name="ExtractAppNotificationRuntimeResource"
+          AfterTargets="Build"
+          Condition="'$(Platform)' == 'x64' Or '$(Platform)' == 'ARM64'">
+    <PropertyGroup>
+      <_AppRuntimeOutputDir>$([System.IO.Path]::GetFullPath('$(TargetDir).'))</_AppRuntimeOutputDir>
+      <_AppRuntimeInsightsDll>$(_AppRuntimeOutputDir)\Microsoft.WindowsAppRuntime.Insights.Resource.dll</_AppRuntimeInsightsDll>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_AppRuntimeFrameworkMsix)')"
+           Text="Windows App Runtime framework MSIX was not found: $(_AppRuntimeFrameworkMsix)" />
+    <Exec Command="tar.exe -xf &quot;$(_AppRuntimeFrameworkMsix)&quot; -C &quot;$(_AppRuntimeOutputDir)&quot; Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
+    <Error Condition="!Exists('$(_AppRuntimeInsightsDll)')"
+           Text="The Windows app-notification runtime resource was not extracted." />
+  </Target>
 </Project>

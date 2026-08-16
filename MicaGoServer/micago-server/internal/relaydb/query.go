@@ -435,6 +435,47 @@ LIMIT ? OFFSET ?;
 	return db.scanRelayMessagesWithAttachments(ctx, rows)
 }
 
+// ListMergedMessages returns one stable chronological window across several
+// real chat routes. The cursor is a (date_created, source_rowid) boundary, so
+// realtime inserts cannot shift a later page as they do with OFFSET.
+func (db *DB) ListMergedMessages(ctx context.Context, guids []string, limit int, beforeDate, beforeRowID *int64, includeDebug bool) ([]store.MessageJSON, error) {
+	if len(guids) == 0 || limit <= 0 {
+		return []store.MessageJSON{}, nil
+	}
+	settings, err := db.GetSyncSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	effectiveDebug := includeDebug || settings.IncludeDebugInNormal
+	chatPlaceholders := strings.TrimRight(strings.Repeat("?,", len(guids)), ",")
+	query := relayMessageSelect + `
+WHERE m.chat_guid IN (` + chatPlaceholders + `)
+  AND (? = 1 OR m.service IN (` + servicePlaceholders(settings) + `))
+  AND (? = 1 OR COALESCE(m.is_debug_only, 0) = 0)
+`
+	args := make([]any, 0, len(guids)+len(serviceArgs(settings))+5)
+	for _, guid := range guids {
+		args = append(args, guid)
+	}
+	args = append(args, boolToInt(includeDebug))
+	args = append(args, serviceArgs(settings)...)
+	args = append(args, boolToInt(effectiveDebug))
+	if beforeDate != nil && beforeRowID != nil {
+		query += `  AND (COALESCE(m.date_created, 0), COALESCE(m.source_rowid, 0)) < (?, ?)
+`
+		args = append(args, *beforeDate, *beforeRowID)
+	}
+	query += `ORDER BY COALESCE(m.date_created, 0) DESC, COALESCE(m.source_rowid, 0) DESC
+LIMIT ?;`
+	args = append(args, limit)
+	rows, err := db.sqlDB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return db.scanRelayMessagesWithAttachments(ctx, rows)
+}
+
 func (db *DB) FindOutgoingMessageMatch(ctx context.Context, guid string, normalizedText string, sentAtUnixMilli int64, excludedGUIDs map[string]struct{}) (*store.MessageJSON, error) {
 	rows, err := db.sqlDB.QueryContext(ctx, relayMessageSelect+`
 WHERE m.chat_guid = ?

@@ -59,7 +59,9 @@ public sealed partial class ConversationDetailsPage : Page
         PinToggle.IsOn = await IsEnabledAsync("chat.pinned.");
         await LoadRoutesCardAsync(l);
 
-        var messages = await AppServices.Current.Cache.GetMessagesAsync(_chat.Id, 500);
+        var routes = _chat.RouteIds is { Count: > 0 } ? _chat.RouteIds : [_chat.Id];
+        var messages = (await Task.WhenAll(routes.Select(route => AppServices.Current.Cache.GetMessagesAsync(route, 500))))
+            .SelectMany(page => page).OrderByDescending(message => message.DateCreated).ToArray();
         var items = messages
             .SelectMany(message => message.Media)
             .Where(item => (item.IsImage || item.IsVideo) && !item.IsStickerLike)
@@ -94,6 +96,7 @@ public sealed partial class ConversationDetailsPage : Page
     }
 
     private bool _loadingMergeToggle;
+    private bool _loadingSendRoute;
 
     /// <summary>
     /// Merged-view opt-out (Flutter C68 beta): a 1:1 contact whose messages
@@ -102,7 +105,7 @@ public sealed partial class ConversationDetailsPage : Page
     private async Task LoadRoutesCardAsync(Services.LocalizationService l)
     {
         if (_chat is null || _chat.IsGroup) return;
-        var mergeKey = "chat.mergeRoutes." + _chat.Title.Trim().ToLowerInvariant();
+        var mergeKey = "chat.mergeRoutes." + (_chat.ContactId ?? _chat.Id);
         var stored = await AppServices.Current.Cache.GetSettingAsync(mergeKey);
         var routes = _chat.RouteIds;
         RoutesHeader.Visibility = Visibility.Visible;
@@ -118,24 +121,43 @@ public sealed partial class ConversationDetailsPage : Page
         _loadingMergeToggle = true;
         MergeRoutesToggle.IsOn = stored != "0";
         _loadingMergeToggle = false;
+        if (routes is { Count: > 1 })
+        {
+            SendRouteLabel.Text=l["sendUsing"];
+            SendRouteLabel.Visibility=Visibility.Visible;
+            SendRoutePicker.Visibility=Visibility.Visible;
+            _loadingSendRoute=true;
+            foreach(var route in routes)SendRoutePicker.Items.Add(new ComboBoxItem{Content=route,Tag=route});
+            SendRoutePicker.SelectedIndex=Math.Max(0,routes.ToList().FindIndex(route=>route.Equals(_chat.PrimaryRouteId,StringComparison.OrdinalIgnoreCase)));
+            _loadingSendRoute=false;
+        }
     }
 
     private async void MergeRoutesToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loadingMergeToggle || _chat is null) return;
-        var mergeKey = "chat.mergeRoutes." + _chat.Title.Trim().ToLowerInvariant();
+        var mergeKey = "chat.mergeRoutes." + (_chat.ContactId ?? _chat.Id);
         await AppServices.Current.Cache.SetSettingAsync(mergeKey, MergeRoutesToggle.IsOn ? "1" : "0");
         if (_context is not null) await _context.Host.RefreshContactsAsync();
     }
 
+    private async void SendRoutePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if(_loadingSendRoute||_chat is null||SendRoutePicker.SelectedItem is not ComboBoxItem { Tag:string route })return;
+        await AppServices.Current.Cache.SetSettingAsync("chat.sendRoute."+(_chat.ContactId??_chat.Id),route);
+        if(_context is not null)await _context.Host.RefreshContactsAsync();
+    }
+
     private async Task<bool> IsEnabledAsync(string prefix) =>
-        string.Equals(await AppServices.Current.Cache.GetSettingAsync(prefix + _chat!.Id), "1", StringComparison.Ordinal);
+        string.Equals(await AppServices.Current.Cache.GetSettingAsync(prefix + PreferenceKey), "1", StringComparison.Ordinal);
+
+    private string PreferenceKey => string.IsNullOrWhiteSpace(_chat?.ContactId) ? _chat!.Id : "contact:" + _chat.ContactId.ToUpperInvariant();
 
     private async void MuteToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_chat is not null)
         {
-            await AppServices.Current.Cache.SetSettingAsync("chat.muted." + _chat.Id, MuteToggle.IsOn ? "1" : "0");
+            await AppServices.Current.Cache.SetSettingAsync("chat.muted." + PreferenceKey, MuteToggle.IsOn ? "1" : "0");
         }
     }
 
@@ -143,7 +165,7 @@ public sealed partial class ConversationDetailsPage : Page
     {
         if (_chat is not null)
         {
-            await AppServices.Current.Cache.SetSettingAsync("chat.pinned." + _chat.Id, PinToggle.IsOn ? "1" : "0");
+            await AppServices.Current.Cache.SetSettingAsync("chat.pinned." + PreferenceKey, PinToggle.IsOn ? "1" : "0");
         }
     }
 

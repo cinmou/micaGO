@@ -17,7 +17,8 @@
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99000000" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFF1F1F1" />
-            <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FFFFFFFF" />
+            <StaticResource x:Key="MicaGoComposerBrush"
+                            ResourceKey="MicaGoContactBarBrush" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
@@ -33,7 +34,8 @@
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99FFFFFF" />
             <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FF242426" />
-            <SolidColorBrush x:Key="MicaGoComposerBrush" Color="#FF252525" />
+            <StaticResource x:Key="MicaGoComposerBrush"
+                            ResourceKey="MicaGoContactBarBrush" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#16FFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
@@ -67,7 +69,7 @@
         <Setter Property="Width" Value="40" />
         <Setter Property="Height" Value="40" />
         <Setter Property="Margin" Value="4" />
-        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="CornerRadius" Value="20" />
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
     </Style>
 
@@ -128,9 +130,42 @@
         <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
     </Style>
 
-    <!-- Unigram-style chat rows: 8px rounded hover/selection surfaces plus the
-         accent selection pill on the left edge (native ListViewItemPresenter
-         selection indicator). -->
+    <!-- Settings uses the native WinUI row presenter and selection indicator. -->
+    <Style x:Key="MicaGoSettingsNavigationItemStyle" TargetType="ListViewItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="MinHeight" Value="44" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <ListViewItemPresenter
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                        ContentMargin="{TemplateBinding Padding}"
+                        CornerRadius="{TemplateBinding CornerRadius}"
+                        SelectionCheckMarkVisualEnabled="False"
+                        SelectionIndicatorVisualEnabled="True"
+                        SelectionIndicatorCornerRadius="{ThemeResource ListViewItemSelectionIndicatorCornerRadius}"
+                        SelectionIndicatorBrush="{ThemeResource ListViewItemSelectionIndicatorBrush}"
+                        SelectionIndicatorPointerOverBrush="{ThemeResource ListViewItemSelectionIndicatorPointerOverBrush}"
+                        SelectionIndicatorPressedBrush="{ThemeResource ListViewItemSelectionIndicatorPressedBrush}"
+                        SelectionIndicatorDisabledBrush="{ThemeResource ListViewItemSelectionIndicatorDisabledBrush}"
+                        PointerOverBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        PressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
+                        SelectedBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        SelectedPointerOverBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
+                        SelectedPressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Chat rows keep the WinUI presenter as the template root. WinUI requires
+         this exact hierarchy and owns its native selection-indicator animation. -->
     <Style x:Key="MicaGoChatListStyle" TargetType="ListViewItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -154,8 +189,11 @@
                         CheckMode="Overlay"
                         SelectionCheckMarkVisualEnabled="False"
                         SelectionIndicatorVisualEnabled="True"
-                        SelectionIndicatorMode="Inline"
-                        SelectionIndicatorBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                        SelectionIndicatorCornerRadius="{ThemeResource ListViewItemSelectionIndicatorCornerRadius}"
+                        SelectionIndicatorBrush="{ThemeResource ListViewItemSelectionIndicatorBrush}"
+                        SelectionIndicatorPointerOverBrush="{ThemeResource ListViewItemSelectionIndicatorPointerOverBrush}"
+                        SelectionIndicatorPressedBrush="{ThemeResource ListViewItemSelectionIndicatorPressedBrush}"
+                        SelectionIndicatorDisabledBrush="{ThemeResource ListViewItemSelectionIndicatorDisabledBrush}"
                         PointerOverBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
                         PressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
                         SelectedBackground="{ThemeResource SubtleFillColorSecondaryBrush}"

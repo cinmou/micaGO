@@ -22,29 +22,31 @@ public static class ThreadPresentation
 
     public static IReadOnlyList<Message> Build(IEnumerable<Message> source,bool isGroup,string language)
     {
-        var raw=source.Where(row=>!row.IsSeparator).OrderBy(row=>row.DateCreated).ToList();
-        var byId=raw.Where(row=>!row.IsReaction).GroupBy(row=>row.Id).ToDictionary(group=>group.Key,group=>group.Last());
-        var consumed=new HashSet<string>();
+        var raw=source.Where(row=>!row.IsSeparator)
+            .OrderBy(row=>row.DateCreated).ThenBy(row=>row.SourceRowId)
+            .ThenBy(row=>row.ChatId,StringComparer.OrdinalIgnoreCase).ThenBy(row=>row.Id,StringComparer.OrdinalIgnoreCase).ToList();
+        var byId=raw.Where(row=>!row.IsReaction).GroupBy(row=>(row.ChatId,row.Id)).ToDictionary(group=>group.Key,group=>group.Last());
+        var consumed=new HashSet<(string ChatId,string Id)>();
         foreach(var associated in raw.Where(row=>row.AssociatedMessageType>0&&!string.IsNullOrWhiteSpace(row.AssociatedMessageGuid)))
         {
-            var targetId=Target(associated.AssociatedMessageGuid);if(targetId is null||!byId.TryGetValue(targetId,out var target))continue;
+            var targetId=Target(associated.AssociatedMessageGuid);var targetKey=(associated.ChatId,targetId??string.Empty);if(targetId is null||!byId.TryGetValue(targetKey,out var target))continue;
             if(associated.AssociatedMessageType==1000&&associated.Media.Count>0)
             {
-                byId[targetId]=target with{Attachments=target.Media.Concat(associated.Media).DistinctBy(item=>item.Id).ToArray()};consumed.Add(associated.Id);continue;
+                byId[targetKey]=target with{Attachments=target.Media.Concat(associated.Media).DistinctBy(item=>item.Id).ToArray()};consumed.Add((associated.ChatId,associated.Id));continue;
             }
             var emoji=ReactionEmoji(associated.AssociatedMessageType);if(emoji is null)continue;
             var reactions=(target.Reactions??[]).ToList();if(associated.AssociatedMessageType>=3000)reactions.RemoveAll(value=>value==emoji);else if(!reactions.Contains(emoji))reactions.Add(emoji);
-            byId[targetId]=target with{Reactions=reactions};consumed.Add(associated.Id);
+            byId[targetKey]=target with{Reactions=reactions};consumed.Add((associated.ChatId,associated.Id));
         }
 
         var visible=new List<Message>();
         foreach(var original in raw)
         {
-            if(consumed.Contains(original.Id)||IsKeptAudioNotice(original)||IsInteractiveUpdate(original))continue;
-            var row=byId.GetValueOrDefault(original.Id,original);var system=IsSystem(row);
+            if(consumed.Contains((original.ChatId,original.Id))||IsKeptAudioNotice(original)||IsInteractiveUpdate(original))continue;
+            var row=byId.GetValueOrDefault((original.ChatId,original.Id),original);var system=IsSystem(row);
             if(!string.IsNullOrWhiteSpace(row.ReplyToGuid))
             {
-                var targetId=Target(row.ReplyToGuid);var preview=targetId is not null&&byId.TryGetValue(targetId,out var reply)?ReplyLabel(reply):"Original message unavailable";
+                var targetId=Target(row.ReplyToGuid);var preview=targetId is not null&&byId.TryGetValue((row.ChatId,targetId),out var reply)?ReplyLabel(reply):"Original message unavailable";
                 row=row with{ReplyPreview=preview};
             }
             if(system)row=row with{GroupTitle=SystemLabel(row),IsPresentationSystem=true};

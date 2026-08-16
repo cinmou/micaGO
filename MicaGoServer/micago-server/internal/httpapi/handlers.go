@@ -49,6 +49,7 @@ type queryService interface {
 	ChatExists(ctx context.Context, guid string) (bool, error)
 	GetChatInfo(ctx context.Context, guid string) (*store.ChatInfo, error)
 	ListChatMessages(ctx context.Context, guid string, limit, offset int, includeEmpty bool) ([]store.MessageJSON, error)
+	ListMergedMessages(ctx context.Context, guids []string, limit int, beforeDate, beforeRowID *int64, includeDebug bool) ([]store.MessageJSON, error)
 	ListMessagesSince(ctx context.Context, since int64, limit int) (relaydb.DeltaResult, error)
 	FindOutgoingMessageMatch(ctx context.Context, guid string, normalizedText string, sentAtUnixMilli int64, excludedGUIDs map[string]struct{}) (*store.MessageJSON, error)
 }

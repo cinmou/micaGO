@@ -6,7 +6,7 @@ public interface IMicaGoApi : IDisposable
 {
     string BaseUrl { get; }
     Task<IReadOnlyList<ChatSummary>> GetChatsAsync(CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<Message>> GetMessagesAsync(string chatId, int limit = 50, int offset = 0, CancellationToken cancellationToken = default);
+    Task<MessageHistoryPage> GetMessageHistoryAsync(IReadOnlyList<string> chatIds, int limit = 50, string? before = null, CancellationToken cancellationToken = default);
     Task<MessageDelta> GetMessagesDeltaAsync(long? since, int limit = 200, CancellationToken cancellationToken = default);
     Task<Message> SendTextAsync(string chatId, string text, string? tempId = null, CancellationToken cancellationToken = default);
     Task<AttachmentUploadResult> SendAttachmentAsync(string chatId, string tempId, string filePath, bool isAudioMessage = false, IProgress<double>? progress = null, CancellationToken cancellationToken = default);
@@ -17,6 +17,8 @@ public interface IMicaGoApi : IDisposable
     Task DeleteMessageAsync(string chatId, string messageId, CancellationToken cancellationToken = default);
     Task<bool> GetTestContactEnabledAsync(CancellationToken cancellationToken = default);
     Task SetTestContactEnabledAsync(bool enabled, CancellationToken cancellationToken = default);
+    Task<ServerSyncSettings> GetSyncSettingsAsync(CancellationToken cancellationToken = default);
+    Task<ServerSyncSettings> SetSyncSettingsAsync(ServerSyncSettings settings, CancellationToken cancellationToken = default);
     Task<string> RegisterDeviceAsync(DeviceRegistration registration, CancellationToken cancellationToken = default);
     Task HeartbeatDeviceAsync(string deviceId, CancellationToken cancellationToken = default);
     IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync(CancellationToken cancellationToken = default);

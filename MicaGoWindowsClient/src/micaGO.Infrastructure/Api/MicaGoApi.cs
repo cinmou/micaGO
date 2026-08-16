@@ -48,17 +48,21 @@ public sealed class MicaGoApi : IMicaGoApi
             .ToArray();
     }
 
-    public async Task<IReadOnlyList<Message>> GetMessagesAsync(string chatId, int limit = 50, int offset = 0, CancellationToken cancellationToken = default)
+    public async Task<MessageHistoryPage> GetMessageHistoryAsync(IReadOnlyList<string> chatIds, int limit = 50, string? before = null, CancellationToken cancellationToken = default)
     {
-        var encoded = Uri.EscapeDataString(chatId);
-        using var document = await GetJsonAsync($"api/chats/{encoded}/messages?limit={limit}&offset={offset}&includeEmpty=false", cancellationToken);
+        if (chatIds.Count == 0) return new MessageHistoryPage([], null, false);
+        var routes = string.Join('&', chatIds.Distinct(StringComparer.OrdinalIgnoreCase).Select(id => $"chatGuid={Uri.EscapeDataString(id)}"));
+        var cursor = string.IsNullOrWhiteSpace(before) ? string.Empty : $"&before={Uri.EscapeDataString(before)}";
+        using var document = await GetJsonAsync($"api/messages/history?{routes}&limit={limit}{cursor}", cancellationToken);
         if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
         {
-            throw new MicaGoApiException("The server returned an invalid message list.");
+            throw new MicaGoApiException("The server returned an invalid message history page.");
         }
-
-        return data.EnumerateArray().WhereObject().Select(element => MapMessage(element, chatId))
-            .Where(message => message.Id.Length > 0).Reverse().ToArray();
+        var messages = data.EnumerateArray().WhereObject()
+            .Select(element => MapMessage(element, GetString(element, "chatGuid") ?? string.Empty))
+            .Where(message => message.Id.Length > 0 && message.ChatId.Length > 0)
+            .Reverse().ToArray();
+        return new MessageHistoryPage(messages, GetString(document.RootElement, "nextCursor"), GetBoolean(document.RootElement, "hasMore") ?? false);
     }
 
     public async Task<MessageDelta> GetMessagesDeltaAsync(long? since, int limit = 200, CancellationToken cancellationToken = default)
@@ -144,6 +148,20 @@ public sealed class MicaGoApi : IMicaGoApi
 
     public Task SetTestContactEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
         SendActionAsync(HttpMethod.Put, "api/test-contact", new { enabled }, cancellationToken);
+
+    public async Task<ServerSyncSettings> GetSyncSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        using var document = await GetJsonAsync("api/sync/settings", cancellationToken);
+        return MapSyncSettings(document.RootElement);
+    }
+
+    public async Task<ServerSyncSettings> SetSyncSettingsAsync(ServerSyncSettings settings, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync("api/sync/settings", settings, cancellationToken);
+        using var document = await ReadJsonResponseAsync(response, cancellationToken);
+        var root = document.RootElement;
+        return MapSyncSettings(root.TryGetProperty("settings", out var nested) ? nested : root);
+    }
 
     public async Task<string> RegisterDeviceAsync(DeviceRegistration registration, CancellationToken cancellationToken = default)
     {
@@ -277,7 +295,7 @@ public sealed class MicaGoApi : IMicaGoApi
         var state = !isOutgoing ? MessageDeliveryState.Read : GetBoolean(json, "isRead") == true ? MessageDeliveryState.Read : GetBoolean(json, "isDelivered") == true ? MessageDeliveryState.Delivered : MessageDeliveryState.Sent;
         var attachments = MapAttachments(json);
         var handle = json.TryGetProperty("handle", out var handleJson) && handleJson.ValueKind == JsonValueKind.Object ? GetString(handleJson, "id") : null;
-        return new Message(GetString(json, "guid") ?? GetString(json, "tempGuid") ?? Guid.NewGuid().ToString("N"), GetString(json, "chatGuid") ?? chatId, GetString(json, "text") ?? string.Empty, FormatMessageTime(dateCreated), isOutgoing, state, isOutgoing ? null : handle, BuildAttachmentLabel(attachments), dateCreated, attachments, GetString(json, "associatedMessageGuid"), GetInt(json, "associatedMessageType") ?? 0, GetString(json, "threadOriginatorGuid"), GetString(json, "expressiveSendStyleId"), GetBoolean(json,"isEdited")==true||(GetLong(json, "dateEdited") ?? 0) > 0, Subject:GetString(json,"subject"), SemanticKind:GetString(json,"semanticKind"), RenderRecommendation:GetString(json,"renderRecommendation"), IsRetracted:GetBoolean(json,"isRetracted")==true||(GetLong(json,"dateRetracted")??0)>0, ItemType:GetInt(json,"itemType")??0, GroupActionType:GetInt(json,"groupActionType")??0, GroupTitle:GetString(json,"groupTitle"), BalloonBundleId:GetString(json,"balloonBundleId"), SenderIdentity:handle);
+        return new Message(GetString(json, "guid") ?? GetString(json, "tempGuid") ?? Guid.NewGuid().ToString("N"), GetString(json, "chatGuid") ?? chatId, GetString(json, "text") ?? string.Empty, FormatMessageTime(dateCreated), isOutgoing, state, isOutgoing ? null : handle, BuildAttachmentLabel(attachments), dateCreated, attachments, GetString(json, "associatedMessageGuid"), GetInt(json, "associatedMessageType") ?? 0, GetString(json, "threadOriginatorGuid"), GetString(json, "expressiveSendStyleId"), GetBoolean(json,"isEdited")==true||(GetLong(json, "dateEdited") ?? 0) > 0, Subject:GetString(json,"subject"), SemanticKind:GetString(json,"semanticKind"), RenderRecommendation:GetString(json,"renderRecommendation"), IsRetracted:GetBoolean(json,"isRetracted")==true||(GetLong(json,"dateRetracted")??0)>0, ItemType:GetInt(json,"itemType")??0, GroupActionType:GetInt(json,"groupActionType")??0, GroupTitle:GetString(json,"groupTitle"), BalloonBundleId:GetString(json,"balloonBundleId"), SenderIdentity:handle, SourceRowId:GetLong(json,"sourceRowId")??0);
     }
 
     private static IReadOnlyList<Attachment> MapAttachments(JsonElement message)
@@ -299,6 +317,16 @@ public sealed class MicaGoApi : IMicaGoApi
             GetString(row,"displayKind"),
             GetBoolean(row,"needsPreviewConversion")??false)).Where(item => item.Id.Length > 0).ToArray();
     }
+
+    private static ServerSyncSettings MapSyncSettings(JsonElement json) => new(
+        GetString(json, "backfillMode") ?? "hybrid",
+        GetInt(json, "recentMessagesPerChat") ?? 100,
+        GetBoolean(json, "includeIMessage") ?? true,
+        GetBoolean(json, "includeSMS") ?? true,
+        GetBoolean(json, "includeRCS") ?? true,
+        GetBoolean(json, "includeUnknown") ?? false,
+        GetBoolean(json, "includeDebugInNormal") ?? false,
+        GetBoolean(json, "allowSmsSend") ?? false);
 
     private static string? BuildAttachmentLabel(IReadOnlyList<Attachment> attachments) => attachments.Count == 0 ? null : attachments.Count > 1 ? $"{attachments[0].FileName} + {attachments.Count - 1} more" : attachments[0].FileName;
     private static string BuildGroupTitle(IReadOnlyList<string> participants) => participants.Count == 0 ? "Group Chat" : string.Join(", ", participants.Take(4));

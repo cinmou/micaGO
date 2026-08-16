@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using MicaGo.Core.Models;
 using MicaGo.Infrastructure.Storage;
 
 internal static class HiddenChatStoreTests
@@ -17,6 +18,13 @@ internal static class HiddenChatStoreTests
             True(restored==1,"selective restore returned the wrong count");
             hidden=await cache.GetHiddenChatGuidsAsync();
             True(hidden.SetEquals(["route-b"]),"selective restore changed the wrong route");
+            var message=new Message("message-a","route-b","hello","12:00",false,MessageDeliveryState.Read,DateCreated:1);
+            await cache.UpsertMessagesAsync([message]);await cache.HideMessagesAsync([message.Id]);
+            True((await cache.GetHiddenMessagesAsync()).Single().Id==message.Id,"hidden message row was not readable");
+            True(await cache.RestoreHiddenMessagesAsync([message.Id])==1,"hidden message restore returned the wrong count");
+            await cache.SetSettingAsync("settings.language","zh-Hans");await cache.HideChatsAsync(["route-c"]);await cache.ClearContentCacheAsync();
+            True(await cache.GetSettingAsync("settings.language")=="zh-Hans","content cache clear removed preferences");
+            True((await cache.GetHiddenChatGuidsAsync()).Contains("route-c"),"content cache clear removed hidden state");
         }
         finally
         {

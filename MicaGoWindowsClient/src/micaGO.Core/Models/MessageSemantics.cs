@@ -50,7 +50,8 @@ public static partial class MessageSemantics
 
     public static bool ShouldReconcile(Message local, Message server)
     {
-        if (!local.IsOutgoing || !server.IsOutgoing || string.IsNullOrWhiteSpace(server.Id)) return false;
+        if (!local.ChatId.Equals(server.ChatId, StringComparison.OrdinalIgnoreCase)
+            || !local.IsOutgoing || !server.IsOutgoing || string.IsNullOrWhiteSpace(server.Id)) return false;
         if (local.Id == server.Id) return true;
         if (local.DateCreated <= 0 || server.DateCreated <= 0) return false;
         var distance = Math.Abs(local.DateCreated - server.DateCreated);
@@ -79,10 +80,9 @@ public static partial class MessageSemantics
     /// <summary>
     /// C74: merges a freshly loaded snapshot into the rows already on screen.
     ///
-    /// Selecting a chat produces three snapshots in sequence (cache page, REST
-    /// page, cache re-read) while realtime frames append rows concurrently. A
-    /// wholesale replace let a late snapshot wipe messages that had just been
-    /// delivered live — they flickered in and vanished until the next event.
+    /// Cache-first selection and cursor history pages can complete while
+    /// realtime frames append rows. A wholesale replace would let a late page
+    /// wipe messages that had just been delivered live.
     ///
     /// Rules: snapshot rows win (they carry the newest server state, with the
     /// on-screen presentation identity carried across); local rows the snapshot
@@ -150,7 +150,11 @@ public static partial class MessageSemantics
             }
         }
 
-        return merged.OrderBy(row => row.DateCreated).ToList();
+        return merged.OrderBy(row => row.DateCreated)
+            .ThenBy(row => row.SourceRowId)
+            .ThenBy(row => row.ChatId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public static Message ReconcilePresentation(Message presented, Message server) => server with

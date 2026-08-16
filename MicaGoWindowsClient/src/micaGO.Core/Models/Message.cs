@@ -54,10 +54,12 @@ public sealed record Message(
     string? EffectLabel = null,
     int MergedSystemCount = 1,
     bool IsPresentationSystem = false,
-    bool ReserveSenderAvatarSpace = false)
+    bool ReserveSenderAvatarSpace = false,
+    long SourceRowId = 0)
 {
     public IReadOnlyList<Attachment> Media => Attachments ?? [];
     public string PresentationKey => PresentationId ?? Id;
+    public string TimelineKey => string.Concat(ChatId, "\u001f", PresentationKey);
     public bool IsReaction => AssociatedMessageType is >= 2000 and <= 3005 && !string.IsNullOrWhiteSpace(AssociatedMessageGuid);
     public bool IsServiceEvent => string.Equals(SemanticKind,"service_event",StringComparison.OrdinalIgnoreCase) || ItemType>0 || GroupActionType>0 || !string.IsNullOrWhiteSpace(GroupTitle);
 }

@@ -37,10 +37,11 @@ public sealed class LocalCacheStore : IDisposable
                     json TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS messages (
-                    guid TEXT PRIMARY KEY,
+                    guid TEXT NOT NULL,
                     chat_guid TEXT NOT NULL,
                     date_created INTEGER NOT NULL,
-                    json TEXT NOT NULL
+                    json TEXT NOT NULL,
+                    PRIMARY KEY(chat_guid, guid)
                 );
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_date ON messages(chat_guid, date_created DESC);
                 CREATE TABLE IF NOT EXISTS settings (
@@ -49,6 +50,7 @@ public sealed class LocalCacheStore : IDisposable
                 );
                 CREATE TABLE IF NOT EXISTS contacts (
                     identity TEXT PRIMARY KEY,
+                    contact_id TEXT NOT NULL DEFAULT '',
                     display_name TEXT NOT NULL,
                     avatar_path TEXT,
                     source TEXT NOT NULL,
@@ -69,6 +71,10 @@ public sealed class LocalCacheStore : IDisposable
                     json TEXT NOT NULL
                 );
                 """, cancellationToken);
+            await MigrateMessageIdentityAsync(db, cancellationToken);
+            if (!await HasColumnAsync(db, "contacts", "contact_id", cancellationToken))
+                await ExecuteAsync(db, "ALTER TABLE contacts ADD COLUMN contact_id TEXT NOT NULL DEFAULT '';", cancellationToken);
+            await ExecuteAsync(db, "UPDATE contacts SET contact_id='legacy:' || lower(hex(randomblob(16))) WHERE contact_id='';", cancellationToken);
             _initialized = true;
         }
         finally { _gate.Release(); }
@@ -105,7 +111,7 @@ public sealed class LocalCacheStore : IDisposable
             foreach (var message in messages.Where(item => !item.IsPending))
             {
                 await using var cmd = db.CreateCommand(); cmd.Transaction = transaction;
-                cmd.CommandText = "INSERT INTO messages(guid,chat_guid,date_created,json) VALUES($id,$chat,$at,$json) ON CONFLICT(guid) DO UPDATE SET chat_guid=excluded.chat_guid,date_created=excluded.date_created,json=excluded.json";
+                cmd.CommandText = "INSERT INTO messages(guid,chat_guid,date_created,json) VALUES($id,$chat,$at,$json) ON CONFLICT(chat_guid,guid) DO UPDATE SET date_created=excluded.date_created,json=excluded.json";
                 cmd.Parameters.AddWithValue("$id", message.Id); cmd.Parameters.AddWithValue("$chat", message.ChatId); cmd.Parameters.AddWithValue("$at", message.DateCreated); cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(message));
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -148,10 +154,10 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
-    public async Task DeleteMessageAsync(string guid, CancellationToken cancellationToken = default)
+    public async Task DeleteMessageAsync(string chatGuid,string guid, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
-        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await using var cmd = db.CreateCommand(); cmd.CommandText = "DELETE FROM messages WHERE guid=$id"; cmd.Parameters.AddWithValue("$id", guid); await cmd.ExecuteNonQueryAsync(cancellationToken); }
+        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await using var cmd = db.CreateCommand(); cmd.CommandText = "DELETE FROM messages WHERE chat_guid=$chat AND guid=$id"; cmd.Parameters.AddWithValue("$chat",chatGuid);cmd.Parameters.AddWithValue("$id", guid); await cmd.ExecuteNonQueryAsync(cancellationToken); }
         finally { _gate.Release(); }
     }
 
@@ -188,7 +194,7 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
-    public async Task<IReadOnlySet<string>> GetHiddenMessageGuidsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlySet<string>> GetHiddenMessageKeysAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
         try
@@ -201,6 +207,28 @@ public sealed class LocalCacheStore : IDisposable
             return rows;
         }
         finally { _gate.Release(); }
+    }
+
+    public async Task<IReadOnlyList<Message>> GetHiddenMessagesAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);
+            await using var cmd=db.CreateCommand();cmd.CommandText="SELECT DISTINCT m.json FROM hidden_messages h JOIN messages m ON h.guid=(m.chat_guid || char(31) || m.guid) OR (instr(h.guid,char(31))=0 AND h.guid=m.guid) ORDER BY h.hidden_at DESC";
+            var rows=new List<Message>();await using var reader=await cmd.ExecuteReaderAsync(cancellationToken);
+            while(await reader.ReadAsync(cancellationToken)){var row=JsonSerializer.Deserialize<Message>(reader.GetString(0));if(row is not null)rows.Add(row);}
+            return rows;
+        }
+        finally{_gate.Release();}
+    }
+
+    public async Task<int> RestoreHiddenMessagesAsync(IEnumerable<string> guids,CancellationToken cancellationToken=default)
+    {
+        var ids=guids.Where(value=>!string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();if(ids.Length==0)return 0;
+        await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);
+        try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var tx=db.BeginTransaction();var restored=0;foreach(var guid in ids){await using var cmd=db.CreateCommand();cmd.Transaction=tx;cmd.CommandText="DELETE FROM hidden_messages WHERE guid=$id";cmd.Parameters.AddWithValue("$id",guid);restored+=await cmd.ExecuteNonQueryAsync(cancellationToken);}await tx.CommitAsync(cancellationToken);return restored;}
+        finally{_gate.Release();}
     }
 
     public async Task HideChatsAsync(IEnumerable<string> guids, CancellationToken cancellationToken = default)
@@ -278,8 +306,8 @@ public sealed class LocalCacheStore : IDisposable
             await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await using var tx = db.BeginTransaction();
             foreach (var contact in contacts)
             {
-                await using var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "INSERT INTO contacts(identity,display_name,avatar_path,source,updated_at) VALUES($id,$name,$avatar,$source,$at) ON CONFLICT(identity) DO UPDATE SET display_name=excluded.display_name,avatar_path=excluded.avatar_path,source=excluded.source,updated_at=excluded.updated_at";
-                cmd.Parameters.AddWithValue("$id", NormalizeIdentity(contact.Identity)); cmd.Parameters.AddWithValue("$name", contact.DisplayName); cmd.Parameters.AddWithValue("$avatar", (object?)contact.AvatarPath ?? DBNull.Value); cmd.Parameters.AddWithValue("$source", contact.Source); cmd.Parameters.AddWithValue("$at", contact.UpdatedAt); await cmd.ExecuteNonQueryAsync(cancellationToken);
+                await using var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "INSERT INTO contacts(identity,contact_id,display_name,avatar_path,source,updated_at) VALUES($id,$contact,$name,$avatar,$source,$at) ON CONFLICT(identity) DO UPDATE SET contact_id=excluded.contact_id,display_name=excluded.display_name,avatar_path=excluded.avatar_path,source=excluded.source,updated_at=excluded.updated_at";
+                cmd.Parameters.AddWithValue("$id", NormalizeIdentity(contact.Identity)); cmd.Parameters.AddWithValue("$contact", contact.ContactId); cmd.Parameters.AddWithValue("$name", contact.DisplayName); cmd.Parameters.AddWithValue("$avatar", (object?)contact.AvatarPath ?? DBNull.Value); cmd.Parameters.AddWithValue("$source", contact.Source); cmd.Parameters.AddWithValue("$at", contact.UpdatedAt); await cmd.ExecuteNonQueryAsync(cancellationToken);
             }
             await tx.CommitAsync(cancellationToken);
         }
@@ -289,7 +317,7 @@ public sealed class LocalCacheStore : IDisposable
     public async Task<ContactMatch?> ResolveContactAsync(string identity, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
-        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await using var cmd = db.CreateCommand(); cmd.CommandText="SELECT display_name,avatar_path,source,updated_at FROM contacts WHERE identity=$id"; cmd.Parameters.AddWithValue("$id", NormalizeIdentity(identity)); await using var row=await cmd.ExecuteReaderAsync(cancellationToken); return await row.ReadAsync(cancellationToken) ? new ContactMatch(identity,row.GetString(0),row.IsDBNull(1)?null:row.GetString(1),row.GetString(2),row.GetInt64(3)) : null; }
+        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await using var cmd = db.CreateCommand(); cmd.CommandText="SELECT contact_id,display_name,avatar_path,source,updated_at FROM contacts WHERE identity=$id"; cmd.Parameters.AddWithValue("$id", NormalizeIdentity(identity)); await using var row=await cmd.ExecuteReaderAsync(cancellationToken); return await row.ReadAsync(cancellationToken) ? new ContactMatch(identity,row.GetString(1),row.IsDBNull(2)?null:row.GetString(2),row.GetString(3),row.GetInt64(4),row.GetString(0)) : null; }
         finally { _gate.Release(); }
     }
 
@@ -314,6 +342,20 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
+    public async Task ClearContentCacheAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
+            // Preferences, imported contacts, and hidden-item tombstones are
+            // user data. Clearing the cache only removes reproducible rows and
+            // resets the delta cursor so the next sync can rebuild them.
+            await ExecuteAsync(db,"DELETE FROM messages; DELETE FROM chats; DELETE FROM pending_uploads; DELETE FROM settings WHERE key='sync.cursor';",cancellationToken);
+        }
+        finally { _gate.Release(); }
+    }
+
     private async Task<IReadOnlyList<T>> ReadJsonRowsAsync<T>(string sql, CancellationToken cancellationToken)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
@@ -322,6 +364,42 @@ public sealed class LocalCacheStore : IDisposable
     }
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken) { if (!_initialized) await InitializeAsync(cancellationToken); }
+
+    private static async Task<bool> HasColumnAsync(SqliteConnection db,string table,string column,CancellationToken cancellationToken)
+    {
+        await using var cmd=db.CreateCommand();cmd.CommandText=$"PRAGMA table_info({table})";
+        await using var rows=await cmd.ExecuteReaderAsync(cancellationToken);
+        while(await rows.ReadAsync(cancellationToken))if(rows.GetString(1).Equals(column,StringComparison.OrdinalIgnoreCase))return true;
+        return false;
+    }
+
+    private static async Task MigrateMessageIdentityAsync(SqliteConnection db,CancellationToken cancellationToken)
+    {
+        var primaryKeyColumns=0;
+        await using(var cmd=db.CreateCommand())
+        {
+            cmd.CommandText="PRAGMA table_info(messages)";
+            await using var rows=await cmd.ExecuteReaderAsync(cancellationToken);
+            while(await rows.ReadAsync(cancellationToken))if(rows.GetInt32(5)>0)primaryKeyColumns++;
+        }
+        if(primaryKeyColumns!=1)return;
+        await ExecuteAsync(db,"""
+            BEGIN IMMEDIATE;
+            CREATE TABLE messages_route_keyed (
+                guid TEXT NOT NULL,
+                chat_guid TEXT NOT NULL,
+                date_created INTEGER NOT NULL,
+                json TEXT NOT NULL,
+                PRIMARY KEY(chat_guid, guid)
+            );
+            INSERT OR REPLACE INTO messages_route_keyed(guid,chat_guid,date_created,json)
+                SELECT guid,chat_guid,date_created,json FROM messages;
+            DROP TABLE messages;
+            ALTER TABLE messages_route_keyed RENAME TO messages;
+            CREATE INDEX idx_messages_chat_date ON messages(chat_guid, date_created DESC);
+            COMMIT;
+            """,cancellationToken);
+    }
     private static string NormalizeIdentity(string value) { var text=value.Trim().ToLowerInvariant(); if(text.Contains('@')) return text; var digits=new string(text.Where(char.IsDigit).ToArray()); return digits.Length == 0 ? text : "+" + digits; }
     private static async Task ExecuteAsync(SqliteConnection db, string sql, CancellationToken cancellationToken) { await using var cmd = db.CreateCommand(); cmd.CommandText = sql; await cmd.ExecuteNonQueryAsync(cancellationToken); }
     public void Dispose() => _gate.Dispose();

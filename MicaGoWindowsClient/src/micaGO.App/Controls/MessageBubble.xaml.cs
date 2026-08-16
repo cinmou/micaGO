@@ -33,11 +33,7 @@ public sealed partial class MessageBubble : UserControl
     private static readonly LinkedList<string> ThumbnailLru = [];
     private static readonly object ThumbnailGate = new();
 
-    // Transient per-thread presentation state (invisible-ink reveal / footer
-    // transition memory). Message-row entrance animation is intentionally not
-    // tracked: recycled WinUI containers made it indistinguishable from a new
-    // row and exposed the transparent canvas during rapid sends.
-    // Reset by the shell whenever another chat is opened.
+    // Transient invisible-ink state, reset when another chat is opened.
     private static readonly HashSet<string> RevealedInkKeys = [];
 
     /// <summary>Raised when a reply preview is tapped; payload is the target message guid.</summary>
@@ -58,6 +54,18 @@ public sealed partial class MessageBubble : UserControl
 
     private Message? _message;
 
+    public static readonly DependencyProperty MessageProperty = DependencyProperty.Register(
+        nameof(Message),
+        typeof(Message),
+        typeof(MessageBubble),
+        new PropertyMetadata(null, OnMessageChanged));
+
+    public Message? Message
+    {
+        get => (Message?)GetValue(MessageProperty);
+        set => SetValue(MessageProperty, value);
+    }
+
     public MessageBubble()
     {
         InitializeComponent();
@@ -76,10 +84,20 @@ public sealed partial class MessageBubble : UserControl
 
     private void OnDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
     {
-        if (args.NewValue is not Message message)
-        {
-            return;
-        }
+        // Standalone uses can still bind a Message directly. Timeline rows use
+        // the Message dependency property so their stable wrapper remains the
+        // ListView item across send confirmation and footer changes.
+        if (args.NewValue is Message message) Message = message;
+    }
+
+    private static void OnMessageChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is MessageBubble bubble && args.NewValue is Message message)
+            bubble.ApplyMessage(message);
+    }
+
+    private void ApplyMessage(Message message)
+    {
 
         var previous = _message;
         var isSameRow = previous?.PresentationKey == message.PresentationKey;
@@ -125,8 +143,8 @@ public sealed partial class MessageBubble : UserControl
         var hasMedia = message.Media.Count > 0;
 
         // A same-key assignment is an in-place state update (delivery, reaction,
-        // grouping, etc.), not a recycled container. Resetting opacity/translation
-        // here caused already-visible bubbles to flash and replay their entrance.
+        // grouping, etc.), not a recycled container. Resetting its visual state
+        // here makes an already-visible bubble flash.
         if (!isSameRow)
         {
             ResetTransientVisuals();
@@ -654,7 +672,7 @@ public sealed partial class MessageBubble : UserControl
         storyboard.Begin();
     }
 
-    // ----- reply jump / link preview / entrance -----
+    // ----- reply jump / link preview -----
 
     private void ReplyPanel_Tapped(object sender, TappedRoutedEventArgs e)
     {
