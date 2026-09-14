@@ -1,11 +1,12 @@
-# micaGO build pipeline.
+# micaGO build and release pipeline.
 #
 # Triggers:
-#   * Push a version tag like v0.78.0 -> builds every artifact for that version.
-#   * Manual "Run workflow"            -> same build, useful to test the pipeline.
+#   * Push a version tag like v0.78.0 -> builds every artifact and publishes a
+#                                        GitHub Release for that version.
+#   * Manual "Run workflow"            -> builds downloadable workflow artifacts
+#                                        without publishing a release.
 #
-# The workflow never creates a GitHub Release: download the artifacts from the
-# run, then create the release by hand. Artifacts:
+# Release artifacts:
 #   micaGO-<version>-android-release.apk
 #   micaGO-<version>-Windows-release.zip        (native WinUI client)
 #   micaGO-<version>-iOS-release-unsigned.ipa
@@ -55,7 +56,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       build_number: ${{ steps.v.outputs.build_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         name: Read version from pubspec and check the tag matches
         run: |
@@ -84,8 +85,8 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -140,7 +141,7 @@ jobs:
           mkdir -p out
           cp MicaGoFlutterClient/build/app/outputs/flutter-apk/app-release.apk \
             "out/micaGO-${{ needs.meta.outputs.version }}-android-release.apk"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.signing.outputs.enabled == 'true'
         with:
           name: android-apk
@@ -155,7 +156,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show Xcode version
         run: xcodebuild -version
       - uses: subosito/flutter-action@v2
@@ -174,7 +175,7 @@ jobs:
           mkdir -p out Payload
           cp -R MicaGoFlutterClient/build/ios/iphoneos/Runner.app Payload/
           zip -qry "out/micaGO-${{ needs.meta.outputs.version }}-iOS-release-unsigned.ipa" Payload
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ios-ipa
           path: out/*.ipa
@@ -186,10 +187,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned explicitly: the windows-latest image's bundled .NET changes over
       # time, and the client targets net10.0.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
       - name: Core contract tests
@@ -204,7 +205,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Copy-Item MicaGoWindowsClient/artifacts/micaGO-release-x64.zip `
             "out/micaGO-${{ needs.meta.outputs.version }}-Windows-release.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-zip
           path: out/*.zip
@@ -216,7 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Linux desktop build deps
         run: |
           sudo apt-get update
@@ -238,8 +239,38 @@ jobs:
           mkdir -p out staging
           cp -r MicaGoFlutterClient/build/linux/x64/release/bundle staging/micaGO
           tar -C staging -czf "out/micaGO-${{ needs.meta.outputs.version }}-Linux-release.tar.gz" micaGO
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-tarball
           path: out/*.tar.gz
           if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [meta, android, ios, windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+      - name: Publish release assets
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --repo "$GITHUB_REPOSITORY"
+          fi
