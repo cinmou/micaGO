@@ -1,17 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mica_go/features/chats/message_display.dart';
 import 'package:mica_go/features/chats/message_render.dart';
 import 'package:mica_go/core/storage/local_cache_store.dart';
 import 'package:mica_go/features/chats/models/chat_summary.dart';
 import 'package:mica_go/features/chats/models/message_model.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+  });
+  tearDownAll(() {
+    debugDefaultTargetPlatformOverride = null;
   });
 
   late LocalCacheStore store;

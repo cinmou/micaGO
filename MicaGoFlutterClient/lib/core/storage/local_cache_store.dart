@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../features/chats/message_render.dart' show messagePreviewText;
 import '../../features/chats/models/chat_summary.dart';
@@ -24,6 +26,12 @@ class LocalCacheStore {
 
   Future<void> open() async {
     if (_db != null) return;
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.windows)) {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+    }
     final dir = await getDatabasesPath();
     _path = p.join(dir, 'micago_client_cache.db');
     _db = await openDatabase(
