@@ -81,6 +81,14 @@ dotnet build .\micaGO.Windows.sln -c Debug -p:Platform=x64
 Or open `micaGO.Windows.sln`, set `micaGO.App` as startup, select
 `Debug | x64` (not ARM64 first), rebuild, F5.
 
+Create the tested portable archive with `scripts/package-release-x64.ps1`.
+After installing Inno Setup 7, `scripts/build-installer-x64.ps1` produces the
+single-file `artifacts/micaGO-Setup-x64.exe` installer from that same archive.
+The installer defaults to a per-user installation, adds a Start menu shortcut,
+offers an optional desktop shortcut, supports in-place upgrades and registers a
+normal Windows uninstaller. Public releases should Authenticode-sign the app
+and installer, or use a Store-distributed MSIX for Microsoft-managed signing.
+
 Core contract tests (no WinUI, no third-party test framework — plain
 `dotnet run`, exit code 0 on success):
 

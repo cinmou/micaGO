@@ -3,6 +3,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using MicaGo.App.Controls;
 using MicaGo.App.Services;
 using MicaGo.App.Views;
 using Windows.Graphics;
@@ -46,6 +47,7 @@ public sealed class ConnectionWindow : Window
     {
         _windowRoot.RowDefinitions.Add(_titleBarRow);
         _windowRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _appTitleBar.Children.Add(TitleBarBrand.Create());
         _windowRoot.Children.Add(_appTitleBar);
         var page = new ConnectionPage();
         Grid.SetRow(page, 1);

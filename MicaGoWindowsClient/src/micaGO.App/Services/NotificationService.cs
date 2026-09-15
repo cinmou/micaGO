@@ -60,20 +60,58 @@ public sealed class NotificationService : IDisposable
         }
     }
 
-    public void Show(string title, string body, string chatId)
+    public void Show(string title, string body, string chatId, string? avatarPath = null)
     {
         if (!Enabled) return;
         if (!Register() || _manager is null) return;
+        var visibleBody = ShowMessageText ? body : HiddenBodyText;
         try
         {
-            var visibleBody = ShowMessageText ? body : HiddenBodyText;
-            var notification = new AppNotificationBuilder().AddText(title).AddText(visibleBody).AddArgument("chat", chatId).BuildNotification();
-            _manager.Show(notification);
+            if (TryGetAvatarUri(avatarPath, out var avatarUri))
+            {
+                try
+                {
+                    _manager.Show(BuildNotification(title, visibleBody, chatId, avatarUri));
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    // A malformed or unsupported contact photo must not suppress
+                    // the message notification itself.
+                    System.Diagnostics.Debug.WriteLine($"[Notifications] avatar rejected: 0x{exception.HResult:X8}: {exception.Message}");
+                }
+            }
+
+            _manager.Show(BuildNotification(title, visibleBody, chatId, null));
         }
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine($"[Notifications] show failed: 0x{exception.HResult:X8}: {exception.Message}");
         }
+    }
+
+    private static AppNotification BuildNotification(string title, string body, string chatId, Uri? avatarUri)
+    {
+        var builder = new AppNotificationBuilder()
+            .AddText(title)
+            .AddText(body)
+            .AddArgument("chat", chatId);
+        if (avatarUri is not null)
+            builder.SetAppLogoOverride(avatarUri, AppNotificationImageCrop.Circle, title);
+        return builder.BuildNotification();
+    }
+
+    private static bool TryGetAvatarUri(string? avatarPath, out Uri? avatarUri)
+    {
+        avatarUri = null;
+        if (string.IsNullOrWhiteSpace(avatarPath) || !File.Exists(avatarPath)) return false;
+        var extension = Path.GetExtension(avatarPath);
+        if (!extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
+            && !extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+            && !extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+            && !extension.Equals(".svg", StringComparison.OrdinalIgnoreCase)) return false;
+        avatarUri = new Uri(Path.GetFullPath(avatarPath), UriKind.Absolute);
+        return avatarUri.IsFile;
     }
 
     public void Dispose()

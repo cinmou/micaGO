@@ -409,7 +409,7 @@ public sealed class ShellViewModel : IAsyncDisposable
                 if(allowNotifications&&unknownRouteFirstObservation&&!message.IsOutgoing&&!_services.ChatPreferences.Hidden.Contains(message.ChatId))
                 {
                     var title=string.IsNullOrWhiteSpace(message.SenderName)?_services.Localization["newMessage"]:message.SenderName;
-                    _services.Notifications.Show(title,MessageSemantics.PreviewText(message),message.ChatId);
+                    _services.Notifications.Show(title,MessageSemantics.PreviewText(message),message.ChatId,message.SenderAvatarPath);
                 }
                 continue;
             }
@@ -429,7 +429,11 @@ public sealed class ShellViewModel : IAsyncDisposable
                 HasUnread=!isSelected&&(incomingUnseen||chat.HasUnread),
                 LatestFromMe=updatesLatest?message.IsOutgoing:chat.LatestFromMe,
             };
-            if(allowNotifications&&incomingUnseen&&!chat.IsMuted&&!IsChatHidden(chat))_services.Notifications.Show(chat.Title,preview,message.ChatId);
+            if(allowNotifications&&incomingUnseen&&!chat.IsMuted&&!IsChatHidden(chat))
+            {
+                var avatarPath=chat.IsGroup?message.SenderAvatarPath??chat.AvatarPath:chat.AvatarPath;
+                _services.Notifications.Show(chat.Title,preview,message.ChatId,avatarPath);
+            }
         }
         if (updates.Count==0) return needsReload;
         foreach(var (key,updated) in updates)
