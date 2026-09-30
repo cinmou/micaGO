@@ -12,6 +12,7 @@ import 'models/connection_profile.dart';
 import 'models/server_urls.dart';
 import 'network/api_client.dart';
 import 'network/chat_preference_sync.dart';
+import 'network/message_preference_sync.dart';
 import 'network/connection_candidate.dart';
 import 'network/endpoint_utils.dart';
 import 'network/device_identity.dart';
@@ -128,6 +129,12 @@ class AppController extends ChangeNotifier {
       notifyListeners();
     },
   );
+  late final MessagePreferenceSync messagePreferences = MessagePreferenceSync(
+    cache: cache,
+    api: () => api,
+    onChanged: notifyListeners,
+  );
+
   static const _customAvatarPrefix = 'custom_avatar:';
   static const inAppNotificationsStorageKey =
       'micago.in_app_notifications_enabled.v1';
@@ -193,6 +200,9 @@ class AppController extends ChangeNotifier {
     // connection:updated — refresh our candidates so we follow the new LAN/
     // Public URLs without the user rescanning a QR.
     _connSub = ws.events.listen((e) {
+      if (e.type == 'message-preferences:changed') {
+        unawaited(messagePreferences.sync());
+      }
       if (e.type == 'chat-preferences:changed') {
         unawaited(chatPreferences.sync());
       }
@@ -418,6 +428,7 @@ class AppController extends ChangeNotifier {
         timeout: const Duration(seconds: 4),
       );
       await chatPreferences.initialize();
+      await messagePreferences.initialize();
       // C63: arm the persistent media disk cache (photos/videos/previews);
       // until/unless this resolves, media falls back to memory+network.
       await _bootstrapStep(
@@ -979,6 +990,7 @@ class AppController extends ChangeNotifier {
     _catchUpInFlight = true;
     try {
       await chatPreferences.sync();
+      await messagePreferences.sync();
       final cursor = realtimeDiagnostics.lastAppliedEventCursor;
       realtimeDiagnostics.lastCatchUpCursor = cursor;
       await cache.writeMetadata('last_catch_up_cursor', cursor ?? '');
@@ -1290,8 +1302,11 @@ class AppController extends ChangeNotifier {
     return ids.length;
   }
 
-  Future<int> releaseHiddenMessages(Iterable<String> guids) =>
-      cache.releaseHiddenMessages(guids);
+  Future<int> releaseHiddenMessages(Iterable<String> guids) async {
+    final keys = guids.toSet();
+    await messagePreferences.setHidden(keys, false);
+    return keys.length;
+  }
 
   /// C19/C21u: register this client so the Companion shows a connected device.
   /// Best-effort and idempotent — sends a **stable, client-generated** device id
@@ -1606,7 +1621,9 @@ class AppController extends ChangeNotifier {
     if (!_foreground || guid.isEmpty || msg.isFromMe) return;
     if (isChatActive(guid) ||
         isChatMuted(guid) ||
-        chatPreferences.isHidden(guid)) {
+        chatPreferences.isHidden(guid) ||
+        messagePreferences.isHidden('$guid\u001f${msg.guid}') ||
+        messagePreferences.isHidden(msg.guid)) {
       return;
     }
     if (isReactionMessage(msg)) return;
@@ -1679,7 +1696,9 @@ class AppController extends ChangeNotifier {
     }
     final chatGuid = chatGuidFromWsEvent(e);
     if (chatGuid != null &&
-        (isChatMuted(chatGuid) || chatPreferences.isHidden(chatGuid))) {
+        (isChatMuted(chatGuid) || chatPreferences.isHidden(chatGuid) ||
+         messagePreferences.isHidden('$chatGuid\u001f${msg.guid}') ||
+         messagePreferences.isHidden(msg.guid))) {
       return;
     }
     final isGroup = _isGroupChatGuid(chatGuid);
@@ -2330,6 +2349,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     chatPreferences.dispose();
+    messagePreferences.dispose();
     _heartbeatTimer?.cancel();
     _connectionProblemTimer?.cancel();
     unawaited(_connSub?.cancel());

@@ -141,6 +141,7 @@ Future<bool> importSettingsBackup(BuildContext context) async {
   final contacts = context.read<ContactsService>();
   try {
     await service.applyBackup(data);
+    await app.messagePreferences.registerLocalRecords();
     // Rebuild the storage-backed controllers + reconnect.
     await themeController.bootstrap();
     await messageDisplay.bootstrap();

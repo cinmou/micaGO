@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using MicaGo.Core.Models;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 
@@ -10,18 +11,18 @@ public static class Ui
     public static ImageSource? Image(string? path) =>
         string.IsNullOrWhiteSpace(path) || !File.Exists(path) ? null : new BitmapImage(new Uri(path));
 
-    public static Visibility CountVisibility(int count) =>
-        count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public static Visibility CountVisibility(bool hasUnread, int count, bool muted) =>
+        ChatUnreadSemantics.Badge(hasUnread, count, muted) == UnreadBadgeKind.Count ? Visibility.Visible : Visibility.Collapsed;
 
     public static Visibility BoolVisibility(bool value) =>
         value ? Visibility.Visible : Visibility.Collapsed;
 
-    public static Visibility PinVisibility(bool pinned, int unread) =>
-        pinned && unread == 0 ? Visibility.Visible : Visibility.Collapsed;
+    public static Visibility PinVisibility(bool pinned, bool hasUnread) =>
+        pinned && !hasUnread ? Visibility.Visible : Visibility.Collapsed;
 
-    public static string CountLabel(int count) => count > 99 ? "99+" : count.ToString();
+    public static string CountLabel(int count) => count > 9999 ? "9999+" : count.ToString();
 
-    /// <summary>Plain unread dot: watermark says unread but the live counter is 0 (C43 rule).</summary>
-    public static Visibility DotVisibility(bool hasUnread, int unreadCount) =>
-        hasUnread && unreadCount == 0 ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>Flutter parity: muted conversations or uncounted unread use a dot.</summary>
+    public static Visibility DotVisibility(bool hasUnread, int unreadCount, bool muted) =>
+        ChatUnreadSemantics.Badge(hasUnread, unreadCount, muted) == UnreadBadgeKind.Dot ? Visibility.Visible : Visibility.Collapsed;
 }

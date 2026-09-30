@@ -45,6 +45,8 @@ internal static class RealtimeSyncTests
 
     internal class FakeApi : IMicaGoApi
     {
+        public virtual Task<MessagePreferences> GetMessagePreferencesAsync(CancellationToken cancellationToken=default)=>Task.FromResult(new MessagePreferences(new string('a',32),0,[]));
+        public virtual Task<MessagePreferences> PatchMessagePreferencesAsync(MessagePreferenceMutation mutation,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         public virtual Task<ChatPreferences> GetChatPreferencesAsync(CancellationToken cancellationToken=default)=>Task.FromResult(new ChatPreferences("test",0,[]));
         public virtual Task<ChatPreferences> PatchChatPreferencesAsync(ChatPreferenceMutation mutation,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         private readonly System.Threading.Channels.Channel<RealtimeEvent> _events=System.Threading.Channels.Channel.CreateUnbounded<RealtimeEvent>();

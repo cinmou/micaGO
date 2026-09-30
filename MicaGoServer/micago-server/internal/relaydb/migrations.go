@@ -14,6 +14,10 @@ func (db *DB) Migrate() error {
 		`CREATE TABLE IF NOT EXISTS chat_preference_mutations (
     mutation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, response TEXT NOT NULL
   );`,
+		`CREATE TABLE IF NOT EXISTS message_preferences_state (id INTEGER PRIMARY KEY CHECK(id=1), server_id TEXT NOT NULL, revision INTEGER NOT NULL);`,
+		`INSERT OR IGNORE INTO message_preferences_state SELECT 1,server_id,0 FROM chat_preferences_state WHERE id=1;`,
+		`CREATE TABLE IF NOT EXISTS message_preferences (message_key TEXT PRIMARY KEY, hidden INTEGER NOT NULL, revision INTEGER NOT NULL);`,
+		`CREATE TABLE IF NOT EXISTS message_preference_mutations (mutation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, response TEXT NOT NULL);`,
 		`CREATE TABLE IF NOT EXISTS chats (
 			guid TEXT PRIMARY KEY,
 			chat_identifier TEXT,

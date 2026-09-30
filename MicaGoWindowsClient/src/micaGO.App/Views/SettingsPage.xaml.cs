@@ -134,6 +134,7 @@ public sealed partial class SettingsPage : Page
         try
         {
             var summary = await AppServices.Current.Backup.ImportAsync(file.Path);
+            await AppServices.Current.MessagePreferences.RegisterLocalRecordsAsync();
             BackupStatus.Text = string.Format(l["backupRestored"], summary.SettingCount);
             // Re-apply restored preferences immediately.
             _loading = true;

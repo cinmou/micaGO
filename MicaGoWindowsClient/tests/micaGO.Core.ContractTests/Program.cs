@@ -15,6 +15,7 @@ var tests = new (string Name, Action Run)[]
     ("stable presentation key", PreservesPresentationKey),
     ("route-qualified message identity", KeepsRouteQualifiedMessagesDistinct),
     ("attachment preview normalization", NormalizesAttachmentPreviews),
+    ("Flutter-compatible unread badge and per-route advancement", ChatUnreadTests.Run),
     ("stable chat row notifications", UpdatesChatRowInPlace),
     ("stable merged contact reorder", KeepsMergedContactRowStable),
     ("stable message row notifications", UpdatesMessageRowInPlace),
@@ -57,6 +58,9 @@ catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL legacy hidd
 
 try { await ChatPreferenceSyncTests.RunAsync(); Console.WriteLine("PASS cross-device preferences, offline replay, conflicts and server scope"); }
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL chat preferences: {exception.Message}");}
+
+try { await MessagePreferenceSyncTests.RunAsync(); Console.WriteLine("PASS message hiding sync, route scope, durable queue and conflicts"); }
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL message preferences: {exception.Message}");}
 
 try {await LateSendConfirmationTests.RunAsync();Console.WriteLine("PASS late send confirmation and durable upload cleanup");}
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL late send confirmation: {exception.Message}");}

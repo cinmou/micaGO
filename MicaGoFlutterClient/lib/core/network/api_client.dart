@@ -237,6 +237,32 @@ class ApiClient {
     return _decodeObject(response);
   }
 
+  Future<Map<String, dynamic>> getMessagePreferences() async {
+    final response = await _send(
+      () => _http
+          .get(_uri('/api/message-preferences'), headers: _authHeaders)
+          .timeout(timeout),
+    );
+    if (response.statusCode != 200) throw _errorFrom(response);
+    return _decodeObject(response);
+  }
+
+  Future<Map<String, dynamic>> patchMessagePreferences(
+    Map<String, dynamic> mutation,
+  ) async {
+    final response = await _send(
+      () => _http
+          .patch(
+            _uri('/api/message-preferences'),
+            headers: _jsonHeaders,
+            body: jsonEncode(mutation),
+          )
+          .timeout(timeout),
+    );
+    if (response.statusCode != 200) throw _errorFrom(response);
+    return _decodeObject(response);
+  }
+
   Map<String, String> get _authHeaders => {
     'Authorization': 'Bearer $token',
     'Accept': 'application/json',

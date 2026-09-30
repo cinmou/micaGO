@@ -65,12 +65,43 @@ class ThreadController extends ChangeNotifier {
   Timer? _reloadDebounce;
 
   /// Chronological (oldest → newest); the thread view renders it reversed.
-  List<MessageModel> get messages => _col.ordered;
+  List<MessageModel> get messages => _col.ordered
+      .where(
+        (message) =>
+            !app.messagePreferences.isHidden(
+              '${message.chatGuid ?? chatGuid}\u001f${message.guid}',
+            ) &&
+            !app.messagePreferences.isHidden(message.guid),
+      )
+      .toList(growable: false);
+
+  Set<String> _visibleHidden = {};
+
+  void _onMessageVisibilityChanged() {
+    if (_disposed) return;
+    final hidden = app.messagePreferences.hidden;
+    if (setEquals(hidden, _visibleHidden)) return;
+    _visibleHidden = hidden;
+    _notify();
+    unawaited(_restoreCachedVisibleMessages());
+  }
+
+  Future<void> _restoreCachedVisibleMessages() async {
+    try {
+      final rows = await _cachedThreadMessages();
+      if (_disposed) return;
+      _col.mergeServerPage(rows);
+      _notify();
+    } catch (_) {
+      if (!_disposed) rethrow;
+    }
+  }
 
   String presentationKeyFor(MessageModel message) =>
       _col.presentationKeyFor(message);
 
   void start() {
+    app.messagePreferences.addListener(_onMessageVisibilityChanged);
     _wsSub = app.ws.events.listen(_onWsEvent);
     // C21: also patch from the delta catch-up (the correctness path), not only
     // WebSocket events. GUID dedup in the collection prevents duplicate bubbles.
@@ -141,11 +172,9 @@ class ThreadController extends ChangeNotifier {
       final page = await api.getMessageHistory(threadGuids, limit: _pageSize);
       if (_disposed) return;
       await _cacheHistory(page.messages);
-      final hidden = await app.cache.hiddenMessageGuids();
       if (_disposed) return;
-      _col.removeServerMessages(hidden);
       _col.mergeServerPage(
-        page.messages.where((m) => !hidden.contains(m.guid)),
+        page.messages,
         baseline: baseline,
         allowNewAttachmentFallback: true,
       );
@@ -174,7 +203,7 @@ class ThreadController extends ChangeNotifier {
     }
   }
 
-  /// Hides a single message on the client only (the server copy is untouched).
+  /// Synchronizes visibility for this message; the server retains its content.
   /// Re-reads the visible page from the cache so it disappears immediately.
   Future<void> hideMessage(String guid) => hideMessages([guid]);
 
@@ -182,11 +211,12 @@ class ThreadController extends ChangeNotifier {
   Future<void> hideMessages(Iterable<String> guids) async {
     final ids = guids.where((g) => g.isNotEmpty).toSet();
     if (ids.isEmpty) return;
-    for (final guid in ids) {
-      await app.cache.setMessageHidden(guid, true);
-    }
+    final keys = _col.ordered
+        .where((m) => ids.contains(m.guid))
+        .map((m) => '${m.chatGuid ?? chatGuid}\u001f${m.guid}')
+        .toSet();
+    await app.messagePreferences.setHidden(keys, true);
     if (_disposed) return;
-    _col.removeServerMessages(ids);
     state = _col.isEmpty ? ThreadState.empty : ThreadState.loaded;
     _notify();
   }
@@ -206,13 +236,8 @@ class ThreadController extends ChangeNotifier {
       );
       if (_disposed) return;
       await _cacheHistory(page.messages);
-      final hidden = await app.cache.hiddenMessageGuids();
       if (_disposed) return;
-      _col.removeServerMessages(hidden);
-      _col.mergeServerPage(
-        page.messages.where((m) => !hidden.contains(m.guid)),
-        baseline: baseline,
-      );
+      _col.mergeServerPage(page.messages, baseline: baseline);
       _historyCursor = page.nextCursor;
       hasMore = page.hasMore;
       error = null;
@@ -603,6 +628,7 @@ class ThreadController extends ChangeNotifier {
 
   @override
   void dispose() {
+    app.messagePreferences.removeListener(_onMessageVisibilityChanged);
     _disposed = true;
     _reloadDebounce?.cancel();
     _wsSub?.cancel();

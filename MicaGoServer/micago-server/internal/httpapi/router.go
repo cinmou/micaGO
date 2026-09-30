@@ -8,6 +8,8 @@ import (
 
 func NewRouter(h *Handlers, hub *realtime.Hub, auth AuthConfig) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /api/message-preferences", auth.Wrap(http.HandlerFunc(h.GetMessagePreferences)))
+	mux.Handle("PATCH /api/message-preferences", auth.Wrap(http.HandlerFunc(h.PatchMessagePreferences)))
 	mux.Handle("GET /api/chat-preferences", auth.Wrap(http.HandlerFunc(h.GetChatPreferences)))
 	mux.Handle("PATCH /api/chat-preferences", auth.Wrap(http.HandlerFunc(h.PatchChatPreferences)))
 	mux.HandleFunc("GET /api/health", h.GetHealth)

@@ -80,6 +80,21 @@ public sealed class MicaGoApi : IMicaGoApi
             ?? throw new MicaGoApiException("Invalid chat preferences.");
     }
 
+    public async Task<MessagePreferences> GetMessagePreferencesAsync(CancellationToken cancellationToken = default)
+    {
+        using var document = await GetJsonAsync("api/message-preferences", cancellationToken);
+        return document.RootElement.Deserialize<MessagePreferences>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new MicaGoApiException("Invalid message preferences.");
+    }
+
+    public async Task<MessagePreferences> PatchMessagePreferencesAsync(MessagePreferenceMutation mutation, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync("api/message-preferences", mutation, cancellationToken);
+        using var document = await ReadJsonResponseAsync(response, cancellationToken);
+        return document.RootElement.Deserialize<MessagePreferences>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new MicaGoApiException("Invalid message preferences.");
+    }
+
     public async Task<IReadOnlyList<ChatSummary>> GetChatsAsync(CancellationToken cancellationToken = default)
     {
         using var document = await GetJsonAsync("api/chats?limit=250", cancellationToken);

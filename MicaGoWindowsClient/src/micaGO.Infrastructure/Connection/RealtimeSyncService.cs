@@ -10,7 +10,8 @@ public sealed class RealtimeSyncService(
     IMicaGoApi api,
     LocalCacheStore cache,
     ChatPreferenceSync? preferences = null,
-    Func<CancellationToken, Task>? reselectRoute = null) : IAsyncDisposable
+    Func<CancellationToken, Task>? reselectRoute = null,
+    MessagePreferenceSync? messagePreferences = null) : IAsyncDisposable
 {
     private const string CursorKey = "sync.cursor";
     private readonly CancellationTokenSource _shutdown = new();
@@ -31,6 +32,7 @@ public sealed class RealtimeSyncService(
         try
         {
             if(preferences is not null) await preferences.SyncAsync(cancellationToken);
+            if(messagePreferences is not null) await messagePreferences.SyncAsync(cancellationToken);
             var raw = await cache.GetSettingAsync(CursorKey, cancellationToken);
             long? cursor = long.TryParse(raw, out var parsed) ? parsed : null;
             do

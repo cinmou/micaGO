@@ -180,6 +180,21 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
+    public async Task AdvanceReadWatermarkAsync(string route, long timestamp, CancellationToken cancellationToken = default)
+    {
+        if (timestamp <= 0) return;
+        await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
+        try {
+            await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
+            await using var command = db.CreateCommand();
+            command.CommandText = "INSERT INTO settings(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE SET value=CAST(MAX(CAST(settings.value AS INTEGER),CAST(excluded.value AS INTEGER)) AS TEXT)";
+            command.Parameters.AddWithValue("$key", "read.watermark." + route);
+            command.Parameters.AddWithValue("$value", timestamp.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task DeleteMessageAsync(string chatGuid,string guid, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
@@ -232,6 +247,29 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
+    public async Task ApplyMessageVisibilityAsync(IEnumerable<string> keys, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString);
+            await db.OpenAsync(cancellationToken);
+            await using var tx = db.BeginTransaction();
+            await using (var clear = db.CreateCommand()) { clear.Transaction = tx; clear.CommandText = "DELETE FROM hidden_messages"; await clear.ExecuteNonQueryAsync(cancellationToken); }
+            foreach (var key in keys)
+            {
+                await using var command = db.CreateCommand(); command.Transaction = tx;
+                command.CommandText = "INSERT INTO hidden_messages(guid,hidden_at) VALUES($key,$at)";
+                command.Parameters.AddWithValue("$key", key);
+                command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await tx.CommitAsync(cancellationToken);
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task<IReadOnlySet<string>> GetHiddenMessageKeysAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
@@ -253,9 +291,12 @@ public sealed class LocalCacheStore : IDisposable
         try
         {
             await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);
-            await using var cmd=db.CreateCommand();cmd.CommandText="SELECT DISTINCT m.json FROM hidden_messages h JOIN messages m ON h.guid=(m.chat_guid || char(31) || m.guid) OR (instr(h.guid,char(31))=0 AND h.guid=m.guid) ORDER BY h.hidden_at DESC";
+            await using var cmd=db.CreateCommand();cmd.CommandText="SELECT DISTINCT m.json,h.guid FROM hidden_messages h LEFT JOIN messages m ON h.guid=(m.chat_guid || char(31) || m.guid) OR (instr(h.guid,char(31))=0 AND h.guid=m.guid) ORDER BY h.hidden_at DESC";
             var rows=new List<Message>();await using var reader=await cmd.ExecuteReaderAsync(cancellationToken);
-            while(await reader.ReadAsync(cancellationToken)){var row=JsonSerializer.Deserialize<Message>(reader.GetString(0));if(row is not null)rows.Add(row);}
+            while(await reader.ReadAsync(cancellationToken)) {
+                if(!reader.IsDBNull(0)) { var row=JsonSerializer.Deserialize<Message>(reader.GetString(0));if(row is not null)rows.Add(row); }
+                else { var parts=reader.GetString(1).Split('\u001f');if(parts.Length==2) rows.Add(new Message(parts[1],parts[0],string.Empty,string.Empty,false,MessageDeliveryState.Sent)); }
+            }
             return rows;
         }
         finally{_gate.Release();}

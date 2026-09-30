@@ -1,3 +1,4 @@
+import 'message_preference_status.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -1108,6 +1109,8 @@ class HiddenMessagesPage extends StatelessWidget {
       emptyIcon: Icons.chat_bubble_outline,
       emptyKey: 'settings.noHiddenMessages',
       restoredKey: 'settings.releasedMessages',
+      changes: app.messagePreferences,
+      footer: MessagePreferenceStatus(preferences: app.messagePreferences),
       load: app.hiddenMessages,
       restore: app.releaseHiddenMessages,
       rowOf: (context, item) {

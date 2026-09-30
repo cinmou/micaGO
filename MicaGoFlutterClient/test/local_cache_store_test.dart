@@ -436,6 +436,24 @@ void main() {
     expect((await store.listMessages('c1')).length, 2);
   });
 
+  test('route-qualified hidden message survives refresh and restore', () async {
+    final message = MessageModel.fromJson({
+      'guid': 'same', 'chatGuid': 'route-a', 'text': 'hello', 'dateCreated': 100,
+    });
+    await store.mergeServerPage('route-a', [message]);
+    await store.applyMessageVisibility({'route-b\u001fsame'});
+    expect(await store.listMessages('route-a'), hasLength(1));
+    await store.applyMessageVisibility({'route-a\u001fsame'});
+    expect(await store.listMessages('route-a'), isEmpty);
+    expect(await store.listAllMessages('route-a'), isEmpty);
+    final hidden = await store.hiddenMessages();
+    expect(hidden.single.guid, 'route-a\u001fsame');
+    await store.mergeServerPage('route-a', [message]);
+    expect(await store.listMessages('route-a'), isEmpty);
+    await store.applyMessageVisibility({});
+    expect(await store.listMessages('route-a'), hasLength(1));
+  });
+
   test('hidden chat count + release restores the contact', () async {
     await store.upsertChats([
       const ChatSummary(guid: 'c1', lastMessageAt: 1, lastMessagePreview: 'x'),

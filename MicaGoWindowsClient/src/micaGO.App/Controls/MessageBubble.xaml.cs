@@ -235,7 +235,7 @@ public sealed partial class MessageBubble : UserControl
             return;
         }
 
-        Bubble.Padding = new Thickness(12, 7, 12, 8);
+        Bubble.Padding = new Thickness(12, 8, 12, 8);
         BodyText.FontSize = 14;
         BodyText.LineHeight = 20;
         // Like Flutter's painter: a reacted-to bubble keeps its tail even

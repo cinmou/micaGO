@@ -61,6 +61,7 @@ public sealed record Message(
 {
     public IReadOnlyList<Attachment> Media => Attachments ?? [];
     public string PresentationKey => PresentationId ?? Id;
+    public string ServerKey => string.Concat(ChatId, "\u001f", Id);
     public string TimelineKey => string.Concat(ChatId, "\u001f", PresentationKey);
     public bool IsReaction => (AssociatedMessageType is >= 2000 and <= 2006 or >= 3000 and <= 3006) && !string.IsNullOrWhiteSpace(AssociatedMessageGuid);
     public bool IsServiceEvent => string.Equals(SemanticKind,"service_event",StringComparison.OrdinalIgnoreCase) || ItemType>0 || GroupActionType>0 || !string.IsNullOrWhiteSpace(GroupTitle);

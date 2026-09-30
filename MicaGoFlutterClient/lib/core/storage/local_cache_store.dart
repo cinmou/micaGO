@@ -124,7 +124,7 @@ CREATE TABLE metadata (
     await db.delete(
       'metadata',
       where:
-          "key NOT LIKE 'chat_preferences.%' AND key != 'chat_visibility.v1'",
+          "key NOT LIKE 'chat_preferences.%' AND key NOT LIKE 'message_preferences.%' AND key != 'chat_visibility.v1'",
     );
   }
 
@@ -304,7 +304,7 @@ SELECT
   m.chat_guid AS chat_guid,
   c.json AS chat_json
 FROM hidden_messages hm
-LEFT JOIN messages m ON m.guid = hm.guid
+LEFT JOIN messages m ON (m.chat_guid || char(31) || m.guid) = hm.guid OR (instr(hm.guid,char(31))=0 AND m.guid = hm.guid)
 LEFT JOIN chats c ON c.guid = m.chat_guid
 ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
 ''');
@@ -343,6 +343,16 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
 
   /// The set of client-hidden message guids, to filter server-fetched pages that
   /// bypass the cache read.
+  Future<void> applyMessageVisibility(Set<String> keys) async {
+    final db = await _ready();
+    await db.transaction((tx) async {
+      await tx.delete('hidden_messages');
+      for (final key in keys) {
+        await tx.insert('hidden_messages', {'guid': key});
+      }
+    });
+  }
+
   Future<Set<String>> hiddenMessageGuids() async {
     final db = await _ready();
     final rows = await db.query('hidden_messages', columns: const ['guid']);
@@ -370,7 +380,7 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     final rows = await db.query(
       'messages',
       where:
-          'chat_guid = ? AND (guid IS NULL OR guid NOT IN (SELECT guid FROM hidden_messages))',
+          'chat_guid = ? AND (guid IS NULL OR guid NOT IN (SELECT guid FROM hidden_messages) AND (chat_guid || char(31) || guid) NOT IN (SELECT guid FROM hidden_messages))',
       whereArgs: [chatGuid],
       orderBy: 'date_created DESC, updated_at DESC',
       limit: limit,
@@ -385,7 +395,7 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     final rows = await db.query(
       'messages',
       where:
-          'chat_guid = ? AND (guid IS NULL OR guid NOT IN (SELECT guid FROM hidden_messages))',
+          'chat_guid = ? AND (guid IS NULL OR guid NOT IN (SELECT guid FROM hidden_messages) AND (chat_guid || char(31) || guid) NOT IN (SELECT guid FROM hidden_messages))',
       whereArgs: [chatGuid],
       orderBy: 'date_created DESC, updated_at DESC',
     );
@@ -895,6 +905,7 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
   MessageModel _messageFromRow(Map<String, Object?> row) {
     final raw = jsonDecode(row['json'] as String) as Map<String, dynamic>;
     return MessageModel.fromJson(raw).copyWith(
+      chatGuid: row['chat_guid'] as String?,
       localState: LocalSendState.values.firstWhere(
         (s) => s.name == row['local_state'],
         orElse: () => LocalSendState.confirmed,

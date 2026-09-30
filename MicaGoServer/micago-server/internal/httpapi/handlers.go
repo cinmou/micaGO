@@ -180,28 +180,30 @@ type StatusDeps struct {
 var implementedNotificationProviders = []string{"none", "webhook"}
 
 type Handlers struct {
-	chatPreferences  chatPreferenceService
-	preferenceEvents eventBroadcaster
-	queries          queryService
-	logger           *log.Logger
-	send             *SendDependencies
-	attachments      attachmentService
-	attachmentsRoot  string
-	devices          deviceService
-	notify           notificationDispatcher
-	serverInfo       store.ServerInfoResponse
-	cfg              config.Config
-	status           StatusDeps
-	startedAt        int64
-	rules            ruleService
-	notifyConfig     notificationConfigurator
-	contactCache     contactCacheReceiver
-	debug            debugQueryService
-	debugColumns     map[string]bool
-	syncNow          func(context.Context) (store.ServerSyncDiagnostics, error)
-	syncSettings     syncSettingsService
-	actions          imessage.Performer
-	testContact      testContactStore
+	chatPreferences         chatPreferenceService
+	messagePreferences      messagePreferenceService
+	messagePreferenceEvents eventBroadcaster
+	preferenceEvents        eventBroadcaster
+	queries                 queryService
+	logger                  *log.Logger
+	send                    *SendDependencies
+	attachments             attachmentService
+	attachmentsRoot         string
+	devices                 deviceService
+	notify                  notificationDispatcher
+	serverInfo              store.ServerInfoResponse
+	cfg                     config.Config
+	status                  StatusDeps
+	startedAt               int64
+	rules                   ruleService
+	notifyConfig            notificationConfigurator
+	contactCache            contactCacheReceiver
+	debug                   debugQueryService
+	debugColumns            map[string]bool
+	syncNow                 func(context.Context) (store.ServerSyncDiagnostics, error)
+	syncSettings            syncSettingsService
+	actions                 imessage.Performer
+	testContact             testContactStore
 }
 
 // SetRuleService wires the v0.11.3 sync-rule store after construction (kept off

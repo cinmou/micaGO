@@ -72,7 +72,10 @@ class MessageCollection {
   Map<String, MessageModel> snapshot() => Map.of(_server);
 
   void removeServerMessages(Iterable<String> guids) {
-    for (final guid in guids) {
+    for (final key in guids) {
+      final parts = key.split('\u001f');
+      final guid = parts.last;
+      if (parts.length == 2 && _server[guid]?.chatGuid != parts.first) continue;
       _server.remove(guid);
       _presentationKeysByServerGuid.remove(guid);
     }

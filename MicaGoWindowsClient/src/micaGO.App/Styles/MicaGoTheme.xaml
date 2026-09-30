@@ -5,6 +5,8 @@
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="MicaGoUnreadBadgeBrush" Color="#FFFF3B30" />
+            <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="White" />
             <StaticResource x:Key="MicaGoChatSurfaceBrush"
                             ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
             <AcrylicBrush x:Key="MicaGoContactBarBrush"
@@ -29,6 +31,8 @@
             <SolidColorBrush x:Key="MicaGoChatBackgroundScrimBrush" Color="#4DFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
+            <SolidColorBrush x:Key="MicaGoUnreadBadgeBrush" Color="#FFFF3B30" />
+            <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="White" />
             <StaticResource x:Key="MicaGoChatSurfaceBrush"
                             ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
             <AcrylicBrush x:Key="MicaGoContactBarBrush"
@@ -50,6 +54,8 @@
             <SolidColorBrush x:Key="MicaGoChatBackgroundScrimBrush" Color="#61000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="MicaGoUnreadBadgeBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
             <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoContactBarBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="{ThemeResource SystemColorWindowColor}" />

@@ -26,7 +26,7 @@ public sealed class SettingsBackupService(LocalCacheStore cache)
     public async Task<BackupSummary> ExportAsync(string destinationPath, string appVersion, CancellationToken cancellationToken = default)
     {
         var settings = (await cache.GetAllSettingsAsync(cancellationToken))
-            .Where(pair => !ExcludedKeys.Contains(pair.Key) && !pair.Key.StartsWith("chat.preferences.", StringComparison.Ordinal))
+            .Where(pair => !ExcludedKeys.Contains(pair.Key) && !pair.Key.StartsWith("chat.preferences.", StringComparison.Ordinal) && !pair.Key.StartsWith("message.preferences.", StringComparison.Ordinal))
             .ToDictionary(pair => pair.Key, pair => pair.Value);
 
         var backgroundPath = settings.GetValueOrDefault(BackgroundKey);

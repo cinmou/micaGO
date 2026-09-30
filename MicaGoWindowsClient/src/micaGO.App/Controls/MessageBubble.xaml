@@ -92,7 +92,7 @@
                     <StackPanel x:Name="BubbleBlocks" Spacing="4">
                         <StackPanel x:Name="MediaPanel" Spacing="4" />
                         <Border x:Name="Bubble"
-                                Padding="12,7,12,8"
+                                Padding="12,8"
                                 HorizontalAlignment="Left"
                                 Background="{ThemeResource MicaGoIncomingMessageBrush}"
                                 CornerRadius="18,18,18,4">
@@ -102,6 +102,8 @@
                                            FontSize="14"
                                            IsTextSelectionEnabled="True"
                                            LineHeight="20"
+                                           LineStackingStrategy="BlockLineHeight"
+                                           OpticalMarginAlignment="TrimSideBearings"
                                            TextWrapping="Wrap" />
                         </Border>
                     </StackPanel>
