@@ -1,4 +1,7 @@
 using System.Globalization;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace MicaGo.App.Services;
 
@@ -159,7 +162,27 @@ public sealed class LocalizationService
     }
 
     public string Language { get; private set; } = ResolveSystemLanguage();
-    public void SetLanguage(string value) => Language = Tables.ContainsKey(value) ? value : ResolveSystemLanguage();
+    public event EventHandler? LanguageChanged;
+    public void SetLanguage(string value)
+    {
+        var language = Tables.ContainsKey(value) ? value : ResolveSystemLanguage();
+        if (Language == language) return;
+        Language = language;
+        LanguageChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void ApplyTypography(FrameworkElement root)
+    {
+        // Bind Han glyph selection to our language picker, including unpackaged hosts.
+        // Keep Latin and emoji native while supplying an explicit Chinese fallback.
+        var traditional = Language == "zh-Hant";
+        root.Language = Language switch { "zh-Hans" => "zh-CN", "zh-Hant" => "zh-TW", _ => "en-US" };
+        var font = new FontFamily(traditional
+            ? "Segoe UI, Microsoft JhengHei UI, Microsoft JhengHei, Microsoft YaHei UI"
+            : "Segoe UI, Microsoft YaHei UI, Microsoft YaHei, Microsoft JhengHei UI");
+        Application.Current.Resources["ContentControlThemeFontFamily"] = font;
+        if (root is Control control) control.FontFamily = font;
+    }
     public string this[string key] => VcfStrings.TryGetValue(Language, out var vcf) && vcf.TryGetValue(key, out var special) ? special : Tables.TryGetValue(Language, out var table) && table.TryGetValue(key, out var value) ? value : Tables["en"].GetValueOrDefault(key, key);
     private static string ResolveSystemLanguage() { var name = CultureInfo.CurrentUICulture.Name; return name.StartsWith("zh-Hant", StringComparison.OrdinalIgnoreCase) || name is "zh-TW" or "zh-HK" or "zh-MO" ? "zh-Hant" : name.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-Hans" : "en"; }
 }

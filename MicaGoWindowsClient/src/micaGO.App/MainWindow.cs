@@ -25,10 +25,14 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = "micaGO";
+        AppServices.Current.Localization.ApplyTypography(_windowRoot);
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "micaGO.ico");
         if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
         _shellPage = new ShellPage();
+        AppServices.Current.Localization.ApplyTypography(_shellPage);
         Content = BuildContent();
+        AppServices.Current.Localization.LanguageChanged += Localization_LanguageChanged;
+        Closed += (_, _) => AppServices.Current.Localization.LanguageChanged -= Localization_LanguageChanged;
         AppWindow.Closing += AppWindow_Closing;
         if (AppWindowTitleBar.IsCustomizationSupported())
         {
@@ -53,6 +57,12 @@ public sealed class MainWindow : Window
         Grid.SetRow(_shellPage, 1);
         _windowRoot.Children.Add(_shellPage);
         return _windowRoot;
+    }
+
+    private void Localization_LanguageChanged(object? sender, EventArgs e)
+    {
+        AppServices.Current.Localization.ApplyTypography(_windowRoot);
+        AppServices.Current.Localization.ApplyTypography(_shellPage);
     }
 
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)

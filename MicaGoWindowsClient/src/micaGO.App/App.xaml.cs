@@ -87,15 +87,31 @@ public partial class App : Application
     public static async Task SetTrayEnabledAsync(bool enabled)
     {
         await AppServices.Current.Cache.InitializeAsync();
-        await AppServices.Current.Cache.SetSettingAsync("settings.tray", enabled ? "true" : "false");
         if (enabled && _tray is null)
         {
-            _tray = new TrayIconService(Path.Combine(AppContext.BaseDirectory, "Assets", "micaGO.ico"));
-            _tray.OpenRequested += (_, _) => ShowCurrentWindow();
-            _tray.ExitRequested += (_, _) => ExitFromTray();
-            _tray.ContactRequested += async (_, contact) => { ShowCurrentWindow(); if (MainWindow is MainWindow main) await main.OpenChatAsync(contact.Id); };
+            try
+            {
+                var tray = new TrayIconService(Path.Combine(AppContext.BaseDirectory, "Assets", "micaGO.ico"));
+                tray.OpenRequested += (_, _) => ShowCurrentWindow();
+                tray.ExitRequested += (_, _) => ExitFromTray();
+                tray.ContactRequested += async (_, contact) => { ShowCurrentWindow(); if (MainWindow is MainWindow main) await main.OpenChatAsync(contact.Id); };
+                _tray = tray;
+                await AppServices.Current.Cache.SetSettingAsync("settings.tray", "true");
+            }
+            catch (Exception exception)
+            {
+                _tray?.Dispose();
+                _tray = null;
+                WriteStartupFailure(exception);
+                await AppServices.Current.Cache.SetSettingAsync("settings.tray", "false");
+            }
         }
-        else if (!enabled && _tray is not null) { _tray.Dispose(); _tray = null; }
+        else if (!enabled)
+        {
+            _tray?.Dispose();
+            _tray = null;
+            await AppServices.Current.Cache.SetSettingAsync("settings.tray", "false");
+        }
     }
 
     public static void UpdateTrayContacts(IEnumerable<TrayContact> contacts) => _tray?.UpdateRecentContacts(contacts);

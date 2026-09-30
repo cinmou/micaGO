@@ -18,13 +18,19 @@ public sealed class ConnectionWindow : Window
     private readonly Grid _windowRoot = new() { Background = null };
     private readonly RowDefinition _titleBarRow = new() { Height = new GridLength(40) };
     private readonly Grid _appTitleBar = new() { Background = null };
+    private readonly ConnectionPage _connectionPage;
 
     public ConnectionWindow()
     {
         Title = "micaGO";
+        AppServices.Current.Localization.ApplyTypography(_windowRoot);
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "micaGO.ico");
         if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
+        _connectionPage = new ConnectionPage();
+        AppServices.Current.Localization.ApplyTypography(_connectionPage);
         Content = BuildContent();
+        AppServices.Current.Localization.LanguageChanged += Localization_LanguageChanged;
+        Closed += (_, _) => AppServices.Current.Localization.LanguageChanged -= Localization_LanguageChanged;
         if (AppWindowTitleBar.IsCustomizationSupported())
         {
             ExtendsContentIntoTitleBar = true;
@@ -49,10 +55,15 @@ public sealed class ConnectionWindow : Window
         _windowRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _appTitleBar.Children.Add(TitleBarBrand.Create());
         _windowRoot.Children.Add(_appTitleBar);
-        var page = new ConnectionPage();
-        Grid.SetRow(page, 1);
-        _windowRoot.Children.Add(page);
+        Grid.SetRow(_connectionPage, 1);
+        _windowRoot.Children.Add(_connectionPage);
         return _windowRoot;
+    }
+
+    private void Localization_LanguageChanged(object? sender, EventArgs e)
+    {
+        AppServices.Current.Localization.ApplyTypography(_windowRoot);
+        AppServices.Current.Localization.ApplyTypography(_connectionPage);
     }
 
     private async void WindowRoot_Loaded(object sender, RoutedEventArgs e)
