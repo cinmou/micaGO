@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+using System.Text.Json;
 using MicaGo.Core.Connection;
 using MicaGo.Infrastructure.Api;
 using MicaGo.Infrastructure.Contracts;
@@ -15,6 +17,7 @@ public sealed class ConnectionManager : IDisposable
     private MicaGoApi? _api;
     private string? _token;
     private int _selectionEpoch;
+    private readonly SemaphoreSlim _endpointRefreshGate = new(1, 1);
 
     public ConnectionManager(IConnectionStore store, EndpointSelector selector)
     {
@@ -68,7 +71,7 @@ public sealed class ConnectionManager : IDisposable
     public async Task<bool> TryRestoreAsync(CancellationToken cancellationToken = default)
     {
         var saved = await _store.LoadAsync(cancellationToken);
-        if (saved is null)
+        if (saved is null || string.IsNullOrEmpty(saved.Profile.DeviceId))
         {
             return false;
         }
@@ -91,14 +94,42 @@ public sealed class ConnectionManager : IDisposable
     public async Task ConnectPairingJsonAsync(string pairingJson, CancellationToken cancellationToken = default)
     {
         var payload = PairingPayloadParser.Parse(pairingJson);
+        if (payload.Version < 4) throw new ConnectionException("Create a new pairing code in micaGO 0.84 or later on the Mac. Older connection JSON is no longer supported.");
         var initialProfile = new ConnectionProfile(
             payload.ServerName,
             payload.Endpoints[0].BaseUrl,
             payload.Endpoints[0].WebSocketUrl,
             payload.Mode,
             payload.ConfigRevision,
-            payload.Endpoints);
-        await ActivateAsync(initialProfile, payload.Token, persist: true, cancellationToken);
+            payload.Endpoints, TlsFingerprint: payload.TlsFingerprint);
+        foreach (var endpoint in payload.Endpoints)
+        {
+            using var client = SecureTransport.CreateClient(endpoint.BaseUrl, endpoint.TlsFingerprint);
+            client.Timeout = TimeSpan.FromSeconds(6);
+            client.MaxResponseContentBufferSize = 4096;
+            try
+            {
+                using var health = await client.GetAsync("api/health", cancellationToken);
+                if (!health.IsSuccessStatusCode) continue;
+                using var body = JsonDocument.Parse(await health.Content.ReadAsStringAsync(cancellationToken));
+                if (!body.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True) continue;
+            }
+            catch (HttpRequestException) { continue; }
+            catch (JsonException) { continue; }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { continue; }
+            // Redeem once; an uncertain result requires a fresh invitation.
+            using var response = await client.PostAsJsonAsync("api/pairing/redeem", new { pairingCode = payload.PairingCode }, cancellationToken);
+            if (!response.IsSuccessStatusCode) throw new ConnectionException("Pairing code expired or already used. Create a new code on the Mac.");
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            var credential = document.RootElement.GetProperty("token").GetString();
+            var deviceId = document.RootElement.GetProperty("deviceId").GetString();
+            if (credential is null || !System.Text.RegularExpressions.Regex.IsMatch(credential, "\\A[a-f0-9]{64}\\z") || string.IsNullOrEmpty(deviceId))
+                throw new ConnectionException("Invalid device credential response.");
+            initialProfile = initialProfile with { DeviceId = deviceId };
+            await ActivateAsync(initialProfile, credential, persist: true, cancellationToken);
+            return;
+        }
+        throw new ConnectionException("No secure pairing endpoint could be reached.");
     }
 
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
@@ -199,7 +230,7 @@ public sealed class ConnectionManager : IDisposable
             ActiveBaseUrl = selected.Endpoint.BaseUrl,
             ActiveWebSocketUrl = selected.Endpoint.WebSocketUrl,
         };
-        api.Rebase(selected.Endpoint.BaseUrl, selected.Endpoint.WebSocketUrl);
+        api.Rebase(selected.Endpoint.BaseUrl, selected.Endpoint.WebSocketUrl, selected.Endpoint.TlsFingerprint);
         Profile = updated;
         ActiveEndpoint = selected;
         await _store.SaveAsync(updated, token, cancellationToken);
@@ -256,7 +287,7 @@ public sealed class ConnectionManager : IDisposable
             ActiveWebSocketUrl = selected.Endpoint.WebSocketUrl,
         };
 
-        var api = new MicaGoApi(activated.ActiveBaseUrl, activated.ActiveWebSocketUrl, token);
+        var api = new MicaGoApi(activated.ActiveBaseUrl, activated.ActiveWebSocketUrl, token, selected.Endpoint.TlsFingerprint);
         try
         {
             if (persist)
@@ -277,6 +308,40 @@ public sealed class ConnectionManager : IDisposable
             api.Dispose();
             throw;
         }
+    }
+
+    public async Task RefreshEndpointsAsync(CancellationToken ct = default)
+    {
+        await _endpointRefreshGate.WaitAsync(ct);
+        try
+        {
+            var client = _api; var profile = Profile; var token = _token; var epoch = _selectionEpoch;
+            if (client is null || profile is null || token is null) return;
+            using var document = await client.GetServerUrlsAsync(ct);
+            if (!ReferenceEquals(client, _api) || epoch != _selectionEpoch || !ReferenceEquals(profile, Profile)) return;
+            var next = EndpointConfiguration.Apply(profile, document.RootElement);
+            if (next.ConfigRevision == profile.ConfigRevision && next.SelectedBaseUrl == profile.SelectedBaseUrl && next.ActiveWebSocketUrl == profile.ActiveWebSocketUrl && next.Endpoints.SequenceEqual(profile.Endpoints)) return;
+            await _store.SaveAsync(next, token, ct);
+            if (!ReferenceEquals(client, _api) || epoch != _selectionEpoch || !ReferenceEquals(profile, Profile))
+            {
+                if (Profile is { } current && _token is { } currentToken) await _store.SaveAsync(current, currentToken, ct);
+                return;
+            }
+            Profile = next;
+            var activePin = next.Endpoints.FirstOrDefault(e => e.BaseUrl == next.ActiveBaseUrl)?.TlsFingerprint
+                ?? profile.Endpoints.FirstOrDefault(e => e.BaseUrl == next.ActiveBaseUrl)?.TlsFingerprint;
+            client.Rebase(next.ActiveBaseUrl, next.ActiveWebSocketUrl, activePin);
+            RoutesChanged?.Invoke(this, EventArgs.Empty);
+            if (next.Endpoints.Count > 0 && !next.Endpoints.Any(endpoint => endpoint.BaseUrl.Equals(next.ActiveBaseUrl, StringComparison.OrdinalIgnoreCase)))
+                await ReselectRouteAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) { }
+        catch (HttpRequestException) { }
+        catch (MicaGoApiException) { }
+        catch (System.Text.Json.JsonException) { }
+        catch (InvalidDataException) { }
+        finally { _endpointRefreshGate.Release(); }
     }
 
     private void MarkProbing(string baseUrl)

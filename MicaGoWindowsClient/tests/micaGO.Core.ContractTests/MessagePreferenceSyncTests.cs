@@ -76,6 +76,9 @@ internal static class MessagePreferenceSyncTests
             await cacheA.AdvanceReadWatermarkAsync("route-a",200);
             await cacheA.AdvanceReadWatermarkAsync("route-a",100);
             True(await cacheA.GetSettingAsync("read.watermark.route-a")=="200","older read event regressed watermark");
+            a.Changed+=(_,_)=>throw new InvalidOperationException("display observer failed");
+            await a.SetHiddenAsync(["route-a\u001fsame-guid"],false);
+            True(a.ErrorKey is null&&!a.Pending&&!server.Rows["route-a\u001fsame-guid"].Hidden,"successful restore was reported offline after a display exception");
             await cacheA.ClearContentCacheAsync();True(await cacheA.GetSettingAsync("message.preferences.v1") is not null,"cache clear erased preferences");
         }
         finally

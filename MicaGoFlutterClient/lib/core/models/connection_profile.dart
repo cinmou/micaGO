@@ -45,9 +45,7 @@ class EndpointRef {
 
   @override
   bool operator ==(Object other) =>
-      other is EndpointRef &&
-      other.baseUrl == baseUrl &&
-      other.wsUrl == wsUrl;
+      other is EndpointRef && other.baseUrl == baseUrl && other.wsUrl == wsUrl;
 
   @override
   int get hashCode => Object.hash(baseUrl, wsUrl);
@@ -60,8 +58,21 @@ class ConnectionProfile {
   /// Normalised http(s) base URL, e.g. `https://mica.example.com`.
   final String baseUrl;
 
-  /// Shared bearer token.
+  /// Device-scoped bearer credential.
   final String token;
+  final String tlsFingerprint;
+  final String deviceId;
+  final String? pairingCode;
+
+  String? pinFor(String url) =>
+      tlsFingerprint.isNotEmpty &&
+          (lanRoutes.any(
+                (r) => Uri.parse(r.baseUrl).origin == Uri.parse(url).origin,
+              ) ||
+              (baseUrl != publicBaseUrl &&
+                  Uri.parse(baseUrl).origin == Uri.parse(url).origin))
+      ? tlsFingerprint
+      : null;
 
   /// Optional explicit WebSocket URL. When null/empty, [effectiveWsUrl] derives
   /// it from [baseUrl].
@@ -88,6 +99,9 @@ class ConnectionProfile {
   ConnectionProfile({
     required this.baseUrl,
     required this.token,
+    this.tlsFingerprint = '',
+    this.deviceId = '',
+    this.pairingCode,
     this.wsUrlOverride,
     List<EndpointRef>? lanRoutes,
     String? lanBaseUrl,
@@ -111,7 +125,10 @@ class ConnectionProfile {
     if (base.isEmpty) return const [];
     final ws = lanWsUrl?.trim() ?? '';
     return List.unmodifiable([
-      EndpointRef(baseUrl: base, wsUrl: ws.isNotEmpty ? ws : deriveWebSocketUrl(base)),
+      EndpointRef(
+        baseUrl: base,
+        wsUrl: ws.isNotEmpty ? ws : deriveWebSocketUrl(base),
+      ),
     ]);
   }
 
@@ -176,6 +193,9 @@ class ConnectionProfile {
   ConnectionProfile copyWith({
     String? baseUrl,
     String? token,
+    String? tlsFingerprint,
+    String? deviceId,
+    Object? pairingCode = _unset,
     String? wsUrlOverride,
     List<EndpointRef>? lanRoutes,
     Object? selectedBaseUrl = _unset,
@@ -187,6 +207,11 @@ class ConnectionProfile {
     return ConnectionProfile(
       baseUrl: baseUrl ?? this.baseUrl,
       token: token ?? this.token,
+      tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
+      deviceId: deviceId ?? this.deviceId,
+      pairingCode: identical(pairingCode, _unset)
+          ? this.pairingCode
+          : pairingCode as String?,
       wsUrlOverride: wsUrlOverride ?? this.wsUrlOverride,
       lanRoutes: lanRoutes ?? this.lanRoutes,
       selectedBaseUrl: identical(selectedBaseUrl, _unset)
@@ -202,6 +227,8 @@ class ConnectionProfile {
   Map<String, dynamic> toJson() => {
     'baseUrl': baseUrl,
     'token': token,
+    'tlsFingerprint': tlsFingerprint,
+    'deviceId': deviceId,
     'wsUrlOverride': wsUrlOverride,
     'lanRoutes': [for (final r in lanRoutes) r.toJson()],
     'selectedBaseUrl': selectedBaseUrl,
@@ -226,6 +253,8 @@ class ConnectionProfile {
     return ConnectionProfile(
       baseUrl: (json['baseUrl'] as String?) ?? '',
       token: (json['token'] as String?) ?? '',
+      tlsFingerprint: (json['tlsFingerprint'] as String?) ?? '',
+      deviceId: (json['deviceId'] as String?) ?? '',
       wsUrlOverride: json['wsUrlOverride'] as String?,
       lanRoutes: routes.isNotEmpty ? routes : null,
       // Fall back to the legacy single-LAN keys when no route list is stored.

@@ -31,13 +31,13 @@ public static class PairingPayloadParser
                 throw new PairingPayloadException("This is not valid micaGO pairing JSON.");
             }
 
-            var token = GetString(root, "token");
+            var version = GetInt(root, "version") ?? 1;
+            var token = GetString(root, version >= 4 ? "pairingCode" : "token");
             if (string.IsNullOrWhiteSpace(token))
             {
                 throw new PairingPayloadException("The pairing JSON is missing its token.");
             }
 
-            var version = GetInt(root, "version") ?? 1;
             return version switch
             {
                 >= 3 when TryGetArray(root, "candidates", out var candidates) =>
@@ -109,7 +109,8 @@ public static class PairingPayloadParser
                 kind,
                 baseUrl,
                 websocket,
-                GetInt(candidate, "priority") ?? 1));
+                GetInt(candidate, "priority") ?? 1,
+ version >= 4 && kind == EndpointKind.Lan ? GetString(root, "tlsFingerprint") : null));
         }
 
         var usable = parsed
@@ -122,13 +123,18 @@ public static class PairingPayloadParser
             throw new PairingPayloadException("The pairing JSON has no usable LAN or public endpoint.");
         }
 
+        if (version >= 4 && (usable.Any(e => new Uri(e.BaseUrl).Scheme != "https" || new Uri(e.WebSocketUrl).Scheme != "wss" || new Uri(e.BaseUrl).Host != new Uri(e.WebSocketUrl).Host || new Uri(e.BaseUrl).Port != new Uri(e.WebSocketUrl).Port)
+          || !System.Text.RegularExpressions.Regex.IsMatch(GetString(root, "tlsFingerprint") ?? "", "\\A[a-fA-F0-9]{64}\\z")))
+            throw new PairingPayloadException("Invalid secure pairing endpoints or certificate fingerprint.");
         return new PairingPayload(
             version,
             mode == ConnectionMode.Auto && version >= 2 ? ConnectionMode.LanFirst : mode,
             token,
             GetString(root, "serverName"),
             GetString(root, "configRevision") ?? string.Empty,
-            usable);
+            usable,
+ version >= 4 ? token : null,
+ version >= 4 ? GetString(root, "tlsFingerprint") : null);
     }
 
     private static bool IsHidden(JsonElement candidate) =>

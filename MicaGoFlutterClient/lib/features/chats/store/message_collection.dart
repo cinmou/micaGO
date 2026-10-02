@@ -5,16 +5,16 @@
 /// mirroring BlueBubbles' in-memory `ChatMessages` struct. It has no Flutter or
 /// async dependencies so every event/reconciliation case is unit-testable.
 ///
-/// - Confirmed/server messages are keyed by `guid`.
+/// - Confirmed/server messages are keyed by route + `guid`.
 /// - Optimistic outgoing messages are keyed by `tempId` until reconciled.
-/// - Dedupe is by guid (server) and tempId (pending); a pending row is removed
+/// - Dedupe is by route + guid (server) and tempId (pending); a pending row is removed
 ///   when a matching server row arrives (see [shouldReconcileLocalWithServer]).
 library;
 
 import '../models/message_model.dart';
 
 class MessageCollection {
-  final Map<String, MessageModel> _server = {}; // by guid
+  final Map<String, MessageModel> _server = {}; // by route + guid
   final Map<String, MessageModel> _pending = {}; // by tempId
 
   /// A confirmed row keeps the optimistic row's presentation identity. This is
@@ -25,7 +25,8 @@ class MessageCollection {
 
   String presentationKeyFor(MessageModel message) {
     if (message.guid.isNotEmpty) {
-      return _presentationKeysByServerGuid[message.guid] ?? message.dedupeKey;
+      return _presentationKeysByServerGuid[message.serverKey] ??
+          message.dedupeKey;
     }
     return message.dedupeKey;
   }
@@ -59,7 +60,13 @@ class MessageCollection {
 
   void _invalidate() => _orderedCache = null;
 
-  MessageModel? serverByGuid(String guid) => _server[guid];
+  MessageModel? serverByGuid(String guid, {String? chatGuid}) {
+    if (chatGuid != null) return _server['$chatGuid\u001f$guid'];
+    if (_server.containsKey(guid)) return _server[guid];
+    final matches = _server.values.where((m) => m.guid == guid).toList();
+    return matches.length == 1 ? matches.single : null;
+  }
+
   MessageModel? pendingByTempId(String tempId) => _pending[tempId];
 
   void clear() {
@@ -73,11 +80,10 @@ class MessageCollection {
 
   void removeServerMessages(Iterable<String> guids) {
     for (final key in guids) {
-      final parts = key.split('\u001f');
-      final guid = parts.last;
-      if (parts.length == 2 && _server[guid]?.chatGuid != parts.first) continue;
-      _server.remove(guid);
-      _presentationKeysByServerGuid.remove(guid);
+      final message = key.contains('\u001f') ? _server[key] : serverByGuid(key);
+      if (message == null) continue;
+      _server.remove(message.serverKey);
+      _presentationKeysByServerGuid.remove(message.serverKey);
     }
     _invalidate();
   }
@@ -90,14 +96,19 @@ class MessageCollection {
     final newGuids = <String>{};
     for (final message in page) {
       if (message.guid.isNotEmpty) {
-        if (!_server.containsKey(message.guid)) newGuids.add(message.guid);
+        if (!_server.containsKey(message.serverKey)) {
+          newGuids.add(message.serverKey);
+        }
         if (baseline != null &&
-            !identical(_server[message.guid], baseline[message.guid])) {
+            !identical(
+              _server[message.serverKey],
+              baseline[message.serverKey],
+            )) {
           continue;
         }
-        _server[message.guid] = message;
+        _server[message.serverKey] = message;
         if (message.tempId != null) {
-          _presentationKeysByServerGuid[message.guid] = message.tempId!;
+          _presentationKeysByServerGuid[message.serverKey] = message.tempId!;
           _pending.remove(message.tempId);
         }
       } else if (message.tempId != null) {
@@ -113,7 +124,7 @@ class MessageCollection {
   /// Merges an older page (pagination) without dropping existing messages.
   void mergeOlder(Iterable<MessageModel> older) {
     for (final m in older) {
-      if (m.guid.isNotEmpty) _server.putIfAbsent(m.guid, () => m);
+      if (m.guid.isNotEmpty) _server.putIfAbsent(m.serverKey, () => m);
     }
     _invalidate();
   }
@@ -122,8 +133,8 @@ class MessageCollection {
   /// Patches in place by guid and reconciles any matching optimistic row.
   void upsertServer(MessageModel m) {
     if (m.guid.isEmpty) return;
-    final isNew = !_server.containsKey(m.guid);
-    _server[m.guid] = m;
+    final isNew = !_server.containsKey(m.serverKey);
+    _server[m.serverKey] = m;
     _reconcileOne(m, isNewRow: isNew);
     _invalidate();
   }
@@ -134,10 +145,12 @@ class MessageCollection {
 
   /// Marks an existing message retracted and clears its displayed content.
   /// Returns false when the guid is unknown (caller may schedule a reload).
-  bool applyUnsend(String guid, int? dateRetracted) {
-    final existing = _server[guid];
+  bool applyUnsend(String guid, int? dateRetracted, {String? chatGuid}) {
+    final existing = guid.contains('\u001f')
+        ? _server[guid]
+        : serverByGuid(guid, chatGuid: chatGuid);
     if (existing == null) return false;
-    _server[guid] = existing.copyWith(
+    _server[existing.serverKey] = existing.copyWith(
       text: '',
       attachments: const [],
       isRetracted: true,
@@ -180,7 +193,7 @@ class MessageCollection {
   /// Replaces an optimistic row with its confirmed server message.
   void confirmPending(String tempId, MessageModel server) {
     _removePendingAsConfirmed(tempId, server);
-    if (server.guid.isNotEmpty) _server[server.guid] = server;
+    if (server.guid.isNotEmpty) _server[server.serverKey] = server;
     _invalidate();
   }
 
@@ -198,11 +211,11 @@ class MessageCollection {
     final servers = _server.values.toList(growable: false)
       ..sort(_compareMessageTime);
     for (final server in servers) {
-      if (_presentationKeysByServerGuid.containsKey(server.guid)) continue;
+      if (_presentationKeysByServerGuid.containsKey(server.serverKey)) continue;
       final tempId = matchingPendingTempId(
         _pending.values,
         server,
-        allowAttachmentFallback: newGuids.contains(server.guid),
+        allowAttachmentFallback: newGuids.contains(server.serverKey),
       );
       if (tempId == null) continue;
       _removePendingAsConfirmed(tempId, server);
@@ -210,7 +223,7 @@ class MessageCollection {
   }
 
   void _reconcileOne(MessageModel server, {bool isNewRow = false}) {
-    if (_presentationKeysByServerGuid.containsKey(server.guid)) return;
+    if (_presentationKeysByServerGuid.containsKey(server.serverKey)) return;
     if (_pending.isEmpty) return;
     final tempId = matchingPendingTempId(
       _pending.values,
@@ -225,7 +238,9 @@ class MessageCollection {
     if (server.guid.isEmpty) return;
     final pending = _pending.remove(tempId);
     if (pending == null) return;
-    _presentationKeysByServerGuid[server.guid] = presentationKeyFor(pending);
+    _presentationKeysByServerGuid[server.serverKey] = presentationKeyFor(
+      pending,
+    );
   }
 }
 

@@ -42,7 +42,7 @@ void main() {
         },
       );
       final s = BackupService.inspect(bytes);
-      expect(s.hasServer, isTrue);
+      expect(s.hasServer, isFalse);
       expect(s.hasAppearance, isTrue);
       expect(s.hasMessageDisplay, isTrue);
       expect(s.hasChatBackground, isTrue);

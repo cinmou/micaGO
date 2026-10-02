@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -61,6 +62,7 @@ func (r *Reachability) UnmarshalJSON(b []byte) error {
 
 // EndpointInfo is one reachable connection endpoint.
 type EndpointInfo struct {
+	Hidden    *bool        `json:"hidden,omitempty"`
 	Kind      string       `json:"kind"` // loopback | lan
 	Label     string       `json:"label"`
 	BaseURL   string       `json:"baseUrl"`
@@ -92,6 +94,7 @@ type ServerURLsResponse struct {
 	// whenever those change, so a paired client can detect that the server's
 	// connection candidates moved and refresh them without rescanning a QR.
 	ConnectionRevision string `json:"connectionRevision"`
+	TLSFingerprint     string `json:"tlsFingerprint,omitempty"`
 }
 
 // PublicURLCheckResult is the POST /api/server/public-url/check payload. It
@@ -109,6 +112,7 @@ type PublicURLCheckResult struct {
 // to the config file, and performs reachability checks. Local/LAN endpoints are
 // derived statically from the bind address and are NOT part of this controller.
 type NetworkController struct {
+	secure        bool
 	mu            sync.RWMutex
 	configPath    string
 	publicBaseURL string
@@ -166,6 +170,9 @@ func (c *NetworkController) SetPublicURL(publicBaseURL string, verifyTLS bool, p
 	if preferred == "" {
 		preferred = "auto"
 	}
+	if c.secure && trimmed != "" && (!strings.HasPrefix(trimmed, "https://") || !verifyTLS) {
+		return fmt.Errorf("public endpoint requires HTTPS with certificate verification")
+	}
 	if err := config.UpdatePublicBaseURL(c.configPath, trimmed, verifyTLS, preferred); err != nil {
 		return err
 	}
@@ -178,7 +185,7 @@ func (c *NetworkController) SetPublicURL(publicBaseURL string, verifyTLS bool, p
 	onChange := c.onChange
 	c.mu.Unlock()
 
-	if onChange != nil && trimmed != "" {
+	if onChange != nil {
 		onChange(context.Background(), trimmed)
 	}
 	return nil
@@ -193,11 +200,19 @@ func (c *NetworkController) Check(ctx context.Context) PublicURLCheckResult {
 		return PublicURLCheckResult{OK: false, Reachable: false, Message: "no public URL configured"}
 	}
 
+	if c.secure && !strings.HasPrefix(base, "https://") {
+		return PublicURLCheckResult{OK: false, Reachable: false, BaseURL: base, Message: "public endpoint requires HTTPS"}
+	}
 	transport := &http.Transport{}
 	if !snap.verifyTLS {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // user opted out of TLS verification
 	}
-	client := &http.Client{Timeout: 6 * time.Second, Transport: transport}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Timeout: 6 * time.Second, Transport: transport,
+		// The user configured one origin. Never forward its bearer probe to a
+		// redirected destination (including a TLS downgrade on the same host).
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 
 	target := strings.TrimRight(base, "/") + "/api/auth/check"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
@@ -221,11 +236,19 @@ func (c *NetworkController) Check(ctx context.Context) PublicURLCheckResult {
 
 	result.Reachable = true
 	result.Status = resp.StatusCode
-	result.AuthOK = resp.StatusCode == http.StatusOK
+	if resp.StatusCode == http.StatusOK {
+		var check struct {
+			OK bool `json:"ok"`
+		}
+		decoder := json.NewDecoder(io.LimitReader(resp.Body, 64<<10))
+		result.AuthOK = decoder.Decode(&check) == nil && check.OK
+	}
 	result.OK = result.AuthOK
 	switch {
 	case result.AuthOK:
 		result.Message = "public URL reaches this server and bearer auth works"
+	case resp.StatusCode == http.StatusOK:
+		result.Message = "public URL returned an invalid MicaGo authentication response"
 	case resp.StatusCode == http.StatusUnauthorized:
 		result.Message = "reached a server but bearer auth was rejected"
 	default:
@@ -261,6 +284,41 @@ func (h *Handlers) buildServerURLs() ServerURLsResponse {
 		resp.PreferredPairingEndpoint = snap.preferred
 		resp.Public = buildPublicEndpoint(snap)
 	}
+	if h.tlsPort != "" {
+		resp.TLSFingerprint = h.tlsFingerprint
+		for i := range resp.LAN {
+			e := &resp.LAN[i]
+			u, _ := url.Parse(e.BaseURL)
+			u.Scheme = "https"
+			u.Host = net.JoinHostPort(u.Hostname(), h.tlsPort)
+			e.BaseURL = u.String()
+			e.WSURL = strings.Replace(e.BaseURL, "https://", "wss://", 1) + "/ws"
+		}
+		if !strings.HasPrefix(resp.Public.BaseURL, "https://") {
+			resp.Public = PublicEndpoint{}
+		}
+	}
+	if h.lanVisibility != nil {
+		hidden, err := h.lanVisibility.HiddenLANEndpoints(context.Background())
+		if err == nil && hidden != nil {
+			excluded := map[string]bool{}
+			for _, base := range hidden {
+				excluded[base] = true
+				if h.tlsPort != "" {
+					u, parseErr := url.Parse(base)
+					if parseErr == nil && u.Scheme == "http" {
+						u.Scheme = "https"
+						u.Host = net.JoinHostPort(u.Hostname(), h.tlsPort)
+						excluded[u.String()] = true
+					}
+				}
+			}
+			for i := range resp.LAN {
+				value := excluded[resp.LAN[i].BaseURL]
+				resp.LAN[i].Hidden = &value
+			}
+		}
+	}
 	resp.ConnectionRevision = connectionRevision(resp)
 	return resp
 }
@@ -274,6 +332,13 @@ func connectionRevision(resp ServerURLsResponse) string {
 		b.WriteString(e.BaseURL)
 		b.WriteByte('|')
 		b.WriteString(e.WSURL)
+		if e.Hidden != nil {
+			if *e.Hidden {
+				b.WriteString("|hidden")
+			} else {
+				b.WriteString("|visible")
+			}
+		}
 		b.WriteByte('\n')
 	}
 	if resp.Public.Enabled {

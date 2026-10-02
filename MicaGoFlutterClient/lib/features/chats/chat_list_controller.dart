@@ -193,7 +193,7 @@ class ChatListController extends ChangeNotifier {
       // duplicate event (WS reconnect, FCM catch-up, resume) can never over-count.
       // Checked before upsert; otherwise every message would look known.
       final isNew =
-          msg.guid.isEmpty || !await app.cache.hasMessageGuid(msg.guid);
+          msg.guid.isEmpty || !await app.cache.hasMessage(chatGuid, msg.guid);
       await app.cache.upsertMessage(chatGuid, msg);
       // C47: ingestion only lights (or leaves) the dot; it never advances the
       // read watermark for someone else's message. The open thread owns marking

@@ -17,7 +17,11 @@ public sealed partial class HiddenMessagesPage:Page
         AppServices.Current.MessagePreferences.Changed-=PreferencesChanged;
         base.OnNavigatedFrom(e);
     }
-    private void PreferencesChanged(object? sender,EventArgs args)=>DispatcherQueue.TryEnqueue(async () => await ReloadAsync());
+    private void PreferencesChanged(object? sender,EventArgs args)=>DispatcherQueue.TryEnqueue(async () => {
+        if(_busy)return;
+        try {await ReloadAsync();}
+        catch(Exception error) {System.Diagnostics.Debug.WriteLine($"[Hidden messages] reload failed: {error.GetType().Name}");}
+    });
     private async Task RunPreferenceAsync(Func<Task> action) {
         if(_busy)return; _busy=true;
         try {await action();}
@@ -46,7 +50,28 @@ IReadOnlyList<Message> messages=_context is null?Array.Empty<Message>():await _c
     private void ExitSelectMode(){_selectMode=false;HiddenMessagesList.SelectedItems.Clear();HiddenMessagesList.SelectionMode=ListViewSelectionMode.None;HiddenMessagesList.IsItemClickEnabled=true;SelectButton.Visibility=HiddenMessagesList.Items.Count>0?Visibility.Visible:Visibility.Collapsed;SelectAllButton.Visibility=Visibility.Collapsed;CancelSelectionButton.Visibility=Visibility.Collapsed;RestoreSelectedButton.Visibility=Visibility.Collapsed;}
     private void UpdateSelectionAction(){var count=HiddenMessagesList.SelectedItems.Count;var label=AppServices.Current.Localization["restoreSelected"];RestoreSelectedButton.Content=count>0?$"{label} ({count})":label;RestoreSelectedButton.IsEnabled=count>0&&!_busy;}
     private async void RestoreOneButton_Click(object sender,RoutedEventArgs e){if(_busy||sender is not Button{Tag:string id})return;await RestoreAsync([id]);}private async void RestoreSelectedButton_Click(object sender,RoutedEventArgs e)=>await RestoreAsync(HiddenMessagesList.SelectedItems.OfType<HiddenMessageRow>().Select(row=>row.Id).ToArray());
-    private async Task RestoreAsync(IReadOnlyList<string> ids){if(_busy||ids.Count==0||_context is null)return;_busy=true;UpdateSelectionAction();try { var restored=await _context.Host.RestoreHiddenMessagesAsync(ids);ExitSelectMode();RestoreInfoBar.Severity=InfoBarSeverity.Success;RestoreInfoBar.Message=string.Format(AppServices.Current.Localization["releasedMessages"],restored);RestoreInfoBar.IsOpen=true; }
-        catch { RestoreInfoBar.Severity=InfoBarSeverity.Error;RestoreInfoBar.Message=AppServices.Current.Localization["prefsConnect"];RestoreInfoBar.IsOpen=true; }
-        finally { _busy=false;await ReloadAsync();UpdateSelectionAction(); }}
+    private async Task RestoreAsync(IReadOnlyList<string> ids) {
+        if(_busy||ids.Count==0||_context is null)return;
+        _busy=true;UpdateSelectionAction();
+        try {
+            int restored;
+            try {restored=await _context.Host.RestoreHiddenMessagesAsync(ids);}
+            catch {
+                RestoreInfoBar.Severity=InfoBarSeverity.Error;
+                RestoreInfoBar.Message=AppServices.Current.Localization[AppServices.Current.Connection.IsConnected?"prefsError":"prefsConnect"];
+                RestoreInfoBar.IsOpen=true;return;
+            }
+            ExitSelectMode();
+            var preferences=AppServices.Current.MessagePreferences;
+            RestoreInfoBar.Severity=preferences.ErrorKey is null?InfoBarSeverity.Success:InfoBarSeverity.Warning;
+            RestoreInfoBar.Message=preferences.ErrorKey is {} errorKey?AppServices.Current.Localization[errorKey]:string.Format(AppServices.Current.Localization["releasedMessages"],restored);
+            RestoreInfoBar.IsOpen=true;
+        }
+        finally {
+            _busy=false;
+            try {await ReloadAsync();}
+            catch(Exception error) {System.Diagnostics.Debug.WriteLine($"[Hidden messages] refresh failed: {error.GetType().Name}");}
+            UpdateSelectionAction();
+        }
+    }
 }

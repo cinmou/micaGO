@@ -13,7 +13,7 @@ import '../storage/secure_store.dart';
 /// micaGO settings backup/restore (C54). A `.micagobak` file is a plain zip:
 ///
 ///   manifest.json          — app/type/version + created-at
-///   settings.json          — all backed-up preferences (incl. server token)
+///   settings.json          — backed-up preferences (excludes device credentials)
 ///   assets/chat-background.*
 ///   assets/custom-avatars/*
 ///
@@ -34,10 +34,9 @@ class BackupService {
   static const _legacyMutedChatsKey = 'micago.muted_chats.v1';
   static const _sidebarWidthKey = 'tablet_sidebar_width';
 
-  /// SecureStore keys included in a backup. The connection profile carries the
-  /// bearer token + routes; the rest are appearance/message/notification prefs.
+  /// Appearance/message/notification keys allowed in a settings backup.
+  /// Device credentials and durable synchronization queues are excluded.
   static const _secureKeys = <String>[
-    'micago.connection_profile.v1', // server url + routes + selected + token
     'micago.contacts_matching_enabled.v1',
     'micago.theme.mode',
     'micago.theme.color',
@@ -152,7 +151,7 @@ class BackupService {
     return BackupSummary(
       appVersion: (manifest['appVersion'] as String?) ?? '',
       createdAt: DateTime.tryParse((manifest['createdAt'] as String?) ?? ''),
-      hasServer: secure.containsKey('micago.connection_profile.v1'),
+      hasServer: false,
       hasAppearance: secure.keys.any((k) => k.startsWith('micago.theme.')),
       hasMessageDisplay: secure.containsKey('micago.message_display_prefs.v1'),
       hasChatBackground: settings['chatBackgroundAsset'] != null,
@@ -174,7 +173,8 @@ class BackupService {
     for (final entry in secure.entries) {
       // The stored background path is device-specific; it's rewritten below from
       // the restored asset, so skip it here.
-      if (entry.key == _chatBackgroundKey ||
+      if (!_secureKeys.contains(entry.key) ||
+          entry.key == _chatBackgroundKey ||
           entry.key == _legacyMutedChatsKey) {
         continue;
       }
@@ -246,8 +246,7 @@ class BackupService {
       }
     }
 
-    // Drop the device id so the restored install registers as a NEW device
-    // (privacy-friendly — the old device row stays untouched).
+    // Remove the obsolete local identity; the paired credential owns device ID.
     await cache.deleteMetadata('device_id');
   }
 

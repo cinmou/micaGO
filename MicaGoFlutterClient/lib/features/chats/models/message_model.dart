@@ -462,7 +462,12 @@ class MessageModel {
 
   /// Stable identity for de-duplication: real GUID if present, else the local
   /// temp id of an optimistic outgoing message.
-  String get dedupeKey => guid.isNotEmpty ? guid : (tempId ?? '');
+  String get serverKey {
+    if (guid.isEmpty) return '';
+    return (chatGuid?.isNotEmpty ?? false) ? '$chatGuid\u001f$guid' : guid;
+  }
+
+  String get dedupeKey => guid.isNotEmpty ? serverKey : (tempId ?? '');
 
   MessageModel copyWith({
     String? guid,

@@ -5,6 +5,7 @@ using MicaGo.Infrastructure.Connection;
 
 var tests = new (string Name, Action Run)[]
 {
+    ("secure pairing, TLS pinning and downgrade rejection", MicaGo.Core.ContractTests.DeviceSecurityTests.Run),
     ("v1 payload", ParsesV1),
     ("v2 LAN first payload", ParsesV2),
     ("v3 candidate filtering", ParsesV3),
@@ -64,6 +65,10 @@ catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL message pre
 
 try {await LateSendConfirmationTests.RunAsync();Console.WriteLine("PASS late send confirmation and durable upload cleanup");}
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL late send confirmation: {exception.Message}");}
+try {await ReadStateSyncTests.RunAsync();Console.WriteLine("PASS cross-device read positions, durable replay, scope and endpoint refresh");}
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL read state: {exception.Message}");}
+try {await ConnectionStoreTests.RunAsync();Console.WriteLine("PASS serialized profile save, load and disconnect");}
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL connection store: {exception.Message}");}
 return failures == 0 ? 0 : 1;
 
 static void ParsesV1()

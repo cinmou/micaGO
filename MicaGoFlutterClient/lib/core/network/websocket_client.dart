@@ -64,6 +64,7 @@ class WebSocketClient extends ChangeNotifier {
     String wsUrl,
     String token, {
     Map<String, String> metadata = const {},
+    String? tlsFingerprint,
   }) {
     disconnect();
 
@@ -77,7 +78,12 @@ class WebSocketClient extends ChangeNotifier {
     _append('connecting…');
 
     try {
-      final channel = connectAuthedWebSocket(base, token, metadata);
+      final channel = connectAuthedWebSocket(
+        base,
+        token,
+        metadata,
+        tlsFingerprint,
+      );
       _channel = channel;
       _sub = channel.stream.listen(
         _onData,

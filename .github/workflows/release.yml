@@ -1,7 +1,7 @@
 # micaGO build and release pipeline.
 #
 # Triggers:
-#   * Push a version tag like v0.78.0 -> builds every artifact and publishes a
+#   * Push a version tag like v0.85.0 -> builds every artifact and publishes a
 #                                        GitHub Release for that version.
 #   * Manual "Run workflow"            -> builds downloadable workflow artifacts
 #                                        without publishing a release.

@@ -1,9 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mica_go/core/models/connection_profile.dart';
+import 'package:mica_go/core/models/server_urls.dart';
 import 'package:mica_go/core/network/connection_candidate.dart';
 import 'package:mica_go/core/network/endpoint_utils.dart';
 
 void main() {
+  test('explicit visible LAN flag permits refreshed addresses', () {
+    final modern = ServerEndpoint.fromJson({
+      'baseUrl': 'http://new',
+      'hidden': false,
+    });
+    final legacy = ServerEndpoint.fromJson({'baseUrl': 'http://old'});
+    expect(modern.hasVisibilityFlags, isTrue);
+    expect(modern.isVisible, isTrue);
+    expect(legacy.hasVisibilityFlags, isFalse);
+  });
+
   _lanRoutePersistenceTests();
   group('normalizeBaseUrl', () {
     test('adds http scheme when missing', () {
@@ -99,7 +111,9 @@ void _lanRoutePersistenceTests() {
     ];
 
     test('a reported list replaces the stored routes', () {
-      const reported = [EndpointRef(baseUrl: 'http://192.168.1.20:3000', wsUrl: '')];
+      const reported = [
+        EndpointRef(baseUrl: 'http://192.168.1.20:3000', wsUrl: ''),
+      ];
       expect(
         resolvePersistedLanRoutes(
           reported: reported,

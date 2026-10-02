@@ -1,17 +1,14 @@
 import 'package:flutter/foundation.dart';
+import '../../core/storage/secure_store.dart';
 
 import '../../core/app_controller.dart';
-import '../../core/models/connection_profile.dart';
-import '../../core/network/api_client.dart';
-import 'onboarding_controller.dart';
 import 'pairing_payload.dart';
 import '../../core/l10n/app_localizations.dart';
 
 enum PairingStage { scanning, preview, testing, success, failure }
 
 /// Drives the QR pairing + onboarding flow: parse a scanned code, preview it,
-/// let the user pick a connection mode (when the payload offers more than one),
-/// then test endpoints in policy order (LAN first, Public fallback), activate
+/// test endpoints in policy order (LAN first, Public fallback), activate
 /// the connection, and run the initial per-chat backfill. The token lives only
 /// inside the parsed payload and is never logged.
 class PairingController extends ChangeNotifier {
@@ -23,14 +20,15 @@ class PairingController extends ChangeNotifier {
   PairingPayload? payload;
   String? message;
 
-  /// C23: there is no user-facing mode anymore. The unified payload always tries
-  /// LAN first, then Public as an optional fallback.
-  ConnectionMode get effectiveMode => payload?.mode ?? ConnectionMode.lanFirst;
-
   void onScan(String raw) {
     if (stage != PairingStage.scanning) return;
     try {
       payload = parsePairingPayload(raw);
+      if (payload!.version < 4) {
+        throw PairingParseException(
+          MicaLocalizations.current.t('pair.secureUpgrade'),
+        );
+      }
       message = null;
       stage = PairingStage.preview;
     } on PairingParseException catch (e) {
@@ -50,55 +48,44 @@ class PairingController extends ChangeNotifier {
   /// Tests endpoints, activates the connection, and warms the local cache.
   Future<bool> useScanned() async {
     final p = payload;
-    if (p == null) return false;
+    if (p == null || stage == PairingStage.testing) return false;
 
     stage = PairingStage.testing;
     message = MicaLocalizations.current.t('pair.testing');
     notifyListeners();
 
-    final onboarding = OnboardingController(
-      prober: (endpoint, token) async {
-        final probe = app.buildProbeClient(
-          ConnectionProfile(baseUrl: endpoint.baseUrl, token: token),
-        );
+    if (p.version >= 4) {
+      try {
+        await app.saveAndActivate(p.toProfile());
+        final paired = app.profile!;
         try {
-          await probe.health();
-          await probe.authCheck();
-          return true;
-        } on ApiException {
-          return false;
-        } finally {
-          probe.close();
+          await app.backfill(
+            paired,
+            onProgress: (progress) {
+              message = progress;
+              notifyListeners();
+            },
+          );
+          message = MicaLocalizations.current.t('pair.syncComplete');
+        } catch (_) {
+          message = MicaLocalizations.current.t('pair.connectedSyncLater');
         }
-      },
-      runInitialSync: (profile, onProgress) =>
-          app.backfill(profile, onProgress: onProgress),
-    );
-
-    onboarding.addListener(() {
-      message = onboarding.status.message;
-      notifyListeners();
-    });
-
-    final profile = await onboarding.run(p, effectiveMode);
-    if (profile == null) {
-      stage = PairingStage.failure;
-      message = onboarding.status.message;
-      notifyListeners();
-      return false;
+        stage = PairingStage.success;
+        notifyListeners();
+        return true;
+      } catch (error) {
+        stage = PairingStage.failure;
+        message = error is CredentialStorageException
+            ? MicaLocalizations.current.t('pair.secureStorageFailed')
+            : error.toString();
+        notifyListeners();
+        return false;
+      }
     }
 
-    await app.saveAndActivate(profile);
-    stage = PairingStage.success;
-    final active = onboarding.activeEndpoint;
-    message = active?.kind == EndpointKind.public
-        ? MicaLocalizations.current
-              .t('pair.pairedPublic')
-              .replaceAll('{status}', onboarding.status.message)
-        : MicaLocalizations.current
-              .t('pair.pairedLan')
-              .replaceAll('{status}', onboarding.status.message);
+    stage = PairingStage.failure;
+    message = MicaLocalizations.current.t('pair.secureUpgrade');
     notifyListeners();
-    return true;
+    return false;
   }
 }

@@ -13,15 +13,20 @@ import (
 	"syscall"
 	"time"
 
+	"crypto/tls"
 	"micagoserver/internal/config"
 	"micagoserver/internal/httpapi"
 	"micagoserver/internal/imessage"
 	"micagoserver/internal/notify"
 	"micagoserver/internal/realtime"
 	"micagoserver/internal/relaydb"
+	"micagoserver/internal/security"
 	micasend "micagoserver/internal/send"
 	"micagoserver/internal/store"
 	"micagoserver/internal/version"
+	"net"
+	"path/filepath"
+	"strconv"
 )
 
 type Options struct {
@@ -183,7 +188,7 @@ func Run(options Options) error {
 
 	if cfg.FirstRun {
 		log.Printf("created config file: %s", cfg.ConfigPath)
-		log.Printf("first-run auth token: %s", cfg.AuthToken)
+
 	}
 	if !config.IsLocalAddress(cfg.HTTPAddr) {
 		log.Printf("warning: binding to non-local address %s; ensure your network exposure and auth settings are intentional", cfg.HTTPAddr)
@@ -204,6 +209,7 @@ func Run(options Options) error {
 		return fmt.Errorf("open relay.db: %w", err)
 	}
 	defer relay.Close()
+ if err:=relay.RemoveLegacyDevices(ctx);err!=nil{return fmt.Errorf("migrate device authorization: %w",err)}
 
 	// Probe chat.db schema once so the update pass and status diagnostics know
 	// which version-sensitive columns are available (v0.11.x).
@@ -429,6 +435,8 @@ func Run(options Options) error {
 	handlers.SetRuleService(relay)
 	handlers.SetChatPreferences(relay, hub)
 	handlers.SetMessagePreferences(relay, hub)
+	handlers.SetReadState(relay, hub)
+	handlers.SetLANVisibility(relay, hub)
 	handlers.SetTestContactService(relay) // offline loopback test contact
 	// Each server (re)start resets the test conversation to a clean scratchpad.
 	if enabled, terr := relay.TestContactEnabled(ctx); terr == nil && enabled {
@@ -452,10 +460,29 @@ func Run(options Options) error {
 	// `message` column set. Auth-protected at the router.
 	handlers.SetDebugService(queries, messageColumns)
 
+	tlsConfig, fingerprint, err := security.ServerTLS(filepath.Join(filepath.Dir(cfg.ConfigPath), "tls"))
+	if err != nil {
+		return err
+	}
+	host, port, err := net.SplitHostPort(cfg.HTTPAddr)
+	if err != nil {
+		return err
+	}
+	numericPort, err := strconv.Atoi(port)
+	if err != nil || numericPort < 1 || numericPort >= 65535 {
+		return fmt.Errorf("invalid HTTP port")
+	}
+	tlsPort := strconv.Itoa(numericPort + 1)
+	deviceAuth := httpapi.NewDeviceAuth(relay, hub, cfg.AuthToken, fingerprint)
+	handlers.SetSecurity(deviceAuth, tlsPort, fingerprint)
+	if handlersNetwork := handlers.NetworkController(); handlersNetwork != nil {
+		handlersNetwork.SecureProbe(deviceAuth)
+	}
 	handler := httpapi.NewRouter(
 		handlers,
 		hub,
 		httpapi.AuthConfig{
+			Devices: deviceAuth,
 			Enabled: !cfg.AuthDisabled,
 			Token:   cfg.AuthToken,
 			Logger:  log.Default(),
@@ -463,20 +490,22 @@ func Run(options Options) error {
 	)
 
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
+		Addr:              net.JoinHostPort("127.0.0.1", port),
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	publicServer := &http.Server{Addr: net.JoinHostPort(host, tlsPort), Handler: handler, ReadHeaderTimeout: 5 * time.Second, TLSConfig: tlsConfig}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
+		_ = publicServer.Shutdown(shutdownCtx)
 	}()
 
 	log.Printf("api-store: relaydb (single canonical path)")
-	log.Printf("listening on http://%s", cfg.HTTPAddr)
+	log.Printf("local control on http://%s; clients on https://%s", srv.Addr, publicServer.Addr)
 	go func() {
 		timer := time.NewTimer(500 * time.Millisecond)
 		defer timer.Stop()
@@ -491,7 +520,17 @@ func Run(options Options) error {
 		}
 	}()
 
-	err = srv.ListenAndServe()
+	listener, listenErr := net.Listen("tcp", publicServer.Addr)
+	if listenErr != nil {
+		return listenErr
+	}
+	defer listener.Close()
+	errorsCh := make(chan error, 2)
+	go func() { errorsCh <- publicServer.Serve(tls.NewListener(listener, tlsConfig)) }()
+	go func() { errorsCh <- srv.ListenAndServe() }()
+	err = <-errorsCh
+	_ = publicServer.Close()
+	_ = srv.Close()
 	if err != nil && err != http.ErrServerClosed {
 		if errors.Is(err, syscall.EADDRINUSE) {
 			log.Printf("failed to bind %s: address already in use; check which process is listening with: lsof -nP -iTCP:3000 -sTCP:LISTEN", cfg.HTTPAddr)
@@ -720,7 +759,12 @@ func dispatchNotifications(ctx context.Context, dispatcher *notify.Dispatcher, r
 		log.Printf("list devices for notification dispatch: %v", err)
 		return
 	}
-	if err := dispatcher.DispatchNewMessages(ctx, devices, result.NotificationEvents); err != nil {
+	events, err := relay.VisibleNotificationEvents(ctx, result.NotificationEvents)
+	if err != nil {
+		log.Printf("notification visibility: %v", err)
+		events = result.NotificationEvents
+	}
+	if err := dispatcher.DispatchNewMessages(ctx, devices, events); err != nil {
 		log.Printf("dispatch notifications: %v", err)
 	}
 }

@@ -68,7 +68,12 @@ public sealed class MessagePreferenceSync(LocalCacheStore cache, Func<IMicaGoApi
             _savedState = encoded;
         }
         _publishedError = ErrorKey;
-        if(changed) Changed?.Invoke(this, EventArgs.Empty);
+        if(changed && Changed is {} subscribers) {
+            foreach(EventHandler observer in subscribers.GetInvocationList()) {
+                try {observer(this,EventArgs.Empty);}
+                catch(Exception error) {System.Diagnostics.Debug.WriteLine($"[Message preferences] observer failed: {error.GetType().Name}");}
+            }
+        }
     }
 
     public async Task SyncAsync(CancellationToken ct = default)

@@ -45,7 +45,7 @@ public sealed class DevicePresenceService : IDisposable
         try
         {
             await _cache.InitializeAsync(cancellationToken);
-            var id=await EnsureDeviceIdAsync(cancellationToken);
+            var id=profile.DeviceId??await EnsureDeviceIdAsync(cancellationToken);
             var registered=false;
             while(!cancellationToken.IsCancellationRequested)
             {

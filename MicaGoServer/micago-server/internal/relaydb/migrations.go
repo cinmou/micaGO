@@ -4,6 +4,12 @@ import "fmt"
 
 func (db *DB) Migrate() error {
 	statements := []string{
+		`CREATE TABLE IF NOT EXISTS device_credentials(device_id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);`,
+		`CREATE TABLE IF NOT EXISTS pairing_codes(code_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);`,
+		`CREATE TABLE IF NOT EXISTS lan_visibility (id INTEGER PRIMARY KEY CHECK(id=1), hidden_urls TEXT NOT NULL);`,
+		`CREATE TABLE IF NOT EXISTS read_positions (chat_guid TEXT PRIMARY KEY, read_through INTEGER NOT NULL);`,
+		`CREATE TABLE IF NOT EXISTS read_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);`,
+		`INSERT OR IGNORE INTO read_state VALUES(1,0);`,
 		`CREATE TABLE IF NOT EXISTS chat_preferences_state (
     id INTEGER PRIMARY KEY CHECK(id=1), server_id TEXT NOT NULL, revision INTEGER NOT NULL
   );`,
@@ -105,6 +111,9 @@ func (db *DB) Migrate() error {
 		}
 	}
 
+	if err := db.ensureColumn("pairing_codes", "used", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if err := db.ensureColumn("messages", "source_rowid", "INTEGER"); err != nil {
 		return err
 	}

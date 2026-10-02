@@ -98,7 +98,17 @@ public sealed class NotificationService : IDisposable
             .AddArgument("chat", chatId);
         if (avatarUri is not null)
             builder.SetAppLogoOverride(avatarUri, AppNotificationImageCrop.Circle, title);
-        return builder.BuildNotification();
+        var notification=builder.BuildNotification();
+        notification.Group=ChatNotificationGroup(chatId);
+        return notification;
+    }
+
+    private static string ChatNotificationGroup(string chatId)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(chatId)))[..16];
+
+    public async Task DismissChatAsync(string chatId) {
+        if(_manager is null)return;
+        try {await _manager.RemoveByGroupAsync(ChatNotificationGroup(chatId));}
+        catch(Exception error) {System.Diagnostics.Debug.WriteLine($"[Notifications] dismissal failed: {error.GetType().Name}");}
     }
 
     private static bool TryGetAvatarUri(string? avatarPath, out Uri? avatarUri)

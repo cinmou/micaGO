@@ -27,6 +27,7 @@ public sealed class LocalizationService
         values["prefsDescription"] = traditional ? "隱藏的聊天會同步到其他裝置。" : chinese ? "隐藏的聊天会同步到其他设备。" : "Hidden chats sync to your other devices.";
         values["prefsOffline"] = chinese ? (traditional ? "尚未同步，連線後重試。" : "尚未同步，连接后重试。") : "Not synced yet. Retry when connected.";
         values["prefsConflict"] = traditional ? "其他裝置改過隱藏狀態，請選擇保留哪一份。" : chinese ? "其他设备改过隐藏状态，请选择保留哪一份。" : "Another device changed which chats are hidden. Pick the version to keep.";
+        values["prefsError"] = chinese ? (traditional ? "恢復訊息失敗，請重試。" : "恢复消息失败，请重试。") : "Could not restore messages. Please retry.";
         values["prefsConnect"] = chinese ? (traditional ? "請先連線至伺服器。" : "请先连接至服务器。") : "Connect to the server first.";
         values["prefsImport"] = traditional ? "同步這台電腦上的隱藏記錄（{0}）" : chinese ? "同步这台电脑上的隐藏记录（{0}）" : "Sync hidden chats from this PC ({0})";
         values["prefsRetry"] = chinese ? (traditional ? "重試同步" : "重试同步") : "Retry sync";

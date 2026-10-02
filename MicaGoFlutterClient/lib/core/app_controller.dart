@@ -13,6 +13,7 @@ import 'models/server_urls.dart';
 import 'network/api_client.dart';
 import 'network/chat_preference_sync.dart';
 import 'network/message_preference_sync.dart';
+import 'network/read_state_sync.dart';
 import 'network/connection_candidate.dart';
 import 'network/endpoint_utils.dart';
 import 'network/device_identity.dart';
@@ -135,6 +136,24 @@ class AppController extends ChangeNotifier {
     onChanged: notifyListeners,
   );
 
+  late final ReadStateSync readState = ReadStateSync(
+    cache: cache,
+    api: () => api,
+    onChanged: (positions) async {
+      final chats = await cache.listChats(includeHidden: true);
+      final clear = clearChatNotification;
+      if (clear != null) {
+        for (final chat in chats) {
+          if (positions.containsKey(chat.guid) &&
+              (chat.lastMessageAt ?? 0) <= positions[chat.guid]!) {
+            await clear(chat.guid);
+          }
+        }
+      }
+      if (!_chatSeenController.isClosed) _chatSeenController.add(null);
+    },
+  );
+
   static const _customAvatarPrefix = 'custom_avatar:';
   static const inAppNotificationsStorageKey =
       'micago.in_app_notifications_enabled.v1';
@@ -152,6 +171,38 @@ class AppController extends ChangeNotifier {
   final ValueNotifier<bool> connectionProblemConfirmed = ValueNotifier<bool>(
     false,
   );
+  final ValueNotifier<bool> tokenRejected = ValueNotifier<bool>(false);
+  static const rejectedCredentialKey = 'micago.credential_rejected.v1';
+  Future<void>? _rejectionCleanup;
+
+  /// A verified authenticated 401 is terminal for this exact credential.
+  @visibleForTesting
+  void rejectCredential(ConnectionProfile rejected) {
+    if (tokenRejected.value || _profile?.token != rejected.token) return;
+    tokenRejected.value = true;
+    ++_selectionEpoch;
+    _profile = null;
+    _serverUrls = null;
+    _activeCandidate = null;
+    _serverReachable = false;
+    cache.accessAllowed = false;
+    _clearConnectionProblem();
+    connectionHealthy.value = false;
+    _refresh.dispose();
+    ws.disconnect();
+    _api?.close();
+    _api = null;
+    _redeemedInvitationCode = null;
+    _redeemedProfile = null;
+    notifyListeners();
+    _rejectionCleanup = () async {
+      await store.writeValue(rejectedCredentialKey, '1');
+      try {
+        await store.clearProfile();
+      } catch (_) {}
+    }();
+  }
+
   static const Duration _connectionProblemDelay = Duration(seconds: 10);
   Timer? _connectionProblemTimer;
 
@@ -200,6 +251,9 @@ class AppController extends ChangeNotifier {
     // connection:updated — refresh our candidates so we follow the new LAN/
     // Public URLs without the user rescanning a QR.
     _connSub = ws.events.listen((e) {
+      if (e.type == 'read-state:changed') {
+        unawaited(readState.sync());
+      }
       if (e.type == 'message-preferences:changed') {
         unawaited(messagePreferences.sync());
       }
@@ -452,8 +506,17 @@ class AppController extends ChangeNotifier {
         timeout: const Duration(seconds: 2),
       );
       await _bootstrapStep('load profile', () async {
+        if (await store.readValue(rejectedCredentialKey) == '1') {
+          tokenRejected.value = true;
+          cache.accessAllowed = false;
+          return;
+        }
         _profile = await store.loadProfile();
-      }, timeout: const Duration(seconds: 3));
+        if (_profile != null && _profile!.deviceId.isEmpty) {
+          _profile = null;
+          await store.clearProfile();
+        }
+      }, timeout: const Duration(seconds: 35));
       if (_profile != null) {
         _activeCandidate = connectionCandidatesForProfile(
           _profile!,
@@ -488,6 +551,10 @@ class AppController extends ChangeNotifier {
     await _loadKeepAlive();
     _deviceIdFuture = null;
     _profile = await store.loadProfile();
+    if (_profile != null && _profile!.deviceId.isEmpty) {
+      _profile = null;
+      await store.clearProfile();
+    }
     _activeCandidate = _profile == null
         ? null
         : connectionCandidatesForProfile(_profile!).firstOrNull;
@@ -544,16 +611,48 @@ class AppController extends ChangeNotifier {
   /// Builds a throwaway [ApiClient] for the connection-test screen without
   /// persisting anything.
   ApiClient buildProbeClient(ConnectionProfile profile) {
-    final candidate = connectionCandidatesForProfile(profile).firstOrNull;
     return ApiClient(
-      baseUrl: candidate?.baseUrl ?? profile.effectiveBaseUrl,
+      baseUrl: profile.effectiveBaseUrl,
       token: profile.token,
+      tlsFingerprint: profile.pinFor(profile.effectiveBaseUrl),
+      onUnauthorized: () => rejectCredential(profile),
     );
   }
 
   /// Persists [profile] and activates it as the live connection.
+  String? _redeemedInvitationCode;
+  ConnectionProfile? _redeemedProfile;
+
   Future<void> saveAndActivate(ConnectionProfile profile) async {
+    final invitation = profile.pairingCode;
+    if (invitation != null) {
+      if (_redeemedInvitationCode == invitation && _redeemedProfile != null) {
+        profile = _redeemedProfile!;
+      } else {
+        profile = await redeemPairingProfile(profile);
+        // Keep this only in memory until secure persistence succeeds. Retrying
+        // a slow/failed Keystore write must not redeem a single-use code twice.
+        _redeemedInvitationCode = invitation;
+        _redeemedProfile = profile;
+      }
+    }
+    await _rejectionCleanup;
+    if (tokenRejected.value) {
+      cache.accessAllowed = true;
+      try {
+        await cache.clearAll();
+      } catch (_) {
+        cache.accessAllowed = false;
+        rethrow;
+      }
+    }
     await store.saveProfile(profile);
+    await store.writeValue(rejectedCredentialKey, '0');
+    cache.accessAllowed = true;
+    tokenRejected.value = false;
+    _rejectionCleanup = null;
+    _redeemedInvitationCode = null;
+    _redeemedProfile = null;
     _profile = profile;
     _serverUrls = null;
     _activeCandidate = null;
@@ -565,6 +664,57 @@ class AppController extends ChangeNotifier {
     // C29b: pairing is a user-visible connect — arm the 10s cannot-connect error.
     notifyListeners();
     unawaited(selectReachableCandidate(reason: 'profile'));
+  }
+
+  @visibleForTesting
+  Future<ConnectionProfile> redeemPairingProfile(
+    ConnectionProfile profile,
+  ) async {
+    ConnectionCandidate? selected;
+    for (final candidate in connectionCandidatesForProfile(profile)) {
+      final probe = ApiClient(
+        baseUrl: candidate.baseUrl,
+        token: '',
+        tlsFingerprint: profile.pinFor(candidate.baseUrl),
+        timeout: const Duration(seconds: 4),
+      );
+      try {
+        if (await probe.health()) {
+          selected = candidate;
+          break;
+        }
+      } catch (_) {
+      } finally {
+        probe.close();
+      }
+    }
+    if (selected == null) {
+      throw StateError('No secure endpoint could be reached.');
+    }
+    final probe = ApiClient(
+      baseUrl: selected.baseUrl,
+      token: '',
+      tlsFingerprint: profile.pinFor(selected.baseUrl),
+    );
+    try {
+      final result = await probe.redeemPairingCode(profile.pairingCode!);
+      final token = result['token'] as String;
+      final device = result['deviceId'] as String;
+      if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(token) || device.isEmpty) {
+        throw StateError('Invalid device credential response.');
+      }
+      profile = profile.copyWith(
+        baseUrl: selected.baseUrl,
+        wsUrlOverride: selected.wsUrl,
+        selectedBaseUrl: selected.baseUrl,
+        token: result['token'] as String,
+        deviceId: result['deviceId'] as String,
+        pairingCode: null,
+      );
+    } finally {
+      probe.close();
+    }
+    return profile;
   }
 
   /// Fetches `GET /api/server/urls` using the active client.
@@ -591,7 +741,7 @@ class AppController extends ChangeNotifier {
       for (final r in profile.lanRoutes) normalizeBaseUrl(r.baseUrl),
     };
     final serverUsesVisibilityFlags = urls.lan.any(
-      (e) => e.hidden || !e.enabled,
+      (e) => e.hasVisibilityFlags || e.hidden || !e.enabled,
     );
     // C26: keep every visible LAN route. Older servers do not expose the
     // Companion's "hidden LAN" list, so once a client has a filtered LAN set
@@ -600,6 +750,8 @@ class AppController extends ChangeNotifier {
       for (final e in urls.lan)
         if (e.baseUrl.trim().isNotEmpty &&
             e.isVisible &&
+            (profile.deviceId.isEmpty ||
+                isSecureEndpointPair(e.baseUrl, e.wsUrl)) &&
             (serverUsesVisibilityFlags ||
                 currentLanBases.isEmpty ||
                 currentLanBases.contains(normalizeBaseUrl(e.baseUrl))))
@@ -616,7 +768,12 @@ class AppController extends ChangeNotifier {
       previous: profile.lanRoutes,
       serverUsesVisibilityFlags: serverUsesVisibilityFlags,
     );
-    final pub = urls.public?.enabled == true ? urls.public : null;
+    final pub =
+        urls.public?.enabled == true &&
+            (profile.deviceId.isEmpty ||
+                isSecureEndpointPair(urls.public!.baseUrl, urls.public!.wsUrl))
+        ? urls.public
+        : null;
     // C26: a manual route pin must survive refresh. Keep the selection if its
     // URL still exists in the new candidate set; otherwise drop it (auto).
     final usableUrls = {
@@ -631,6 +788,8 @@ class AppController extends ChangeNotifier {
     final next = ConnectionProfile(
       baseUrl: profile.baseUrl,
       token: profile.token,
+      tlsFingerprint: profile.tlsFingerprint,
+      deviceId: profile.deviceId,
       wsUrlOverride: profile.wsUrlOverride,
       lanRoutes: effectiveLanRoutes.isNotEmpty ? effectiveLanRoutes : null,
       selectedBaseUrl: keptSelection,
@@ -721,6 +880,7 @@ class AppController extends ChangeNotifier {
     ws.connect(
       candidate.wsUrl,
       profile.token,
+      tlsFingerprint: profile.pinFor(candidate.baseUrl),
       metadata: {
         'clientType': 'flutter',
         'platform': platform,
@@ -927,6 +1087,8 @@ class AppController extends ChangeNotifier {
     final client = ApiClient(
       baseUrl: candidate.baseUrl,
       token: profile.token,
+      tlsFingerprint: profile.pinFor(candidate.baseUrl),
+      onUnauthorized: () => rejectCredential(profile),
       timeout: const Duration(seconds: 4),
     );
     try {
@@ -991,6 +1153,7 @@ class AppController extends ChangeNotifier {
     try {
       await chatPreferences.sync();
       await messagePreferences.sync();
+      await readState.sync();
       final cursor = realtimeDiagnostics.lastAppliedEventCursor;
       realtimeDiagnostics.lastCatchUpCursor = cursor;
       await cache.writeMetadata('last_catch_up_cursor', cursor ?? '');
@@ -1050,6 +1213,8 @@ class AppController extends ChangeNotifier {
     final ids = guids.where((g) => g.trim().isNotEmpty).toList(growable: false);
     if (ids.isEmpty) return;
     await cache.markChatsSeen(ids, upTo: upTo);
+    final positions = await cache.readPositions(ids);
+    unawaited(readState.markViewed(positions));
     // C75: reading a conversation in-app dismisses its notification too. This
     // used to happen ONLY when the user tapped the notification itself
     // (requestOpenChat), so an FCM push stayed in the shade after you opened
@@ -1083,7 +1248,7 @@ class AppController extends ChangeNotifier {
           final chatGuid = msg.chatGuid;
           if (chatGuid != null && chatGuid.isNotEmpty) {
             final isNew =
-                msg.guid.isEmpty || !await cache.hasMessageGuid(msg.guid);
+                msg.guid.isEmpty || !await cache.hasMessage(chatGuid, msg.guid);
             await cache.upsertMessage(chatGuid, msg);
             // C47: ingestion only ever lights (or leaves) the unread dot — it
             // never advances another party's read watermark. Marking a chat read
@@ -1137,6 +1302,11 @@ class AppController extends ChangeNotifier {
   /// watchdog. Nothing is shown until the problem has lasted
   /// [_connectionProblemDelay]; recovery clears it immediately.
   void _updateConnectionHealth() {
+    if (tokenRejected.value || _profile == null) {
+      connectionHealthy.value = false;
+      _clearConnectionProblem();
+      return;
+    }
     final healthy =
         ws.status == WsStatus.connected &&
         (_serverReachable || ws.status == WsStatus.connected);
@@ -1153,7 +1323,7 @@ class AppController extends ChangeNotifier {
   /// socket could postpone the warning forever.
   void _armConnectionProblemWatchdog() {
     // Never count down while backgrounded — see setForeground.
-    if (!_foreground) return;
+    if (!_foreground || tokenRejected.value || _profile == null) return;
     if (connectionProblemConfirmed.value) return;
     if (_connectionProblemTimer?.isActive ?? false) return;
     _connectionProblemTimer = Timer(_connectionProblemDelay, () {
@@ -1401,6 +1571,8 @@ class AppController extends ChangeNotifier {
         final client = ApiClient(
           baseUrl: candidate.baseUrl,
           token: profile.token,
+          tlsFingerprint: profile.pinFor(candidate.baseUrl),
+          onUnauthorized: () => rejectCredential(profile),
           timeout: const Duration(seconds: 5),
         );
         try {
@@ -1607,6 +1779,13 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> _alreadyRead(String route, MessageModel message) async {
+    final at = message.dateCreated;
+    if (at == null || at <= 0) return false;
+    final positions = await cache.readPositions([route]);
+    return at <= (positions[route] ?? 0);
+  }
+
   Future<void> _maybeEmitForegroundAlert(WsEvent e) async {
     final msg = messageFromWsEvent(e);
     if (msg == null) return;
@@ -1619,6 +1798,7 @@ class AppController extends ChangeNotifier {
   ) async {
     final guid = (chatGuid ?? msg.chatGuid ?? '').trim();
     if (!_foreground || guid.isEmpty || msg.isFromMe) return;
+    if (await _alreadyRead(guid, msg)) return;
     if (isChatActive(guid) ||
         isChatMuted(guid) ||
         chatPreferences.isHidden(guid) ||
@@ -1696,11 +1876,13 @@ class AppController extends ChangeNotifier {
     }
     final chatGuid = chatGuidFromWsEvent(e);
     if (chatGuid != null &&
-        (isChatMuted(chatGuid) || chatPreferences.isHidden(chatGuid) ||
-         messagePreferences.isHidden('$chatGuid\u001f${msg.guid}') ||
-         messagePreferences.isHidden(msg.guid))) {
+        (isChatMuted(chatGuid) ||
+            chatPreferences.isHidden(chatGuid) ||
+            messagePreferences.isHidden('$chatGuid\u001f${msg.guid}') ||
+            messagePreferences.isHidden(msg.guid))) {
       return;
     }
+    if (chatGuid != null && await _alreadyRead(chatGuid, msg)) return;
     final isGroup = _isGroupChatGuid(chatGuid);
     final contactName = contactNameResolver?.call(msg.handleId);
     final senderName = messageNotificationTitle(
@@ -2014,8 +2196,9 @@ class AppController extends ChangeNotifier {
   // makes concurrent registrations (reconnect + resume + startup) converge on
   // the same id, so they can never race into two server rows.
   Future<String>? _deviceIdFuture;
-  Future<String> _ensureDeviceId() =>
-      _deviceIdFuture ??= _loadOrCreateDeviceId();
+  Future<String> _ensureDeviceId() => (_profile?.deviceId.isNotEmpty ?? false)
+      ? Future.value(_profile!.deviceId)
+      : (_deviceIdFuture ??= _loadOrCreateDeviceId());
 
   Future<String> _loadOrCreateDeviceId() async {
     final existing = await cache.readMetadata('device_id');
@@ -2238,6 +2421,8 @@ class AppController extends ChangeNotifier {
   /// Clears the saved profile and tears down clients.
   Future<void> signOut() async {
     ws.disconnect();
+    _redeemedInvitationCode = null;
+    _redeemedProfile = null;
     await store.clearProfile();
     await cache.clearAll();
     _api?.close();
@@ -2333,7 +2518,12 @@ class AppController extends ChangeNotifier {
               connectionCandidatesForProfile(profile).firstOrNull);
     _activeCandidate = candidate;
     _api = profile != null && candidate != null && profile.token.isNotEmpty
-        ? ApiClient(baseUrl: candidate.baseUrl, token: profile.token)
+        ? ApiClient(
+            baseUrl: candidate.baseUrl,
+            token: profile.token,
+            tlsFingerprint: profile.pinFor(candidate.baseUrl),
+            onUnauthorized: () => rejectCredential(profile),
+          )
         : null;
   }
 
@@ -2362,6 +2552,7 @@ class AppController extends ChangeNotifier {
     ws.dispose();
     _api?.close();
     connectionProblemConfirmed.dispose();
+    tokenRejected.dispose();
     connectionHealthy.dispose();
     unawaited(cache.close());
     super.dispose();

@@ -71,7 +71,8 @@ void main() {
 
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Paste connection JSON'), findsOneWidget);
-      expect(find.text('Advanced manual setup'), findsOneWidget);
+      expect(find.text('Advanced manual setup'), findsNothing);
+      expect(find.byType(TextFormField), findsNothing);
       expect(find.text('WebSocket URL (optional)'), findsNothing);
       expect(find.text('Server URL'), findsNothing);
     },

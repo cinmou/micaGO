@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"micagoserver/internal/config"
@@ -310,4 +312,41 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func TestRemovingPublicURLClearsFirestoreDiscovery(t *testing.T) {
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		var document struct {
+			Fields map[string]struct {
+				StringValue string `json:"stringValue"`
+			} `json:"fields"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&document); err != nil {
+			t.Fatal(err)
+		}
+		field, exists := document.Fields["publicBaseUrl"]
+		if !exists || field.StringValue != "" {
+			t.Fatal("stale public endpoint was not cleared")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(nil)), Header: make(http.Header)}, nil
+	})}
+	dispatcher := NewDispatcher(config.Config{})
+	dispatcher.firestore = NewFirestoreURLSync("test", "server", "config", stubTokens{}, client)
+	dispatcher.SyncPublicURL(context.Background(), "")
+	if calls != 1 {
+		t.Fatal("empty public endpoint was discarded")
+	}
+}
+
+func TestServiceAccountReadErrorDoesNotExposePath(t *testing.T) {
+	privatePath := filepath.Join(t.TempDir(), "private-credential.json")
+	_, err := LoadServiceAccount(privatePath)
+	if err == nil {
+		t.Fatal("expected unreadable credential")
+	}
+	if strings.Contains(err.Error(), privatePath) || strings.Contains(err.Error(), "private-credential.json") {
+		t.Fatal("credential path leaked in provider error")
+	}
 }

@@ -6,8 +6,9 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 WebSocketChannel connectAuthedWebSocket(
   Uri baseUri,
   String token,
-  Map<String, String> metadata,
-) {
+  Map<String, String> metadata, [
+  String? fingerprint,
+]) {
   final uri = baseUri.replace(
     queryParameters: {
       ...baseUri.queryParameters,

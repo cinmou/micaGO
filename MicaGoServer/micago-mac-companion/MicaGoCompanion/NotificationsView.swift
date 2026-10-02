@@ -24,13 +24,13 @@ private struct ProviderStatusCard: View {
         SectionCard(title: "Provider Status") {
             if let n = model.status?.notifications {
                 LabeledRow(label: "State", value: stateLabel(n))
-                LabeledRow(label: "Enabled", value: n.enabled ? String(localized: "yes") : String(localized: "no"))
+                LabeledRow(label: "Enabled", value: n.enabled ? L10n.localized( "yes") : L10n.localized( "no"))
                 LabeledRow(label: "Provider", value: n.provider)
-                LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? String(localized: "configured") : String(localized: "not set"))
-                LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? String(localized: "configured") : String(localized: "not set"))
+                LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
+                LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
                 LabeledRow(label: "Implemented", value: n.implemented.joined(separator: ", "))
                 LabeledRow(label: "Stub", value: n.stub.isEmpty ? "—" : n.stub.joined(separator: ", "))
-                LabeledRow(label: "Firestore URL sync", value: model.firestoreSyncActive ? String(localized: "enabled") : String(localized: "disabled"))
+                LabeledRow(label: "Firestore URL sync", value: model.firestoreSyncActive ? L10n.localized( "enabled") : L10n.localized( "disabled"))
             } else {
                 Text("Start the server to read notification status.").foregroundStyle(.secondary)
             }
@@ -38,9 +38,9 @@ private struct ProviderStatusCard: View {
     }
 
     private func stateLabel(_ n: NotificationStatus) -> String {
-        if !n.enabled { return String(localized: "disabled") }
-        if n.provider == "fcm" { return n.implemented.contains("fcm") ? String(localized: "configured (fcm)") : String(localized: "config invalid (fcm)") }
-        return String(localized: "active (\(n.provider))")
+        if !n.enabled { return L10n.localized( "disabled") }
+        if n.provider == "fcm" { return n.implemented.contains("fcm") ? L10n.localized( "configured (fcm)") : L10n.localized( "config invalid (fcm)") }
+        return L10n.localized( "active (\(n.provider))")
     }
 }
 
@@ -129,16 +129,16 @@ private struct FirebaseSetupCard: View {
 
     private var serviceAccountLabel: String {
         if model.serviceAccountPath.isEmpty {
-            return serviceAccountReady ? String(localized: "Service account already configured") : String(localized: "No service-account file selected")
+            return serviceAccountReady ? L10n.localized( "Service account already configured") : L10n.localized( "No service-account file selected")
         }
-        return String(localized: "Selected: \((model.serviceAccountPath as NSString).lastPathComponent)")
+        return L10n.localized( "Selected: \((model.serviceAccountPath as NSString).lastPathComponent)")
     }
 
     private var googleServicesLabel: String {
         if model.googleServicesPath.isEmpty {
-            return googleServicesReady ? String(localized: "google-services.json already configured") : String(localized: "No google-services.json selected")
+            return googleServicesReady ? L10n.localized( "google-services.json already configured") : L10n.localized( "No google-services.json selected")
         }
-        return String(localized: "Selected: \((model.googleServicesPath as NSString).lastPathComponent)")
+        return L10n.localized( "Selected: \((model.googleServicesPath as NSString).lastPathComponent)")
     }
 
     private func firebaseFileRow(icon: String, ready: Bool, title: String, button: String, action: @escaping () -> Void) -> some View {

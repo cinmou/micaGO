@@ -74,3 +74,24 @@ bool isValidHttpUrl(String value) {
       (uri.scheme == 'http' || uri.scheme == 'https') &&
       uri.host.isNotEmpty;
 }
+
+/// Resolve WebSocket ports through the corresponding HTTP scheme. Dart's Uri
+/// only supplies default ports for HTTP/HTTPS, not WS/WSS.
+int transportPort(Uri uri) => switch (uri.scheme) {
+  'wss' => uri.replace(scheme: 'https').port,
+  'ws' => uri.replace(scheme: 'http').port,
+  _ => uri.port,
+};
+
+/// REST and WebSocket routes must share the same secure host and port.
+bool isSecureEndpointPair(String baseUrl, String wsUrl) {
+  final base = Uri.tryParse(baseUrl);
+  final ws = Uri.tryParse(wsUrl);
+  return base != null &&
+      ws != null &&
+      base.scheme == 'https' &&
+      ws.scheme == 'wss' &&
+      base.host.isNotEmpty &&
+      base.host == ws.host &&
+      transportPort(base) == transportPort(ws);
+}

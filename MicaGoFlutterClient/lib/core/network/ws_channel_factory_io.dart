@@ -1,3 +1,5 @@
+import 'secure_transport.dart';
+import 'dart:io';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -8,15 +10,20 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 WebSocketChannel connectAuthedWebSocket(
   Uri baseUri,
   String token,
-  Map<String, String> metadata,
-) {
+  Map<String, String> metadata, [
+  String? fingerprint,
+]) {
   final uri = baseUri.replace(
     queryParameters: {...baseUri.queryParameters, ...metadata},
   );
   final headers = <String, dynamic>{};
   if (token.isNotEmpty) headers['Authorization'] = 'Bearer $token';
-  return IOWebSocketChannel.connect(
-    uri,
-    headers: headers.isEmpty ? null : headers,
+  final client = secureIoClient(uri.toString(), fingerprint: fingerprint);
+  return IOWebSocketChannel(
+    WebSocket.connect(
+      uri.toString(),
+      headers: headers.isEmpty ? null : headers,
+      customClient: client,
+    ).whenComplete(() => client.close()),
   );
 }

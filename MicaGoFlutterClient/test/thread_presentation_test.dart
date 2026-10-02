@@ -76,6 +76,41 @@ List<ThreadViewItem> _build(
 );
 
 void main() {
+  test('merged replies and reactions resolve within their own route', () {
+    final a = _m(
+      guid: 'same',
+      text: 'A',
+      dateCreated: 100,
+    ).copyWith(chatGuid: 'a');
+    final b = _m(
+      guid: 'same',
+      text: 'B',
+      dateCreated: 200,
+    ).copyWith(chatGuid: 'b');
+    final reaction = _m(
+      guid: 'tap',
+      associatedMessageGuid: 'p:0/same',
+      associatedMessageType: 2001,
+      dateCreated: 300,
+    ).copyWith(chatGuid: 'a');
+    final reply = _m(
+      guid: 'reply',
+      text: 'reply',
+      threadOriginatorGuid: 'same',
+      dateCreated: 400,
+    ).copyWith(chatGuid: 'b');
+    final items = _build([
+      a,
+      b,
+      reaction,
+      reply,
+    ]).whereType<MessageViewItem>().toList();
+    expect(items.first.reactions, hasLength(1));
+    expect(items[1].reactions, isEmpty);
+    expect(items.last.reply!.text, 'B');
+    expect(items.last.reply!.targetGuid, 'b\u001fsame');
+  });
+
   test('inserts a date separator before each new day', () {
     final t0 = DateTime(2024, 1, 1, 10).millisecondsSinceEpoch;
     final items = _build([

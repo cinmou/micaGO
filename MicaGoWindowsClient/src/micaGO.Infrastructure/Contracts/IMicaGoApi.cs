@@ -5,6 +5,8 @@ namespace MicaGo.Infrastructure.Contracts;
 public interface IMicaGoApi : IDisposable
 {
     string BaseUrl { get; }
+    Task<ReadState> GetReadStateAsync(CancellationToken cancellationToken = default);
+    Task<ReadState> PatchReadStateAsync(ReadStateMutation mutation, CancellationToken cancellationToken = default);
     Task<MessagePreferences> GetMessagePreferencesAsync(CancellationToken cancellationToken = default);
     Task<MessagePreferences> PatchMessagePreferencesAsync(MessagePreferenceMutation mutation, CancellationToken cancellationToken = default);
     Task<ChatPreferences> GetChatPreferencesAsync(CancellationToken cancellationToken = default);

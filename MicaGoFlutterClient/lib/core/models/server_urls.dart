@@ -20,6 +20,7 @@ class ServerEndpoint {
   final String wsUrl;
   final bool hidden;
   final bool enabled;
+  final bool hasVisibilityFlags;
 
   /// `reachable` is `true` / `false` / `"unknown"` on the wire; kept as the
   /// raw dynamic and exposed via [reachableLabel].
@@ -32,6 +33,7 @@ class ServerEndpoint {
     required this.wsUrl,
     this.hidden = false,
     this.enabled = true,
+    this.hasVisibilityFlags = false,
     required this.reachable,
   });
 
@@ -40,6 +42,12 @@ class ServerEndpoint {
 
   factory ServerEndpoint.fromJson(Map<String, dynamic> json) {
     return ServerEndpoint(
+      hasVisibilityFlags: [
+        'hidden',
+        'isHidden',
+        'disabled',
+        'enabled',
+      ].any(json.containsKey),
       kind: (json['kind'] as String?) ?? '',
       label: (json['label'] as String?) ?? '',
       baseUrl: (json['baseUrl'] as String?) ?? '',

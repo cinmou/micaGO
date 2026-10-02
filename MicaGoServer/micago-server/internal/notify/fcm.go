@@ -117,6 +117,7 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 		"previewMode":       n.PreviewMode,
 		"hasAttachments":    strconv.FormatBool(n.HasAttachments),
 		"createdAt":         strconv.FormatInt(n.CreatedAt, 10),
+		"dateCreated":       strconv.FormatInt(n.DateCreated, 10),
 	}
 	return map[string]any{
 		"message": map[string]any{

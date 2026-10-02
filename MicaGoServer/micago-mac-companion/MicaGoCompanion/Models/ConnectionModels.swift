@@ -50,6 +50,7 @@ struct ConnectionEndpoint: Codable, Identifiable, Hashable {
     var baseUrl: String
     var wsUrl: String
     var reachable: Reachability
+    var hidden: Bool? = nil
 
     var id: String { baseUrl }
 }

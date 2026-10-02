@@ -8,14 +8,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/connection_profile.dart';
 
 /// Persists the connection profile. The bearer token is stored with
-/// [FlutterSecureStorage] (Android Keystore-backed EncryptedSharedPreferences),
+/// [FlutterSecureStorage] (Android Keystore-backed encryption),
 /// not plain SharedPreferences, and is never logged.
+class CredentialStorageException implements Exception {
+  const CredentialStorageException();
+  @override
+  String toString() => 'Could not save the device credential securely.';
+}
+
 class SecureStore {
   static const _profileKey = 'micago.connection_profile.v1';
   static const _contactsKey = 'micago.contacts_matching_enabled.v1';
   static const _fallbackMarkerKey = 'micago.secure_store_fallback.v1';
   static const _fallbackPrefix = 'micago.secure_fallback.';
-  static const _secureTimeout = Duration(milliseconds: 900);
+  // First Android Keystore initialization can take seconds on older devices.
+  // A Future timeout cannot cancel the underlying platform write.
+  static const _secureTimeout = Duration(seconds: 30);
 
   final FlutterSecureStorage _storage;
   final SharedPreferencesAsync _fallback;
@@ -29,7 +37,9 @@ class SecureStore {
   /// Loads the saved profile, or null if none / unreadable.
   Future<ConnectionProfile?> loadProfile() async {
     try {
-      final raw = await _read(_profileKey);
+      if (await readValue('micago.credential_rejected.v1') == '1') return null;
+      final raw = await _storage.read(key: _profileKey).timeout(_secureTimeout);
+      await _cleanupLegacyProfile();
       if (raw == null || raw.isEmpty) return null;
       final decoded = jsonDecode(raw);
       if (decoded is Map<String, dynamic>) {
@@ -43,11 +53,27 @@ class SecureStore {
   }
 
   Future<void> saveProfile(ConnectionProfile profile) async {
-    await _write(_profileKey, jsonEncode(profile.toJson()));
+    try {
+      await _storage
+          .write(key: _profileKey, value: jsonEncode(profile.toJson()))
+          .timeout(_secureTimeout);
+    } catch (_) {
+      throw const CredentialStorageException();
+    }
+    // Legacy cleanup is best-effort: a successfully secured credential must
+    // not be reported as failed because a non-secret preference delete failed.
+    await _cleanupLegacyProfile();
   }
 
   Future<void> clearProfile() async {
-    await _delete(_profileKey);
+    await _storage.delete(key: _profileKey).timeout(_secureTimeout);
+    await _cleanupLegacyProfile();
+  }
+
+  Future<void> _cleanupLegacyProfile() async {
+    try {
+      await _deleteFallback(_profileKey);
+    } catch (_) {}
   }
 
   /// Whether the user has opted into local contacts matching (a simple flag —
@@ -102,8 +128,8 @@ class SecureStore {
     }
     try {
       await _storage.write(key: key, value: value).timeout(_secureTimeout);
-      // Keep a plain fallback mirror. If a ROM later breaks Android Keystore,
-      // pairing and appearance settings still survive the automatic downgrade.
+      // Only non-secret preferences use this fallback mirror. Device
+      // credentials are handled exclusively by saveProfile above.
       await _writeFallback(key, value);
     } catch (error) {
       await _enableFallback(error);
@@ -125,7 +151,9 @@ class SecureStore {
       (await _fallback.getBool(_fallbackMarkerKey)) ?? false;
 
   Future<void> _enableFallback(Object error) async {
-    debugPrint('[SecureStore] Falling back to SharedPreferences: $error');
+    if (kDebugMode) {
+      debugPrint('[SecureStore] Using non-secret preference fallback.');
+    }
     await _fallback.setBool(_fallbackMarkerKey, true);
   }
 

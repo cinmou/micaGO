@@ -180,6 +180,13 @@ type StatusDeps struct {
 var implementedNotificationProviders = []string{"none", "webhook"}
 
 type Handlers struct {
+	deviceAuth              *DeviceAuth
+	tlsPort                 string
+	tlsFingerprint          string
+	lanVisibility           lanVisibilityService
+	lanVisibilityEvents     eventBroadcaster
+	readState               readStateService
+	readStateEvents         eventBroadcaster
 	chatPreferences         chatPreferenceService
 	messagePreferences      messagePreferenceService
 	messagePreferenceEvents eventBroadcaster
@@ -330,6 +337,13 @@ func (h *Handlers) GetServerStatus(w http.ResponseWriter, r *http.Request) {
 		status.Sync.Settings = h.status.SyncSettings(r.Context())
 	}
 
+	if h.deviceAuth != nil {
+		status.Auth.Enabled = true
+		status.Address.LAN = nil
+		for _, endpoint := range h.buildServerURLs().LAN {
+			status.Address.LAN = append(status.Address.LAN, endpoint.BaseURL)
+		}
+	}
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -956,9 +970,15 @@ func (h *Handlers) SendAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request exceeds the size limit")
+			return
+		}
 		writeBadRequest(w, "expected multipart/form-data with a file")
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 	tempGUID := strings.TrimSpace(r.FormValue("tempGuid"))
 
 	file, header, err := r.FormFile("file")
@@ -1046,9 +1066,15 @@ func (h *Handlers) SendAttachments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request exceeds the size limit")
+			return
+		}
 		writeBadRequest(w, "expected multipart/form-data with files")
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 	tempGUID := strings.TrimSpace(r.FormValue("tempGuid"))
 	if tempGUID != "" {
 		h.broadcastSendPending(r.Context(), tempGUID, guid)
@@ -1517,6 +1543,10 @@ func (h *Handlers) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if id := deviceIdentity(r); id != "" {
+		req.ID = id
+	}
+
 	// C29c: log every incoming registration BEFORE validation so a failing
 	// Android client is visible in the backend log (auth already passed here —
 	// a bad token is rejected upstream and never reaches this handler).
@@ -1690,7 +1720,11 @@ func (h *Handlers) DeleteDevice(w http.ResponseWriter, r *http.Request) {
 		writeNotFound(w, "device not found")
 		return
 	}
-	if err := h.devices.DeleteDevice(r.Context(), id); err != nil {
+	deleteDevice := h.devices.DeleteDevice
+	if h.deviceAuth != nil {
+		deleteDevice = h.deviceAuth.Revoke
+	}
+	if err := deleteDevice(r.Context(), id); err != nil {
 		h.logInternal("delete device", err)
 		writeInternalError(w)
 		return
@@ -2115,3 +2149,11 @@ func parseDebug(r *http.Request) (bool, error) {
 	}
 	return v, nil
 }
+
+func (h *Handlers) SetSecurity(auth *DeviceAuth, port, fingerprint string) {
+	h.deviceAuth = auth
+	h.tlsPort = port
+	h.tlsFingerprint = fingerprint
+}
+
+func (h *Handlers) NetworkController() *NetworkController { return h.status.Network }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -1077,22 +1078,32 @@ class _AudioAttachment extends StatefulWidget {
 
 class _AudioAttachmentState extends State<_AudioAttachment> {
   final AudioPlayer _player = AudioPlayer();
+  File? _playableFile;
   bool _loaded = false;
   bool _failed = false;
 
   @override
   void dispose() {
-    _player.dispose();
+    final file = _playableFile;
+    unawaited(() async {
+      await _player.dispose();
+      if (file != null && await file.exists()) await file.delete();
+    }());
     super.dispose();
   }
 
   Future<void> _toggle() async {
     try {
       if (!_loaded) {
-        await _player.setUrl(
-          widget.api.attachmentPlayableUrl(widget.attachment.guid),
-          headers: widget.api.mediaAuthHeaders, // token in header, not URL
+        final file = await widget.api.downloadPlayableFile(
+          widget.attachment.guid,
         );
+        if (!mounted) {
+          await file.delete();
+          return;
+        }
+        _playableFile = file;
+        await _player.setFilePath(file.path);
         _loaded = true;
       }
       if (_player.playing) {

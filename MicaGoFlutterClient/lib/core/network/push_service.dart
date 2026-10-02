@@ -349,6 +349,20 @@ Future<void> showPushNotification(RemoteMessage message) async {
     }
   }
 
+  if (chatGuid != null) {
+    final guid = data['messageGuid'] ?? data['guid'];
+    final hidden = await _notificationCache.hiddenMessageGuids();
+    if (guid != null &&
+        (hidden.contains('$chatGuid\u001f$guid') || hidden.contains(guid))) {
+      return;
+    }
+    final at = int.tryParse('${data['dateCreated'] ?? ''}');
+    if (at != null && at > 0) {
+      final positions = await _notificationCache.readPositions([chatGuid]);
+      if (at <= (positions[chatGuid] ?? 0)) return;
+    }
+  }
+
   final plugin = FlutterLocalNotificationsPlugin();
   await plugin.initialize(
     const InitializationSettings(
@@ -425,6 +439,7 @@ Future<String> sendNotificationReply(String chatGuid, String text) async {
   final api = ApiClient(
     baseUrl: profile.effectiveBaseUrl,
     token: profile.token,
+    tlsFingerprint: profile.pinFor(profile.effectiveBaseUrl),
   );
   try {
     await api.sendText(

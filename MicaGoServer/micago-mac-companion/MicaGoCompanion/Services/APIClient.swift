@@ -116,6 +116,15 @@ struct APIClient {
         return try JSONDecoder().decode(ServerURLs.self, from: data)
     }
 
+    func setLANVisibility(_ hiddenBaseURLs: Set<String>) async throws -> ServerURLs {
+        var req = request("api/server/lan-visibility", method: "PUT")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["hiddenBaseUrls": hiddenBaseURLs.sorted()])
+        let (data, response) = try await Self.session().data(for: req)
+        try Self.validate(response)
+        return try JSONDecoder().decode(ServerURLs.self, from: data)
+    }
+
     /// Sets (or clears, with an empty string) the optional public endpoint.
     @discardableResult
     func setPublicURL(_ publicBaseURL: String, verifyTLS: Bool, preferred: String) async throws -> ServerURLs {
@@ -309,6 +318,25 @@ struct APIClient {
 
     /// Deletes a paired device record (C21u) — used to prune stale/historical
     /// devices from the list.
+    struct PairingInvitation: Decodable {
+        let pairingCode: String
+        let expiresAt: Int64
+        let tlsFingerprint: String
+    }
+    func createPairingCode() async throws -> PairingInvitation {
+        let (data,response)=try await Self.session().data(for:request("api/pairing/create",method:"POST"))
+        try Self.validate(response,body:data)
+        return try JSONDecoder().decode(PairingInvitation.self,from:data)
+    }
+
+    struct PairingStatus: Decodable { let state: String }
+    func pairingStatus(code: String) async throws -> String {
+        let req = try jsonRequest("api/pairing/status", method: "POST", body: ["pairingCode": code])
+        let (data, response) = try await Self.session().data(for: req)
+        try Self.validate(response, body: data)
+        return try JSONDecoder().decode(PairingStatus.self, from: data).state
+    }
+
     func deleteDevice(deviceID: String) async throws {
         let req = request("api/devices/\(deviceID)", method: "DELETE")
         let (_, response) = try await Self.session().data(for: req)
@@ -391,8 +419,8 @@ enum APIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .badResponse: return String(localized: "Unexpected response from the server.")
-        case .status(let code): return String(localized: "Server returned HTTP \(code).")
+        case .badResponse: return L10n.localized( "Unexpected response from the server.")
+        case .status(let code): return L10n.localized( "Server returned HTTP \(code).")
         case .message(let msg): return msg
         }
     }

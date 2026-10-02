@@ -91,7 +91,7 @@ public sealed class EndpointSelector
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(ProbeTimeout);
-            using var client = new HttpClient { BaseAddress = new Uri($"{endpoint.BaseUrl}/") };
+            using var client = SecureTransport.CreateClient(endpoint.BaseUrl, endpoint.TlsFingerprint);
 
             using var healthRequest = new HttpRequestMessage(HttpMethod.Get, "api/health");
             healthRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -126,6 +126,7 @@ public sealed class EndpointSelector
         {
             return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, "Connection timed out.");
         }
+        catch (ConnectionException error) { return new(endpoint, false, stopwatch.Elapsed, error.Message); }
         catch (HttpRequestException exception)
         {
             return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, exception.Message);

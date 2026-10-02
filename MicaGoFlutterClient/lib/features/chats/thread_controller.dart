@@ -212,7 +212,7 @@ class ThreadController extends ChangeNotifier {
     final ids = guids.where((g) => g.isNotEmpty).toSet();
     if (ids.isEmpty) return;
     final keys = _col.ordered
-        .where((m) => ids.contains(m.guid))
+        .where((m) => ids.contains(m.serverKey))
         .map((m) => '${m.chatGuid ?? chatGuid}\u001f${m.guid}')
         .toSet();
     await app.messagePreferences.setHidden(keys, true);
@@ -586,7 +586,8 @@ class ThreadController extends ChangeNotifier {
         if (threadGuids.contains(eventChat)) {
           final guid = e.data['guid'] as String?;
           final dateRetracted = _asInt(e.data['dateRetracted']);
-          if (guid == null || !_col.applyUnsend(guid, dateRetracted)) {
+          if (guid == null ||
+              !_col.applyUnsend(guid, dateRetracted, chatGuid: eventChat)) {
             unawaited(app.recordRealtimeFallback(malformed: guid == null));
             _scheduleReload();
           } else {

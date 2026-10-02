@@ -120,7 +120,7 @@ List<DisplayRow> buildDisplayRows(
   final reactionsByTarget = <String, List<MessageModel>>{};
   final stickersByTarget = <String, List<MessageModel>>{};
   final consumed = <String>{};
-  final guids = {for (final m in messages) m.guid};
+  final guids = {for (final m in messages) m.serverKey};
   for (final m in messages) {
     if (isKeptAudioNotice(m)) {
       consumed.add(m.dedupeKey);
@@ -131,7 +131,12 @@ List<DisplayRow> buildDisplayRows(
       continue;
     }
     if (isAssociatedSticker(m)) {
-      final target = reactionTargetGuid(m.associatedMessageGuid);
+      final targetGuid = reactionTargetGuid(m.associatedMessageGuid);
+      final target = targetGuid == null
+          ? null
+          : ((m.chatGuid?.isNotEmpty ?? false)
+                ? '${m.chatGuid}\u001f$targetGuid'
+                : targetGuid);
       if (target != null && guids.contains(target)) {
         stickersByTarget.putIfAbsent(target, () => []).add(m);
         consumed.add(m.dedupeKey);
@@ -140,7 +145,12 @@ List<DisplayRow> buildDisplayRows(
     }
     if (prefs.mergeTapbacks) {
       if (renderableKindFor(m) != MessageRenderableKind.reaction) continue;
-      final target = reactionTargetGuid(m.associatedMessageGuid);
+      final targetGuid = reactionTargetGuid(m.associatedMessageGuid);
+      final target = targetGuid == null
+          ? null
+          : ((m.chatGuid?.isNotEmpty ?? false)
+                ? '${m.chatGuid}\u001f$targetGuid'
+                : targetGuid);
       if (target != null && guids.contains(target)) {
         reactionsByTarget.putIfAbsent(target, () => []).add(m);
         consumed.add(m.dedupeKey);
@@ -185,8 +195,8 @@ List<DisplayRow> buildDisplayRows(
       DisplayRow(
         message: m,
         kind: kind,
-        reactions: reactionsByTarget[m.guid] ?? const [],
-        stickers: stickersByTarget[m.guid] ?? const [],
+        reactions: reactionsByTarget[m.serverKey] ?? const [],
+        stickers: stickersByTarget[m.serverKey] ?? const [],
       ),
     );
   }

@@ -169,29 +169,36 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     // C64: warm the action-capabilities cache so the first long-press menu is
     // complete and instant.
     final api = app.api;
-    if (api != null) prefetchMessageActionCapabilities(api);
-    app.setActiveChatGuids(_routeGuids);
+    if (api != null) prefetchMessageActionCapabilities(api, force: true);
+    _controller = _createController(app, _active)..start();
+    app.setActiveChatGuids(_controller.threadGuids);
     WidgetsBinding.instance.addObserver(this);
     // C43/C47: opening a thread is the authoritative read event — advance the
     // read watermark for every route so the unread dot clears, and keep it
     // caught up as messages arrive on any route while the thread is foreground.
-    unawaited(app.markChatsViewed(_routeGuids));
+    unawaited(app.markChatsViewed(_controller.threadGuids));
     _seenDeltaSub = app.deltaMessages.listen((m) {
-      if (m.chatGuid != null && _routeGuids.contains(m.chatGuid)) {
-        _markViewedIfForeground(upTo: m.dateCreated);
+      if (m.chatGuid != null && _controller.threadGuids.contains(m.chatGuid)) {
+        _markViewedIfForeground(route: m.chatGuid, upTo: m.dateCreated);
       }
       unawaited(_refreshOtherUnreadChats());
     });
     _seenWsSub = app.ws.events.listen((e) {
+      if (e.type == 'capabilities:updated') {
+        final api = app.api;
+        if (api != null) prefetchMessageActionCapabilities(api, force: true);
+      }
       final guid = rt.chatGuidFromWsEvent(e);
-      if (guid != null && _routeGuids.contains(guid)) {
-        _markViewedIfForeground(upTo: rt.messageFromWsEvent(e)?.dateCreated);
+      if (guid != null && _controller.threadGuids.contains(guid)) {
+        _markViewedIfForeground(
+          route: guid,
+          upTo: rt.messageFromWsEvent(e)?.dateCreated,
+        );
       }
       if (e.type == 'message:new' || e.type == 'message:update') {
         unawaited(_refreshOtherUnreadChats());
       }
     });
-    _controller = _createController(app, _active)..start();
     _scroll.addListener(_onScroll);
     // The chat area's rounded top corners and the composer overlay would repeat
     // in every stitched tile of a scrolling screenshot.
@@ -209,13 +216,16 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   /// Advance the read watermark for this contact's routes, but only while the
   /// app is actually in the foreground — a message landing while backgrounded
   /// (even with this thread mounted) must still light the dot (C45/C47).
-  void _markViewedIfForeground({int? upTo}) {
+  void _markViewedIfForeground({String? route, int? upTo}) {
     if (!mounted) return;
     final app = context.read<AppController>();
     if (!app.isForeground) return;
     unawaited(
       app
-          .markChatsViewed(_routeGuids, upTo: upTo)
+          .markChatsViewed(
+            route == null ? _controller.threadGuids : [route],
+            upTo: upTo,
+          )
           .then((_) => _refreshOtherUnreadChats()),
     );
   }
@@ -275,12 +285,12 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _controller.removeListener(_onThreadChanged);
     _controller.dispose();
     final app = context.read<AppController>();
-    app.setActiveChatGuids(_routeGuids);
-    unawaited(app.markChatsViewed([route.guid]));
     setState(() {
       _active = route;
       _controller = _createController(app, route)..start();
       _controller.addListener(_onThreadChanged);
+      app.setActiveChatGuids(_controller.threadGuids);
+      unawaited(app.markChatsViewed(_controller.threadGuids));
     });
   }
 
@@ -310,6 +320,8 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     setState(() {
       _controller = _createController(app, _active)..start();
       _controller.addListener(_onThreadChanged);
+      app.setActiveChatGuids(_controller.threadGuids);
+      unawaited(app.markChatsViewed(_controller.threadGuids));
     });
   }
 
@@ -401,7 +413,13 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
 
   Future<void> _jumpToMessage(String? guid) async {
     if (guid == null || guid.isEmpty) return;
-    final key = _messageKeys[guid];
+    final candidates = _controller.messages
+        .where((m) => m.guid == guid)
+        .toList();
+    final identity = guid.contains('\u001f')
+        ? guid
+        : (candidates.length == 1 ? candidates.single.serverKey : guid);
+    final key = _messageKeys[identity];
     final targetContext = key?.currentContext;
     if (targetContext == null) {
       TopBanner.show(
@@ -417,9 +435,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       alignment: 0.42,
     );
     if (!mounted) return;
-    setState(() => _flashGuid = guid);
+    setState(() => _flashGuid = identity);
     Future<void>.delayed(const Duration(milliseconds: 900), () {
-      if (mounted && _flashGuid == guid) setState(() => _flashGuid = null);
+      if (mounted && _flashGuid == identity) setState(() => _flashGuid = null);
     });
   }
 
@@ -1375,7 +1393,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   Future<void> _forwardSelected(ApiClient api) async {
     // Chronological order — forwarded one message at a time.
     final selected = _controller.messages
-        .where((m) => _selectedGuids.contains(m.guid))
+        .where((m) => _selectedGuids.contains(m.serverKey))
         .toList(growable: false);
     if (selected.isEmpty) return;
     _exitSelectMode();
@@ -1439,7 +1457,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       reactions: m.reactions,
       stickers: m.stickers,
       reply: m.reply,
-      highlighted: m.message.guid == _flashGuid,
+      highlighted: m.message.serverKey == _flashGuid,
       effectHint: m.effectHint,
       sendEffect: m.sendEffect,
       effectTrigger: _effectTriggers[effectKey] ?? 0,
@@ -1463,18 +1481,18 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         context,
         m.message,
         position,
-        chatGuid: _active.guid,
+        chatGuid: m.message.chatGuid ?? _active.guid,
         api: api,
         attachment: attachment,
         onRetracted: (guid) => _controller.markRetractedLocally(guid),
         onChanged: () => _controller.load(showSpinner: false),
-        onHide: () => _controller.hideMessage(m.message.guid),
+        onHide: () => _controller.hideMessage(m.message.serverKey),
         onDeletePending: (tempId) => _controller.deletePending(tempId),
         onSelect: _enterSelectMode,
       ),
     );
     final keyed = KeyedSubtree(
-      key: _messageKey(m.presentationKey, m.message.guid),
+      key: _messageKey(m.presentationKey, m.message.serverKey),
       child: bubble,
     );
     final row = m.message.hasAttachments
@@ -1492,7 +1510,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     // right to make room (outgoing are right-aligned and stay put).
     final progress = _selectModeController.value;
     if (progress == 0 && !_selectMode) return entrance;
-    final guid = m.message.guid;
+    final guid = m.message.serverKey;
     return _SelectableMessageRow(
       progress: progress,
       active: _selectMode,
@@ -1975,10 +1993,20 @@ MessageActionCapabilities _messageActionCaps =
     const MessageActionCapabilities();
 DateTime? _messageActionCapsAt;
 Future<MessageActionCapabilities>? _messageActionCapsFetch;
+ApiClient? _messageActionCapsApi;
+int _messageActionCapsGeneration = 0;
 
 Future<MessageActionCapabilities> _fetchMessageActionCapabilities(
   ApiClient api,
 ) {
+  if (!identical(api, _messageActionCapsApi)) {
+    _messageActionCapsApi = api;
+    _messageActionCaps = const MessageActionCapabilities();
+    _messageActionCapsAt = null;
+    _messageActionCapsFetch = null;
+    _messageActionCapsGeneration++;
+  }
+  final generation = _messageActionCapsGeneration;
   final at = _messageActionCapsAt;
   if (at != null &&
       DateTime.now().difference(at) < const Duration(minutes: 2)) {
@@ -1987,17 +2015,28 @@ Future<MessageActionCapabilities> _fetchMessageActionCapabilities(
   return _messageActionCapsFetch ??= api
       .getMessageActionCapabilities()
       .then((caps) {
+        if (generation != _messageActionCapsGeneration) {
+          return _messageActionCaps;
+        }
         _messageActionCaps = caps;
         _messageActionCapsAt = DateTime.now();
         return caps;
       })
       .catchError((_) => _messageActionCaps)
       .whenComplete(() {
-        _messageActionCapsFetch = null;
+        if (generation == _messageActionCapsGeneration) {
+          _messageActionCapsFetch = null;
+        }
       });
 }
 
-void prefetchMessageActionCapabilities(ApiClient api) {
+void prefetchMessageActionCapabilities(ApiClient api, {bool force = false}) {
+  if (force) {
+    _messageActionCapsAt = null;
+    _messageActionCapsFetch = null;
+    _messageActionCaps = const MessageActionCapabilities();
+    _messageActionCapsGeneration++;
+  }
   unawaited(_fetchMessageActionCapabilities(api));
 }
 
@@ -2194,7 +2233,7 @@ Future<void> showMessageActionMenu(
       );
       break;
     case MessageAction.select:
-      onSelect?.call(message.guid);
+      onSelect?.call(message.serverKey);
       break;
     case MessageAction.hide:
       await onHide?.call();
@@ -2231,7 +2270,7 @@ Future<void> showMessageActionMenu(
         success: MicaLocalizations.of(context).t('chat.undoSendQueued'),
         onChanged: () async {
           await onChanged?.call();
-          onRetracted?.call(message.guid);
+          onRetracted?.call(message.serverKey);
         },
       );
       break;

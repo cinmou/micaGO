@@ -24,7 +24,7 @@ AttachmentModel _att({
 );
 
 void main() {
-  final api = ApiClient(baseUrl: 'http://localhost:0', token: 't');
+  final api = ApiClient(baseUrl: 'https://localhost:0', token: 't');
 
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

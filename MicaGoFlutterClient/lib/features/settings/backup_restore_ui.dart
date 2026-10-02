@@ -18,7 +18,7 @@ import 'settings_dialog_actions.dart';
 Future<void> exportSettingsBackup(BuildContext context) async {
   final strings = MicaLocalizations.of(context);
   final app = context.read<AppController>();
-  // Warn: the backup carries the server token.
+  // Explain which settings the backup includes.
   final proceed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(

@@ -12,6 +12,7 @@ import '../../features/chats/store/message_collection.dart'
     show matchingPendingTempId;
 
 class LocalCacheStore {
+  bool accessAllowed = true;
   Database? _db;
   String? _path;
 
@@ -22,7 +23,8 @@ class LocalCacheStore {
   // v4: chats.pinned + a hidden_messages tombstone table (C42 pin/hide).
   // v5: chats.last_seen_at + chats.latest_from_me drive the watermark-derived
   // unread dot (C43) — unread is computed from the data, not a fragile counter.
-  static const int _schemaVersion = 5;
+  // v6: route-qualified cache keys preserve distinct account timelines.
+  static const int _schemaVersion = 6;
 
   Future<void> open() async {
     if (_db != null) return;
@@ -38,7 +40,16 @@ class LocalCacheStore {
       _path!,
       version: _schemaVersion,
       onCreate: (db, _) => _createSchema(db),
-      onUpgrade: (db, _, _) => _rebuildSchema(db),
+      onUpgrade: (db, oldVersion, _) async {
+        if (oldVersion < 5) {
+          await _rebuildSchema(db);
+        } else {
+          // Preserve cached history, pending sends and durable preference queues.
+          await db.execute(
+            "UPDATE messages SET key=chat_guid || char(31) || CASE WHEN guid IS NOT NULL AND guid!='' THEN 'guid:' || guid ELSE 'temp:' || temp_id END",
+          );
+        }
+      },
       onDowngrade: (db, _, _) => _rebuildSchema(db),
       onOpen: (db) async {
         await db.execute(
@@ -124,7 +135,7 @@ CREATE TABLE metadata (
     await db.delete(
       'metadata',
       where:
-          "key NOT LIKE 'chat_preferences.%' AND key NOT LIKE 'message_preferences.%' AND key != 'chat_visibility.v1'",
+          "key NOT LIKE 'chat_preferences.%' AND key NOT LIKE 'message_preferences.%' AND key NOT LIKE 'read_state.%' AND key != 'chat_visibility.v1'",
     );
   }
 
@@ -359,18 +370,6 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     return {for (final r in rows) r['guid'] as String};
   }
 
-  Future<int> releaseHiddenMessages(Iterable<String> guids) async {
-    final ids = guids.where((g) => g.trim().isNotEmpty).toSet();
-    if (ids.isEmpty) return 0;
-    final db = await _ready();
-    final batch = db.batch();
-    for (final guid in ids) {
-      batch.delete('hidden_messages', where: 'guid = ?', whereArgs: [guid]);
-    }
-    final results = await batch.commit();
-    return results.whereType<int>().fold<int>(0, (sum, value) => sum + value);
-  }
-
   Future<List<MessageModel>> listMessages(
     String chatGuid, {
     int limit = 200,
@@ -402,32 +401,17 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     return rows.map(_messageFromRow).toList(growable: false);
   }
 
-  Future<bool> hasMessageGuid(String guid) async {
+  Future<bool> hasMessage(String chatGuid, String guid) async {
     if (guid.isEmpty) return false;
     final db = await _ready();
     final rows = await db.query(
       'messages',
       columns: const ['key'],
-      where: 'guid = ?',
-      whereArgs: [guid],
+      where: 'chat_guid = ? AND guid = ?',
+      whereArgs: [chatGuid, guid],
       limit: 1,
     );
     return rows.isNotEmpty;
-  }
-
-  Future<void> replaceServerPage(
-    String chatGuid,
-    Iterable<MessageModel> messages,
-  ) async {
-    final db = await _ready();
-    await db.transaction((tx) async {
-      await tx.delete(
-        'messages',
-        where: "chat_guid=? AND guid IS NOT NULL AND guid!=''",
-        whereArgs: [chatGuid],
-      );
-      await _mergeConfirmedMessages(tx, chatGuid, messages);
-    });
   }
 
   /// Adds or updates a fetched page without dropping older cached history.
@@ -571,6 +555,35 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
   /// `latest_renderable_at`) or this call wins the race for the same WS/delta
   /// event — otherwise the watermark could settle behind the new message and
   /// leave a stale dot lit while the user is looking at the conversation.
+  Future<Map<String, int>> readPositions(Iterable<String> routes) async {
+    final db = await _ready();
+    final positions = <String, int>{};
+    for (final route in routes) {
+      final rows = await db.query(
+        'chats',
+        columns: ['last_seen_at'],
+        where: 'guid=?',
+        whereArgs: [route],
+      );
+      if (rows.isNotEmpty) {
+        positions[route] = (rows.single['last_seen_at'] as int?) ?? 0;
+      }
+    }
+    return positions;
+  }
+
+  Future<void> applyReadPositions(Map<String, int> positions) async {
+    final db = await _ready();
+    final batch = db.batch();
+    for (final entry in positions.entries) {
+      batch.rawUpdate(
+        'UPDATE chats SET last_seen_at=MAX(COALESCE(last_seen_at,0),?) WHERE guid=? AND COALESCE(last_seen_at,0)<?',
+        [entry.value, entry.key, entry.value],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
   Future<void> markChatsSeen(Iterable<String> guids, {int? upTo}) async {
     final db = await _ready();
     final batch = db.batch();
@@ -664,8 +677,8 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     final db = await _ready();
     final rows = await db.query(
       'messages',
-      where: 'guid = ?',
-      whereArgs: [guid],
+      where: 'chat_guid = ? AND guid = ?',
+      whereArgs: [chatGuid, guid],
       limit: 1,
     );
     if (rows.isEmpty) return;
@@ -845,7 +858,11 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
   }
 
   Future<Database> _ready() async {
+    if (!accessAllowed)
+      throw StateError("Device credential rejected; cache access locked.");
     await open();
+    if (!accessAllowed)
+      throw StateError("Device credential rejected; cache access locked.");
     return _db!;
   }
 
@@ -862,10 +879,12 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
       // thread even if one slips through. The raw timeline lives behind the
       // server's Message Inspector API, not in this cache.
       if (message.isDebugOnly) continue;
-      final key = message.guid.isNotEmpty
+      if (message.guid.isEmpty && (message.tempId?.isEmpty ?? true)) continue;
+      final route = message.chatGuid ?? chatGuid;
+      final identity = message.guid.isNotEmpty
           ? 'guid:${message.guid}'
           : 'temp:${message.tempId}';
-      if (key.endsWith('null')) continue;
+      final key = '$route\u001f$identity';
       batch.insert('messages', {
         'key': key,
         'guid': message.guid,

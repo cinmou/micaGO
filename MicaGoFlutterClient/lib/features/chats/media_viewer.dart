@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -358,6 +359,7 @@ class FullscreenVideo extends StatefulWidget {
 class _FullscreenVideoState extends State<FullscreenVideo>
     with WidgetsBindingObserver {
   VideoPlayerController? _controller;
+  File? _playableFile;
   bool _failed = false;
   bool _controlsVisible = true;
   Timer? _hideTimer;
@@ -379,12 +381,22 @@ class _FullscreenVideoState extends State<FullscreenVideo>
       _controlsVisible = true;
     });
     await previous?.dispose();
+    final previousFile = _playableFile;
+    _playableFile = null;
+    if (previousFile != null && await previousFile.exists()) {
+      await previousFile.delete();
+    }
     if (!mounted || generation != _generation) return;
-    final controller = VideoPlayerController.networkUrl(
-      Uri.parse(widget.api.attachmentPlayableUrl(widget.attachment.guid)),
-      httpHeaders: widget.api.mediaAuthHeaders,
-    );
+    VideoPlayerController? controller;
+    File? file;
     try {
+      file = await widget.api.downloadPlayableFile(widget.attachment.guid);
+      if (!mounted || generation != _generation) {
+        await file.delete();
+        return;
+      }
+      _playableFile = file;
+      controller = VideoPlayerController.file(file);
       await controller.initialize();
       if (!mounted || generation != _generation) {
         await controller.dispose();
@@ -400,7 +412,8 @@ class _FullscreenVideoState extends State<FullscreenVideo>
       setState(() => _controller = controller);
       _scheduleHide();
     } catch (_) {
-      await controller.dispose();
+      await controller?.dispose();
+      if (file != null && await file.exists()) await file.delete();
       if (mounted && generation == _generation) setState(() => _failed = true);
     }
   }
@@ -419,7 +432,12 @@ class _FullscreenVideoState extends State<FullscreenVideo>
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
     _hideTimer?.cancel();
-    _controller?.dispose();
+    final player = _controller;
+    final file = _playableFile;
+    unawaited(() async {
+      await player?.dispose();
+      if (file != null && await file.exists()) await file.delete();
+    }());
     super.dispose();
   }
 

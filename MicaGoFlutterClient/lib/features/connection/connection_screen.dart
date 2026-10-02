@@ -7,15 +7,9 @@ import '../../app/router.dart';
 import '../settings/backup_restore_ui.dart';
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
-import '../../core/models/connection_profile.dart';
-import '../../core/network/endpoint_utils.dart';
-import '../../core/network/manual_connection_profile.dart';
 import '../pairing/pairing_payload.dart';
-import 'connection_controller.dart';
 
-/// Connection setup. Normal paths are QR scan and pasted v3 connection JSON.
-/// Low-level URL entry is kept only as an advanced fallback and still generates
-/// the same LAN/Public candidate model used by QR pairing.
+/// Connection setup through QR or the same pasted single-use invitation.
 class ConnectionScreen extends StatefulWidget {
   const ConnectionScreen({super.key});
 
@@ -24,47 +18,19 @@ class ConnectionScreen extends StatefulWidget {
 }
 
 class _ConnectionScreenState extends State<ConnectionScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _publicUrlCtrl = TextEditingController();
-  final _lanUrlCtrl = TextEditingController();
-  final _tokenCtrl = TextEditingController();
-  bool _obscureToken = true;
   String? _pasteError;
 
-  late final ConnectionController _controller;
+  late final AppController _app;
 
   @override
   void initState() {
     super.initState();
-    _controller = ConnectionController(context.read<AppController>());
-    final existing = _controller.app.profile;
-    if (existing != null) {
-      _publicUrlCtrl.text = existing.publicBaseUrl ?? '';
-      _lanUrlCtrl.text = existing.lanBaseUrl ?? '';
-      _tokenCtrl.text = existing.token;
-      if (_publicUrlCtrl.text.isEmpty && _lanUrlCtrl.text.isEmpty) {
-        _publicUrlCtrl.text = existing.baseUrl;
-      }
-    }
-    _publicUrlCtrl.addListener(() => setState(() {}));
-    _lanUrlCtrl.addListener(() => setState(() {}));
+    _app = context.read<AppController>();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _publicUrlCtrl.dispose();
-    _lanUrlCtrl.dispose();
-    _tokenCtrl.dispose();
     super.dispose();
-  }
-
-  ConnectionProfile _buildAdvancedProfile() {
-    return advancedManualProfile(
-      publicBaseUrl: _publicUrlCtrl.text,
-      lanBaseUrl: _lanUrlCtrl.text,
-      token: _tokenCtrl.text,
-    );
   }
 
   Future<void> _pasteConnectionJson() async {
@@ -100,25 +66,19 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     if (raw == null || raw.isEmpty) return;
     try {
       final profile = parsePairingPayload(raw).toProfile();
-      await _controller.save(profile);
+      if (profile.pairingCode == null) {
+        throw PairingParseException(
+          MicaLocalizations.current.t('pair.secureUpgrade'),
+        );
+      }
+      await _app.saveAndActivate(profile);
       if (!mounted) return;
       context.go(Routes.home);
     } on PairingParseException catch (e) {
       setState(() => _pasteError = e.message);
+    } catch (error) {
+      if (mounted) setState(() => _pasteError = error.toString());
     }
-  }
-
-  Future<void> _onTestAdvanced() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    FocusScope.of(context).unfocus();
-    await _controller.test(_buildAdvancedProfile());
-  }
-
-  Future<void> _onSaveAdvanced() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    await _controller.save(_buildAdvancedProfile());
-    if (!mounted) return;
-    context.go(Routes.home);
   }
 
   @override
@@ -129,7 +89,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       body: SafeArea(
         bottom: false,
         child: ListenableBuilder(
-          listenable: _controller,
+          listenable: _app,
           builder: (context, _) {
             return SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(
@@ -155,12 +115,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     label: Text(strings.t('pair.pasteJson')),
                   ),
                   const SizedBox(height: 12),
-                  // C54: restore a settings backup (server + token + prefs) to get
-                  // straight back in after a reinstall / new device.
+                  // Settings restore preserves this install's device credentials.
                   OutlinedButton.icon(
                     onPressed: () async {
                       final ok = await importSettingsBackup(context);
-                      if (ok && context.mounted) context.go(Routes.home);
+                      if (ok && context.mounted && _app.profile != null) {
+                        context.go(Routes.home);
+                      }
                     },
                     icon: const Icon(Icons.restore),
                     label: Text(strings.t('settings.importBackup')),
@@ -169,96 +130,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     const SizedBox(height: 12),
                     _InlineError(text: _pasteError!),
                   ],
-                  const SizedBox(height: 24),
-                  Form(
-                    key: _formKey,
-                    child: ExpansionTile(
-                      tilePadding: EdgeInsets.zero,
-                      title: Text(strings.t('pair.advancedSetup')),
-                      subtitle: Text(strings.t('pair.advancedSetupHint')),
-                      children: [
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _publicUrlCtrl,
-                          keyboardType: TextInputType.url,
-                          autocorrect: false,
-                          decoration: InputDecoration(
-                            labelText: strings.t('pair.publicUrl'),
-                            hintText: 'https://mica.example.com',
-                            helperText: _derivedPublicWs,
-                            prefixIcon: const Icon(Icons.public_outlined),
-                          ),
-                          validator: (v) => _optionalUrlValidator(v, 'Public'),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _lanUrlCtrl,
-                          keyboardType: TextInputType.url,
-                          autocorrect: false,
-                          decoration: InputDecoration(
-                            labelText: strings.t('pair.lanUrl'),
-                            hintText: 'http://192.168.1.23:3000',
-                            helperText: _derivedLanWs,
-                            prefixIcon: const Icon(Icons.wifi_tethering),
-                          ),
-                          validator: (v) => _optionalUrlValidator(v, 'LAN'),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _tokenCtrl,
-                          obscureText: _obscureToken,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          decoration: InputDecoration(
-                            labelText: strings.t('pair.bearerToken'),
-                            prefixIcon: const Icon(Icons.key_outlined),
-                            suffixIcon: IconButton(
-                              tooltip: MicaLocalizations.of(context).t(
-                                _obscureToken ? 'common.show' : 'common.hide',
-                              ),
-                              icon: Icon(
-                                _obscureToken
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                              ),
-                              onPressed: () => setState(
-                                () => _obscureToken = !_obscureToken,
-                              ),
-                            ),
-                          ),
-                          validator: (v) => (v ?? '').trim().isEmpty
-                              ? MicaLocalizations.of(
-                                  context,
-                                ).t('pair.tokenRequired')
-                              : null,
-                        ),
-                        const SizedBox(height: 20),
-                        OutlinedButton.icon(
-                          onPressed: _controller.state == TestState.testing
-                              ? null
-                              : _onTestAdvanced,
-                          icon: _controller.state == TestState.testing
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.wifi_tethering),
-                          label: Text(strings.t('pair.testAdvanced')),
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: _onSaveAdvanced,
-                          icon: const Icon(Icons.save_outlined),
-                          label: Text(strings.t('pair.saveAdvanced')),
-                        ),
-                        const SizedBox(height: 16),
-                        _TestResult(controller: _controller),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             );
@@ -266,32 +137,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         ),
       ),
     );
-  }
-
-  String? get _derivedPublicWs {
-    final raw = _publicUrlCtrl.text.trim();
-    if (raw.isEmpty) return null;
-    return 'WebSocket: ${deriveWebSocketUrl(raw)}';
-  }
-
-  String? get _derivedLanWs {
-    final raw = _lanUrlCtrl.text.trim();
-    if (raw.isEmpty) return null;
-    return 'WebSocket: ${deriveWebSocketUrl(raw)}';
-  }
-
-  String? _optionalUrlValidator(String? value, String label) {
-    final raw = value?.trim() ?? '';
-    final other = label == 'Public' ? _lanUrlCtrl.text : _publicUrlCtrl.text;
-    if (raw.isEmpty) {
-      if (other.trim().isEmpty) {
-        return MicaLocalizations.of(context).t('pair.urlOrJsonRequired');
-      }
-      return null;
-    }
-    return isValidHttpUrl(raw)
-        ? null
-        : MicaLocalizations.of(context).t('pair.invalidOrigin');
   }
 }
 
@@ -350,41 +195,6 @@ class _InlineError extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(text)),
         ],
-      ),
-    );
-  }
-}
-
-class _TestResult extends StatelessWidget {
-  final ConnectionController controller;
-  const _TestResult({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    if (controller.state == TestState.idle ||
-        controller.state == TestState.testing) {
-      return const SizedBox.shrink();
-    }
-    final scheme = Theme.of(context).colorScheme;
-    final ok = controller.state == TestState.success;
-    final color = ok ? scheme.primary : scheme.error;
-    return Card(
-      color: (ok ? scheme.primaryContainer : scheme.errorContainer).withValues(
-        alpha: 0.4,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              ok ? Icons.check_circle_outline : Icons.error_outline,
-              color: color,
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: Text(controller.message ?? '')),
-          ],
-        ),
       ),
     );
   }

@@ -26,33 +26,36 @@ func kinds(_ json: String) -> [String] {
     return cands.compactMap { $0["kind"] as? String }
 }
 
-let lan = ConnectionCandidate(kind: "lan", baseUrl: "http://192.168.1.5:3000", wsUrl: "ws://192.168.1.5:3000/ws")
+let lan = ConnectionCandidate(kind: "lan", baseUrl: "https://192.168.1.5:3001", wsUrl: "wss://192.168.1.5:3001/ws")
 let pub = ConnectionCandidate(kind: "public", baseUrl: "https://x.example.com", wsUrl: "wss://x.example.com/ws")
 
 // LAN only — a valid payload with no Public required.
 let lanOnly = unifiedConnectionPayload(lan: [lan], publicCandidate: nil,
-    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false)
+    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false,tlsFingerprint:String(repeating:"a",count:64),expiresAt:1234567890)
 precondition(kinds(lanOnly) == ["lan"], "LAN-only payload should have exactly one lan candidate")
-precondition((decode(lanOnly)["token"] as? String) == "tok", "LAN-only payload should carry the token")
+precondition((decode(lanOnly)["pairingCode"] as? String) == "tok", "LAN-only payload should carry the token")
 
 // LAN + Public — LAN first, Public second.
 let both = unifiedConnectionPayload(lan: [lan], publicCandidate: pub,
-    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false)
+    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false,tlsFingerprint:String(repeating:"a",count:64),expiresAt:1234567890)
 precondition(kinds(both) == ["lan", "public"], "LAN+Public payload should be lan then public")
 
 // Public only — still valid.
 let pubOnly = unifiedConnectionPayload(lan: [], publicCandidate: pub,
-    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false)
+    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false,tlsFingerprint:String(repeating:"a",count:64),expiresAt:1234567890)
 precondition(kinds(pubOnly) == ["public"], "Public-only payload should have one public candidate")
 
 // Neither — empty payload (UI shows an empty state instead of copying this).
 let none = unifiedConnectionPayload(lan: [], publicCandidate: nil,
-    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false)
+    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: false,tlsFingerprint:String(repeating:"a",count:64),expiresAt:1234567890)
 precondition(none == "{}", "no candidates should produce an empty object")
 
 // Redaction hides the token.
 let red = unifiedConnectionPayload(lan: [lan], publicCandidate: nil,
-    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: true)
-precondition((decode(red)["token"] as? String) == "<redacted>", "redacted payload must hide the token")
+    token: "tok", serverName: "Mac", configRevision: "rev1", redacted: true,tlsFingerprint:String(repeating:"a",count:64),expiresAt:1234567890)
+precondition((decode(red)["pairingCode"] as? String) == "<redacted>", "redacted payload must hide the token")
 
 print("unifiedConnectionPayload: all assertions passed")
+
+precondition(decode(lanOnly)["token"] == nil, "administrator token field must never be exported")
+precondition((decode(lanOnly)["version"] as? Int) == 4)

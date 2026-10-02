@@ -4,6 +4,7 @@ import Combine
 
 @main
 struct MicaGoCompanionApp: App {
+    @AppStorage(L10n.languageKey) private var appLanguage = "system"
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     // Shared singletons so bootstrap/shutdown work even with no window open
     // (silent launch / menu-bar-only mode) and the AppDelegate can reach them.
@@ -17,6 +18,7 @@ struct MicaGoCompanionApp: App {
     var body: some Scene {
         WindowGroup(id: "dashboard") {
             ContentView()
+                .environment(\.locale, Locale(identifier: L10n.languageIdentifier(for: appLanguage)))
                 .environmentObject(model)
                 .environmentObject(runtime)
                 .environmentObject(backend)
@@ -96,6 +98,13 @@ final class MenuBarStatusItemController: NSObject, NSMenuDelegate {
         }
         statusItem.menu = menu
         updateStatusItem()
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in L10n.languageIdentifier }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusItem() }
+            .store(in: &cancellables)
 
         backend.$processState
             .combineLatest(model.$reachable)
