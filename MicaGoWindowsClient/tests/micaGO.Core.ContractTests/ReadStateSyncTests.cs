@@ -13,14 +13,22 @@ internal static class ReadStateSyncTests
         public bool Offline,LoseReply;
         private readonly Dictionary<string,Dictionary<string,long>> _servers=[];
         public Dictionary<string,long> Rows=>_servers.TryGetValue(Id,out var rows)?rows:(_servers[Id]=[]);
+        public Dictionary<string,ReadPosition> Marks=[];
         public override Task<ReadState> GetReadStateAsync(CancellationToken ct=default) {
             if(Offline)throw new HttpRequestException("offline");
-            return Task.FromResult(new ReadState(Id,0,Rows.Select(pair=>new ReadPosition(pair.Key,pair.Value)).ToArray()));
+            return Task.FromResult(new ReadState(Id,0,Rows.Select(pair=>Marks.GetValueOrDefault(pair.Key) is {} mark ? mark with {ReadThrough=pair.Value} : new ReadPosition(pair.Key,pair.Value,false)).ToArray()));
         }
         public override Task<ReadState> PatchReadStateAsync(ReadStateMutation mutation,CancellationToken ct=default) {
             if(Offline)throw new HttpRequestException("offline");
             if(mutation.ServerId!=Id)throw new MicaGoApiException("scope",409);
-            foreach(var row in mutation.Changes)Rows[row.ChatGuid]=Math.Max(Rows.GetValueOrDefault(row.ChatGuid),row.ReadThrough);
+            foreach(var row in mutation.Changes) {
+                var mark=Marks.GetValueOrDefault(row.ChatGuid)??new ReadPosition(row.ChatGuid,0,false);
+                if(row.MarkedUnread is not null&&row.BaseUnreadRevision!=mark.UnreadRevision)continue;
+                if(row.ReadThrough>Rows.GetValueOrDefault(row.ChatGuid))mark=mark with {MarkedUnread=false,UnreadRevision=mark.UnreadRevision+1};
+                if(row.MarkedUnread is not null&&row.MarkedUnread!=mark.MarkedUnread)mark=mark with {MarkedUnread=row.MarkedUnread,UnreadRevision=mark.UnreadRevision+1};
+                Marks[row.ChatGuid]=mark;
+                Rows[row.ChatGuid]=Math.Max(Rows.GetValueOrDefault(row.ChatGuid),row.ReadThrough);
+            }
             if(LoseReply){LoseReply=false;throw new HttpRequestException("lost acknowledgement");}
             return GetReadStateAsync(ct);
         }
@@ -35,6 +43,19 @@ internal static class ReadStateSyncTests
             await a.SyncAsync();await b.SyncAsync();await a.MarkViewedAsync(new Dictionary<string,long>{{"a",200},{"b",50}});await b.SyncAsync();
             True(await cacheB.GetSettingAsync("read.watermark.a")=="200","remote read not mirrored");
             await b.MarkViewedAsync(new Dictionary<string,long>{{"a",100}});True(server.Rows["a"]==200&&server.Rows["b"]==50,"read regressed or crossed routes");
+            var unread=server.Marks["a"];
+            await server.PatchReadStateAsync(new(server.Id,[new("a",200,true,BaseUnreadRevision:unread.UnreadRevision)]));
+            await b.SyncAsync();True(b.UnreadMarks.GetValueOrDefault("a"),"manual unread not mirrored");
+            await b.MarkViewedAsync(new Dictionary<string,long>{{"a",200}});
+            await a.SyncAsync();True(!a.UnreadMarks.GetValueOrDefault("a")&&server.Rows["a"]==200,"manual read did not clear or rewound watermark");
+            await a.SetMarkedUnreadAsync(new Dictionary<string,long>{{"a",200},{"b",50}},true);
+            await b.SyncAsync();True(b.UnreadMarks.GetValueOrDefault("a")&&b.UnreadMarks.GetValueOrDefault("b"),"merged manual unread not synchronized");
+            await b.SetMarkedUnreadAsync(new Dictionary<string,long>{{"a",200},{"b",50}},false);
+            await a.SyncAsync();True(!a.UnreadMarks.GetValueOrDefault("a")&&!a.UnreadMarks.GetValueOrDefault("b"),"merged manual read not synchronized");
+            server.Offline=true;await a.SetMarkedUnreadAsync(new Dictionary<string,long>{{"a",200}},true);
+            a=new ReadStateSync(cacheA,()=>server);
+            server.Offline=false;await b.MarkViewedAsync(new Dictionary<string,long>{{"a",250}});
+            await a.SyncAsync();True(!a.UnreadMarks.GetValueOrDefault("a"),"stale unread replay relit a newer read");
             server.Offline=true;await a.MarkViewedAsync(new Dictionary<string,long>{{"a",300}});
             a=new ReadStateSync(cacheA,()=>server);server.Offline=false;server.LoseReply=true;await a.SyncAsync();await a.SyncAsync();
             True(server.Rows["a"]==300,"offline read lost after restart");

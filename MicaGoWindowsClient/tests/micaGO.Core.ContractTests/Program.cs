@@ -5,6 +5,7 @@ using MicaGo.Infrastructure.Connection;
 
 var tests = new (string Name, Action Run)[]
 {
+    ("optional pairing QR validation", PairingQrTests.Run),
     ("secure pairing, TLS pinning and downgrade rejection", MicaGo.Core.ContractTests.DeviceSecurityTests.Run),
     ("v1 payload", ParsesV1),
     ("v2 LAN first payload", ParsesV2),
@@ -69,6 +70,11 @@ try {await ReadStateSyncTests.RunAsync();Console.WriteLine("PASS cross-device re
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL read state: {exception.Message}");}
 try {await ConnectionStoreTests.RunAsync();Console.WriteLine("PASS serialized profile save, load and disconnect");}
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL connection store: {exception.Message}");}
+try {await CredentialSessionTests.RunAsync();Console.WriteLine("PASS terminal credential rejection, late responses and media lock");}
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL credential rejection: {exception.Message}");}
+try { await NotificationReplyTests.RunAsync(); Console.WriteLine("PASS notification reply scope, ordinary send and uncertain delivery"); }
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL notification reply: {exception.Message}");}
+
 return failures == 0 ? 0 : 1;
 
 static void ParsesV1()

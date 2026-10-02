@@ -4,11 +4,12 @@ using MicaGo.Infrastructure.Storage;
 internal static class ConnectionStoreTests
 {
     private sealed class Secrets : ISecretStore {
-        private string? _value;
+        private readonly Dictionary<string,string> _values=[];
         public Action? OnWrite;
-        public string? Read(string key)=>_value;
-        public void Write(string key,string value) {_value=value;OnWrite?.Invoke();}
-        public void Delete(string key)=>_value=null;
+        public bool IgnoreWrites;
+        public string? Read(string key)=>_values.GetValueOrDefault(key);
+        public void Write(string key,string value) {if(!IgnoreWrites)_values[key]=value;OnWrite?.Invoke();}
+        public void Delete(string key)=>_values.Remove(key);
     }
     public static async Task RunAsync() {
         var directory=Directory.CreateTempSubdirectory("micago-profile-");
@@ -17,6 +18,17 @@ internal static class ConnectionStoreTests
             var secrets=new Secrets();var store=new ConnectionStore(secrets,directory.FullName);
             var profile=new ConnectionProfile("test","http://lan","ws://lan/ws",ConnectionMode.LanFirst,"r",[new(EndpointKind.Lan,"http://lan","ws://lan/ws")]);
             await store.SaveAsync(profile,"first-test-credential");
+            await store.PrepareAsync();
+            if((await store.LoadAsync())?.Token!="first-test-credential")throw new Exception("Credential preflight changed the current credential.");
+            secrets.IgnoreWrites=true;
+            var invitation=System.Text.Json.JsonSerializer.Serialize(new {version=4,pairingCode=new string('a',64),tlsFingerprint=new string('b',64),candidates=new[]{new{kind="lan",baseUrl="https://192.168.1.3:3001",wsUrl="wss://192.168.1.3:3001/ws"}}});
+            using(var connection=new MicaGo.Infrastructure.Connection.ConnectionManager(store,new MicaGo.Infrastructure.Connection.EndpointSelector()))
+            {
+                try {await connection.ConnectPairingJsonAsync(invitation);throw new Exception("Persistence preflight failure reached pairing.");}
+                catch(System.ComponentModel.Win32Exception) { }
+            }
+            secrets.IgnoreWrites=false;
+            if((await store.LoadAsync())?.Token!="first-test-credential")throw new Exception("Failed preflight erased an existing credential.");
             // Cancelled writes must leave both the previous profile and
             // its credential intact.
             var impossible=profile with {ActiveBaseUrl=new string('x',100_000)};

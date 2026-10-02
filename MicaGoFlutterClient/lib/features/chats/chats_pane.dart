@@ -158,7 +158,6 @@ class _ChatsPaneState extends State<ChatsPane> {
                               : widget.searchRequests,
                           compact: compact,
                           sidebar: true,
-                          selectedGuid: _selected?.primary.guid,
                           onOpen: (merged) =>
                               setState(() => _selected = merged),
                         ),

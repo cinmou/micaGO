@@ -58,6 +58,17 @@ class _MicaLocalizationsDelegate
 
 const _strings = {
   'en': {
+    "pair.compatibilityTitle": "Use compatibility storage?",
+    "pair.compatibilityBody":
+        "The system credential store is unavailable. Compatibility mode stores encrypted credentials in this app’s private storage, with the key on this device. Apps with root access can recover them. Enable it only on a device you trust.",
+    "pair.enableCompatibility": "Enable compatibility mode",
+    "pair.compatibilityRequired":
+        "Pairing cancelled. This device requires compatibility storage.",
+    "settings.credentialCompatibility":
+        "Credential storage: compatibility mode",
+    "settings.credentialCompatibilityDetail":
+        "Local software encryption; root access can expose credentials.",
+
     'chat.awaitingConfirmation': 'Waiting for confirmation',
     'prefs.description':
         'Hidden chats continue syncing across devices and suppress notifications.',
@@ -106,6 +117,7 @@ const _strings = {
     'settings.releasedContacts': 'Restored {n} hidden contacts',
     'settings.nothingHidden': 'Nothing is hidden',
     'chat.hiddenContact': 'Chat hidden',
+    'chat.undoHide': 'Undo',
     'chat.pin': 'Pin to top',
     'chat.unpin': 'Unpin',
     'chat.hide': 'Hide',
@@ -270,6 +282,7 @@ const _strings = {
     'notif.keepAlive': 'Keep micaGO running in background',
     'notif.inApp': 'In-app notifications',
     'notif.showMessageText': 'Show message text',
+    'notif.reply': 'Reply',
     'notif.diagnostics': 'Notification diagnostics',
     'notif.copyDiagnostics': 'Copy diagnostics',
     'notif.diagnosticsCopied': 'Diagnostics copied',
@@ -340,6 +353,10 @@ const _strings = {
     'connection.webSocketLost': 'Live updates stopped. Reconnecting…',
     'connection.webSocketRecovered': 'Realtime updates restored',
     'connection.cannotReachTitle': 'Can’t reach your micaGO server',
+    'connection.tokenRejectedTitle': 'Device access rejected',
+    'connection.tokenRejectedBody':
+        'The server rejected this device’s token. Message history is locked. Create a new pairing code on the Mac to reconnect.',
+    'connection.pairAgain': 'Pair again',
     'connection.cannotReachBody':
         'micaGO couldn\'t reach your Mac within 10 seconds.\n\n• Check that the micaGO server is running on the Mac.\n• On LAN, keep this phone on the same Wi‑Fi as the Mac. On Public, check the Public URL.\n• Check the server address in Settings → Connection.',
     'connection.checkNow': 'Check now',
@@ -384,7 +401,7 @@ const _strings = {
     'error.unreachable': 'Unable to connect to the server.',
     'error.chatNotFound': 'Conversation not found on the server.',
     'chat.markRead': 'Mark read',
-    'chat.pinShort': 'Pin',
+    'chat.markUnread': 'Mark unread',
     'chat.group': 'Group',
     'chat.groupChat': 'Group Chat',
     'chat.noChatsYet': 'No conversations',
@@ -532,6 +549,14 @@ const _strings = {
     'settings.backgroundUpdated': 'Chat background updated',
   },
   'zhHans': {
+    "pair.compatibilityTitle": "启用兼容存储？",
+    "pair.compatibilityBody":
+        "系统凭据存储不可用。兼容模式将凭据加密保存在应用私有目录，密钥也保存在本机。获得 root 权限的应用可读取凭据。请仅在可信设备上启用。",
+    "pair.enableCompatibility": "启用兼容模式",
+    "pair.compatibilityRequired": "配对已取消。此设备需要使用兼容存储。",
+    "settings.credentialCompatibility": "凭据存储：兼容模式",
+    "settings.credentialCompatibilityDetail": "使用本机软件加密，root 权限可读取凭据。",
+
     'chat.awaitingConfirmation': '等待发送确认',
     'prefs.description': '隐藏聊天继续在设备间同步，且不再发送通知。',
     'prefs.offline': '隐藏状态尚未同步，连接后将自动重试。',
@@ -576,6 +601,7 @@ const _strings = {
     'settings.releasedContacts': '已恢复 {n} 个被隐藏的联系人',
     'settings.nothingHidden': '没有被隐藏的内容',
     'chat.hiddenContact': '已隐藏聊天',
+    'chat.undoHide': '撤销',
     'chat.pin': '置顶',
     'chat.unpin': '取消置顶',
     'chat.hide': '隐藏',
@@ -727,6 +753,7 @@ const _strings = {
     'notif.keepAlive': '在后台保持 micaGO 运行',
     'notif.inApp': '应用内通知',
     'notif.showMessageText': '显示消息内容',
+    'notif.reply': '回复',
     'notif.diagnostics': '通知诊断',
     'notif.copyDiagnostics': '复制诊断信息',
     'notif.diagnosticsCopied': '诊断信息已复制',
@@ -794,6 +821,9 @@ const _strings = {
     'connection.webSocketLost': '实时更新中断，正在重连…',
     'connection.webSocketRecovered': '实时更新已恢复',
     'connection.cannotReachTitle': '无法连接到你的 micaGO 服务器',
+    'connection.tokenRejectedTitle': '令牌被拒绝',
+    'connection.tokenRejectedBody': '服务器已拒绝此设备的令牌，消息记录已锁定。请在 Mac 上生成新配对码，重新连接。',
+    'connection.pairAgain': '重新配对',
     'connection.cannotReachBody':
         '10 秒内没能连上你的 Mac。\n\n• 确认 Mac 上的 micaGO 服务器正在运行。\n• 用局域网时，手机要连 Mac 所在的 Wi‑Fi；用公网时，检查 Public URL 是否正确。\n• 在设置 → 连接中核对服务器地址。',
     'connection.checkNow': '立即检查',
@@ -838,7 +868,7 @@ const _strings = {
     'error.unreachable': '无法连接服务器。',
     'error.chatNotFound': '服务器上未找到此会话。',
     'chat.markRead': '标为已读',
-    'chat.pinShort': '置顶',
+    'chat.markUnread': '标为未读',
     'chat.group': '群聊',
     'chat.groupChat': '群聊',
     'chat.noChatsYet': '暂无聊天',
@@ -978,6 +1008,14 @@ const _strings = {
     'settings.backgroundUpdated': '聊天背景已更新',
   },
   'zhHant': {
+    "pair.compatibilityTitle": "啟用相容儲存？",
+    "pair.compatibilityBody":
+        "系統憑證儲存無法使用。相容模式將憑證加密儲存在應用程式私有目錄，金鑰也儲存在本機。取得 root 權限的應用程式可讀取憑證。請僅在可信裝置上啟用。",
+    "pair.enableCompatibility": "啟用相容模式",
+    "pair.compatibilityRequired": "配對已取消。此裝置需要使用相容儲存。",
+    "settings.credentialCompatibility": "憑證儲存：相容模式",
+    "settings.credentialCompatibilityDetail": "使用本機軟體加密，root 權限可讀取憑證。",
+
     'chat.awaitingConfirmation': '等待傳送確認',
     'prefs.description': '隱藏的聊天持續在裝置間同步，並停止通知。',
     'prefs.offline': '隱藏狀態尚未同步，連線後將自動重試。',
@@ -1022,6 +1060,7 @@ const _strings = {
     'settings.releasedContacts': '已恢復 {n} 個被隱藏的聯絡人',
     'settings.nothingHidden': '沒有被隱藏的內容',
     'chat.hiddenContact': '已隱藏聊天',
+    'chat.undoHide': '復原',
     'chat.pin': '置頂',
     'chat.unpin': '取消置頂',
     'chat.hide': '隱藏',
@@ -1173,6 +1212,7 @@ const _strings = {
     'notif.keepAlive': '在背景保持 micaGO 執行',
     'notif.inApp': '應用程式內通知',
     'notif.showMessageText': '顯示訊息內容',
+    'notif.reply': '回覆',
     'notif.diagnostics': '通知診斷',
     'notif.copyDiagnostics': '複製診斷資訊',
     'notif.diagnosticsCopied': '診斷資訊已複製',
@@ -1240,6 +1280,9 @@ const _strings = {
     'connection.webSocketLost': '即時更新中斷，正在重新連線…',
     'connection.webSocketRecovered': '即時更新已恢復',
     'connection.cannotReachTitle': '無法連線到你的 micaGO 伺服器',
+    'connection.tokenRejectedTitle': '權杖被拒絕',
+    'connection.tokenRejectedBody': '伺服器已拒絕此裝置的權杖，訊息記錄已鎖定。請在 Mac 上產生新配對碼，重新連線。',
+    'connection.pairAgain': '重新配對',
     'connection.cannotReachBody':
         '10 秒內沒能連上你的 Mac。\n\n• 確認 Mac 上的 micaGO 伺服器正在執行。\n• 用區域網路時，手機要連 Mac 所在的 Wi‑Fi；用公開位址時，檢查 Public URL 是否正確。\n• 在設定 → 連線中核對伺服器位址。',
     'connection.checkNow': '立即檢查',
@@ -1284,7 +1327,7 @@ const _strings = {
     'error.unreachable': '無法連線伺服器。',
     'error.chatNotFound': '伺服器上找不到此對話。',
     'chat.markRead': '標為已讀',
-    'chat.pinShort': '置頂',
+    'chat.markUnread': '標為未讀',
     'chat.group': '群組',
     'chat.groupChat': '群組聊天',
     'chat.noChatsYet': '尚無聊天',

@@ -15,6 +15,8 @@ namespace MicaGo.Infrastructure.Api;
 public sealed class MicaGoApi : IMicaGoApi
 {
     private readonly string _token;
+    private readonly CredentialSession _credential = new();
+    public event EventHandler? CredentialRejected { add => _credential.Rejected += value; remove => _credential.Rejected -= value; }
     private string? _fingerprint;
     private readonly object _routeGate = new();
     private readonly List<HttpClient> _retiredClients = [];
@@ -34,9 +36,9 @@ public sealed class MicaGoApi : IMicaGoApi
     public string BaseUrl { get; private set; }
     public Task<JsonDocument> GetServerUrlsAsync(CancellationToken ct = default) => GetJsonAsync("api/server/urls", ct);
 
-    private static HttpClient CreateClient(string baseUrl, string token, string? fingerprint)
+    private HttpClient CreateClient(string baseUrl, string token, string? fingerprint)
     {
-        var http = SecureTransport.CreateClient(baseUrl, fingerprint);
+        var http = SecureTransport.CreateClient(baseUrl, fingerprint, new CredentialSessionHandler(_credential));
         http.Timeout = TimeSpan.FromSeconds(30);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -200,7 +202,9 @@ public sealed class MicaGoApi : IMicaGoApi
         {
             throw new MicaGoApiException($"The server returned HTTP {(int)response.StatusCode}.", (int)response.StatusCode);
         }
-        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        _credential.EnsureAllowed();
+        return bytes;
     }
 
     public async Task<MessageActionCapabilities> GetMessageActionCapabilitiesAsync(CancellationToken cancellationToken = default)
@@ -272,7 +276,9 @@ public sealed class MicaGoApi : IMicaGoApi
         var pin = _fingerprint;
         socket.Options.RemoteCertificateValidationCallback = (_, cert, _, errors) => SecureTransport.ValidateCertificate(cert, errors, pin);
         socket.Options.SetRequestHeader("Authorization", $"Bearer {_token}");
+        _credential.EnsureAllowed();
         await socket.ConnectAsync(uri, linked.Token);
+        _credential.EnsureAllowed();
         var buffer = new byte[64 * 1024];
         while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
@@ -340,7 +346,7 @@ public sealed class MicaGoApi : IMicaGoApi
         return await ReadJsonResponseAsync(response, cancellationToken);
     }
 
-    private static async Task<JsonDocument> ReadJsonResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private async Task<JsonDocument> ReadJsonResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (!response.IsSuccessStatusCode)
         {
@@ -350,7 +356,9 @@ public sealed class MicaGoApi : IMicaGoApi
         try
         {
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            try { _credential.EnsureAllowed(); return document; }
+            catch { document.Dispose(); throw; }
         }
         catch (JsonException exception)
         {

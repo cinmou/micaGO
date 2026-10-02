@@ -56,7 +56,7 @@ func (h *Handlers) PatchReadState(w http.ResponseWriter, r *http.Request) {
 	}
 	seen := map[string]bool{}
 	for _, row := range request.Changes {
-		if strings.TrimSpace(row.ChatGUID) == "" || len(row.ChatGUID) > 1024 || row.ReadThrough <= 0 || seen[row.ChatGUID] {
+		if strings.TrimSpace(row.ChatGUID) == "" || len(row.ChatGUID) > 1024 || (row.ReadThrough < 0 || (row.ReadThrough == 0 && row.MarkedUnread == nil)) || (row.MarkedUnread != nil && (row.BaseUnreadRevision == nil || *row.BaseUnreadRevision < 0)) || seen[row.ChatGUID] {
 			writeBadRequest(w, "invalid read position")
 			return
 		}

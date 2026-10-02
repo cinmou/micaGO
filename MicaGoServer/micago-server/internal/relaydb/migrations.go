@@ -111,6 +111,11 @@ func (db *DB) Migrate() error {
 		}
 	}
 
+	for _, column := range []string{"marked_unread", "unread_revision"} {
+		if err := db.ensureColumn("read_positions", column, "INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
 	if err := db.ensureColumn("pairing_codes", "used", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}

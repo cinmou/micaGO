@@ -31,7 +31,32 @@ class ThreadController extends ChangeNotifier {
     required this.app,
     required this.chatGuid,
     Set<String> mergedGuids = const {},
-  }) : mergedGuids = {...mergedGuids}..remove(chatGuid);
+  }) : mergedGuids = {...mergedGuids}..remove(chatGuid) {
+    app.tokenRejected.addListener(_onAuthChanged);
+    app.addListener(_onConnectionRecovered);
+    app.connectionHealthy.addListener(_onConnectionRecovered);
+  }
+
+  void _onAuthChanged() {
+    if (!app.tokenRejected.value || _disposed) return;
+    _reloadDebounce?.cancel();
+    _col.clear();
+    error = null;
+    notifyListeners();
+  }
+
+  bool _waitingForRecovery = false;
+  void _onConnectionRecovered() {
+    if (_disposed ||
+        !_waitingForRecovery ||
+        !app.isForeground ||
+        app.isForegroundRecovering ||
+        !app.connectionHealthy.value) {
+      return;
+    }
+    _waitingForRecovery = false;
+    unawaited(load(showSpinner: false));
+  }
 
   /// Every chat guid rendered by this thread (primary + merged routes).
   Set<String> get threadGuids => {chatGuid, ...mergedGuids};
@@ -65,15 +90,17 @@ class ThreadController extends ChangeNotifier {
   Timer? _reloadDebounce;
 
   /// Chronological (oldest → newest); the thread view renders it reversed.
-  List<MessageModel> get messages => _col.ordered
-      .where(
-        (message) =>
-            !app.messagePreferences.isHidden(
-              '${message.chatGuid ?? chatGuid}\u001f${message.guid}',
-            ) &&
-            !app.messagePreferences.isHidden(message.guid),
-      )
-      .toList(growable: false);
+  List<MessageModel> get messages => app.tokenRejected.value
+      ? const []
+      : _col.ordered
+            .where(
+              (message) =>
+                  !app.messagePreferences.isHidden(
+                    '${message.chatGuid ?? chatGuid}\u001f${message.guid}',
+                  ) &&
+                  !app.messagePreferences.isHidden(message.guid),
+            )
+            .toList(growable: false);
 
   Set<String> _visibleHidden = {};
 
@@ -168,6 +195,7 @@ class ThreadController extends ChangeNotifier {
       _notify();
     }
     final baseline = _col.snapshot();
+    final generation = app.foregroundGeneration;
     try {
       final page = await api.getMessageHistory(threadGuids, limit: _pageSize);
       if (_disposed) return;
@@ -186,10 +214,22 @@ class ThreadController extends ChangeNotifier {
       _sweepAttachmentSendBookkeeping();
       state = _col.isEmpty ? ThreadState.empty : ThreadState.loaded;
       error = null;
+      _waitingForRecovery = false;
     } on ApiException catch (e) {
       if (_disposed) return;
-      state = _col.isEmpty ? ThreadState.error : ThreadState.loaded;
-      error = _humanize(e);
+      final suppressed = app.suppressReadFailure(
+        e,
+        requestGeneration: generation,
+      );
+      _waitingForRecovery = suppressed;
+      state = _col.isEmpty
+          ? (suppressed ? ThreadState.loading : ThreadState.error)
+          : ThreadState.loaded;
+      error = suppressed ? null : e.localizedMessage(forMessages: true);
+      if (suppressed && generation != app.foregroundGeneration) {
+        // Run after AsyncCache releases this failed request.
+        Timer.run(_onConnectionRecovered);
+      }
     }
     _notify();
   }
@@ -228,6 +268,7 @@ class ThreadController extends ChangeNotifier {
     loadingOlder = true;
     _notify();
     final baseline = _col.snapshot();
+    final generation = app.foregroundGeneration;
     try {
       final page = await api.getMessageHistory(
         threadGuids,
@@ -242,7 +283,11 @@ class ThreadController extends ChangeNotifier {
       hasMore = page.hasMore;
       error = null;
     } on ApiException catch (e) {
-      if (!_disposed) error = _humanize(e);
+      if (!_disposed) {
+        error = app.suppressReadFailure(e, requestGeneration: generation)
+            ? null
+            : e.localizedMessage(forMessages: true);
+      }
     } finally {
       loadingOlder = false;
       _notify();
@@ -612,23 +657,11 @@ class ThreadController extends ChangeNotifier {
     });
   }
 
-  String _humanize(ApiException e) {
-    switch (e.code) {
-      case 'unauthorized':
-        return MicaLocalizations.current.t('error.tokenRejected');
-      case 'timeout':
-        return MicaLocalizations.current.t('error.timeoutMessages');
-      case 'network_error':
-        return MicaLocalizations.current.t('error.unreachable');
-      case 'not_found':
-        return MicaLocalizations.current.t('error.chatNotFound');
-      default:
-        return e.message;
-    }
-  }
-
   @override
   void dispose() {
+    app.tokenRejected.removeListener(_onAuthChanged);
+    app.removeListener(_onConnectionRecovered);
+    app.connectionHealthy.removeListener(_onConnectionRecovered);
     app.messagePreferences.removeListener(_onMessageVisibilityChanged);
     _disposed = true;
     _reloadDebounce?.cancel();

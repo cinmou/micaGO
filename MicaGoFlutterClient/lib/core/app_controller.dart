@@ -24,6 +24,7 @@ import 'network/websocket_client.dart';
 import 'storage/local_cache_store.dart';
 import 'storage/media_cache.dart';
 import 'storage/secure_store.dart';
+import 'ui/top_banner.dart';
 import '../features/chats/message_render.dart';
 import '../features/chats/models/chat_summary.dart';
 import '../features/chats/models/message_model.dart';
@@ -176,19 +177,24 @@ class AppController extends ChangeNotifier {
   Future<void>? _rejectionCleanup;
 
   /// A verified authenticated 401 is terminal for this exact credential.
-  @visibleForTesting
   void rejectCredential(ConnectionProfile rejected) {
     if (tokenRejected.value || _profile?.token != rejected.token) return;
     tokenRejected.value = true;
     ++_selectionEpoch;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _profile = null;
     _serverUrls = null;
     _activeCandidate = null;
     _serverReachable = false;
     cache.accessAllowed = false;
+    MediaCache.instance.accessAllowed = false;
+    TopBanner.blocked = true;
+    TopBanner.dismiss();
     _clearConnectionProblem();
     connectionHealthy.value = false;
     _refresh.dispose();
+    unawaited(_applyKeepAlive(false));
     ws.disconnect();
     _api?.close();
     _api = null;
@@ -196,9 +202,14 @@ class AppController extends ChangeNotifier {
     _redeemedProfile = null;
     notifyListeners();
     _rejectionCleanup = () async {
-      await store.writeValue(rejectedCredentialKey, '1');
+      try {
+        await store.writeValue(rejectedCredentialKey, '1');
+      } catch (_) {}
       try {
         await store.clearProfile();
+      } catch (_) {}
+      try {
+        await cache.clearAll();
       } catch (_) {}
     }();
   }
@@ -251,6 +262,7 @@ class AppController extends ChangeNotifier {
     // connection:updated — refresh our candidates so we follow the new LAN/
     // Public URLs without the user rescanning a QR.
     _connSub = ws.events.listen((e) {
+      if (tokenRejected.value) return;
       if (e.type == 'read-state:changed') {
         unawaited(readState.sync());
       }
@@ -277,6 +289,21 @@ class AppController extends ChangeNotifier {
   // a system notification. The app shell updates this from lifecycle events.
   bool _foreground = true;
   bool get isForeground => _foreground;
+  bool _foregroundRecovering = false;
+  bool _disposed = false;
+  int _foregroundGeneration = 0;
+  int get foregroundGeneration => _foregroundGeneration;
+  bool get isForegroundRecovering => _foregroundRecovering;
+
+  bool suppressReadFailure(
+    ApiException error, {
+    required int requestGeneration,
+  }) =>
+      (error.code == 'timeout' || error.code == 'network_error') &&
+      (!_foreground ||
+          _foregroundRecovering ||
+          requestGeneration != _foregroundGeneration ||
+          !connectionHealthy.value);
 
   /// C77: the connection watchdog only counts **foreground** time.
   ///
@@ -290,11 +317,13 @@ class AppController extends ChangeNotifier {
   void setForeground(bool value) {
     if (_foreground == value) return;
     _foreground = value;
+    _foregroundGeneration++;
     if (!value) {
       _clearConnectionProblem();
       return;
     }
-    _updateConnectionHealth();
+    _foregroundRecovering = true;
+    _clearConnectionProblem();
   }
 
   final Set<String> _activeChatGuids = <String>{};
@@ -419,12 +448,31 @@ class AppController extends ChangeNotifier {
 
   /// Called by the app shell on foreground resume (lightweight refresh).
   void onResume() {
-    if (hasProfile && ws.status != WsStatus.connected) {}
-    _refresh.onResume();
+    if (!hasProfile) return;
+    final generation = _foregroundGeneration;
+    _foregroundRecovering = true;
+    _clearConnectionProblem();
+    unawaited(() async {
+      try {
+        if (await store.readValue(rejectedCredentialKey) == '1') {
+          if (_profile case final profile?) rejectCredential(profile);
+          return;
+        }
+        await _refresh.onResume();
+      } catch (_) {
+        // The foreground watchdog owns connectivity notices.
+      } finally {
+        if (!_disposed && generation == _foregroundGeneration) {
+          _foregroundRecovering = false;
+          _updateConnectionHealth();
+          notifyListeners();
+        }
+      }
+    }());
   }
 
-  ConnectionProfile? get profile => _profile;
-  ApiClient? get api => _api;
+  ConnectionProfile? get profile => tokenRejected.value ? null : _profile;
+  ApiClient? get api => tokenRejected.value ? null : _api;
   ServerUrls? get serverUrls => _serverUrls;
   ConnectionCandidate? get activeCandidate => _activeCandidate;
 
@@ -446,7 +494,8 @@ class AppController extends ChangeNotifier {
   List<ConnectionCandidate> get connectionCandidates =>
       _profile == null ? const [] : connectionCandidatesForProfile(_profile!);
   List<String> get connectionLog => List.unmodifiable(_connectionLog);
-  bool get hasProfile => _profile?.isComplete ?? false;
+  bool get hasProfile =>
+      !tokenRejected.value && (_profile?.isComplete ?? false);
   bool get bootstrapped => _bootstrapped;
   DateTime? get lastCatchUpSyncAt => _lastCatchUpSyncAt;
   bool get realtimeCatchingUp => _realtimeCatchingUp;
@@ -509,6 +558,8 @@ class AppController extends ChangeNotifier {
         if (await store.readValue(rejectedCredentialKey) == '1') {
           tokenRejected.value = true;
           cache.accessAllowed = false;
+          MediaCache.instance.accessAllowed = false;
+          TopBanner.blocked = true;
           return;
         }
         _profile = await store.loadProfile();
@@ -541,15 +592,12 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  /// C54: after a settings restore, reload the storage-backed state and
-  /// reconnect. The device id metadata was dropped by the restore, so the next
-  /// registration mints a fresh id (a new row in the server's Paired Devices).
+  /// Reload storage-backed settings and the server-issued device credential.
   Future<void> reloadAfterRestore() async {
     _mutedChats.clear();
     await _loadNotificationPreferences();
     await _loadCustomAvatars();
     await _loadKeepAlive();
-    _deviceIdFuture = null;
     _profile = await store.loadProfile();
     if (_profile != null && _profile!.deviceId.isEmpty) {
       _profile = null;
@@ -623,7 +671,13 @@ class AppController extends ChangeNotifier {
   String? _redeemedInvitationCode;
   ConnectionProfile? _redeemedProfile;
 
-  Future<void> saveAndActivate(ConnectionProfile profile) async {
+  Future<void> saveAndActivate(
+    ConnectionProfile profile, {
+    Future<bool> Function()? confirmCompatibility,
+  }) async {
+    await store.prepareCredentialStorage(
+      confirmCompatibility: confirmCompatibility,
+    );
     final invitation = profile.pairingCode;
     if (invitation != null) {
       if (_redeemedInvitationCode == invitation && _redeemedProfile != null) {
@@ -641,15 +695,17 @@ class AppController extends ChangeNotifier {
       cache.accessAllowed = true;
       try {
         await cache.clearAll();
-      } catch (_) {
+      } finally {
         cache.accessAllowed = false;
-        rethrow;
       }
     }
     await store.saveProfile(profile);
     await store.writeValue(rejectedCredentialKey, '0');
     cache.accessAllowed = true;
+    MediaCache.instance.accessAllowed = true;
+    TopBanner.blocked = false;
     tokenRejected.value = false;
+    if (_keepAliveEnabled) unawaited(_applyKeepAlive(true));
     _rejectionCleanup = null;
     _redeemedInvitationCode = null;
     _redeemedProfile = null;
@@ -896,11 +952,7 @@ class AppController extends ChangeNotifier {
   /// During the first attempt we suppress scary offline banners unless the attempt
   /// actually fails.
   Future<bool> connectForeground({required String reason}) {
-    if (hasProfile && ws.status != WsStatus.connected) {
-      // C29b: this is a user-visible connect attempt — arm the 10s watchdog so
-      // the user gets a clear "can't reach the server" error instead of being
-      // stuck on "Reconnecting…" forever.
-    }
+    if (!hasProfile) return Future.value(false);
     return selectReachableCandidate(reason: reason);
   }
 
@@ -1205,10 +1257,8 @@ class AppController extends ChangeNotifier {
 
   /// The authoritative "the user is looking at this conversation" signal: marks
   /// every [guids] route seen in the cache (advancing the read watermark) and
-  /// notifies the chat list to re-derive the dot. Only the open thread should
-  /// call this — message ingestion (WS/delta) never clears another party's dot
-  /// (C47), which is what made the dot flicker/disappear when a new message
-  /// arrived while a stale "active chat" was still recorded.
+  /// notifies the chat list to re-derive the dot. Used by the open thread and
+  /// explicit mark-read actions; message ingestion never clears the dot.
   Future<void> markChatsViewed(Iterable<String> guids, {int? upTo}) async {
     final ids = guids.where((g) => g.trim().isNotEmpty).toList(growable: false);
     if (ids.isEmpty) return;
@@ -1323,7 +1373,12 @@ class AppController extends ChangeNotifier {
   /// socket could postpone the warning forever.
   void _armConnectionProblemWatchdog() {
     // Never count down while backgrounded — see setForeground.
-    if (!_foreground || tokenRejected.value || _profile == null) return;
+    if (!_foreground ||
+        _foregroundRecovering ||
+        tokenRejected.value ||
+        _profile == null) {
+      return;
+    }
     if (connectionProblemConfirmed.value) return;
     if (_connectionProblemTimer?.isActive ?? false) return;
     _connectionProblemTimer = Timer(_connectionProblemDelay, () {
@@ -1347,6 +1402,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _onWebSocketStatusChanged() {
+    if (tokenRejected.value) return;
     if (ws.status == WsStatus.connected) {
       _serverReachable = true;
       _clearConnectionProblem();
@@ -2134,7 +2190,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> _loadKeepAlive() async {
     _keepAliveEnabled = (await store.readValue(_keepAlivePrefKey)) == '1';
-    if (_keepAliveEnabled) await _applyKeepAlive(true);
+    if (_keepAliveEnabled) await _applyKeepAlive(!tokenRejected.value);
   }
 
   Future<void> _applyKeepAlive(bool enabled) async {
@@ -2169,6 +2225,7 @@ class AppController extends ChangeNotifier {
   /// opens the conversation (after a delta sync) when possible.
   final ValueNotifier<String?> pendingOpenChat = ValueNotifier<String?>(null);
   void requestOpenChat(String chatGuid) {
+    if (tokenRejected.value) return;
     if (chatGuid.isEmpty || chatPreferences.isHidden(chatGuid)) return;
     pendingOpenChat.value = chatGuid;
     // C32: opening a chat dismisses its stacked conversation notification.
@@ -2192,21 +2249,7 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  // The stable device id is loaded/created exactly once; the memoized Future
-  // makes concurrent registrations (reconnect + resume + startup) converge on
-  // the same id, so they can never race into two server rows.
-  Future<String>? _deviceIdFuture;
-  Future<String> _ensureDeviceId() => (_profile?.deviceId.isNotEmpty ?? false)
-      ? Future.value(_profile!.deviceId)
-      : (_deviceIdFuture ??= _loadOrCreateDeviceId());
-
-  Future<String> _loadOrCreateDeviceId() async {
-    final existing = await cache.readMetadata('device_id');
-    if (existing != null && existing.isNotEmpty) return existing;
-    final id = generateStableDeviceId();
-    await cache.writeMetadata('device_id', id);
-    return id;
-  }
+  Future<String> _ensureDeviceId() => Future.value(profile?.deviceId ?? '');
 
   Future<bool> markRealtimeEventApplied(
     WsEvent event, {
@@ -2538,6 +2581,7 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     chatPreferences.dispose();
     messagePreferences.dispose();
     _heartbeatTimer?.cancel();

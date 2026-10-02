@@ -1,3 +1,4 @@
+import '../../core/ui/app_dialog.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -167,9 +168,8 @@ Future<void> showAttachmentActions(
   required AttachmentModel attachment,
 }) async {
   final strings = MicaLocalizations.of(context);
-  final action = await showModalBottomSheet<AttachmentAction>(
+  final action = await showAppBottomSheet<AttachmentAction>(
     context: context,
-    showDragHandle: true,
     builder: (sheetContext) {
       return SafeArea(
         child: Column(

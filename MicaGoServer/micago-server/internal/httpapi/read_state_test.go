@@ -50,6 +50,28 @@ func TestReadStateHTTPContract(t *testing.T) {
 	if call(http.MethodPatch, prefix+`[{"chatGuid":"a","readThrough":200}]}`, true).Code != 200 {
 		t.Fatal("valid read failed")
 	}
+	for _, body := range []string{
+		`[{"chatGuid":"a","readThrough":200,"markedUnread":true}]}`,
+		`[{"chatGuid":"a","readThrough":200,"markedUnread":true,"baseUnreadRevision":-1}]}`,
+	} {
+		if call(http.MethodPatch, prefix+body, true).Code != 400 {
+			t.Fatal("unversioned manual unread accepted")
+		}
+	}
+	response := call(http.MethodPatch, prefix+`[{"chatGuid":"new","readThrough":0,"markedUnread":true,"baseUnreadRevision":0}]}`, true)
+	var marked store.ReadState
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &marked) != nil {
+		t.Fatal("manual unread without read position failed")
+	}
+	found := false
+	for _, row := range marked.Data {
+		if row.ChatGUID == "new" && row.MarkedUnread != nil && *row.MarkedUnread && row.ReadThrough == 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("manual unread missing from snapshot")
+	}
 	if call(http.MethodPatch, strings.ReplaceAll(prefix, initial.ServerID, strings.Repeat("b", 32))+`[{"chatGuid":"a","readThrough":200}]}`, true).Code != 409 {
 		t.Fatal("foreign server accepted")
 	}

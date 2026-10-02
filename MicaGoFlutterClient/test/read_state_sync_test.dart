@@ -10,6 +10,12 @@ import 'package:mica_go/core/storage/local_cache_store.dart';
 class ReadCache extends LocalCacheStore {
   final metadata = <String, String>{};
   final seen = <String, int>{};
+  final marks = <String, bool>{};
+  @override
+  Future<void> applyUnreadMarks(Map<String, bool> values) async {
+    marks.addAll(values);
+  }
+
   @override
   Future<String?> readMetadata(String key) async => metadata[key];
   @override
@@ -30,13 +36,21 @@ class ReadServer {
   bool offline = false, loseReply = false;
   final servers = <String, Map<String, int>>{};
   Map<String, int> get rows => servers.putIfAbsent(id, () => {});
+  final markStores = <String, Map<String, Map<String, dynamic>>>{};
+  Map<String, Map<String, dynamic>> get marks =>
+      markStores.putIfAbsent(id, () => {});
   final sentScopes = <String>[];
   Map<String, dynamic> get snapshot => {
     'serverId': id,
     'revision': 0,
     'data': [
-      for (final entry in rows.entries)
-        {'chatGuid': entry.key, 'readThrough': entry.value},
+      for (final route in {...rows.keys, ...marks.keys})
+        {
+          'chatGuid': route,
+          'readThrough': rows[route] ?? 0,
+          'markedUnread': marks[route]?['markedUnread'] ?? false,
+          'unreadRevision': marks[route]?['unreadRevision'] ?? 0,
+        },
     ],
   };
   late final client = ApiClient(
@@ -50,10 +64,26 @@ class ReadServer {
         sentScopes.add(mutation['serverId'] as String);
         if (mutation['serverId'] != id) return http.Response('{}', 409);
         for (final row in mutation['changes'] as List) {
-          rows[row['chatGuid'] as String] = max(
-            rows[row['chatGuid']] ?? 0,
-            row['readThrough'] as int,
+          final route = row['chatGuid'] as String;
+          final mark = marks.putIfAbsent(
+            route,
+            () => {'markedUnread': false, 'unreadRevision': 0},
           );
+          if (row.containsKey('markedUnread') &&
+              row['baseUnreadRevision'] != mark['unreadRevision']) {
+            continue;
+          }
+          final at = row['readThrough'] as int;
+          if (at > (rows[route] ?? 0)) {
+            rows[route] = at;
+            mark['markedUnread'] = false;
+            mark['unreadRevision'] = (mark['unreadRevision'] as int) + 1;
+          }
+          if (row.containsKey('markedUnread') &&
+              row['markedUnread'] != mark['markedUnread']) {
+            mark['markedUnread'] = row['markedUnread'];
+            mark['unreadRevision'] = (mark['unreadRevision'] as int) + 1;
+          }
         }
         if (loseReply) {
           loseReply = false;
@@ -68,6 +98,50 @@ class ReadServer {
 }
 
 void main() {
+  test(
+    'manual unread syncs without rewinding and clears on the other device',
+    () async {
+      final server = ReadServer(), aCache = ReadCache(), bCache = ReadCache();
+      final a = server.device(aCache), b = server.device(bCache);
+      await a.sync();
+      await b.sync();
+      await a.markViewed({'a': 200, 'b': 100});
+      await a.markUnread(['a', 'b']);
+      await b.sync();
+      expect(bCache.marks, {'a': true, 'b': true});
+      expect(bCache.seen, {'a': 200, 'b': 100});
+      await b.markViewed({'a': 200});
+      await a.sync();
+      expect(aCache.marks, {'a': false, 'b': true});
+      expect(server.rows['a'], 200);
+    },
+  );
+  test(
+    'offline unread survives restart and stale replay cannot undo a newer read',
+    () async {
+      final server = ReadServer(), cache = ReadCache();
+      var a = server.device(cache);
+      await a.sync();
+      await a.markViewed({'a': 200});
+      server.offline = true;
+      await a.markUnread(['a']);
+      expect(cache.marks['a'], true);
+      server.offline = false;
+      final b = server.device(ReadCache());
+      await b.sync();
+      await b.markViewed({'a': 300});
+      a = server.device(cache);
+      await a.sync();
+      expect(cache.marks['a'], false);
+      expect(cache.seen['a'], 300);
+      await a.markUnread(['a']);
+      server.loseReply = true;
+      await a.markViewed({'a': 300});
+      await a.sync();
+      expect(cache.marks['a'], false);
+    },
+  );
+
   test(
     'read positions sync across devices, remain monotonic and route scoped',
     () async {

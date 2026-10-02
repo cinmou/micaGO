@@ -643,7 +643,7 @@ private struct AboutPage: View {
             }
         }
 
-        Text("An open source project.")
+        Text(verbatim: "made with ♥️ for everyone")
             .font(.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .center)

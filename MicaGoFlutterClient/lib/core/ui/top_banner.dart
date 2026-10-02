@@ -17,9 +17,15 @@ enum TopBannerKind { info, error }
 class TopBanner {
   TopBanner._();
 
+  static bool blocked = false;
   static OverlayEntry? _entry;
   static String? _lastMessage;
   static DateTime? _lastShownAt;
+
+  static void dismiss() {
+    _entry?.remove();
+    _entry = null;
+  }
 
   /// Shows [message] as a top banner over the root overlay. Repeated identical
   /// messages within 3s are suppressed to avoid noisy repeats.
@@ -29,6 +35,7 @@ class TopBanner {
     TopBannerKind kind = TopBannerKind.info,
     Duration duration = const Duration(seconds: 3),
   }) {
+    if (blocked) return;
     final trimmed = message.trim();
     if (trimmed.isEmpty) return;
     final now = DateTime.now();
@@ -53,8 +60,10 @@ class TopBanner {
         kind: kind,
         duration: duration,
         onDismissed: () {
-          if (identical(_entry, entry)) _entry = null;
-          entry.remove();
+          if (identical(_entry, entry)) {
+            _entry = null;
+            entry.remove();
+          }
         },
       ),
     );

@@ -1,4 +1,6 @@
 namespace MicaGo.Infrastructure.Connection;
 
-public sealed class ConnectionException(string message, Exception? innerException = null)
+public class ConnectionException(string message, Exception? innerException = null)
     : Exception(message, innerException);
+
+public sealed class CredentialRejectedException() : ConnectionException("The server rejected this device credential. Pair again.");

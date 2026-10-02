@@ -1,3 +1,4 @@
+import '../../core/ui/app_dialog.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -2305,30 +2306,15 @@ Future<String?> _promptForEditedMessage(
   BuildContext context,
   String initialText,
 ) async {
-  final controller = TextEditingController(text: initialText);
-  final result = await showDialog<String>(
+  final strings = MicaLocalizations.of(context);
+  final result = await showAppTextInput(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(MicaLocalizations.of(context).t('chat.editMessage')),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        minLines: 1,
-        maxLines: 5,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(MicaLocalizations.of(context).t('common.cancel')),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-          child: Text(MicaLocalizations.of(context).t('common.save')),
-        ),
-      ],
-    ),
+    title: strings.t('chat.editMessage'),
+    initialText: initialText,
+    maxLines: 5,
+    cancelLabel: strings.t('common.cancel'),
+    confirmLabel: strings.t('common.save'),
   );
-  controller.dispose();
   if (result == null || result.isEmpty || result == initialText) return null;
   return result;
 }
@@ -2446,9 +2432,8 @@ Future<ChatSummary?> _pickForwardTarget(
     return null;
   }
 
-  return showModalBottomSheet<ChatSummary>(
+  return showAppBottomSheet<ChatSummary>(
     context: context,
-    showDragHandle: true,
     builder: (ctx) {
       final scheme = Theme.of(ctx).colorScheme;
       return SafeArea(
@@ -2533,21 +2518,16 @@ Future<bool> _confirmMessageAction(
   required String body,
   required String confirm,
 }) async {
-  return await showDialog<bool>(
+  return await showAppDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => AppDialog(
           title: Text(title),
           content: Text(body),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(MicaLocalizations.of(context).t('common.cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(confirm),
-            ),
-          ],
+          cancelLabel: MicaLocalizations.of(context).t('common.cancel'),
+          onCancel: () => Navigator.pop(context, false),
+          confirmLabel: confirm,
+          onConfirm: () => Navigator.pop(context, true),
+          destructive: true,
         ),
       ) ??
       false;
@@ -5990,12 +5970,9 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
   }
 
   Future<void> _showDetailsSearchSheet() {
-    return showModalBottomSheet<void>(
+    return showAppBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: false,
-      backgroundColor: Colors.transparent,
       builder: (context) => _ThreadSearchSheet(
         messages: _detailMessages,
         resolveName: widget.resolveName,
@@ -6104,116 +6081,93 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
             ));
     final insets = activeKeyboardInset(context);
 
+    final height = math.min(
+      MediaQuery.sizeOf(context).height * 0.72,
+      math.max(120.0, MediaQuery.sizeOf(context).height - insets - 100),
+    );
     return AnimatedPadding(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       padding: EdgeInsets.only(bottom: insets),
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: FractionallySizedBox(
-          heightFactor: 0.72,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: _accent1_50(scheme),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 24,
-                  offset: const Offset(0, -8),
+      child: SizedBox(
+        height: height,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _search,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: strings.t('chat.searchConversation'),
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide(color: scheme.outlineVariant),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide(color: scheme.primary),
+                    ),
+                    filled: true,
+                    fillColor: scheme.surface.withValues(alpha: 0.86),
+                    isDense: true,
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              _search.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                  ),
+                  onChanged: (v) => setState(() => _query = v),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    q.isEmpty
+                        ? strings.t('chat.searchPrompt')
+                        : results.isEmpty
+                        ? strings.t('chat.searchNoMatches')
+                        : strings
+                              .t('chat.searchMatchCount')
+                              .replaceAll('{count}', '${results.length}'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: results.length,
+                    itemBuilder: (context, i) {
+                      final m = results[i];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          displayText(m) ?? m.text ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          _subtitle(m),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        onTap: () => widget.onSelect(m.guid),
+                      );
+                    },
+                  ),
                 ),
               ],
-            ),
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 5,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                    TextField(
-                      controller: _search,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: strings.t('chat.searchConversation'),
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: BorderSide(color: scheme.outlineVariant),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: BorderSide(color: scheme.primary),
-                        ),
-                        filled: true,
-                        fillColor: scheme.surface.withValues(alpha: 0.86),
-                        isDense: true,
-                        suffixIcon: _query.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () {
-                                  _search.clear();
-                                  setState(() => _query = '');
-                                },
-                              ),
-                      ),
-                      onChanged: (v) => setState(() => _query = v),
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        q.isEmpty
-                            ? strings.t('chat.searchPrompt')
-                            : results.isEmpty
-                            ? strings.t('chat.searchNoMatches')
-                            : strings
-                                  .t('chat.searchMatchCount')
-                                  .replaceAll('{count}', '${results.length}'),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: results.length,
-                        itemBuilder: (context, i) {
-                          final m = results[i];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              displayText(m) ?? m.text ?? '',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              _subtitle(m),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            onTap: () => widget.onSelect(m.guid),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),

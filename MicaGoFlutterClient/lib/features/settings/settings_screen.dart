@@ -31,7 +31,7 @@ import '../contacts/people_screen.dart';
 import '../debug/debug_log_panel.dart';
 import 'backup_restore_ui.dart';
 import 'message_display_page.dart';
-import 'settings_dialog_actions.dart';
+import '../../core/ui/app_dialog.dart';
 
 /// Settings tab: shows the current connection (token masked), and lets the user
 /// edit the connection or disconnect. Kept minimal for C1.
@@ -43,9 +43,12 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  Future<bool>? _compatibilityStatus;
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
+    _compatibilityStatus ??= app.store.compatibilityStorageEnabled();
     // C61: persisted on the controller (SecureStore-backed) so the entry no
     // longer vanishes when this screen is rebuilt or the app restarts.
     final testingAndDebugUnlocked = app.developerModeEnabled;
@@ -103,6 +106,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => context.push(Routes.connection),
                       ),
+                    ),
+                  if (profile != null)
+                    FutureBuilder<bool>(
+                      future: _compatibilityStatus,
+                      builder: (context, snapshot) => snapshot.data == true
+                          ? Card(
+                              child: ListTile(
+                                leading: _leadingIcon(Icons.security_outlined),
+                                title: Text(
+                                  strings.t('settings.credentialCompatibility'),
+                                ),
+                                subtitle: Text(
+                                  strings.t(
+                                    'settings.credentialCompatibilityDetail',
+                                  ),
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   const SizedBox(height: 20),
                   Text(
@@ -235,21 +257,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     AppController app,
   ) async {
     final scheme = Theme.of(context).colorScheme;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppDialog(
         icon: Icon(Icons.link_off, color: scheme.error),
         title: Text(MicaLocalizations.of(ctx).t('settings.unpairTitle')),
         content: Text(MicaLocalizations.of(ctx).t('settings.unpairBody')),
-        actions: [
-          SettingsDialogActionRow(
-            cancelLabel: MicaLocalizations.of(ctx).t('settings.cancel'),
-            onCancel: () => Navigator.pop(ctx, false),
-            confirmLabel: MicaLocalizations.of(ctx).t('settings.unpairConfirm'),
-            onConfirm: () => Navigator.pop(ctx, true),
-            destructive: true,
-          ),
-        ],
+
+        cancelLabel: MicaLocalizations.of(ctx).t('settings.cancel'),
+        onCancel: () => Navigator.pop(ctx, false),
+        confirmLabel: MicaLocalizations.of(ctx).t('settings.unpairConfirm'),
+        onConfirm: () => Navigator.pop(ctx, true),
+        destructive: true,
       ),
     );
     if (confirmed == true) {
@@ -1961,6 +1980,10 @@ class _AboutBodyState extends State<_AboutBody> {
             ],
           ),
         ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Text('made with ♥️ for everyone', textAlign: TextAlign.center),
+        ),
       ],
     );
   }
@@ -1999,19 +2022,16 @@ class _AboutBodyState extends State<_AboutBody> {
 
   Future<void> _confirmDisableDebugMode() async {
     final strings = MicaLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppDialog(
         title: Text(strings.t('settings.disableDebugTitle')),
         content: Text(strings.t('settings.disableDebugBody')),
-        actions: [
-          SettingsDialogActionRow(
-            cancelLabel: strings.t('settings.cancel'),
-            onCancel: () => Navigator.pop(ctx, false),
-            confirmLabel: strings.t('settings.disableDebugConfirm'),
-            onConfirm: () => Navigator.pop(ctx, true),
-          ),
-        ],
+
+        cancelLabel: strings.t('settings.cancel'),
+        onCancel: () => Navigator.pop(ctx, false),
+        confirmLabel: strings.t('settings.disableDebugConfirm'),
+        onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
     if (confirmed != true || !mounted) return;

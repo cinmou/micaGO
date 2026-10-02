@@ -37,7 +37,7 @@ internal static class RealtimeSyncTests
             Equal("A",(await cache.GetMessagesAsync("route-a",20)).Single().Text);
             Equal("B",(await cache.GetMessagesAsync("route-b",20)).Single().Text);
 
-            var live=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var batches=new List<RealtimeMessageBatch>();sync.MessagesChanged+=(_,batch)=>batches.Add(batch);sync.StatusChanged+=(_,status)=>{if(status=="Live")live.TrySetResult();};sync.Start();await live.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            var live=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var delivered=new TaskCompletionSource<RealtimeMessageBatch>(TaskCreationOptions.RunContinuationsAsynchronously);sync.MessagesChanged+=(_,batch)=>{if(batch.Messages.Any(message=>message.Id=="m4"))delivered.TrySetResult(batch);};sync.StatusChanged+=(_,status)=>{if(status=="Live")live.TrySetResult();};sync.Start();await live.Task.WaitAsync(TimeSpan.FromSeconds(2));
             var capabilities=new TaskCompletionSource<MessageActionCapabilities>(TaskCreationOptions.RunContinuationsAsynchronously);
             sync.CapabilitiesChanged+=(_,value)=>capabilities.TrySetResult(value);
             api.ActionCapabilities=new(true,false,true);api.EmitRealtime("capabilities:updated");
@@ -45,7 +45,7 @@ internal static class RealtimeSyncTests
             True(refreshed.CanEdit&&refreshed.CanDelete&&!refreshed.CanRetract,"helper event did not refresh action capabilities");
             api.Deltas.Enqueue(new MessageDelta([Message("m4",400)],[],4,false));api.EmitRealtime();
             using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(3));while((await cache.GetMessagesAsync("chat",20,0,timeout.Token)).All(row=>row.Id!="m4"))await Task.Delay(20,timeout.Token);
-            True(batches.Any(batch=>batch.AllowNotifications&&batch.Messages.Any(message=>message.Id=="m4")),"live catch-up did not allow notifications");
+            var deliveredBatch=await delivered.Task.WaitAsync(TimeSpan.FromSeconds(3));True(deliveredBatch.AllowNotifications,"live catch-up did not allow notifications");
 
             var freshPath=Path.Combine(Path.GetTempPath(),"micago-sync-fresh-"+Guid.NewGuid().ToString("N")+".db");
             try
@@ -77,7 +77,7 @@ internal static class RealtimeSyncTests
         public async IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync([EnumeratorCancellation] CancellationToken cancellationToken=default){await foreach(var item in _events.Reader.ReadAllAsync(cancellationToken))yield return item;}
         public Task<IReadOnlyList<ChatSummary>> GetChatsAsync(CancellationToken cancellationToken=default)=>Task.FromResult<IReadOnlyList<ChatSummary>>([]);
         public Task<MessageHistoryPage> GetMessageHistoryAsync(IReadOnlyList<string> chatIds,int limit=50,string? before=null,CancellationToken cancellationToken=default)=>Task.FromResult(new MessageHistoryPage([],null,false));
-        public Task<Message> SendTextAsync(string chatId,string text,string? tempId=null,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
+        public virtual Task<Message> SendTextAsync(string chatId,string text,string? tempId=null,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         public Task<AttachmentUploadResult> SendAttachmentAsync(string chatId,string tempId,string filePath,bool isAudioMessage=false,IProgress<double>? progress=null,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         public Task<byte[]> GetAttachmentBytesAsync(string attachmentId,bool preview=false,bool playable=false,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         public Task<bool> GetTestContactEnabledAsync(CancellationToken cancellationToken=default)=>Task.FromResult(false);

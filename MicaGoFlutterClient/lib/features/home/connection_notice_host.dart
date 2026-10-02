@@ -1,20 +1,12 @@
+import '../../core/ui/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
 
-/// C75: the single surface for connection trouble.
-///
-/// Previously three surfaces fought each other — a transient top banner, a
-/// sticky red banner, and a modal dialog — and the banner could appear the
-/// moment you opened the app, before the first connect had a chance to finish.
-///
-/// Now there is one signal ([AppController.connectionProblemConfirmed], set
-/// only after the link has been down for 10 continuous seconds) and one
-/// sequence: **dialog first, then the sticky banner stays** until the
-/// connection recovers. Recovery clears both immediately. Transient
-/// connection banners are gone entirely.
+/// One app-wide notice surface. Authentication rejection takes priority over
+/// connectivity failures, including while a timeout dialog is already open.
 class ConnectionNoticeHost extends StatefulWidget {
   final Widget child;
   const ConnectionNoticeHost({super.key, required this.child});
@@ -26,9 +18,11 @@ class ConnectionNoticeHost extends StatefulWidget {
 class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
   AppController? _app;
   bool _dialogOpen = false;
+  DialogRoute<void>? _noticeRoute;
+  NavigatorState? _noticeNavigator;
 
-  /// The sticky banner only appears once the dialog has been presented, so the
-  /// user always gets the explanation before the persistent strip.
+  /// Connectivity failures may leave a retry strip after the dialog closes.
+  /// Rejected credentials are explained only by the dialog.
   bool _showStickyBanner = false;
 
   @override
@@ -37,29 +31,53 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
     final app = context.read<AppController>();
     if (identical(app, _app)) return;
     _app?.connectionProblemConfirmed.removeListener(_onProblemChanged);
+    _app?.tokenRejected.removeListener(_onProblemChanged);
     _app = app;
     app.connectionProblemConfirmed.addListener(_onProblemChanged);
+    app.tokenRejected.addListener(_onProblemChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onProblemChanged();
+    });
   }
 
   @override
   void dispose() {
     _app?.connectionProblemConfirmed.removeListener(_onProblemChanged);
+    _app?.tokenRejected.removeListener(_onProblemChanged);
     super.dispose();
   }
 
   void _onProblemChanged() {
-    final problem = _app?.connectionProblemConfirmed.value ?? false;
+    final problem =
+        (_app?.tokenRejected.value ?? false) ||
+        (_app?.connectionProblemConfirmed.value ?? false);
     if (!problem) {
       // Recovered: drop the banner and close the dialog if it is still up.
       if (_showStickyBanner && mounted) {
         setState(() => _showStickyBanner = false);
       }
       if (_dialogOpen && mounted) {
-        Navigator.of(context, rootNavigator: true).maybePop();
+        final route = _noticeRoute;
+        if (route != null && route.isActive) {
+          _noticeNavigator?.removeRoute(route);
+        }
       }
       return;
     }
-    if (!_dialogOpen) unawaitedShowDialog();
+    if (_app?.tokenRejected.value ?? false) {
+      ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
+      // Remove unrelated pageless routes that could still show old records.
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).popUntil((route) => route == _noticeRoute || route.isFirst);
+    }
+    if (!_dialogOpen) {
+      if (_showStickyBanner && mounted) {
+        setState(() => _showStickyBanner = false);
+      }
+      unawaitedShowDialog();
+    }
   }
 
   void unawaitedShowDialog() {
@@ -70,41 +88,62 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
   Future<void> _showCannotConnectDialog() async {
     _dialogOpen = true;
     final strings = MicaLocalizations.of(context);
-    await showDialog<void>(
+    final route = DialogRoute<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.cloud_off),
-        title: Text(strings.t('connection.cannotReachTitle')),
-        content: Text(strings.t('connection.cannotReachBody')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(strings.t('common.dismiss')),
-          ),
-          FilledButton(
-            onPressed: () {
+      builder: (ctx) => ValueListenableBuilder<bool>(
+        valueListenable: _app!.tokenRejected,
+        builder: (context, rejected, _) => PopScope(
+          canPop: !rejected,
+          child: AppDialog(
+            icon: Icon(rejected ? Icons.lock_outline : Icons.cloud_off),
+            title: Text(
+              strings.t(
+                rejected
+                    ? 'connection.tokenRejectedTitle'
+                    : 'connection.cannotReachTitle',
+              ),
+            ),
+            content: Text(
+              strings.t(
+                rejected
+                    ? 'connection.tokenRejectedBody'
+                    : 'connection.cannotReachBody',
+              ),
+            ),
+            cancelLabel: rejected ? null : strings.t('common.dismiss'),
+            onCancel: rejected ? null : () => Navigator.of(ctx).pop(),
+            confirmLabel: strings.t(
+              rejected ? 'connection.pairAgain' : 'common.retry',
+            ),
+            onConfirm: () {
               Navigator.of(ctx).pop();
-              _app?.retryInitialConnect();
+              if (!rejected) _app?.retryInitialConnect();
             },
-            child: Text(strings.t('common.retry')),
           ),
-        ],
+        ),
       ),
     );
+    _noticeRoute = route;
+    _noticeNavigator = Navigator.of(context, rootNavigator: true);
+    await _noticeNavigator!.push(route);
+    _noticeRoute = null;
     _dialogOpen = false;
     if (!mounted) return;
     // The banner takes over from the dialog, and only while still broken.
-    final stillBroken = _app?.connectionProblemConfirmed.value ?? false;
+    final stillBroken =
+        !(_app?.tokenRejected.value ?? false) &&
+        (_app?.connectionProblemConfirmed.value ?? false);
     setState(() => _showStickyBanner = stillBroken);
   }
 
   @override
   Widget build(BuildContext context) {
+    final rejected = context.watch<AppController>().tokenRejected.value;
     final scheme = Theme.of(context).colorScheme;
     final strings = MicaLocalizations.of(context);
     return Column(
       children: [
-        if (_showStickyBanner)
+        if (_showStickyBanner && !rejected)
           Material(
             color: scheme.errorContainer,
             child: SafeArea(

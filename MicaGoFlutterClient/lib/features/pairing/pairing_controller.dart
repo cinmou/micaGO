@@ -46,7 +46,9 @@ class PairingController extends ChangeNotifier {
   }
 
   /// Tests endpoints, activates the connection, and warms the local cache.
-  Future<bool> useScanned() async {
+  Future<bool> useScanned({
+    Future<bool> Function()? confirmCompatibility,
+  }) async {
     final p = payload;
     if (p == null || stage == PairingStage.testing) return false;
 
@@ -56,7 +58,10 @@ class PairingController extends ChangeNotifier {
 
     if (p.version >= 4) {
       try {
-        await app.saveAndActivate(p.toProfile());
+        await app.saveAndActivate(
+          p.toProfile(),
+          confirmCompatibility: confirmCompatibility,
+        );
         final paired = app.profile!;
         try {
           await app.backfill(
@@ -75,7 +80,9 @@ class PairingController extends ChangeNotifier {
         return true;
       } catch (error) {
         stage = PairingStage.failure;
-        message = error is CredentialStorageException
+        message = error is CompatibilityStorageRequired
+            ? MicaLocalizations.current.t('pair.compatibilityRequired')
+            : error is CredentialStorageException
             ? MicaLocalizations.current.t('pair.secureStorageFailed')
             : error.toString();
         notifyListeners();

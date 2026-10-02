@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../features/chats/models/chat_summary.dart';
 import '../../features/chats/models/message_model.dart';
 import '../models/server_urls.dart';
+import '../l10n/app_localizations.dart';
 import 'endpoint_utils.dart';
 
 /// Result of a cursor delta fetch (C21 catch-up). [cursor] is the new persistent
@@ -125,6 +126,19 @@ class ApiException implements Exception {
   String toString() =>
       'ApiException($code'
       '${statusCode != null ? ' [$statusCode]' : ''}): $message';
+
+  String localizedMessage({bool forMessages = false}) {
+    final strings = MicaLocalizations.current;
+    return switch (code) {
+      'unauthorized' => strings.t('error.tokenRejected'),
+      'timeout' => strings.t(
+        forMessages ? 'error.timeoutMessages' : 'error.timeoutChats',
+      ),
+      'network_error' => strings.t('error.unreachable'),
+      'not_found' when forMessages => strings.t('error.chatNotFound'),
+      _ => message,
+    };
+  }
 
   /// A plain-language explanation suitable for the UI. Never contains the token.
   /// Cloudflare 5xx (520–530) are mapped to tunnel/origin guidance.
@@ -992,6 +1006,8 @@ class ApiClient {
       res = await http.Response.fromStream(
         streamed,
       ).timeout(const Duration(seconds: 30));
+    } on ApiException {
+      rethrow;
     } on TimeoutException {
       throw const ApiException(
         code: 'timeout',
@@ -1087,6 +1103,8 @@ class ApiClient {
   Future<http.Response> _send(Future<http.Response> Function() run) async {
     try {
       return await run();
+    } on ApiException {
+      rethrow;
     } on TimeoutException {
       throw const ApiException(
         code: 'timeout',
@@ -1149,6 +1167,11 @@ class _AuthObservingClient extends http.BaseClient {
     if (response.statusCode == 401 &&
         request.headers['Authorization']?.isNotEmpty == true) {
       onUnauthorized?.call();
+      throw const ApiException(
+        code: 'unauthorized',
+        message: 'Device token rejected.',
+        statusCode: 401,
+      );
     }
     return response;
   }

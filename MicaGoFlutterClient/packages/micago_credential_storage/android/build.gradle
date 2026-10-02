@@ -1,0 +1,23 @@
+group = 'com.micago.credentials'
+version = '1.0'
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'com.android.tools.build:gradle:8.13.2' }
+}
+apply plugin: 'com.android.library'
+android {
+    namespace = 'com.micago.credentials'
+    compileSdk = 36
+    defaultConfig {
+        minSdk = 24
+        testInstrumentationRunner 'com.micago.credentials.CredentialStorageInstrumentation'
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    // Tink supplies key generation, authenticated encryption and serialization.
+    implementation 'com.google.crypto.tink:tink-android:1.23.0'
+}

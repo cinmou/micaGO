@@ -15,6 +15,10 @@ public sealed class ConnectionManager : IDisposable
     private readonly Dictionary<string, RouteProbe> _probes = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _probing = new(StringComparer.OrdinalIgnoreCase);
     private MicaGoApi? _api;
+    private readonly SemaphoreSlim _restoreGate = new(1, 1);
+    private readonly SemaphoreSlim _credentialGate = new(1, 1);
+    public bool TokenRejected { get; private set; }
+    public event EventHandler? CredentialRejected;
     private string? _token;
     private int _selectionEpoch;
     private readonly SemaphoreSlim _endpointRefreshGate = new(1, 1);
@@ -70,31 +74,44 @@ public sealed class ConnectionManager : IDisposable
 
     public async Task<bool> TryRestoreAsync(CancellationToken cancellationToken = default)
     {
-        var saved = await _store.LoadAsync(cancellationToken);
-        if (saved is null || string.IsNullOrEmpty(saved.Profile.DeviceId))
-        {
-            return false;
-        }
-
+        await _restoreGate.WaitAsync(cancellationToken);
         try
         {
-            await ActivateAsync(saved.Profile, saved.Token, persist: true, cancellationToken);
-            return true;
+            if (TokenRejected) return false;
+            if (IsConnected) return true;
+            var saved = await _store.LoadAsync(cancellationToken);
+            if (saved is null || string.IsNullOrEmpty(saved.Profile.DeviceId))
+            {
+                return false;
+            }
+
+            try
+            {
+                await ActivateAsync(saved.Profile, saved.Token, persist: true, cancellationToken);
+                return true;
+            }
+            catch (CredentialRejectedException)
+            {
+                await RejectCredentialAsync(null);
+                return false;
+            }
+            catch (ConnectionException)
+            {
+                DisposeApi();
+                Profile = null;
+                ActiveEndpoint = null;
+                ConnectionChanged?.Invoke(this, EventArgs.Empty);
+                return false;
+            }
         }
-        catch (ConnectionException)
-        {
-            DisposeApi();
-            Profile = null;
-            ActiveEndpoint = null;
-            ConnectionChanged?.Invoke(this, EventArgs.Empty);
-            return false;
-        }
+        finally { _restoreGate.Release(); }
     }
 
     public async Task ConnectPairingJsonAsync(string pairingJson, CancellationToken cancellationToken = default)
     {
         var payload = PairingPayloadParser.Parse(pairingJson);
         if (payload.Version < 4) throw new ConnectionException("Create a new pairing code in micaGO 0.84 or later on the Mac. Older connection JSON is no longer supported.");
+        await _store.PrepareAsync(cancellationToken);
         var initialProfile = new ConnectionProfile(
             payload.ServerName,
             payload.Endpoints[0].BaseUrl,
@@ -126,7 +143,12 @@ public sealed class ConnectionManager : IDisposable
             if (credential is null || !System.Text.RegularExpressions.Regex.IsMatch(credential, "\\A[a-f0-9]{64}\\z") || string.IsNullOrEmpty(deviceId))
                 throw new ConnectionException("Invalid device credential response.");
             initialProfile = initialProfile with { DeviceId = deviceId };
-            await ActivateAsync(initialProfile, credential, persist: true, cancellationToken);
+            // Keep the issued credential recoverable if route activation times out.
+            await _credentialGate.WaitAsync(cancellationToken);
+            try { await _store.SaveAsync(initialProfile, credential, cancellationToken); TokenRejected = false; }
+            finally { _credentialGate.Release(); }
+            try { await ActivateAsync(initialProfile, credential, persist: true, cancellationToken); }
+            catch (CredentialRejectedException) { await RejectCredentialAsync(null); throw; }
             return;
         }
         throw new ConnectionException("No secure pairing endpoint could be reached.");
@@ -134,21 +156,26 @@ public sealed class ConnectionManager : IDisposable
 
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
-        Interlocked.Increment(ref _selectionEpoch);
-        DisposeApi();
-        Profile = null;
-        ActiveEndpoint = null;
-        _token = null;
-        SwitchingRoute = null;
-        RealtimeLive = false;
-        lock (_gate)
+        await _credentialGate.WaitAsync(cancellationToken);
+        try
         {
-            _probes.Clear();
-            _probing.Clear();
+            Interlocked.Increment(ref _selectionEpoch);
+            DisposeApi();
+            Profile = null;
+            ActiveEndpoint = null;
+            _token = null;
+            SwitchingRoute = null;
+            RealtimeLive = false;
+            lock (_gate)
+            {
+                _probes.Clear();
+                _probing.Clear();
+            }
+            await _store.ClearAsync(cancellationToken);
+            ConnectionChanged?.Invoke(this, EventArgs.Empty);
+            RoutesChanged?.Invoke(this, EventArgs.Empty);
         }
-        await _store.ClearAsync(cancellationToken);
-        ConnectionChanged?.Invoke(this, EventArgs.Empty);
-        RoutesChanged?.Invoke(this, EventArgs.Empty);
+        finally { _credentialGate.Release(); }
     }
 
     /// <summary>W-UI9: checks every route in parallel for Settings. Never changes the active route.</summary>
@@ -183,7 +210,7 @@ public sealed class ConnectionManager : IDisposable
         RoutesChanged?.Invoke(this, EventArgs.Empty);
         try
         {
-            await _store.SaveAsync(Profile, token, cancellationToken);
+            await SaveCurrentAsync(Profile, token, _api, cancellationToken);
             // ReselectCoreAsync already refuses to apply a stale run. Don't compare the
             // epoch again afterwards: the socket cancelled by the switch makes the
             // realtime loop start its own (confirming) reselection right away.
@@ -222,7 +249,9 @@ public sealed class ConnectionManager : IDisposable
         var epoch = Interlocked.Increment(ref _selectionEpoch);
         if (profile is null || token is null || api is null) return false;
 
-        var (selected, kept) = await SelectRouteAsync(profile, token, cancellationToken);
+        EndpointProbeResult selected; ConnectionProfile kept;
+        try { (selected, kept) = await SelectRouteAsync(profile, token, cancellationToken); }
+        catch (CredentialRejectedException) { await RejectCredentialAsync(api); throw; }
         if (epoch != Volatile.Read(ref _selectionEpoch) || !ReferenceEquals(api, _api)) return false;
 
         var updated = kept with
@@ -233,7 +262,7 @@ public sealed class ConnectionManager : IDisposable
         api.Rebase(selected.Endpoint.BaseUrl, selected.Endpoint.WebSocketUrl, selected.Endpoint.TlsFingerprint);
         Profile = updated;
         ActiveEndpoint = selected;
-        await _store.SaveAsync(updated, token, cancellationToken);
+        await SaveCurrentAsync(updated, token, api, cancellationToken);
         RoutesChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
@@ -260,6 +289,7 @@ public sealed class ConnectionManager : IDisposable
             try { result = await _selector.ProbeAsync(chosen, token, cancellationToken); }
             finally { ClearProbing(chosen.BaseUrl); }
             Record(result);
+            if (result.CredentialRejected) throw new CredentialRejectedException();
             if (result.IsAvailable) return (result, profile);
         }
 
@@ -288,6 +318,8 @@ public sealed class ConnectionManager : IDisposable
         };
 
         var api = new MicaGoApi(activated.ActiveBaseUrl, activated.ActiveWebSocketUrl, token, selected.Endpoint.TlsFingerprint);
+        api.CredentialRejected += (_, _) => _ = RejectCredentialAsync(api);
+        await _credentialGate.WaitAsync(cancellationToken);
         try
         {
             if (persist)
@@ -296,6 +328,7 @@ public sealed class ConnectionManager : IDisposable
             }
 
             DisposeApi();
+            TokenRejected = false;
             Profile = activated;
             ActiveEndpoint = selected;
             _api = api;
@@ -308,6 +341,29 @@ public sealed class ConnectionManager : IDisposable
             api.Dispose();
             throw;
         }
+        finally { _credentialGate.Release(); }
+    }
+
+    private async Task RejectCredentialAsync(MicaGoApi? expected)
+    {
+        await _credentialGate.WaitAsync();
+        try
+        {
+            if (expected is not null && !ReferenceEquals(expected, _api)) return;
+            if (TokenRejected) return;
+            TokenRejected = true;
+            Interlocked.Increment(ref _selectionEpoch);
+            DisposeApi();
+            Profile = null; ActiveEndpoint = null; _token = null;
+            SwitchingRoute = null; RealtimeLive = false;
+            ConnectionChanged?.Invoke(this, EventArgs.Empty);
+            RoutesChanged?.Invoke(this, EventArgs.Empty);
+            CredentialRejected?.Invoke(this, EventArgs.Empty);
+            // Clearing the profile blocks restore even when Credential Manager is unavailable.
+            try { await _store.ClearAsync(); }
+            catch { System.Diagnostics.Debug.WriteLine("[Connection] Failed to remove rejected credential."); }
+        }
+        finally { _credentialGate.Release(); }
     }
 
     public async Task RefreshEndpointsAsync(CancellationToken ct = default)
@@ -321,10 +377,10 @@ public sealed class ConnectionManager : IDisposable
             if (!ReferenceEquals(client, _api) || epoch != _selectionEpoch || !ReferenceEquals(profile, Profile)) return;
             var next = EndpointConfiguration.Apply(profile, document.RootElement);
             if (next.ConfigRevision == profile.ConfigRevision && next.SelectedBaseUrl == profile.SelectedBaseUrl && next.ActiveWebSocketUrl == profile.ActiveWebSocketUrl && next.Endpoints.SequenceEqual(profile.Endpoints)) return;
-            await _store.SaveAsync(next, token, ct);
+            await SaveCurrentAsync(next, token, client, ct);
             if (!ReferenceEquals(client, _api) || epoch != _selectionEpoch || !ReferenceEquals(profile, Profile))
             {
-                if (Profile is { } current && _token is { } currentToken) await _store.SaveAsync(current, currentToken, ct);
+                if (Profile is { } current && _token is { } currentToken) await SaveCurrentAsync(current, currentToken, _api, ct);
                 return;
             }
             Profile = next;
@@ -342,6 +398,13 @@ public sealed class ConnectionManager : IDisposable
         catch (System.Text.Json.JsonException) { }
         catch (InvalidDataException) { }
         finally { _endpointRefreshGate.Release(); }
+    }
+
+    private async Task SaveCurrentAsync(ConnectionProfile profile, string token, MicaGoApi? expected, CancellationToken ct)
+    {
+        await _credentialGate.WaitAsync(ct);
+        try { if (!TokenRejected && expected is not null && ReferenceEquals(expected, _api)) await _store.SaveAsync(profile, token, ct); }
+        finally { _credentialGate.Release(); }
     }
 
     private void MarkProbing(string baseUrl)

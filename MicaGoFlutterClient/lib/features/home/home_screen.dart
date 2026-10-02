@@ -155,6 +155,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _push?.dispose();
     _app?.pendingOpenChat.removeListener(_onOpenChatRequested);
     unawaited(_foregroundAlertSub?.cancel());
     _dismissForegroundAlert();

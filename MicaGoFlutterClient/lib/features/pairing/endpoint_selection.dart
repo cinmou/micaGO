@@ -54,5 +54,6 @@ List<ConnectionMode> offeredModes(PairingPayload payload) {
   if (hasPublic) return const [ConnectionMode.publicOnly];
   return const [];
 }
+
 // C23 cleanup: connectionModeLabel was removed — the UI no longer shows a
 // LAN-only vs LAN+Public mode chooser (the unified payload auto-selects).

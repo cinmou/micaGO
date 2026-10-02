@@ -1,5 +1,6 @@
+import '../pairing/pairing_dialogs.dart';
+import '../../core/storage/secure_store.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -35,34 +36,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
   Future<void> _pasteConnectionJson() async {
     setState(() => _pasteError = null);
-    final clip = await Clipboard.getData(Clipboard.kTextPlain);
+    final raw = await requestPairingJson(context);
     if (!mounted) return;
-    final controller = TextEditingController(text: clip?.text?.trim() ?? '');
-    final raw = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(MicaLocalizations.of(ctx).t('pair.pasteJson')),
-        content: TextField(
-          controller: controller,
-          maxLines: 7,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: MicaLocalizations.of(ctx).t('pair.pasteJsonHint'),
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(MicaLocalizations.of(ctx).t('settings.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: Text(MicaLocalizations.of(ctx).t('pair.connect')),
-          ),
-        ],
-      ),
-    );
     if (raw == null || raw.isEmpty) return;
     try {
       final profile = parsePairingPayload(raw).toProfile();
@@ -71,13 +46,26 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           MicaLocalizations.current.t('pair.secureUpgrade'),
         );
       }
-      await _app.saveAndActivate(profile);
+      await _app.saveAndActivate(
+        profile,
+        confirmCompatibility: () => confirmCompatibilityStorage(context),
+      );
       if (!mounted) return;
       context.go(Routes.home);
     } on PairingParseException catch (e) {
       setState(() => _pasteError = e.message);
     } catch (error) {
-      if (mounted) setState(() => _pasteError = error.toString());
+      if (mounted) {
+        setState(
+          () => _pasteError = MicaLocalizations.of(context).t(
+            error is CompatibilityStorageRequired
+                ? 'pair.compatibilityRequired'
+                : error is CredentialStorageException
+                ? 'pair.secureStorageFailed'
+                : 'connection.cannotReachTitle',
+          ),
+        );
+      }
     }
   }
 

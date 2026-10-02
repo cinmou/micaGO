@@ -26,6 +26,19 @@ public sealed class ConnectionStore : IConnectionStore
         _profilePath = Path.Combine(root, "connection-profile.json");
     }
 
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        await _stateGate.WaitAsync(cancellationToken);
+        var key = "credential-probe-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var value = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+            _secrets.Write(key, value);
+            if (_secrets.Read(key) != value) throw new System.ComponentModel.Win32Exception("Credential Manager verification failed.");
+        }
+        finally { try { _secrets.Delete(key); } finally { _stateGate.Release(); } }
+    }
+
     public async Task<SavedConnection?> LoadAsync(CancellationToken cancellationToken = default)
     {
         await _stateGate.WaitAsync(cancellationToken);
@@ -79,8 +92,8 @@ public sealed class ConnectionStore : IConnectionStore
         await _stateGate.WaitAsync(cancellationToken);
         try
         {
-            _secrets.Delete(TokenKey);
             if (File.Exists(_profilePath)) File.Delete(_profilePath);
+            _secrets.Delete(TokenKey);
         }
         finally { _stateGate.Release(); }
     }

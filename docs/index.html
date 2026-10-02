@@ -34,10 +34,7 @@
       <section class="hero section">
         <div class="hero-copy">
           <h1 data-i18n="hero.title"><span>Your Mac's iMessage,</span> <span>on your phone</span> <span>or PC.</span></h1>
-          <p class="hero-subtitle" data-i18n="hero.subtitle">
-            Read and reply to iMessages from an Android phone or a Windows PC. micaGO works as a
-            remote for the Messages app on your own Mac, so that Mac needs to stay on.
-          </p>
+          <p class="hero-subtitle" data-i18n="hero.subtitle">Read and send iMessages on Android and Windows through the Messages app on your Mac. Your Mac must remain powered on and connected.</p>
           <div class="hero-actions" aria-label="Download and documentation links">
             <a class="button button-primary" href="#downloads" data-i18n="hero.download">Download</a>
             <a class="button button-secondary" href="#how" data-i18n="hero.how">How it works</a>
@@ -61,26 +58,20 @@
         </div>
         <div>
           <strong data-i18n="trust.3.title">No micaGO servers</strong>
-          <span data-i18n="trust.3.body">Messages only travel between your own devices. We never see them.</span>
+          <span data-i18n="trust.3.body">Connect directly to your Mac. Optional push notifications use your own Firebase project.</span>
         </div>
       </section>
 
       <section class="section split-section">
         <div class="section-copy">
           <p class="eyebrow" data-i18n="fit.eyebrow">Is this for me?</p>
-          <h2 data-i18n="fit.title">Check before you download.</h2>
-          <p data-i18n="fit.intro">
-            Many people expect micaGO to put iMessage on Android by itself. It can't. It only works
-            with a Mac you already own.
-          </p>
+          <h2 data-i18n="fit.title">Requirements before installation.</h2>
+          <p data-i18n="fit.intro">micaGO requires a Mac signed in to Messages. The Mac handles communication with Apple; Android and Windows connect to that Mac.</p>
         </div>
         <div class="feature-grid">
           <article class="feature-card">
             <h3 data-i18n="fit.1.title">Good fit: you have a Mac</h3>
-            <p data-i18n="fit.1.body">
-              It sits at home or at work, stays on, and is signed in to Messages. That Mac is what
-              talks to Apple.
-            </p>
+            <p data-i18n="fit.1.body">Use a Mac at home or work that can remain awake, connected, and signed in to Messages.</p>
           </article>
           <article class="feature-card">
             <h3 data-i18n="fit.2.title">Good fit: you chat on Android or Windows</h3>
@@ -109,10 +100,8 @@
       <section id="features" class="section split-section">
         <div class="section-copy">
           <p class="eyebrow" data-i18n="features.eyebrow">What you can do</p>
-          <h2 data-i18n="features.title">Chat from another screen.</h2>
-          <p data-i18n="features.intro">
-            Your Mac sends each reply from your own Apple ID, so your friends see nothing new.
-          </p>
+          <h2 data-i18n="features.title">Your conversations across devices.</h2>
+          <p data-i18n="features.intro">Messages are sent by your Mac using its configured iMessage account and send route.</p>
         </div>
         <div class="feature-grid">
           <article class="feature-card">
@@ -121,7 +110,7 @@
           </article>
           <article class="feature-card">
             <h3 data-i18n="features.2.title">Photos, voice messages, and reactions</h3>
-            <p data-i18n="features.2.body">Send pictures, record voice messages, reply to a specific message, or react to one.</p>
+            <p data-i18n="features.2.body">Share photos and voice messages, and use supported message replies and reactions.</p>
           </article>
           <article class="feature-card">
             <h3 data-i18n="features.3.title">Text messages (SMS)</h3>
@@ -143,7 +132,7 @@
 
       <section class="showcase section" aria-labelledby="showcase-title">
         <div class="section-copy centered showcase-intro">
-          <p class="eyebrow" data-i18n="showcase.eyebrow">What it looks like</p>
+          <p class="eyebrow" data-i18n="showcase.eyebrow">Interface</p>
           <h2 id="showcase-title" data-i18n="showcase.title">Chat on your devices. Manage it from your Mac.</h2>
           <p data-i18n="showcase.intro">
             You chat in the micaGO app. The Companion app sits in the Mac menu bar and shows whether
@@ -200,7 +189,7 @@
       <section id="how" class="section steps-section">
         <div class="section-copy centered">
           <p class="eyebrow" data-i18n="how.eyebrow">How it works</p>
-          <h2 data-i18n="how.title">Set it up once.</h2>
+          <h2 data-i18n="how.title">Connect your devices.</h2>
         </div>
         <div class="steps">
           <article>
@@ -217,14 +206,14 @@
             <h3 data-i18n="how.2.title">Connect your phone or PC</h3>
             <p data-i18n="how.2.body">
               Install micaGO on your device. On Android, scan the QR code in the Companion. On Windows,
-              paste the pairing code it shows. The same Wi-Fi makes the first connection easiest.
+              paste the connection JSON or use the optional QR scanner. Use the same local network for initial pairing.
               <a href="https://github.com/cinmou/MicaGo/blob/main/docs/android-client-connection.md">Connection guide</a>.
             </p>
           </article>
           <article>
             <span>3</span>
             <h3 data-i18n="how.3.title">Start chatting</h3>
-            <p data-i18n="how.3.body">Your conversations show up. Leave the Mac on and messages keep coming in both directions.</p>
+            <p data-i18n="how.3.body">Your conversations appear in the app. Keep your Mac awake and connected to send and receive messages.</p>
           </article>
         </div>
       </section>
@@ -232,17 +221,11 @@
       <section id="privacy" class="privacy-section section">
         <div>
           <p class="eyebrow" data-i18n="privacy.eyebrow">Privacy</p>
-          <h2 data-i18n="privacy.title">Your messages stay between your own devices.</h2>
+          <h2 data-i18n="privacy.title">A connection to your own Mac.</h2>
         </div>
         <div class="privacy-list">
-          <p data-i18n="privacy.1">
-            You don't sign up for anything, and micaGO has no cloud. No server of ours stores or reads
-            your chats.
-          </p>
-          <p data-i18n="privacy.2">
-            Remote access is optional. If you set it up, the link leads to your own Mac and is locked
-            with a key only your devices know.
-            <a href="https://github.com/cinmou/MicaGo/blob/main/docs/remote-access-cloudflare.md">Remote access guide</a>.
+          <p data-i18n="privacy.1">micaGO requires no hosted account. Chat history is stored on your Mac and cached locally on your clients.</p>
+          <p data-i18n="privacy.2">Client connections use HTTPS and device credentials. LAN connections verify the paired certificate; public endpoints use system certificate trust. Remote access requires your own configuration.
           </p>
           <p data-i18n="privacy.3">
             Push notifications are optional too. They go through Google's push service with a
@@ -305,14 +288,11 @@
         <div class="faq-list">
           <details>
             <summary data-i18n="faq.1.q">Can I get iMessage on Android without a Mac?</summary>
-            <p data-i18n="faq.1.a">No. micaGO needs your own Mac signed in to Messages, and that Mac does the real work.</p>
+            <p data-i18n="faq.1.a">A Mac signed in to Messages is required. It handles iMessage communication for the connected clients.</p>
           </details>
           <details>
             <summary data-i18n="faq.2.q">Does my Mac have to stay on?</summary>
-            <p data-i18n="faq.2.a">
-              Yes. Nothing is sent or received while it's asleep or off. Turn on Keep Awake in the
-              Companion to stop it from sleeping.
-            </p>
+            <p data-i18n="faq.2.a">Yes. Sending and receiving pause while the Mac is asleep or off. Companion offers an optional Keep Awake setting to help maintain availability.</p>
           </details>
           <details>
             <summary data-i18n="faq.3.q">Will my friends see a different number or name?</summary>
@@ -324,7 +304,7 @@
           </details>
           <details>
             <summary data-i18n="faq.5.q">Does micaGO keep my messages in a cloud?</summary>
-            <p data-i18n="faq.5.a">No. micaGO has no cloud, so your messages stay on your own devices.</p>
+            <p data-i18n="faq.5.a">micaGO has no hosted chat service. History stays on your devices. Optional Firebase notifications are delivered through your own Firebase project.</p>
           </details>
           <details>
             <summary data-i18n="faq.6.q">Can I use it away from home?</summary>
@@ -335,7 +315,7 @@
           </details>
           <details>
             <summary data-i18n="faq.7.q">Is it stable?</summary>
-            <p data-i18n="faq.7.a">It's beta software. It works for everyday use, though you may hit a few rough edges.</p>
+            <p data-i18n="faq.7.a">micaGO is in beta. Compatibility and reliability can vary by macOS version, device, and network configuration.</p>
           </details>
         </div>
       </section>
@@ -343,7 +323,7 @@
 
     <footer class="site-footer">
       <span>micaGO</span>
-      <span data-i18n="footer.love">An open source project.</span>
+      <span>made with ♥️ for everyone</span>
       <a href="https://github.com/cinmou/MicaGo">GitHub</a>
     </footer>
 
@@ -365,7 +345,7 @@
             "nav.docs": "文档",
             "href.docs": DOCS + "index.zh-Hans.md",
             "hero.title": "<span>Mac 上的 iMessage，</span> <span>手机电脑</span> <span>都能用。</span>",
-            "hero.subtitle": "在安卓手机或 Windows 电脑上收发 iMessage。micaGO 相当于你自己那台 Mac 上「信息」App 的遥控器，所以这台 Mac 要一直开着。",
+            "hero.subtitle": "通过 Mac 上的「信息」App，在 Android 和 Windows 上收发 iMessage。Mac 需要保持开机和网络连接。",
             "hero.download": "下载",
             "hero.how": "工作原理",
             "hero.source": "查看源代码",
@@ -374,12 +354,12 @@
             "trust.2.title": "需要一台 Mac",
             "trust.2.body": "必须是你自己的 Mac，保持开机，并登录「信息」。",
             "trust.3.title": "没有 micaGO 服务器",
-            "trust.3.body": "消息只在你自己的设备之间传递，我们看不到。",
+            "trust.3.body": "客户端连接到你的 Mac。可选的推送通知使用你自己的 Firebase 项目。",
             "fit.eyebrow": "适合我吗？",
-            "fit.title": "下载前先看这里。",
-            "fit.intro": "很多人以为 micaGO 能让安卓手机单独用上 iMessage。它做不到，必须搭配你已有的 Mac。",
+            "fit.title": "安装前的使用条件。",
+            "fit.intro": "micaGO 需要一台已登录「信息」的 Mac。Mac 负责与 Apple 通信，Android 和 Windows 客户端连接到这台 Mac。",
             "fit.1.title": "适合：你有 Mac",
-            "fit.1.body": "Mac 放在家里或公司，一直开着，登录了「信息」。和 Apple 通信的就是它。",
+            "fit.1.body": "使用家中或工作场所的 Mac，并保持唤醒、联网和「信息」登录状态。",
             "fit.2.title": "适合：你用安卓或 Windows 聊天",
             "fit.2.body": "想在手机、平板或电脑上回 iMessage，不用每次走回 Mac 前。",
             "fit.3.title": "不适合：你没有 Mac",
@@ -387,17 +367,17 @@
             "fit.4.title": "不适合：Mac 经常关机",
             "fit.4.body": "Mac 醒着，消息才能收发。Mac 休眠时，micaGO 会等它醒来。",
             "features.eyebrow": "能做什么",
-            "features.title": "换一块屏幕聊天。",
-            "features.intro": "回复由你的 Mac 用你自己的 Apple ID 发出，朋友那边看不出区别。",
+            "features.title": "在不同设备上继续对话。",
+            "features.intro": "消息由 Mac 通过已配置的 iMessage 账号和发送线路发出。",
             "features.1.title": "iMessage 聊天",
             "features.1.body": "阅读并回复你的对话，群聊也可以。",
             "features.2.title": "图片、语音和回应",
-            "features.2.body": "发图片，录语音，回复某条消息，或者加个回应。",
+            "features.2.body": "分享图片和语音消息，使用受支持的消息回复和回应功能。",
             "features.3.title": "短信（绿色气泡）",
             "features.3.body": "iPhone 把短信转发到 Mac 后，普通短信也能收发。在 iPhone 设置里打开「短信转发」即可。",
             "features.4.title": "不在家时（可选）",
             "features.4.body": "连着同一个 Wi-Fi 就能直接用。想在别处用，可以自己搭一条通往 Mac 的安全连接。<a href='" + DOCS + "remote-access-cloudflare.md'>远程访问指南（英文）</a>。",
-            "showcase.eyebrow": "长什么样",
+            "showcase.eyebrow": "界面预览",
             "showcase.title": "设备上聊天，Mac 上管理。",
             "showcase.intro": "你在 micaGO App 里聊天。Mac 菜单栏里的 Companion 会显示连接是否正常。",
             "showcase.android.title": "在手机上聊天",
@@ -408,17 +388,17 @@
             "showcase.mac.title": "Mac 上的 Companion",
             "showcase.mac.body": "显示连接状态，还有配对设备用的配对码。",
             "how.eyebrow": "工作原理",
-            "how.title": "设置一次就好。",
+            "how.title": "连接你的设备。",
             "how.1.title": "设置 Mac",
             "how.1.body": "在登录了「信息」的 Mac 上安装 micaGO Companion。系统询问时允许「完全磁盘访问权限」，它才能读取消息。<a href='" + DOCS + "getting-started.zh-Hans.md'>Mac 设置指南</a>。",
             "how.2.title": "连接手机或电脑",
-            "how.2.body": "在设备上安装 micaGO。安卓扫描 Companion 里的二维码，Windows 粘贴它提供的配对码。第一次连接时用同一个 Wi-Fi 最省事。<a href='" + DOCS + "android-client-connection.md'>连接指南（英文）</a>。",
+            "how.2.body": "在设备上安装 micaGO。安卓扫描 Companion 里的二维码，Windows 粘贴连接 JSON，也可使用可选的扫码功能。首次配对建议使用同一局域网。<a href='" + DOCS + "android-client-connection.md'>连接指南（英文）</a>。",
             "how.3.title": "开始聊天",
-            "how.3.body": "对话会出现在 App 里。Mac 保持开机，消息就能一直双向收发。",
+            "how.3.body": "对话会同步到 App。保持 Mac 唤醒和联网，以便收发消息。",
             "privacy.eyebrow": "隐私",
-            "privacy.title": "消息只在你自己的设备之间传递。",
-            "privacy.1": "micaGO 不用注册，也没有云端。我们没有任何存储或读取聊天的服务器。",
-            "privacy.2": "远程访问是可选的。设置后，这条连接直通你自己的 Mac，并用只有你的设备知道的密钥保护。<a href='" + DOCS + "remote-access-cloudflare.md'>远程访问指南（英文）</a>。",
+            "privacy.title": "连接到你自己的 Mac。",
+            "privacy.1": "micaGO 不需要注册托管账号。聊天记录存储在 Mac 上，客户端保留本地缓存。",
+            "privacy.2": "客户端通过 HTTPS 和设备凭据连接。局域网连接验证配对时的证书，公网地址使用系统证书信任。远程访问需要自行配置。",
             "privacy.3": "推送通知同样可选。通知经 Google 推送服务送达，用的是你自己创建的 Firebase 项目。<a href='" + DOCS + "notifications-setup.md'>通知指南（英文）</a>。",
             "downloads.eyebrow": "下载",
             "downloads.title": "先装 Mac 端，再装你的设备。",
@@ -434,22 +414,21 @@
             "note.title": "说明",
             "note.body": "micaGO 仍是测试版。安卓 App 测得最多，Windows App 比较新。所有下载都来自项目的 GitHub 发布页。分步说明见<a href='" + DOCS + "index.zh-Hans.md'>使用文档</a>。",
             "faq.eyebrow": "常见问题",
-            "faq.title": "大家常问的问题。",
+            "faq.title": "常见问题。",
             "faq.1.q": "没有 Mac 能在安卓上用 iMessage 吗？",
-            "faq.1.a": "不能。micaGO 需要你自己那台登录了「信息」的 Mac，真正干活的是它。",
+            "faq.1.a": "需要一台已登录「信息」的 Mac，由它为已连接的客户端处理 iMessage 通信。",
             "faq.2.q": "Mac 必须一直开着吗？",
-            "faq.2.a": "是的。Mac 休眠或关机时什么都收发不了。打开 Companion 里的「保持唤醒」，Mac 就不会休眠。",
+            "faq.2.a": "是的。Mac 休眠或关机时，消息收发会暂停。Companion 提供可选的「保持唤醒」设置，帮助维持服务可用。",
             "faq.3.q": "朋友会看到别的号码或名字吗？",
             "faq.3.a": "不会。每条消息都由你的 Mac 用你自己的 Apple ID 发出。",
             "faq.4.q": "micaGO 是 Apple 做的吗？",
             "faq.4.a": "不是。它是独立的开源项目，跟 Apple 没有关系。",
             "faq.5.q": "消息会存到 micaGO 的云端吗？",
-            "faq.5.a": "不会。micaGO 没有云端，消息只留在你自己的设备上。",
+            "faq.5.a": "micaGO 不提供托管聊天服务，记录保留在你的设备上。可选的 Firebase 通知通过你自己的 Firebase 项目送达。",
             "faq.6.q": "不在家时能用吗？",
             "faq.6.a": "可以，自己搭好通往 Mac 的安全连接就行。<a href='" + DOCS + "remote-access-cloudflare.md'>阅读远程访问指南（英文）</a>。",
             "faq.7.q": "稳定吗？",
-            "faq.7.a": "目前是测试版，日常能用，偶尔会遇到小问题。",
-            "footer.love": "开源项目。"
+            "faq.7.a": "micaGO 仍处于测试阶段。兼容性和稳定性会受 macOS 版本、设备和网络配置影响。"
           },
           "zh-Hant": {
             "meta.title": "micaGO - 在 Android 手機或 Windows 電腦上用 Mac 的 iMessage",
@@ -460,7 +439,7 @@
             "nav.docs": "文件",
             "href.docs": DOCS + "index.zh-Hant.md",
             "hero.title": "<span>Mac 上的 iMessage，</span> <span>手機電腦</span> <span>都能用。</span>",
-            "hero.subtitle": "在 Android 手機或 Windows 電腦上收發 iMessage。micaGO 就像你自己那台 Mac 上「訊息」App 的遙控器，所以這台 Mac 要一直開著。",
+            "hero.subtitle": "透過 Mac 上的「訊息」App，在 Android 和 Windows 上收發 iMessage。Mac 需要保持開機與網路連線。",
             "hero.download": "下載",
             "hero.how": "運作方式",
             "hero.source": "檢視原始碼",
@@ -469,12 +448,12 @@
             "trust.2.title": "需要一台 Mac",
             "trust.2.body": "必須是你自己的 Mac，保持開機，並登入「訊息」。",
             "trust.3.title": "沒有 micaGO 伺服器",
-            "trust.3.body": "訊息只在你自己的裝置之間傳遞，我們看不到。",
+            "trust.3.body": "用戶端連接到你的 Mac。選用的推播通知使用你自己的 Firebase 專案。",
             "fit.eyebrow": "適合我嗎？",
-            "fit.title": "下載前先看這裡。",
-            "fit.intro": "很多人以為 micaGO 能讓 Android 手機單獨用上 iMessage。它做不到，必須搭配你已有的 Mac。",
+            "fit.title": "安裝前的使用條件。",
+            "fit.intro": "micaGO 需要一台已登入「訊息」的 Mac。Mac 負責與 Apple 通訊，Android 和 Windows 用戶端連接到這台 Mac。",
             "fit.1.title": "適合：你有 Mac",
-            "fit.1.body": "Mac 放在家裡或公司，一直開著，登入了「訊息」。跟 Apple 通訊的就是它。",
+            "fit.1.body": "使用家中或工作場所的 Mac，並保持喚醒、連網與「訊息」登入狀態。",
             "fit.2.title": "適合：你用 Android 或 Windows 聊天",
             "fit.2.body": "想在手機、平板或電腦上回 iMessage，不用每次走回 Mac 前。",
             "fit.3.title": "不適合：你沒有 Mac",
@@ -482,17 +461,17 @@
             "fit.4.title": "不適合：Mac 經常關機",
             "fit.4.body": "Mac 醒著，訊息才能收發。Mac 睡眠時，micaGO 會等它醒來。",
             "features.eyebrow": "能做什麼",
-            "features.title": "換一個螢幕聊天。",
-            "features.intro": "回覆由你的 Mac 用你自己的 Apple ID 送出，朋友那邊看不出差別。",
+            "features.title": "在不同裝置上繼續對話。",
+            "features.intro": "訊息由 Mac 透過已設定的 iMessage 帳號與傳送路線送出。",
             "features.1.title": "iMessage 聊天",
             "features.1.body": "閱讀並回覆你的對話，群組聊天也可以。",
             "features.2.title": "照片、語音和回應",
-            "features.2.body": "傳照片，錄語音，回覆某則訊息，或者加個回應。",
+            "features.2.body": "分享照片與語音訊息，使用支援的訊息回覆與回應功能。",
             "features.3.title": "簡訊（綠色泡泡）",
             "features.3.body": "iPhone 把簡訊轉寄到 Mac 後，一般簡訊也能收發。在 iPhone 設定裡打開「簡訊轉寄」即可。",
             "features.4.title": "不在家時（選用）",
             "features.4.body": "連著同一個 Wi-Fi 就能直接使用。想在別處使用，可以自己架一條通往 Mac 的安全連線。<a href='" + DOCS + "remote-access-cloudflare.md'>遠端存取指南（英文）</a>。",
-            "showcase.eyebrow": "長什麼樣子",
+            "showcase.eyebrow": "介面預覽",
             "showcase.title": "裝置上聊天，Mac 上管理。",
             "showcase.intro": "你在 micaGO App 裡聊天。Mac 選單列裡的 Companion 會顯示連線是否正常。",
             "showcase.android.title": "在手機上聊天",
@@ -503,17 +482,17 @@
             "showcase.mac.title": "Mac 上的 Companion",
             "showcase.mac.body": "顯示連線狀態，還有配對裝置用的配對碼。",
             "how.eyebrow": "運作方式",
-            "how.title": "設定一次就好。",
+            "how.title": "連接你的裝置。",
             "how.1.title": "設定 Mac",
             "how.1.body": "在登入了「訊息」的 Mac 上安裝 micaGO Companion。系統詢問時允許「完整磁碟取用權限」，它才能讀取訊息。<a href='" + DOCS + "getting-started.zh-Hant.md'>Mac 設定指南</a>。",
             "how.2.title": "連接手機或電腦",
-            "how.2.body": "在裝置上安裝 micaGO。Android 掃描 Companion 裡的 QR Code，Windows 貼上它提供的配對碼。第一次連線時用同一個 Wi-Fi 最省事。<a href='" + DOCS + "android-client-connection.md'>連線指南（英文）</a>。",
+            "how.2.body": "在裝置上安裝 micaGO。Android 掃描 Companion 裡的 QR Code，Windows 貼上連線 JSON，也可使用選用的掃碼功能。首次配對建議使用同一區域網路。<a href='" + DOCS + "android-client-connection.md'>連線指南（英文）</a>。",
             "how.3.title": "開始聊天",
-            "how.3.body": "對話會出現在 App 裡。Mac 保持開機，訊息就能一直雙向收發。",
+            "how.3.body": "對話會同步到 App。保持 Mac 喚醒與連網，以便收發訊息。",
             "privacy.eyebrow": "隱私",
-            "privacy.title": "訊息只在你自己的裝置之間傳遞。",
-            "privacy.1": "micaGO 不用註冊，也沒有雲端。我們沒有任何儲存或讀取聊天的伺服器。",
-            "privacy.2": "遠端存取是選用的。設定後，這條連線直通你自己的 Mac，並用只有你的裝置知道的金鑰保護。<a href='" + DOCS + "remote-access-cloudflare.md'>遠端存取指南（英文）</a>。",
+            "privacy.title": "連接到你自己的 Mac。",
+            "privacy.1": "micaGO 不需要註冊託管帳號。聊天記錄儲存在 Mac 上，用戶端保留本機快取。",
+            "privacy.2": "用戶端透過 HTTPS 與裝置憑證連線。區域網路連線驗證配對時的憑證，公開網址使用系統憑證信任。遠端存取需要自行設定。",
             "privacy.3": "推播通知同樣是選用的。通知經 Google 推播服務送達，用的是你自己建立的 Firebase 專案。<a href='" + DOCS + "notifications-setup.md'>通知指南（英文）</a>。",
             "downloads.eyebrow": "下載",
             "downloads.title": "先裝 Mac 端，再裝你的裝置。",
@@ -529,22 +508,21 @@
             "note.title": "說明",
             "note.body": "micaGO 仍是測試版。Android App 測得最多，Windows App 比較新。所有下載都來自專案的 GitHub 發行頁面。逐步說明請看<a href='" + DOCS + "index.zh-Hant.md'>使用者文件</a>。",
             "faq.eyebrow": "常見問題",
-            "faq.title": "大家常問的問題。",
+            "faq.title": "常見問題。",
             "faq.1.q": "沒有 Mac 能在 Android 上用 iMessage 嗎？",
-            "faq.1.a": "不行。micaGO 需要你自己那台登入了「訊息」的 Mac，真正做事的是它。",
+            "faq.1.a": "需要一台已登入「訊息」的 Mac，由它為已連接的用戶端處理 iMessage 通訊。",
             "faq.2.q": "Mac 必須一直開著嗎？",
-            "faq.2.a": "是的。Mac 睡眠或關機時什麼都收發不了。打開 Companion 裡的「保持喚醒」，Mac 就不會睡眠。",
+            "faq.2.a": "是的。Mac 睡眠或關機時，訊息收發會暫停。Companion 提供選用的「保持喚醒」設定，協助維持服務可用。",
             "faq.3.q": "朋友會看到別的號碼或名字嗎？",
             "faq.3.a": "不會。每則訊息都由你的 Mac 用你自己的 Apple ID 送出。",
             "faq.4.q": "micaGO 是 Apple 做的嗎？",
             "faq.4.a": "不是。它是獨立的開源專案，跟 Apple 沒有關係。",
             "faq.5.q": "訊息會存到 micaGO 的雲端嗎？",
-            "faq.5.a": "不會。micaGO 沒有雲端，訊息只留在你自己的裝置上。",
+            "faq.5.a": "micaGO 不提供託管聊天服務，記錄保留在你的裝置上。選用的 Firebase 通知透過你自己的 Firebase 專案送達。",
             "faq.6.q": "不在家時能用嗎？",
             "faq.6.a": "可以，自己架好通往 Mac 的安全連線就行。<a href='" + DOCS + "remote-access-cloudflare.md'>閱讀遠端存取指南（英文）</a>。",
             "faq.7.q": "穩定嗎？",
-            "faq.7.a": "目前是測試版，日常可以使用，偶爾會遇到小問題。",
-            "footer.love": "開源專案。"
+            "faq.7.a": "micaGO 仍處於測試階段。相容性與穩定性會受 macOS 版本、裝置與網路設定影響。"
           }
         };
 

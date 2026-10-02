@@ -35,13 +35,6 @@ void main() {
       expect(body.keys, isNot(contains('contacts')));
     });
 
-    test('stable id generator is unique and prefixed', () {
-      final a = generateStableDeviceId();
-      final b = generateStableDeviceId();
-      expect(a, startsWith('flutter-'));
-      expect(a, isNot(b)); // random → effectively never collides
-    });
-
     test('mode defaults to lan when unspecified', () {
       final body = buildDeviceRegistration(
         name: 'Pixel 7',

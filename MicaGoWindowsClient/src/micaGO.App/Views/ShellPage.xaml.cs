@@ -47,12 +47,16 @@ public sealed partial class ShellPage : Page
     private readonly DispatcherTimer _voiceTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private DateTimeOffset _voiceStartedAt;
     private bool _selectMode;
+    private bool _shutDown;
+    private readonly DispatcherTimer _hideUndoTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private ChatSummary? _undoHiddenChat;
     private readonly List<(MessageRow Row,MessageEntranceKind Kind)> _pendingMessageEntrances=[];
     private bool _messageEntranceDrainScheduled;
 
     public ShellPage()
     {
         InitializeComponent();
+        _hideUndoTimer.Tick += (_, _) => { _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoBar.IsOpen = false; };
         NavigationCacheMode=Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
         Loaded += ShellPage_Loaded;
         ShellRoot.SizeChanged += ShellRoot_SizeChanged;
@@ -209,17 +213,31 @@ public sealed partial class ShellPage : Page
     {
         if(_viewModel is null||(e.OriginalSource as FrameworkElement)?.DataContext is not ChatSummary chat)return;
         var menu=new MenuFlyout();
+        var mark=new MenuFlyoutItem { Text=AppServices.Current.Localization[chat.HasUnread?"markRead":"markUnread"], Icon=new FontIcon { Glyph="\uE8C3" } };
+        mark.Click+=async(_,_)=>await _viewModel.SetChatUnreadAsync(chat,!chat.HasUnread);
+        menu.Items.Add(mark);
         var hide=new MenuFlyoutItem{Text=AppServices.Current.Localization["hide"],Icon=new FontIcon{Glyph="\uED1A"}};
         hide.Click+=async(_,_)=>
         {
             var wasSelected=_viewModel.SelectedChat is{} selected&&(selected.Id==chat.Id||chat.RouteIds?.Contains(selected.Id)==true);
             await _viewModel.HideChatAsync(chat);
+            _undoHiddenChat = chat;
+            HideUndoBar.Message = AppServices.Current.Localization["chatHidden"];
+            HideUndoButton.Content = AppServices.Current.Localization["undo"];
+            HideUndoBar.IsOpen = true; _hideUndoTimer.Stop(); _hideUndoTimer.Start();
             if(!wasSelected)return;
             ChatList.SelectedItem=null;
             if(_viewModel.Chats.FirstOrDefault() is{} next){ChatList.SelectedItem=next;await SelectChatAsync(next);return;}
             EmptyState.Visibility=Visibility.Visible;Composer.IsEnabled=false;UpdateComposerActions();
         };
         menu.Items.Add(hide);menu.ShowAt(ChatList,e.GetPosition(ChatList));e.Handled=true;
+    }
+
+    private async void HideUndoButton_Click(object sender, RoutedEventArgs e)
+    {
+        var chat = _undoHiddenChat;
+        _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoBar.IsOpen = false;
+        if (chat is not null && _viewModel is not null) await _viewModel.RestoreHiddenChatsAsync([chat.Id]);
     }
 
     private async Task SelectChatAsync(ChatSummary chat)
@@ -524,6 +542,8 @@ public sealed partial class ShellPage : Page
     /// <summary>Stops the realtime loop and timers when the chat window closes.</summary>
     public async Task ShutdownAsync()
     {
+        if (_shutDown) return; _shutDown = true;
+        _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoBar.IsOpen = false;
         _timestampTimer.Stop();
         _voiceTimer.Stop();
         _voiceRecorder.Dispose();

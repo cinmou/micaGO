@@ -24,6 +24,7 @@ class MediaCache {
   MediaCache._();
   static final MediaCache instance = MediaCache._();
 
+  bool accessAllowed = true;
   Directory? _dir;
   final Map<String, Future<Uint8List>> _inflight = {};
 
@@ -142,7 +143,8 @@ class MediaCache {
 
   /// Memory-only synchronous hit (used by tiles to render without a spinner
   /// frame while scrolling, C51). Disk hits arrive through [load].
-  Uint8List? memoryHit(String key) => _pinned[key] ?? _memoryCache[key];
+  Uint8List? memoryHit(String key) =>
+      accessAllowed ? (_pinned[key] ?? _memoryCache[key]) : null;
 
   /// memory → disk → [fetch] (network), writing through to both layers.
   /// Concurrent loads of the same key share one future.
@@ -151,6 +153,15 @@ class MediaCache {
     Future<Uint8List> Function() fetch, {
     bool urgent = false,
   }) {
+    if (!accessAllowed) {
+      return Future.error(
+        const ApiException(
+          code: 'unauthorized',
+          message: 'Device access rejected.',
+          statusCode: 401,
+        ),
+      );
+    }
     final pinned = _pinned[key];
     if (pinned != null) return Future.value(pinned);
     final mem = _memoryCache[key];
@@ -158,12 +169,25 @@ class MediaCache {
     final running = _inflight[key];
     if (running != null) return running;
     final local = _localPreviews[key];
-    final future = local == null
-        ? _loadInner(key, fetch, urgent: urgent)
-        : local().then((bytes) {
-            if (identical(_localPreviews[key], local)) _pinned[key] = bytes;
-            return bytes;
-          });
+    final future =
+        (local == null
+                ? _loadInner(key, fetch, urgent: urgent)
+                : local().then((bytes) {
+                    if (identical(_localPreviews[key], local)) {
+                      _pinned[key] = bytes;
+                    }
+                    return bytes;
+                  }))
+            .then((bytes) {
+              if (!accessAllowed) {
+                throw const ApiException(
+                  code: 'unauthorized',
+                  message: 'Device access rejected.',
+                  statusCode: 401,
+                );
+              }
+              return bytes;
+            });
     _inflight[key] = future;
     future.whenComplete(() => _inflight.remove(key)).ignore();
     return future;

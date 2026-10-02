@@ -207,14 +207,20 @@ class ChatPreferenceSync extends ChangeNotifier {
     _revision = (snapshot['revision'] as num).toInt();
   }
 
-  Future<void> setHidden(Iterable<String> guids, bool value) => _run(() async {
+  Future<void> setHidden(
+    Iterable<String> guids,
+    bool value, {
+    bool syncImmediately = true,
+  }) => _run(() async {
     if (_serverId == null) await _sync();
     if (_serverId == null) {
       throw StateError('Connect once before syncing hidden chats.');
     }
     _enqueue(guids, value);
     await _publish();
-    await _sync();
+    if (syncImmediately) {
+      await _sync();
+    }
   });
 
   void _enqueue(Iterable<String> guids, bool value) {

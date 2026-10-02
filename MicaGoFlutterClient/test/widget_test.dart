@@ -18,6 +18,13 @@ class _MemoryStore implements SecureStore {
   ConnectionProfile? _saved;
 
   @override
+  Future<bool> compatibilityStorageEnabled() async => false;
+  @override
+  Future<void> prepareCredentialStorage({
+    Future<bool> Function()? confirmCompatibility,
+  }) async {}
+
+  @override
   Future<ConnectionProfile?> loadProfile() async => _saved;
 
   @override

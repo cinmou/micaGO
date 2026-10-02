@@ -60,11 +60,13 @@ class RefreshCoordinator {
   }
 
   /// App returned to the foreground: reconnect promptly and do a light catch-up.
-  void onResume() {
-    if (wsStatus() != WsStatus.connected) {
-      unawaited(reconnect());
-    }
-    unawaited(catchUp('resume'));
+  Future<void>? _resume;
+  Future<void> onResume() =>
+      _resume ??= _resumeInner().whenComplete(() => _resume = null);
+
+  Future<void> _resumeInner() async {
+    if (wsStatus() != WsStatus.connected) await reconnect();
+    await catchUp('resume');
   }
 
   void dispose() {

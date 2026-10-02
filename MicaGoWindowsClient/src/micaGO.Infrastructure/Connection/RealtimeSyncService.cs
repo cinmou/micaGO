@@ -13,7 +13,8 @@ public sealed class RealtimeSyncService(
     Func<CancellationToken, Task>? reselectRoute = null,
     MessagePreferenceSync? messagePreferences = null,
     ReadStateSync? readState = null,
-    Func<CancellationToken,Task>? refreshEndpoints = null) : IAsyncDisposable
+    Func<CancellationToken,Task>? refreshEndpoints = null,
+    Func<bool>? credentialRejected = null) : IAsyncDisposable
 {
     private const string CursorKey = "sync.cursor";
     private readonly CancellationTokenSource _shutdown = new();
@@ -62,7 +63,7 @@ public sealed class RealtimeSyncService(
     {
         var attempt = 0;
         var completedInitialCatchUp = false;
-        while (!cancellationToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested && credentialRejected?.Invoke() != true)
         {
             try
             {
@@ -98,8 +99,11 @@ public sealed class RealtimeSyncService(
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (MicaGo.Infrastructure.Api.MicaGoApiException error) when (error.StatusCode == 401) { break; }
+            catch (CredentialRejectedException) { break; }
             catch
             {
+                if (credentialRejected?.Invoke() == true) break;
                 attempt++;
                 StatusChanged?.Invoke(this, "Reconnecting");
                 // W-UI9: re-run route selection before reconnecting, so a dropped

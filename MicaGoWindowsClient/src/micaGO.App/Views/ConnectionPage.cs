@@ -19,12 +19,17 @@ public sealed class ConnectionPage : Page
     private readonly TextBlock _phaseText = new() { FontSize = 12, Opacity = 0.72 };
     private CancellationTokenSource? _connectionCancellation;
     private bool _restoreAttempted;
+    private readonly Button _scanButton = new();
+    private readonly Button _imageButton = new();
+    private bool _pairingAttempt;
 
     public ConnectionPage()
     {
         Content = BuildContent();
         _pairingBox.TextChanged += PairingBox_TextChanged;
         _connectButton.Click += ConnectButton_Click;
+        _scanButton.Click += async (_, _) => await ReadQrAsync(camera: true);
+        _imageButton.Click += async (_, _) => await ReadQrAsync(camera: false);
         Loaded += ConnectionPage_Loaded;
         Unloaded += ConnectionPage_Unloaded;
     }
@@ -47,10 +52,12 @@ public sealed class ConnectionPage : Page
         input.Children.Add(_pairingLabel);
         input.Children.Add(_pairingBox);
         input.Children.Add(_tokenNote);
+        var scanActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        scanActions.Children.Add(_scanButton); scanActions.Children.Add(_imageButton);
+        input.Children.Add(scanActions);
 
         var cardContent = new StackPanel
         {
-            Width = 520,
             MaxWidth = 520,
             Spacing = 16,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -66,7 +73,7 @@ public sealed class ConnectionPage : Page
             Padding = new Thickness(28, 24, 28, 24),
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
         };
-        root.Children.Add(cardContent);
+        root.Children.Add(new ScrollViewer { Content = cardContent, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         return root;
     }
 
@@ -78,7 +85,21 @@ public sealed class ConnectionPage : Page
         var language = await AppServices.Current.Cache.GetSettingAsync("settings.language");
         if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
         ApplyText();
-        await RestoreConnectionAsync();
+        if (AppServices.Current.Connection.TokenRejected) await ShowRejectedDialogAsync();
+        else await RestoreConnectionAsync();
+    }
+
+    private async Task ShowRejectedDialogAsync()
+    {
+        _statusPanel.Visibility = Visibility.Collapsed;
+        _phaseText.Text = string.Empty;
+        var l = AppServices.Current.Localization;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot, Title = l["tokenRejectedTitle"], Content = l["tokenRejectedBody"],
+            PrimaryButtonText = l["pairAgain"], DefaultButton = ContentDialogButton.Primary,
+        };
+        await dialog.ShowAsync();
     }
 
     private void ApplyText()
@@ -89,6 +110,7 @@ public sealed class ConnectionPage : Page
         _pairingBox.PlaceholderText = l["connPlaceholder"];
         _tokenNote.Text = l["connTokenNote"];
         _connectButton.Content = l["connConnect"];
+        _scanButton.Content = l["scanQr"]; _imageButton.Content = l["qrImage"];
     }
 
     private async Task RestoreConnectionAsync()
@@ -99,7 +121,8 @@ public sealed class ConnectionPage : Page
         try
         {
             if (await AppServices.Current.Connection.TryRestoreAsync(_connectionCancellation.Token)) { App.ShowMainWindow(); return; }
-            ShowStatus(l["connPaste"]);
+            if (AppServices.Current.Connection.TokenRejected) await ShowRejectedDialogAsync();
+            else ShowStatus(l["connPaste"]);
         }
         catch (OperationCanceledException) { ShowStatus(l["connTimeout"]); }
         catch (Exception exception) { ShowStatus(string.Format(l["connRestoreFailed"], SafeMessage(exception))); }
@@ -109,16 +132,21 @@ public sealed class ConnectionPage : Page
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
         _connectionCancellation?.Cancel();
-        _connectionCancellation = new CancellationTokenSource();
+        _connectionCancellation?.Dispose();
+        _connectionCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+        _pairingAttempt = true;
         SetBusy(true, AppServices.Current.Localization["connTesting"]);
         _statusPanel.Visibility = Visibility.Collapsed;
         var connected = false;
         try
         {
+            await AppServices.Current.ClearRejectedContentAsync();
             await AppServices.Current.Connection.ConnectPairingJsonAsync(_pairingBox.Text, _connectionCancellation.Token);
             connected = true;
         }
+        catch (OperationCanceledException) { ShowStatus(AppServices.Current.Localization["connTimeout"]); }
         catch (PairingPayloadException exception) { ShowStatus(exception.Message); }
+        catch (CredentialRejectedException) { await ShowRejectedDialogAsync(); }
         catch (ConnectionException exception) { ShowStatus(exception.Message); }
         catch (Exception exception) when (exception is not OperationCanceledException) { ShowStatus($"Connection failed: {SafeMessage(exception)}"); }
         finally { if (!connected) SetBusy(false, string.Empty); }
@@ -137,17 +165,42 @@ public sealed class ConnectionPage : Page
         }
     }
 
+    private async Task ReadQrAsync(bool camera)
+    {
+        _pairingAttempt = true;
+        SetBusy(true, string.Empty);
+        try
+        {
+            string? json;
+            if (camera) json = await new PairingQrScanner().ShowAsync(XamlRoot);
+            else
+            {
+                var picker = new Windows.Storage.Pickers.FileOpenPicker();
+                foreach (var extension in new[] { ".png", ".jpg", ".jpeg", ".bmp" }) picker.FileTypeFilter.Add(extension);
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.ConnectionHost));
+                var file = await picker.PickSingleFileAsync();
+                if (file is null) return;
+                json = await PairingQrScanner.ReadImageAsync(file);
+                if (json is null) { ShowStatus(AppServices.Current.Localization["qrNotFound"]); return; }
+            }
+            if (json is not null) { _pairingBox.Text = json; ShowStatus(AppServices.Current.Localization["qrRead"]); }
+        }
+        catch { ShowStatus(AppServices.Current.Localization[camera ? "cameraUnavailable" : "qrNotFound"]); }
+        finally { SetBusy(false, string.Empty); }
+    }
+
     private void PairingBox_TextChanged(object sender, TextChangedEventArgs e) =>
         _connectButton.IsEnabled = _pairingBox.IsEnabled && !string.IsNullOrWhiteSpace(_pairingBox.Text);
 
     private void SetBusy(bool busy, string phase)
     {
         _pairingBox.IsEnabled = !busy;
+        _scanButton.IsEnabled = !busy; _imageButton.IsEnabled = !busy;
         _connectButton.IsEnabled = !busy && !string.IsNullOrWhiteSpace(_pairingBox.Text);
         _phaseText.Text = phase;
     }
 
-    private void ShowStatus(string message) { _statusText.Text = message; _statusPanel.Visibility = Visibility.Visible; }
+    private void ShowStatus(string message) { if (AppServices.Current.Connection.TokenRejected && !_pairingAttempt) return; _statusText.Text = message; _statusPanel.Visibility = Visibility.Visible; }
 
     private static string SafeMessage(Exception exception) => exception switch
     {

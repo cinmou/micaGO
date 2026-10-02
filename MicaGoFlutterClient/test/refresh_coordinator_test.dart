@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mica_go/core/network/refresh_coordinator.dart';
@@ -72,28 +73,58 @@ void main() {
       });
     });
 
-    test('a reconnect is NOT fired if the socket recovered before the timer', () {
-      fakeAsync((async) {
-        var status = WsStatus.disconnected;
+    test(
+      'a reconnect is NOT fired if the socket recovered before the timer',
+      () {
+        fakeAsync((async) {
+          var status = WsStatus.disconnected;
+          var reconnects = 0;
+          final c = RefreshCoordinator(
+            reconnect: () async => reconnects++,
+            catchUp: (_) async {},
+            wsStatus: () => status,
+          );
+
+          c.onWsStatusChanged(WsStatus.disconnected);
+          // Recover before the backoff elapses.
+          status = WsStatus.connected;
+          c.onWsStatusChanged(WsStatus.connected);
+          async.elapse(const Duration(seconds: 30));
+          expect(reconnects, 0);
+
+          c.dispose();
+        });
+      },
+    );
+
+    test(
+      'overlapping resumes share reconnect and wait before catch-up',
+      () async {
+        final ready = Completer<void>();
         var reconnects = 0;
+        var polls = 0;
         final c = RefreshCoordinator(
-          reconnect: () async => reconnects++,
-          catchUp: (_) async {},
-          wsStatus: () => status,
+          reconnect: () {
+            reconnects++;
+            return ready.future;
+          },
+          catchUp: (_) async {
+            polls++;
+          },
+          wsStatus: () => WsStatus.disconnected,
         );
-
-        c.onWsStatusChanged(WsStatus.disconnected);
-        // Recover before the backoff elapses.
-        status = WsStatus.connected;
-        c.onWsStatusChanged(WsStatus.connected);
-        async.elapse(const Duration(seconds: 30));
-        expect(reconnects, 0);
-
+        final first = c.onResume();
+        final second = c.onResume();
+        expect(reconnects, 1);
+        expect(polls, 0);
+        ready.complete();
+        await Future.wait([first, second]);
+        expect(polls, 1);
         c.dispose();
-      });
-    });
+      },
+    );
 
-    test('onResume reconnects when down and always catches up', () {
+    test('onResume reconnects before catching up', () async {
       var status = WsStatus.disconnected;
       var reconnects = 0;
       final reasons = <String>[];
@@ -103,14 +134,14 @@ void main() {
         wsStatus: () => status,
       );
 
-      c.onResume();
+      await c.onResume();
       expect(reconnects, 1);
       expect(reasons, contains('resume'));
 
       // When already connected, resume only catches up.
       status = WsStatus.connected;
       reconnects = 0;
-      c.onResume();
+      await c.onResume();
       expect(reconnects, 0);
       expect(reasons.where((r) => r == 'resume').length, 2);
 

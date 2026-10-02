@@ -16,12 +16,13 @@ public static class SecureTransport
             && string.Equals(leaf.GetCertHashString(HashAlgorithmName.SHA256), fingerprint, StringComparison.OrdinalIgnoreCase);
     }
 
-    public static HttpClient CreateClient(string baseUrl, string? fingerprint = null)
+    public static HttpClient CreateClient(string baseUrl, string? fingerprint = null, DelegatingHandler? middleware = null)
     {
         if (new Uri(baseUrl).Scheme != "https")
             throw new ConnectionException("This connection requires HTTPS. Create a new pairing code on the Mac.");
         var handler = new HttpClientHandler { AllowAutoRedirect = false };
         handler.ServerCertificateCustomValidationCallback = (_, cert, _, errors) => ValidateCertificate(cert, errors, fingerprint);
-        return new HttpClient(handler) { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
+        if (middleware is not null) middleware.InnerHandler = handler;
+        return new HttpClient((HttpMessageHandler?)middleware ?? handler) { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
     }
 }

@@ -57,3 +57,40 @@ func TestReadStateMonotonicScopeAndVisibility(t *testing.T) {
 		t.Fatal("notification filtering crossed routes or retained hidden/read messages")
 	}
 }
+
+func TestManualUnreadCASAndReplay(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	initial, _ := db.ReadState(ctx)
+	send := func(row store.ReadPosition) store.ReadPosition {
+		t.Helper()
+		state, err := db.AdvanceReadState(ctx, store.ReadStateMutation{ServerID: initial.ServerID, Changes: []store.ReadPosition{row}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return state.Data[0]
+	}
+	read := send(store.ReadPosition{ChatGUID: "a", ReadThrough: 200})
+	yes, no := true, false
+	base := read.UnreadRevision
+	request := store.ReadPosition{ChatGUID: "a", MarkedUnread: &yes, BaseUnreadRevision: &base}
+	marked := send(request)
+	replay := send(request)
+	if !*marked.MarkedUnread || marked.ReadThrough != 200 || replay.UnreadRevision != marked.UnreadRevision {
+		t.Fatal("unread rewound or replayed")
+	}
+	next := marked.UnreadRevision
+	cleared := send(store.ReadPosition{ChatGUID: "a", ReadThrough: 200, MarkedUnread: &no, BaseUnreadRevision: &next})
+	stale := send(request)
+	if *cleared.MarkedUnread || *stale.MarkedUnread || stale.ReadThrough != 200 {
+		t.Fatal("old unread resurrected")
+	}
+	request.ReadThrough = 999
+	if row := send(request); row.ReadThrough != 200 {
+		t.Fatal("stale override advanced read position")
+	}
+}

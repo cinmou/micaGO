@@ -273,22 +273,6 @@
         }
       }
     },
-    "An open source project.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开源项目。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "開源專案。"
-          }
-        }
-      }
-    },
     "Android Client": {
       "localizations": {
         "zh-Hans": {

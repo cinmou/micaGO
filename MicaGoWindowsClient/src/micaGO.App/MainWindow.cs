@@ -48,6 +48,8 @@ public sealed class MainWindow : Window
         Closed += async (_, _) => await _shellPage.ShutdownAsync();
     }
 
+    internal Task StopRejectedSessionAsync() => _shellPage.ShutdownAsync();
+
     private UIElement BuildContent()
     {
         _windowRoot.RowDefinitions.Add(_titleBarRow);

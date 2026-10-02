@@ -730,14 +730,14 @@ func broadcastSendMatch(ctx context.Context, hub *realtime.Hub, tempGUID string,
 }
 
 func logSyncResult(result relaydb.SyncResult, force bool) {
-	if !force && result.MessagesSynced == 0 {
+	if !force && result.ChatsWritten == 0 && result.MessagesWritten == 0 && result.AttachmentsWritten == 0 {
 		return
 	}
 
 	log.Printf("sync mode: %s", result.Mode)
 	log.Printf("previous last_message_rowid: %d", result.PreviousLastMessageRowID)
 	log.Printf("synced chats: %d", result.ChatsSynced)
-	log.Printf("synced messages: %d", result.MessagesSynced)
+	log.Printf("scanned messages: %d, changed: %d, unchanged: %d", result.RowsScanned, result.MessagesWritten, result.MessagesUnchanged)
 	log.Printf("new last_message_rowid: %d", result.NewLastMessageRowID)
 	if result.LastMessageGUID != "" {
 		log.Printf("last synced message: guid=%s dateCreated=%d", result.LastMessageGUID, result.LastMessageDateCreated)
@@ -749,9 +749,6 @@ func dispatchNotifications(ctx context.Context, dispatcher *notify.Dispatcher, r
 		return
 	}
 	if len(result.NotificationEvents) == 0 {
-		if result.MessagesSynced > 0 {
-			log.Printf("notification dispatch: no events generated for %d synced message(s)", result.MessagesSynced)
-		}
 		return
 	}
 	devices, err := relay.ListDevices(ctx)

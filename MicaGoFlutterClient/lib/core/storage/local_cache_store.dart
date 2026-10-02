@@ -24,7 +24,8 @@ class LocalCacheStore {
   // v5: chats.last_seen_at + chats.latest_from_me drive the watermark-derived
   // unread dot (C43) — unread is computed from the data, not a fragile counter.
   // v6: route-qualified cache keys preserve distinct account timelines.
-  static const int _schemaVersion = 6;
+  // v7: synchronized manual unread marks remain separate from read watermarks.
+  static const int _schemaVersion = 7;
 
   Future<void> open() async {
     if (_db != null) return;
@@ -44,10 +45,17 @@ class LocalCacheStore {
         if (oldVersion < 5) {
           await _rebuildSchema(db);
         } else {
+          if (oldVersion < 7) {
+            await db.execute(
+              'ALTER TABLE chats ADD COLUMN marked_unread INTEGER NOT NULL DEFAULT 0',
+            );
+          }
           // Preserve cached history, pending sends and durable preference queues.
-          await db.execute(
-            "UPDATE messages SET key=chat_guid || char(31) || CASE WHEN guid IS NOT NULL AND guid!='' THEN 'guid:' || guid ELSE 'temp:' || temp_id END",
-          );
+          if (oldVersion < 6) {
+            await db.execute(
+              "UPDATE messages SET key=chat_guid || char(31) || CASE WHEN guid IS NOT NULL AND guid!='' THEN 'guid:' || guid ELSE 'temp:' || temp_id END",
+            );
+          }
         }
       },
       onDowngrade: (db, _, _) => _rebuildSchema(db),
@@ -74,6 +82,7 @@ CREATE TABLE chats (
   hidden INTEGER NOT NULL DEFAULT 0,
   always_visible INTEGER NOT NULL DEFAULT 0,
   pinned INTEGER NOT NULL DEFAULT 0,
+  marked_unread INTEGER NOT NULL DEFAULT 0,
   last_seen_at INTEGER NOT NULL DEFAULT 0,
   latest_from_me INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL
@@ -143,6 +152,7 @@ CREATE TABLE metadata (
     bool includeDebug = false,
     bool includeHidden = false,
   }) async {
+    if (!accessAllowed) return [];
     final db = await _ready();
     // Pinned chats sort to the top; within each group, newest activity first.
     final rows = await db.query(
@@ -151,6 +161,7 @@ CREATE TABLE metadata (
           'pinned DESC, COALESCE(latest_renderable_at, 0) DESC, updated_at DESC',
     );
     final hidden = await effectiveHiddenChatGuids();
+    if (!accessAllowed) return [];
     return rows
         .map(_chatFromRow)
         .where((chat) => includeDebug || chat.hasRenderableMessages)
@@ -208,6 +219,18 @@ ON CONFLICT(guid) DO UPDATE SET
       );
     }
     await batch.commit(noResult: true);
+    final state = await readMetadata('read_state.v1');
+    if (state != null) {
+      final decoded = jsonDecode(state) as Map<String, dynamic>;
+      final marks = <String, bool>{};
+      for (final field in ['marks', 'pendingMarks']) {
+        for (final entry in ((decoded[field] as Map?) ?? {}).entries) {
+          marks[entry.key as String] =
+              (entry.value as Map)['markedUnread'] == true;
+        }
+      }
+      await applyUnreadMarks(marks);
+    }
   }
 
   Future<void> removeChats(Iterable<String> guids) async {
@@ -274,6 +297,7 @@ ON CONFLICT(guid) DO UPDATE SET
       (await effectiveHiddenChatGuids()).length;
 
   Future<List<ChatSummary>> hiddenChats() async {
+    if (!accessAllowed) return [];
     final hidden = await effectiveHiddenChatGuids();
     final db = await _ready();
     final rows = await db.query(
@@ -283,6 +307,7 @@ ON CONFLICT(guid) DO UPDATE SET
     final known = {
       for (final row in rows) row['guid'] as String: _chatFromRow(row),
     };
+    if (!accessAllowed) return [];
     return [for (final guid in hidden) known[guid] ?? ChatSummary(guid: guid)];
   }
 
@@ -301,12 +326,15 @@ ON CONFLICT(guid) DO UPDATE SET
   }
 
   Future<int> hiddenMessageCount() async {
+    if (!accessAllowed) return 0;
     final db = await _ready();
     final r = await db.rawQuery('SELECT COUNT(*) AS n FROM hidden_messages');
+    if (!accessAllowed) return 0;
     return (r.first['n'] as int?) ?? 0;
   }
 
   Future<List<HiddenMessageRecord>> hiddenMessages() async {
+    if (!accessAllowed) return [];
     final db = await _ready();
     final rows = await db.rawQuery('''
 SELECT
@@ -319,6 +347,7 @@ LEFT JOIN messages m ON (m.chat_guid || char(31) || m.guid) = hm.guid OR (instr(
 LEFT JOIN chats c ON c.guid = m.chat_guid
 ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
 ''');
+    if (!accessAllowed) return [];
     return rows
         .map((row) {
           MessageModel? message;
@@ -372,8 +401,9 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
 
   Future<List<MessageModel>> listMessages(
     String chatGuid, {
-    int limit = 200,
+    int? limit = 200,
   }) async {
+    if (!accessAllowed) return [];
     final db = await _ready();
     // Exclude client-hidden messages (tombstoned in hidden_messages).
     final rows = await db.query(
@@ -384,24 +414,17 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
       orderBy: 'date_created DESC, updated_at DESC',
       limit: limit,
     );
+    if (!accessAllowed) return [];
     return rows.map(_messageFromRow).toList(growable: false);
   }
 
   /// Every locally persisted message for a chat, newest first. Details/media
   /// aggregation uses this instead of the thread's bounded in-memory window.
-  Future<List<MessageModel>> listAllMessages(String chatGuid) async {
-    final db = await _ready();
-    final rows = await db.query(
-      'messages',
-      where:
-          'chat_guid = ? AND (guid IS NULL OR guid NOT IN (SELECT guid FROM hidden_messages) AND (chat_guid || char(31) || guid) NOT IN (SELECT guid FROM hidden_messages))',
-      whereArgs: [chatGuid],
-      orderBy: 'date_created DESC, updated_at DESC',
-    );
-    return rows.map(_messageFromRow).toList(growable: false);
-  }
+  Future<List<MessageModel>> listAllMessages(String chatGuid) =>
+      listMessages(chatGuid, limit: null);
 
   Future<bool> hasMessage(String chatGuid, String guid) async {
+    if (!accessAllowed) return false;
     if (guid.isEmpty) return false;
     final db = await _ready();
     final rows = await db.query(
@@ -411,6 +434,7 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
       whereArgs: [chatGuid, guid],
       limit: 1,
     );
+    if (!accessAllowed) return false;
     return rows.isNotEmpty;
   }
 
@@ -572,6 +596,20 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     return positions;
   }
 
+  Future<void> applyUnreadMarks(Map<String, bool> marks) async {
+    final db = await _ready();
+    final batch = db.batch();
+    for (final entry in marks.entries) {
+      batch.update(
+        'chats',
+        {'marked_unread': entry.value ? 1 : 0},
+        where: 'guid=?',
+        whereArgs: [entry.key],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
   Future<void> applyReadPositions(Map<String, int> positions) async {
     final db = await _ready();
     final batch = db.batch();
@@ -610,6 +648,7 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
         {
           'json': jsonEncode(chat.toJson()),
           'last_seen_at': seenAt,
+          'marked_unread': 0,
           'updated_at': now,
         },
         where: 'guid = ?',
@@ -858,11 +897,7 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
   }
 
   Future<Database> _ready() async {
-    if (!accessAllowed)
-      throw StateError("Device credential rejected; cache access locked.");
     await open();
-    if (!accessAllowed)
-      throw StateError("Device credential rejected; cache access locked.");
     return _db!;
   }
 
@@ -907,13 +942,15 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     final latestFromMe = (row['latest_from_me'] as int? ?? 0) != 0;
     // C43: the unread dot is derived here from the data — the chat's latest
     // renderable message is newer than this client last saw, and not from me.
-    final hasUnread = latestAt > lastSeenAt && !latestFromMe;
+    final markedUnread = (row['marked_unread'] as int? ?? 0) != 0;
+    final hasUnread = markedUnread || (latestAt > lastSeenAt && !latestFromMe);
     // pinned/hasUnread/latestFromMe live in columns (survive server upserts);
     // fold them into the model.
     final merged = {
       ...raw,
       'isPinned': pinned,
       'hasUnread': hasUnread,
+      if (markedUnread) 'unreadCount': 0,
       'latestRenderableFromMe': latestFromMe,
       if (alwaysVisible && raw['hasRenderableMessages'] != true)
         'hasRenderableMessages': true,

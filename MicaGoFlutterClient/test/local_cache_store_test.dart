@@ -23,13 +23,60 @@ void main() {
     store = LocalCacheStore();
     await store.open();
     await store.clearAll();
+    await store.deleteMetadata('read_state.v1');
     await store.applyChatVisibility({});
+    await store.applyMessageVisibility({});
   });
 
   tearDown(() async {
     await store.clearAll();
     await store.close();
   });
+
+  test(
+    'manual unread survives summaries and read clears it without rewinding',
+    () async {
+      await store.writeMetadata(
+        'read_state.v1',
+        '{"serverId":"test","rows":{},"pending":{},"marks":{"route":{"markedUnread":true,"unreadRevision":1}},"pendingMarks":{}}',
+      );
+      await store.upsertChats([
+        const ChatSummary(guid: 'route', lastMessageAt: 200, unreadCount: 9),
+      ]);
+      var chat = (await store.listChats()).single;
+      expect(chat.hasUnread, true);
+      expect(chat.unreadCount, 0);
+      expect((await store.readPositions(['route']))['route'], 200);
+      await store.markChatsSeen(['route']);
+      chat = (await store.listChats()).single;
+      expect(chat.hasUnread, false);
+      expect((await store.readPositions(['route']))['route'], 200);
+      await store.deleteMetadata('read_state.v1');
+    },
+  );
+
+  test(
+    'revoked access hides history, details and hidden-message reads',
+    () async {
+      await store.upsertMessage(
+        'private',
+        MessageModel.fromJson({
+          'guid': 'secret-message',
+          'chatGuid': 'private',
+          'text': 'private record',
+        }),
+      );
+      expect(await store.listAllMessages('private'), isNotEmpty);
+      store.accessAllowed = false;
+      expect(await store.listChats(includeHidden: true), isEmpty);
+      expect(await store.hiddenChats(), isEmpty);
+      expect(await store.listMessages('private'), isEmpty);
+      expect(await store.listAllMessages('private'), isEmpty);
+      expect(await store.hiddenMessages(), isEmpty);
+      expect(await store.hasMessage('private', 'secret-message'), isFalse);
+      store.accessAllowed = true;
+    },
+  );
 
   test(
     'duplicate GUIDs keep cache detection and unsend route scoped',
@@ -86,13 +133,14 @@ void main() {
       final path = store.databasePath!;
       await store.close();
       final legacy = await sqlite.databaseFactoryFfi.openDatabase(path);
+      await legacy.execute('ALTER TABLE chats DROP COLUMN marked_unread');
       await legacy.execute(
         "UPDATE messages SET key=CASE WHEN guid!='' THEN 'guid:' || guid ELSE 'temp:' || temp_id END",
       );
       await legacy.execute('PRAGMA user_version=5');
       await legacy.close();
       await store.open();
-      expect(store.schemaVersion, 6);
+      expect(store.schemaVersion, 7);
       expect(await store.readMetadata('read_state.v1'), 'durable read queue');
       expect(
         await store.readMetadata('message_preferences.v1'),
