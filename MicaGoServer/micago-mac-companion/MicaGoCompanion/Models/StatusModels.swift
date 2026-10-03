@@ -274,6 +274,7 @@ struct DeviceInfo: Codable, Identifiable {
     }
 
     var isConnected: Bool { connected ?? false }
+    var awaitingRegistration: Bool { platform == "unknown" && lastSeenAt == nil && !isConnected }
 
     /// Human "last connected" string from `lastSeenAt`.
     var lastConnectedLabel: String {

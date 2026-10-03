@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.78.0}"
+VERSION="${VERSION:-0.87.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED_DATA="${DERIVED_DATA:-$COMPANION_DIR/build/DerivedData}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
@@ -30,7 +30,6 @@ DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-micaGO}"
 DMG_APP_NAME="${DMG_APP_NAME:-micaGO Companion.app}"
 DMG_WINDOW_WIDTH="${DMG_WINDOW_WIDTH:-}"
 DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-}"
-DMG_WINDOW_SCALE="${DMG_WINDOW_SCALE:-100}"
 
 mkdir -p "$BACKEND_DIR" "$ARTIFACT_DIR"
 
@@ -163,28 +162,26 @@ rm -rf "$DMG_STAGING_DIR"
 mkdir -p "$DMG_STAGING_DIR"
 
 ditto "$APP_PATH" "$DMG_STAGING_DIR/$DMG_APP_NAME"
-if [ ! -f "$DMG_BACKGROUND_PATH" ]; then
-  mkdir -p "$SWIFT_MODULE_CACHE_DIR"
-  CLANG_MODULE_CACHE_PATH="$SWIFT_MODULE_CACHE_DIR" \
-    swift "$SCRIPT_DIR/make-dmg-background.swift" "$DMG_BACKGROUND_PATH"
-fi
+mkdir -p "$SWIFT_MODULE_CACHE_DIR"
+CLANG_MODULE_CACHE_PATH="$SWIFT_MODULE_CACHE_DIR" \
+  swift "$SCRIPT_DIR/make-dmg-background.swift" "$DMG_BACKGROUND_PATH"
 
+# Finder layout uses points. Retina PNGs have twice as many pixels at 144
+# DPI; interpreting pixels as points doubles the window and misplaces icons.
 if [ -z "$DMG_WINDOW_WIDTH" ]; then
-  DMG_WINDOW_WIDTH="$(sips -g pixelWidth "$DMG_BACKGROUND_PATH" 2>/dev/null | awk '/pixelWidth/ {print $2}')"
+  DMG_WINDOW_WIDTH="$(sips -g pixelWidth -g dpiWidth "$DMG_BACKGROUND_PATH" 2>/dev/null | awk '/pixelWidth/ {pixels=$2} /dpiWidth/ {dpi=$2} END {if (dpi > 0) printf "%.0f", pixels * 72 / dpi; else print pixels}')"
 fi
 if [ -z "$DMG_WINDOW_HEIGHT" ]; then
-  DMG_WINDOW_HEIGHT="$(sips -g pixelHeight "$DMG_BACKGROUND_PATH" 2>/dev/null | awk '/pixelHeight/ {print $2}')"
+  DMG_WINDOW_HEIGHT="$(sips -g pixelHeight -g dpiHeight "$DMG_BACKGROUND_PATH" 2>/dev/null | awk '/pixelHeight/ {pixels=$2} /dpiHeight/ {dpi=$2} END {if (dpi > 0) printf "%.0f", pixels * 72 / dpi; else print pixels}')"
 fi
 DMG_WINDOW_WIDTH="${DMG_WINDOW_WIDTH:-660}"
 DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-420}"
-if [ "$DMG_WINDOW_SCALE" -gt 0 ] && [ "$DMG_WINDOW_SCALE" -ne 100 ]; then
-  DMG_WINDOW_WIDTH=$((DMG_WINDOW_WIDTH * DMG_WINDOW_SCALE / 100))
-  DMG_WINDOW_HEIGHT=$((DMG_WINDOW_HEIGHT * DMG_WINDOW_SCALE / 100))
-fi
-APP_ICON_X=$((DMG_WINDOW_WIDTH * 27 / 100))
-APP_ICON_Y=$((DMG_WINDOW_HEIGHT * 49 / 100))
-APPLICATIONS_ICON_X=$((DMG_WINDOW_WIDTH * 73 / 100))
+# Match the arrow's 216-point top-origin center in make-dmg-background.swift.
+APP_ICON_X=$((DMG_WINDOW_WIDTH * 180 / 660))
+APP_ICON_Y=$((DMG_WINDOW_HEIGHT * 216 / 420))
+APPLICATIONS_ICON_X=$((DMG_WINDOW_WIDTH * 480 / 660))
 APPLICATIONS_ICON_Y="$APP_ICON_Y"
+echo "Finder layout: ${DMG_WINDOW_WIDTH}x${DMG_WINDOW_HEIGHT} points; icons at ${APP_ICON_X},${APP_ICON_Y} and ${APPLICATIONS_ICON_X},${APPLICATIONS_ICON_Y}"
 
 create-dmg \
   --volname "$DMG_VOLUME_NAME" \

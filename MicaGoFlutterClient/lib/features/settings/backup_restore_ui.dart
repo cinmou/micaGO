@@ -8,30 +8,26 @@ import '../../core/l10n/app_localizations.dart';
 import '../../core/theme_controller.dart';
 import '../contacts/contacts_service.dart';
 import 'message_display_controller.dart';
-import 'settings_dialog_actions.dart';
+import '../../core/ui/app_dialog.dart';
 
 /// Shared "Backup & Restore" flows (C54) used by both Settings and the pairing
-/// screen. Export writes an unencrypted `.micagobak` zip (contains the bearer
-/// token — warned about); import parses, previews, confirms, applies, then
-/// reloads the app state and reconnects.
+/// screen. Backups contain settings, exclude device credentials and durable
+/// sync queues, and preserve the current installation when restored.
 
 Future<void> exportSettingsBackup(BuildContext context) async {
   final strings = MicaLocalizations.of(context);
   final app = context.read<AppController>();
-  // Warn: the backup carries the server token.
-  final proceed = await showDialog<bool>(
+  // Explain which settings the backup includes.
+  final proceed = await showAppDialog<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
+    builder: (ctx) => AppDialog(
       title: Text(MicaLocalizations.of(ctx).t('backup.exportTitle')),
       content: Text(MicaLocalizations.of(ctx).t('backup.tokenWarning')),
-      actions: [
-        SettingsDialogActionRow(
-          cancelLabel: MicaLocalizations.of(ctx).t('settings.cancel'),
-          onCancel: () => Navigator.pop(ctx, false),
-          confirmLabel: MicaLocalizations.of(ctx).t('backup.export'),
-          onConfirm: () => Navigator.pop(ctx, true),
-        ),
-      ],
+
+      cancelLabel: MicaLocalizations.of(ctx).t('settings.cancel'),
+      onCancel: () => Navigator.pop(ctx, false),
+      confirmLabel: MicaLocalizations.of(ctx).t('backup.export'),
+      onConfirm: () => Navigator.pop(ctx, true),
     ),
   );
   if (proceed != true || !context.mounted) return;
@@ -86,7 +82,7 @@ Future<bool> importSettingsBackup(BuildContext context) async {
     return false;
   }
 
-  final confirmed = await showDialog<bool>(
+  final confirmed = await showAppDialog<bool>(
     context: context,
     builder: (ctx) {
       final s = MicaLocalizations.of(ctx);
@@ -102,7 +98,7 @@ Future<bool> importSettingsBackup(BuildContext context) async {
         if (summary.hiddenMessageCount > 0)
           '${s.t('backup.itemHiddenMessages')} (${summary.hiddenMessageCount})',
       ];
-      return AlertDialog(
+      return AppDialog(
         title: Text(s.t('backup.restoreTitle')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -122,14 +118,11 @@ Future<bool> importSettingsBackup(BuildContext context) async {
             ),
           ],
         ),
-        actions: [
-          SettingsDialogActionRow(
-            cancelLabel: s.t('settings.cancel'),
-            onCancel: () => Navigator.pop(ctx, false),
-            confirmLabel: s.t('backup.restore'),
-            onConfirm: () => Navigator.pop(ctx, true),
-          ),
-        ],
+
+        cancelLabel: s.t('settings.cancel'),
+        onCancel: () => Navigator.pop(ctx, false),
+        confirmLabel: s.t('backup.restore'),
+        onConfirm: () => Navigator.pop(ctx, true),
       );
     },
   );

@@ -39,7 +39,7 @@ func (h *Handlers) GetMessagePreferences(w http.ResponseWriter, r *http.Request)
 	}
 	result, err := h.messagePreferences.MessagePreferences(r.Context(), since)
 	if err != nil {
-		h.logInternal("chat preferences", err)
+		h.logInternal("message preferences", err)
 		writeInternalError(w)
 		return
 	}
@@ -89,7 +89,7 @@ func (h *Handlers) PatchMessagePreferences(w http.ResponseWriter, r *http.Reques
 	seen := map[string]bool{}
 	for _, change := range request.Changes {
 		if strings.TrimSpace(change.MessageKey) == "" || len(change.MessageKey) > 2048 || len(strings.Split(change.MessageKey, "\x1f")) != 2 || strings.HasPrefix(change.MessageKey, "\x1f") || strings.HasSuffix(change.MessageKey, "\x1f") || change.BaseRevision < 0 || seen[change.MessageKey] {
-			writeBadRequest(w, "invalid or duplicate chat preference")
+			writeBadRequest(w, "invalid or duplicate message preference")
 			return
 		}
 		seen[change.MessageKey] = true
@@ -106,7 +106,7 @@ func (h *Handlers) PatchMessagePreferences(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusConflict, map[string]any{"code": "preference_mutation_reused"})
 		return
 	case err != nil:
-		h.logInternal("update chat preferences", err)
+		h.logInternal("update message preferences", err)
 		writeInternalError(w)
 		return
 	}

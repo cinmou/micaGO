@@ -365,8 +365,8 @@ private struct ChatsCard: View {
     }
 
     private func ruleStatus(forChat guid: String) -> String {
-        guard let rule = model.storedRule(kind: "chat", value: guid) else { return String(localized: "default policy") }
-        return String(localized: "sync: \(rule.syncMode)")
+        guard let rule = model.storedRule(kind: "chat", value: guid) else { return L10n.localized( "default policy") }
+        return L10n.localized( "sync: \(rule.syncMode)")
     }
 }
 

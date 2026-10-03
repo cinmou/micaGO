@@ -15,7 +15,6 @@ import '../../core/ui/keyboard_insets.dart';
 import '../chats/chats_pane.dart';
 import '../chats/avatar.dart';
 import '../settings/settings_screen.dart';
-import 'connection_notice_host.dart';
 
 /// The post-pairing app shell: chat-first, with Settings as a secondary page.
 class HomeShell extends StatefulWidget {
@@ -156,6 +155,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _push?.dispose();
     _app?.pendingOpenChat.removeListener(_onOpenChatRequested);
     unawaited(_foregroundAlertSub?.cancel());
     _dismissForegroundAlert();
@@ -191,12 +191,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         : inkWash
         ? scheme.surface
         : _homeAccent1_50(scheme);
-    final chats = ConnectionNoticeHost(
-      child: ChatsPane(
-        searchRequests: _searchRequests,
-        onSearchRequested: () => _searchRequests.value++,
-        onOpenSettings: _openSettings,
-      ),
+    final chats = ChatsPane(
+      searchRequests: _searchRequests,
+      onSearchRequested: () => _searchRequests.value++,
+      onOpenSettings: _openSettings,
     );
     return KeyboardInsetGuard(
       child: Scaffold(

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart' as sqlite;
 import 'package:mica_go/features/chats/message_display.dart';
 import 'package:mica_go/features/chats/message_render.dart';
 import 'package:mica_go/core/storage/local_cache_store.dart';
@@ -22,13 +23,148 @@ void main() {
     store = LocalCacheStore();
     await store.open();
     await store.clearAll();
+    await store.deleteMetadata('read_state.v1');
     await store.applyChatVisibility({});
+    await store.applyMessageVisibility({});
   });
 
   tearDown(() async {
     await store.clearAll();
     await store.close();
   });
+
+  test(
+    'manual unread survives summaries and read clears it without rewinding',
+    () async {
+      await store.writeMetadata(
+        'read_state.v1',
+        '{"serverId":"test","rows":{},"pending":{},"marks":{"route":{"markedUnread":true,"unreadRevision":1}},"pendingMarks":{}}',
+      );
+      await store.upsertChats([
+        const ChatSummary(guid: 'route', lastMessageAt: 200, unreadCount: 9),
+      ]);
+      var chat = (await store.listChats()).single;
+      expect(chat.hasUnread, true);
+      expect(chat.unreadCount, 0);
+      expect((await store.readPositions(['route']))['route'], 200);
+      await store.markChatsSeen(['route']);
+      chat = (await store.listChats()).single;
+      expect(chat.hasUnread, false);
+      expect((await store.readPositions(['route']))['route'], 200);
+      await store.deleteMetadata('read_state.v1');
+    },
+  );
+
+  test(
+    'revoked access hides history, details and hidden-message reads',
+    () async {
+      await store.upsertMessage(
+        'private',
+        MessageModel.fromJson({
+          'guid': 'secret-message',
+          'chatGuid': 'private',
+          'text': 'private record',
+        }),
+      );
+      expect(await store.listAllMessages('private'), isNotEmpty);
+      store.accessAllowed = false;
+      expect(await store.listChats(includeHidden: true), isEmpty);
+      expect(await store.hiddenChats(), isEmpty);
+      expect(await store.listMessages('private'), isEmpty);
+      expect(await store.listAllMessages('private'), isEmpty);
+      expect(await store.hiddenMessages(), isEmpty);
+      expect(await store.hasMessage('private', 'secret-message'), isFalse);
+      store.accessAllowed = true;
+    },
+  );
+
+  test(
+    'duplicate GUIDs keep cache detection and unsend route scoped',
+    () async {
+      final a = MessageModel.fromJson({
+        'guid': 'shared',
+        'chatGuid': 'a',
+        'text': 'route A',
+        'dateCreated': 10,
+      });
+      final b = MessageModel.fromJson({
+        'guid': 'shared',
+        'chatGuid': 'b',
+        'text': 'route B',
+        'dateCreated': 20,
+      });
+      await store.upsertMessage('a', a);
+      expect(await store.hasMessage('a', 'shared'), isTrue);
+      expect(await store.hasMessage('b', 'shared'), isFalse);
+      await store.upsertMessage('b', b);
+      await store.applyUnsend('b', 'shared', 30);
+      expect((await store.listMessages('a')).single.text, 'route A');
+      final retracted = (await store.listMessages('b')).single;
+      expect(retracted.isRetracted, isTrue);
+      expect(retracted.dateCreated, 20);
+      await store.applyUnsend('missing', 'shared', 40);
+      expect(await store.listMessages('missing'), isEmpty);
+    },
+  );
+
+  test(
+    'v5 upgrade retains history, hidden records and durable outboxes',
+    () async {
+      await store.upsertMessage(
+        'a',
+        MessageModel.fromJson({
+          'guid': 'shared',
+          'chatGuid': 'a',
+          'text': 'old history',
+          'dateCreated': 10,
+        }),
+      );
+      await store.addPending(
+        'a',
+        MessageModel.optimistic(
+          tempId: 'queued',
+          text: 'not sent yet',
+          dateCreated: 11,
+        ),
+      );
+      await store.applyMessageVisibility({'a\u001fshared'});
+      await store.writeMetadata('read_state.v1', 'durable read queue');
+      await store.writeMetadata('message_preferences.v1', 'durable hide queue');
+      final path = store.databasePath!;
+      await store.close();
+      final legacy = await sqlite.databaseFactoryFfi.openDatabase(path);
+      await legacy.execute('ALTER TABLE chats DROP COLUMN marked_unread');
+      await legacy.execute(
+        "UPDATE messages SET key=CASE WHEN guid!='' THEN 'guid:' || guid ELSE 'temp:' || temp_id END",
+      );
+      await legacy.execute('PRAGMA user_version=5');
+      await legacy.close();
+      await store.open();
+      expect(store.schemaVersion, 7);
+      expect(await store.readMetadata('read_state.v1'), 'durable read queue');
+      expect(
+        await store.readMetadata('message_preferences.v1'),
+        'durable hide queue',
+      );
+      expect((await store.listMessages('a')).single.tempId, 'queued');
+      await store.deletePending('queued');
+      await store.applyMessageVisibility({});
+      expect((await store.listMessages('a')).single.text, 'old history');
+      await store.upsertMessage(
+        'b',
+        MessageModel.fromJson({
+          'guid': 'shared',
+          'chatGuid': 'b',
+          'text': 'new route',
+          'dateCreated': 20,
+        }),
+      );
+      expect((await store.listMessages('a')).single.text, 'old history');
+      expect((await store.listMessages('b')).single.text, 'new route');
+      await store.deleteMetadata('read_state.v1');
+      await store.deleteMetadata('message_preferences.v1');
+    },
+  );
 
   test('cold start returns cached chats and messages', () async {
     await store.upsertChats([
@@ -39,7 +175,7 @@ void main() {
         lastMessagePreview: 'hello',
       ),
     ]);
-    await store.replaceServerPage('chat-1', [
+    await store.mergeServerPage('chat-1', [
       MessageModel.fromJson({
         'guid': 'm1',
         'chatGuid': 'chat-1',
@@ -56,7 +192,7 @@ void main() {
   });
 
   test('merged pages preserve all cached message history', () async {
-    await store.replaceServerPage('chat-1', [
+    await store.mergeServerPage('chat-1', [
       MessageModel.fromJson({
         'guid': 'older',
         'chatGuid': 'chat-1',
@@ -78,7 +214,7 @@ void main() {
   });
 
   test('drops cached opaque URL preview payload attachments', () async {
-    await store.replaceServerPage('chat-1', [
+    await store.mergeServerPage('chat-1', [
       MessageModel.fromJson({
         'guid': 'm1',
         'chatGuid': 'chat-1',
@@ -114,7 +250,7 @@ void main() {
     await store.upsertChats([
       const ChatSummary(guid: 'chat-1', hasRenderableMessages: true),
     ]);
-    await store.replaceServerPage('chat-1', [
+    await store.mergeServerPage('chat-1', [
       MessageModel.fromJson({
         'guid': 'm1',
         'chatGuid': 'chat-1',
@@ -359,7 +495,7 @@ void main() {
     await store.upsertChats([
       const ChatSummary(guid: 'test-chat', lastMessagePreview: 'old'),
     ]);
-    await store.replaceServerPage('test-chat', [
+    await store.mergeServerPage('test-chat', [
       MessageModel.fromJson({
         'guid': 'm1',
         'chatGuid': 'test-chat',
@@ -396,7 +532,7 @@ void main() {
 
   test('hidden message is filtered from the thread and restorable', () async {
     await store.upsertChats([const ChatSummary(guid: 'c1', lastMessageAt: 1)]);
-    await store.replaceServerPage('c1', [
+    await store.mergeServerPage('c1', [
       MessageModel.fromJson({
         'guid': 'a',
         'chatGuid': 'c1',
@@ -416,7 +552,7 @@ void main() {
     expect(await store.hiddenMessageCount(), 1);
 
     // A re-sync (delete + reinsert) must not resurrect the hidden message.
-    await store.replaceServerPage('c1', [
+    await store.mergeServerPage('c1', [
       MessageModel.fromJson({
         'guid': 'a',
         'chatGuid': 'c1',
@@ -432,13 +568,16 @@ void main() {
     ]);
     expect((await store.listMessages('c1')).length, 1);
 
-    expect(await store.releaseHiddenMessages(['b']), 1);
+    await store.applyMessageVisibility({});
     expect((await store.listMessages('c1')).length, 2);
   });
 
   test('route-qualified hidden message survives refresh and restore', () async {
     final message = MessageModel.fromJson({
-      'guid': 'same', 'chatGuid': 'route-a', 'text': 'hello', 'dateCreated': 100,
+      'guid': 'same',
+      'chatGuid': 'route-a',
+      'text': 'hello',
+      'dateCreated': 100,
     });
     await store.mergeServerPage('route-a', [message]);
     await store.applyMessageVisibility({'route-b\u001fsame'});
@@ -615,7 +754,7 @@ void main() {
     // C12: the local cache is the renderable timeline only. Even if a debug-only
     // row reaches the client, it must not be stored in (or returned from) the
     // normal thread — the raw timeline lives behind the server Inspector API.
-    await store.replaceServerPage('chat-1', [
+    await store.mergeServerPage('chat-1', [
       MessageModel.fromJson({
         'guid': 'real',
         'chatGuid': 'chat-1',

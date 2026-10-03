@@ -17,6 +17,7 @@ public sealed class NotificationService : IDisposable
 
     /// <summary>Raised (on a background thread) when the user clicks a message notification.</summary>
     public event EventHandler<string>? ChatActivated;
+    public event EventHandler<(string ChatId, string DeviceId, string Text)>? ReplyRequested;
 
     public bool Register()
     {
@@ -56,13 +57,19 @@ public sealed class NotificationService : IDisposable
     {
         if (args.Arguments.TryGetValue("chat", out var chatId) && !string.IsNullOrWhiteSpace(chatId))
         {
+            if (args.Arguments.TryGetValue("action", out var action) && action == "reply")
+            {
+                if (args.Arguments.TryGetValue("device", out var device) && args.UserInput.TryGetValue("replyText", out var text) && !string.IsNullOrWhiteSpace(text))
+                    ReplyRequested?.Invoke(this, (chatId, device, text));
+                return;
+            }
             ChatActivated?.Invoke(this, chatId);
         }
     }
 
     public void Show(string title, string body, string chatId, string? avatarPath = null)
     {
-        if (!Enabled) return;
+        if (!Enabled || AppServices.Current.Connection.TokenRejected) return;
         if (!Register() || _manager is null) return;
         var visibleBody = ShowMessageText ? body : HiddenBodyText;
         try
@@ -98,7 +105,37 @@ public sealed class NotificationService : IDisposable
             .AddArgument("chat", chatId);
         if (avatarUri is not null)
             builder.SetAppLogoOverride(avatarUri, AppNotificationImageCrop.Circle, title);
-        return builder.BuildNotification();
+        if (AppServices.Current.Connection.Profile?.DeviceId is {Length:>0} device)
+        {
+            var l=AppServices.Current.Localization;
+            builder.AddTextBox("replyText", l["message"], string.Empty)
+                .AddButton(new AppNotificationButton(l["notificationReply"])
+                    .AddArgument("action", "reply").AddArgument("chat", chatId).AddArgument("device", device).SetInputId("replyText"));
+        }
+        var notification=builder.BuildNotification();
+        notification.Group=ChatNotificationGroup(chatId);
+        return notification;
+    }
+
+    public void ShowReplyStatus(string chatId, string message)
+    {
+        if (!Register() || _manager is null) return;
+        try { _manager.Show(new AppNotificationBuilder().AddText("micaGO").AddText(message).AddArgument("chat", chatId).BuildNotification()); }
+        catch { }
+    }
+
+    private static string ChatNotificationGroup(string chatId)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(chatId)))[..16];
+
+    public async Task DismissAllAsync()
+    {
+        if (_manager is null) return;
+        try { await _manager.RemoveAllAsync(); } catch { }
+    }
+
+    public async Task DismissChatAsync(string chatId) {
+        if(_manager is null)return;
+        try {await _manager.RemoveByGroupAsync(ChatNotificationGroup(chatId));}
+        catch(Exception error) {System.Diagnostics.Debug.WriteLine($"[Notifications] dismissal failed: {error.GetType().Name}");}
     }
 
     private static bool TryGetAvatarUri(string? avatarPath, out Uri? avatarUri)

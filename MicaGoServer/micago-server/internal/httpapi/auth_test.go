@@ -104,3 +104,14 @@ func TestServerInfoDoesNotExposeToken(t *testing.T) {
 		t.Fatalf("response leaked token: %s", rec.Body.String())
 	}
 }
+
+func TestEmptyConfiguredTokenNeverAuthenticates(t *testing.T) {
+	auth := AuthConfig{Enabled: true}
+	for _, target := range []string{"/ws", "/ws?token="} {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		r.Header.Set("Authorization", "Bearer ")
+		if auth.ValidateRequest(r) || auth.ValidateWebSocketRequest(r) {
+			t.Fatal("empty configured token authenticated")
+		}
+	}
+}

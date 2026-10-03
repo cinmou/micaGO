@@ -27,6 +27,7 @@
     <Content Include="Assets\TwemojiFlags\*.svg" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\TwemojiEmoji17\*.svg" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\ZXING-LICENSE.txt" Link="ZXING-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\TWEMOJI-LICENSE-GRAPHICS.txt" Link="TWEMOJI-LICENSE-GRAPHICS.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

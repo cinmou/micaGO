@@ -39,8 +39,8 @@ check(
     "IPv6 any bind maps to loopback for local control"
 )
 check(
-    ConfigReader.controlAddress("192.168.1.5:3000") == "192.168.1.5:3000",
-    "specific bind address is preserved"
+    ConfigReader.controlAddress("192.168.1.5:3000") == "127.0.0.1:3000",
+    "specific LAN bind still uses local control"
 )
 
 // C18 crash regression: Go's host-less listen syntax must never produce a
@@ -63,11 +63,11 @@ check(
     "bare IPv6 any '::' maps to loopback with default port"
 )
 check(
-    ConfigReader.controlHostPort("[::1]:8080") == ("::1", 8080),
-    "bracketed IPv6 host keeps host and port"
+    ConfigReader.controlHostPort("[::1]:8080") == ("127.0.0.1", 8080),
+    "bracketed IPv6 bind uses local control and keeps port"
 )
 check(
-    ConfigReader.controlAddress("192.168.1.5") == "192.168.1.5:3000",
+    ConfigReader.controlAddress("192.168.1.5") == "127.0.0.1:3000",
     "missing port defaults to 3000"
 )
 check(

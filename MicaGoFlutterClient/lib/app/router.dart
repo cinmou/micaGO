@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../core/app_controller.dart';
 import '../features/connection/connection_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/home/connection_notice_host.dart';
 import '../features/pairing/qr_pairing_screen.dart';
 
 /// Route names/paths for the app.
@@ -21,7 +22,7 @@ GoRouter createRouter(AppController app) {
     refreshListenable: app,
     redirect: (context, state) {
       // Wait until persisted state is loaded to avoid a flash of the wrong page.
-      if (!app.bootstrapped) return null;
+      if (!app.bootstrapped && !app.tokenRejected.value) return null;
       final loc = state.matchedLocation;
       final onboarding = loc == Routes.connection || loc == Routes.pair;
       if (!app.hasProfile && !onboarding) {
@@ -30,17 +31,22 @@ GoRouter createRouter(AppController app) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: Routes.connection,
-        builder: (context, state) => const ConnectionScreen(),
-      ),
-      GoRoute(
-        path: Routes.pair,
-        builder: (context, state) => const QrPairingScreen(),
-      ),
-      GoRoute(
-        path: Routes.home,
-        builder: (context, state) => const HomeShell(),
+      ShellRoute(
+        builder: (context, state, child) => ConnectionNoticeHost(child: child),
+        routes: [
+          GoRoute(
+            path: Routes.connection,
+            builder: (context, state) => const ConnectionScreen(),
+          ),
+          GoRoute(
+            path: Routes.pair,
+            builder: (context, state) => const QrPairingScreen(),
+          ),
+          GoRoute(
+            path: Routes.home,
+            builder: (context, state) => const HomeShell(),
+          ),
+        ],
       ),
     ],
   );

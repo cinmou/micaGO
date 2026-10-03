@@ -153,7 +153,8 @@ func TestCheckPublicURLReachableAndAuth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/auth/check" &&
 			r.Header.Get("Authorization") == "Bearer "+token {
-			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
 			return
 		}
 		w.WriteHeader(http.StatusUnauthorized)
@@ -269,5 +270,51 @@ func TestBuildServerURLsLanOnlyHasNoPublic(t *testing.T) {
 	}
 	if resp.ConnectionRevision == "" {
 		t.Fatal("LAN-only config should still have a connection revision")
+	}
+}
+
+func TestPublicURLProbeNeverFollowsRedirect(t *testing.T) {
+	redirected := false
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected = true; w.WriteHeader(200) }))
+	defer destination.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+	controller := NewNetworkController(config.Config{PublicBaseURL: source.URL, VerifyTLS: true, AuthToken: "probe-test-token"})
+	result := controller.Check(context.Background())
+	if redirected || result.OK || result.AuthOK || result.Status != http.StatusTemporaryRedirect {
+		t.Fatalf("redirect probe result=%+v followed=%t", result, redirected)
+	}
+}
+
+func TestPublicURLRemovalPropagatesToDiscovery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("network: {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	controller := NewNetworkController(config.Config{ConfigPath: path, PublicBaseURL: "https://old.example", VerifyTLS: true})
+	calls := 0
+	controller.SetOnChange(func(_ context.Context, url string) {
+		calls++
+		if url != "" {
+			t.Fatalf("expected cleared URL")
+		}
+	})
+	if err := controller.SetPublicURL("", true, "auto"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal("removed public URL was not propagated")
+	}
+}
+
+func TestPublicURLProbeRejectsGenericSuccessPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>generic success</html>")) }))
+	defer server.Close()
+	controller := NewNetworkController(config.Config{PublicBaseURL: server.URL, VerifyTLS: true, AuthToken: "probe-test-token"})
+	result := controller.Check(context.Background())
+	if result.OK || result.AuthOK || !result.Reachable {
+		t.Fatalf("generic page passed authentication: %+v", result)
 	}
 }

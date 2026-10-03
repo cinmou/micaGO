@@ -1,3 +1,4 @@
+import '../../core/ui/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,10 +9,9 @@ import '../../core/l10n/app_localizations.dart';
 /// Message info sheet with a redacted diagnostic payload. Never shows the
 /// bearer token or credentials (see [messageDebugMap] / [redactJson]).
 Future<void> showMessageDebugSheet(BuildContext context, MessageModel m) {
-  return showModalBottomSheet<void>(
+  return showAppBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    showDragHandle: true,
     builder: (context) => _MessageDebugSheet(message: m),
   );
 }

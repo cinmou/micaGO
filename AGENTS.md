@@ -13,7 +13,7 @@ Four components:
 
 ## Important rules
 
-- Current product version is `0.78.0` (codename Muscovite) across Flutter (`+78`), Go, macOS Companion, and Windows; version-comparison fixtures and historical release notes retain their original versions.
+- Current product version is `0.87.0` (codename Muscovite) across Flutter (`+87`), Go, macOS Companion, and Windows; version-comparison fixtures and historical release notes retain their original versions.
 
 - **Never commit unless explicitly asked.** Branch first if on `main`.
 - **Never log, commit, or expose** bearer tokens, push tokens, or service-account paths. The Companion redacts tokens in captured server stdout (`BackendController.redact`).
@@ -21,11 +21,26 @@ Four components:
 - **Firebase, keep-alive, and IMCore message actions are all optional and off by default.** Don't word docs/UI as if they're required or guaranteed.
 - Keep final logs clean (debug-guarded only).
 - Companion menu-bar icon must use **template rendering** (no hard-coded colors) so it adapts to light/dark menu bars.
+- DMG Finder coordinates use points: derive background size from pixels × 72 / DPI, regenerate the background each package, and visually check the mounted DMG before notarizing. Keep using `scripts/package-dmg.sh` and `create-dmg`.
 - **Before debugging sync, check the running backend binary's version against source** — a stale binary is a common false lead. Rebuild via `scripts/build-backend.sh`.
 
 ## Known UI/state notes
 
+- Notification inline replies use Android RemoteInput through the existing local-notifications plugin and Windows AppNotificationBuilder. Payloads carry the chat route and device ID, never credentials; old-device notifications cannot send. Replies are ordinary new messages, and uncertain delivery is never automatically retried.
+- Flutter foreground recovery reconnects before delta catch-up. History requests capture a foreground generation so late pre-lock network failures stay silent; an interrupted history load retries when the foreground connection recovers. Authentication rejection remains terminal.
+- Website colors follow `prefers-color-scheme`; product footers use the fixed phrase `made with ♥️ for everyone` in every locale.
+
+
+- Android baseline is API 24 (Android 7.0) with the current Flutter engine. Credential persistence allows 30 seconds for slow Keystore initialization; bootstrap profile loading allows 35 seconds. If secure save fails after redemption, retry reuses the already-issued credential in memory. Profiles never fall back to plaintext preferences. If both RSA/AES Keystore probes fail, Android pairing offers explicit software-storage opt-in before invitation redemption. Tink AES-GCM stores a random keyset plus ciphertext atomically in `noBackupFilesDir`; this protects against ordinary app access, not root. Normal devices keep Keystore. Both credential stores clear on disconnect/revocation; selectors never fall back to older credentials. The local Flutter plugin is auto-registered for background engines too. Companion distinguishes issued-but-unregistered devices as awaiting connection.
+
+- Pairing QR lifecycle: local-admin `POST /api/pairing/status` returns active/used/expired/invalidated; redemption atomically marks the hashed invitation used. Companion polls status every 3 seconds and uses a one-second TimelineView for countdown/expiry; used/expired QR codes are hidden and only manual creation replaces them.
+
+- Flutter secure endpoints use `isSecureEndpointPair`/`transportPort`: Dart `Uri.port` returns 0 for implicit WSS ports; compare via the corresponding HTTPS scheme so default 443 works in pairing, endpoint refresh and TLS pinning.
+
+- **0.84 security:** QR/JSON v4 contains a 5-minute, single-use invitation and the SHA-256 TLS certificate pin, never the local administrator token. Remote devices receive independent credentials stored hashed in relay.db; deleting a device revokes credentials and closes its authenticated sockets. Legacy pairing must be repeated; keep caches and outboxes. Plain HTTP is loopback-only for Companion/local proxies; client TLS listens on configured port + 1 (default 3001). LAN clients pin the persisted certificate, public HTTPS uses system trust. Never restore credential fallback to plaintext preferences or automatic HTTP downgrade. Native Flutter audio/video download through the authenticated pinned API before playback.
+
 - **Single-message visibility sync:** `/api/message-preferences` uses `messageKey = chat GUID + U+001F + server message GUID`, the shared persistent server identity, revision-checked atomic batches and idempotent mutation IDs. Windows/Flutter keep durable server-scoped outboxes, explicit legacy import/conflict actions, and local tombstone mirrors; cache clearing preserves queues, backups exclude queues. Visibility never changes ingestion/history cursors. Windows must use `Message.ServerKey`, never the optimistic `TimelineKey`, for synchronized hiding. Requires rebuilding the Mac backend. Tests: Go `message_preferences_test.go`, Flutter `message_preference_sync_test.dart`/`message_visibility_thread_test.dart`, Windows `MessagePreferenceSyncTests.cs`.
+- **Manual unread:** `/api/read-state` synchronizes a separate `markedUnread` flag with per-route compare-and-set revisions; watermarks remain monotonic. Flutter left swipe hides with five-second Undo, right swipe marks read, and the long-press action toggles read/unread. Windows consumes the flag and clears it on viewing. Backend and clients must be updated together.
 - **Windows unread parity:** `ChatUnreadSemantics` matches Flutter's hasUnread-first badge policy (muted → dot, positive count → number, otherwise dot). Unread state aggregates per route for merged contacts; outgoing messages clear only their own route. Initial history starts seen and SQLite read watermarks advance monotonically. Ordinary message bodies use 14/20-DIP text with symmetric 12/8-DIP padding and explicit block line height.
 
 - **Windows Chinese typography:** `LocalizationService.ApplyTypography` applies the selected XAML language (`zh-CN`/`zh-TW`/`en-US`) and Segoe UI with explicit YaHei UI/JhengHei UI fallback to both native hosts. Plain/rich text use `ContentControlThemeFontFamily`; language changes update existing hosts. Keep icon fonts and bundled emoji rendering separate.
@@ -50,6 +65,7 @@ Four components:
 - **Windows optimistic rows/media:** `Message.PresentationKey` survives local→server confirmation. Attachment paths stay memory-only for retry; upload progress updates the same row. Bubble previews use a 64-item LRU and 900px decode bound; details uses smaller 360px previews.
 - **Windows sync/page state:** `ShellViewModel` cancels the prior selection request, pages messages in 50-row chunks, stores `read.watermark.<chat>`, and persists unfinished attachment tasks in `pending_uploads`. Realtime events update chat preview/order/unread and suppress notifications for the open chat.
 - **Windows local notifications:** the unpackaged self-contained Windows App SDK 2.2 build must carry `Microsoft.WindowsAppRuntime.Insights.Resource.dll`; without it `AppNotificationManager.IsSupported()` returns true but `Register()` fails with `0x8007007E`. `micaGO.App.csproj` extracts the architecture-matched DLL from the official Runtime framework MSIX after every app build. Load notification preferences before realtime starts, keep the initial history delta silent, and retain registration HRESULT/state for diagnosis. Toasts use the stable local contact/sender photo as a circular app-logo override when Windows supports its format; an invalid image falls back to the normal notification so delivery is never lost.
+- **Windows pairing/auth parity:** optional camera scanning uses native `MediaCapture`/`MediaFrameReader` and ZXing.Net; QR image import shares `PairingQrDecoder`. Neither path redeems until Connect is pressed; JSON stays available. Credential Manager preflight runs before redemption. An authenticated 401 is terminal for one `CredentialSession`, suppresses late replies/reconnect, removes the saved profile, closes the chat/media UI and clears cached history/media before re-pairing; unrelated 403 action denials are not credential rejection. No sticky auth banner. Manual read/unread uses the existing route-scoped CAS outbox; chat hiding offers one native InfoBar undo for five seconds. Native camera/XAML runtime needs Windows verification.
 - **Windows device presence:** `DevicePresenceService` mirrors Flutter: after each successful restore/pair it registers one stable random `windows-*` identity as `platform=windows`, `clientType=native`, `pushProvider=none`, then heartbeats every 30 seconds. The ID is stored in LocalAppData outside SQLite so cache clearing/settings backup cannot duplicate a device. Registration and heartbeat failures are best-effort and retry without blocking connection startup.
 - **Windows thread scrolling/composer:** older 50-row pages load automatically when the native message `ScrollViewer` approaches the top; `ShellPage` preserves the first visible presentation key/pixel anchor and must not restore a manual “load earlier” button. Optimistic send/confirmation collection rebuilds keep the bottom anchored and suppress the top-pagination trigger so sending never jumps to history. The message list disables horizontal scrolling to prevent a transient gray scrollbar while realizing a new row; send-to-bottom realizes the final container, waits for layout, then corrects only a residual offset. The message canvas extends behind the bottom-aligned floating composer with bottom content padding. The outer Mica border owns all composer chrome; the native `TextBox` keeps selection/IME/text paste while its focused background, border and underline stay locally transparent. `PreviewKeyDown` makes Enter send reliably and Shift+Enter inserts a line break. Clipboard bitmap/storage-item paste reuses `SendAttachmentsAsync`, including virtual-file temp copies and bitmap-to-PNG transcoding. The composer follows Unigram's attachment | text | system emoji | contextual voice/send layout; its 48-DIP action slots use circular transparent 40-DIP native button surfaces, and the right action changes from voice to send only when visible text exists.
 - **Windows contacts/routes:** users can select multiple `.vcf` contact cards locally; `FolkerKinzel.VCards` is the single parser, and RFC UID (or a persisted fallback id reused through existing identities) supplies stable `contact_id`. Embedded PHOTO data is content-hash cached under LocalAppData and used by chat/header/group avatars. Resolved 1:1 chats merge by `contact_id`, never display name; merge/send-route/mute/pin preferences use that stable key. Sends use the saved route, otherwise a sendable iMessage route, while the newest route still owns the preview. Clearing contacts deletes vCard/legacy CSV rows and cached avatar files only. Do not restore the hand-written vCard parser, title-keyed merging, Google OAuth/People sync, or CSV import UI.
@@ -61,6 +77,8 @@ Four components:
 - `serverDisplayState(process:reachable:)` (`BackendController.swift`) is the single source of truth for combined process+reachability state; both the menu-bar icon and the dashboard pill derive from it.
 - Sync Control loads four endpoints (`sync/rules`, `sync/settings`, `chats`, `messages/recent`). A failure in any one is what users see as a page error.
 - Contacts permission on macOS can only be prompted by the app once (`.notDetermined`); after that it's System-Settings-only. The UI must not offer a dead "Allow" button.
+
+- **Flutter modal UI:** `core/ui/app_dialog.dart` owns the Material dialog surface, responsive outlined/filled actions, input controller lifetime and bottom-sheet route defaults. Pairing QR/JSON flows share `pairing_dialogs.dart`; do not restore settings-only action rows or per-screen AlertDialog layouts. Authentication notices retain their owned DialogRoute and live rejection priority.
 
 ## Localization (zh-Hans + zh-Hant)
 
@@ -74,8 +92,7 @@ Four components:
   Background-isolate notification strings (push_service) have no context, so they
   aren't localized.
 - **Companion:** `Localization.swift` (`L10n.tr`) covers the sidebar + menu
-  (en/zhHans/zhHant). Most dashboard body text is still hardcoded English (large
-  follow-up).
+  (en/zhHans/zhHant). App language is persisted in `appLanguage` (system/en/zh-Hans/zh-Hant). SwiftUI locale and `L10n.localized` select the same string catalog; use the helper for Foundation strings so manual language changes apply consistently.
 - **Docs:** `README.md` + `README.zh-Hans.md` / `.zh-Hant.md` and `docs/index.md` +
   `index.zh-Hans.md` / `.zh-Hant.md` and `docs/getting-started.*` — each with a
   language switcher. C38 restyled the README + docs hub in a hero / language-switcher
@@ -140,8 +157,7 @@ Four components:
   (`AppController.isMergedDisplayEnabled`, SecureStore
   `micago.merged_display.v1`) shown in the details Routes section when a
   contact has 2+ iMessage routes. `ThreadController` takes `mergedGuids`:
-  load pulls the newest page of every route (paging older stays
-  primary-route-only), WS/delta/unsend/reactions route on `threadGuids`,
+  load and older pages use one multi-route keyset cursor, WS/delta/unsend/reactions route on `threadGuids`,
   cache writes use the message's own chatGuid, sends stay on the active
   route. Toggling rebuilds the live controller (`_rebuildActiveController`).
 - **Details sheet fully localized** (`details.*` keys ×3 locales; the media
@@ -769,7 +785,7 @@ Four components:
   onto the authoritative server result — badges survive reloads, and chats the
   server drops still disappear (don't read the whole list back from cache, which
   never prunes).
-- **Idempotent increment:** `_patchMessageEvent` checks `hasMessageGuid` **before**
+- **Idempotent increment:** `_patchMessageEvent` checks route-scoped `hasMessage` **before**
   the upsert and only marks unread for a genuinely new guid, so a replayed WS event
   can't over-count.
 - **Cleanup:** removed the redundant unread-clear in `MessageThreadScreen.initState`

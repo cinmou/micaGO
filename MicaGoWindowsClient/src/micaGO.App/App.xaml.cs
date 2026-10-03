@@ -9,7 +9,9 @@ public partial class App : Application
     /// <summary>The chat window. Null while the pairing window is the only window.</summary>
     public static Window MainWindow { get; private set; } = null!;
 
+    private static Microsoft.UI.Dispatching.DispatcherQueue? _dispatcher;
     private static ConnectionWindow? _connectionWindow;
+    internal static Window ConnectionHost => _connectionWindow ?? throw new InvalidOperationException("Pairing window is not open.");
     private static bool _switchingWindows;
     private static bool _isExiting;
     private static bool _servicesDisposed;
@@ -35,15 +37,22 @@ public partial class App : Application
 
     internal static void ReportStartupFailure(Exception exception) => WriteStartupFailure(exception);
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args) => _ = LaunchAsync();
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _ = LaunchAsync();
+    }
 
     private static async Task LaunchAsync()
     {
         try
         {
             await AppServices.Current.Cache.InitializeAsync();
+            await AppServices.Current.ClearRejectedContentAsync();
             await LoadNotificationPreferencesAsync();
+            AppServices.Current.Connection.CredentialRejected += OnCredentialRejected;
             AppServices.Current.Notifications.ChatActivated += OnNotificationChatActivated;
+            AppServices.Current.Notifications.ReplyRequested += OnNotificationReplyRequested;
             AppServices.Current.Notifications.Register();
             if (await AppServices.Current.Cache.GetSettingAsync("settings.tray") == "true") await SetTrayEnabledAsync(true);
             // An already-paired PC goes straight to the chat window (which
@@ -62,14 +71,56 @@ public partial class App : Application
         }
     }
 
+    private static void OnCredentialRejected(object? sender, EventArgs args)
+    {
+        var window = MainWindow ?? (Window?)_connectionWindow;
+        window?.DispatcherQueue.TryEnqueue(async () =>
+        {
+            if (!AppServices.Current.Connection.TokenRejected) return;
+            // Remove history and any open media/settings surface before showing pairing.
+            if (MainWindow?.Content is FrameworkElement content) content.Visibility = Visibility.Collapsed;
+            AppServices.Current.Notifications.Enabled = false;
+            UpdateTrayContacts([]);
+            try
+            {
+                if (MainWindow is MainWindow main) await main.StopRejectedSessionAsync();
+                MicaGo.App.Controls.MessageBubble.ClearPrivateMedia();
+                await AppServices.Current.Notifications.DismissAllAsync();
+                await AppServices.Current.ClearRejectedContentAsync(rejected: true);
+            }
+            catch (Exception error) { WriteStartupFailure(error); }
+            if (_connectionWindow is null) ShowConnectionWindow();
+        });
+    }
+
     private static async Task LoadNotificationPreferencesAsync()
     {
         var services = AppServices.Current;
-        services.Notifications.Enabled = await services.Cache.GetSettingAsync("settings.notifications") != "false";
+        var notificationsEnabled = await services.Cache.GetSettingAsync("settings.notifications") != "false";
+        services.Notifications.Enabled = notificationsEnabled && !services.Connection.TokenRejected;
         services.Notifications.ShowMessageText = await services.Cache.GetSettingAsync("settings.notificationPreview") != "false";
         var language = await services.Cache.GetSettingAsync("settings.language");
         if (!string.IsNullOrWhiteSpace(language)) services.Localization.SetLanguage(language);
         services.Notifications.HiddenBodyText = services.Localization["newMessage"];
+    }
+
+    private static void OnNotificationReplyRequested(object? sender, (string ChatId, string DeviceId, string Text) reply)
+    {
+        _dispatcher?.TryEnqueue(async () =>
+        {
+            var services = AppServices.Current;
+            var result = MicaGo.Infrastructure.Connection.NotificationReplyResult.Failed;
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                if (!services.Connection.IsConnected) await services.Connection.TryRestoreAsync(timeout.Token);
+                result = await new MicaGo.Infrastructure.Connection.NotificationReplySender(() => services.Connection.Api, () => services.Connection.Profile?.DeviceId)
+                    .SendAsync(reply.ChatId, reply.DeviceId, reply.Text, timeout.Token);
+            }
+            catch { }
+            if (result == MicaGo.Infrastructure.Connection.NotificationReplyResult.Sent) await services.Notifications.DismissChatAsync(reply.ChatId);
+            else services.Notifications.ShowReplyStatus(reply.ChatId, services.Localization[result == MicaGo.Infrastructure.Connection.NotificationReplyResult.Pending ? "notificationReplyPending" : result == MicaGo.Infrastructure.Connection.NotificationReplyResult.Rejected ? "notificationReplyRejected" : "notificationReplyFailed"]);
+        });
     }
 
     private static void OnNotificationChatActivated(object? sender, string chatId)
@@ -142,6 +193,8 @@ public partial class App : Application
         _switchingWindows = true;
         try
         {
+            if (AppServices.Current.Connection.TokenRejected) return;
+            _ = LoadNotificationPreferencesAsync();
             var window = new MainWindow();
             window.Closed += OnHostWindowClosed;
             MainWindow = window;

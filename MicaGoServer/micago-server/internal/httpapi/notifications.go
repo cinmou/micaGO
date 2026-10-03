@@ -23,7 +23,7 @@ type notificationsConfigRequest struct {
 }
 
 // notificationsConfigResponse echoes the resulting status. It never returns the
-// service-account contents or any token — only flags/paths/levels.
+// service-account contents or any token — only configuration flags and preview levels.
 type notificationsConfigResponse struct {
 	store.ServerNotificationStatus
 	ServiceAccountPathSet bool `json:"serviceAccountPathSet"`
@@ -83,7 +83,7 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if _, err := notify.LoadServiceAccount(req.ServiceAccountPath); err != nil {
-			writeBadRequest(w, "invalid service account: "+err.Error())
+			writeBadRequest(w, "service account JSON could not be read or is invalid")
 			return
 		}
 		if req.GoogleServicesPath == "" {
@@ -91,7 +91,7 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if _, err := notify.LoadFirebaseClientConfig(req.GoogleServicesPath); err != nil {
-			writeBadRequest(w, "invalid google-services.json: "+err.Error())
+			writeBadRequest(w, "google-services.json could not be read or is invalid")
 			return
 		}
 	}

@@ -18,13 +18,15 @@ Companion. Solution entry point: `micaGO.Windows.sln`.
 
 ## What it does today
 
-- **Pairing & connection** — paste the Companion's connection JSON (v1/v2/v3
-  payloads); all LAN candidates are probed in parallel (health + auth) and the
+- **Pairing & connection** — paste the Companion's v4 connection JSON, scan its QR code
+  with an optional camera, or choose a QR image; all LAN candidates are probed in parallel (health + auth) and the
   fastest wins, with public-URL fallback. The bearer token is stored in
   **Windows Credential Manager** (never in config files); the rest of the
   profile lives in `%LOCALAPPDATA%\micaGO\connection-profile.json`. Saved
   pairings restore silently on launch — the dedicated pairing window
   (`ConnectionWindow`) only appears when restore fails or after a disconnect.
+  An authenticated token rejection locks the session, removes the credential,
+  closes cached history and media, and shows one re-pairing dialog without a persistent banner.
 - **Chats & threads** — real `/api/chats` with search, contact-name/avatar
   resolution, multi-route contact merging (with a per-contact opt-out), local
   pin sorting, and watermark-derived unread dots that survive restarts.

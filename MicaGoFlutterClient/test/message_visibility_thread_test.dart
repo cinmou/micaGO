@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +22,12 @@ class TestApp extends AppController {
   ApiClient get api => client;
 }
 
+class RecoveryApp extends TestApp {
+  RecoveryApp(super.client);
+  @override
+  bool get isForegroundRecovering => false;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory directory;
@@ -31,6 +38,60 @@ void main() {
     await databaseFactory.setDatabasesPath(directory.path);
   });
   tearDownAll(() => directory.delete(recursive: true));
+  test(
+    'late pre-lock history timeout stays quiet and retries after recovery',
+    () async {
+      final pending = Completer<http.Response>();
+      final started = Completer<void>();
+      var calls = 0;
+      final api = ApiClient(
+        baseUrl: 'http://test',
+        token: 'test',
+        httpClient: MockClient((request) {
+          calls++;
+          if (calls == 1) {
+            started.complete();
+            return pending.future;
+          }
+          return Future.value(
+            http.Response(
+              '{"data":[{"guid":"recovered","chatGuid":"recovery-route","text":"hello","dateCreated":100}],"hasMore":false}',
+              200,
+            ),
+          );
+        }),
+      );
+      final app = RecoveryApp(api);
+      await app.cache.open();
+      final thread = ThreadController(app: app, chatGuid: 'recovery-route');
+      try {
+        final loading = thread.load(showSpinner: false);
+        await started.future;
+        app.setForeground(false);
+        app.setForeground(true);
+        app.connectionHealthy.value = true;
+        pending.completeError(TimeoutException('request started before lock'));
+        await loading;
+        expect(thread.error, isNull);
+        final recovered = Completer<void>();
+        thread.addListener(() {
+          if (thread.messages.isNotEmpty && !recovered.isCompleted) {
+            recovered.complete();
+          }
+        });
+        await recovered.future.timeout(const Duration(seconds: 3));
+        expect(thread.messages.single.guid, 'recovered');
+        expect(calls, 2);
+        expect(thread.error, isNull);
+      } finally {
+        thread.dispose();
+        app.dispose();
+        api.close();
+        await app.cache.close();
+      }
+    },
+  );
+
   test('remote hide and restore update an already open thread', () async {
     var revision = 0;
     var hidden = false;

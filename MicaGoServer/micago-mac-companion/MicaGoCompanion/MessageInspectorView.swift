@@ -61,10 +61,10 @@ final class MessageInspectorModel: ObservableObject {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .all: return String(localized: "All senders")
-            case .fromMe: return String(localized: "From me")
-            case .unknown: return String(localized: "Unknown sender")
-            case .specific: return String(localized: "Specific handle")
+            case .all: return L10n.localized( "All senders")
+            case .fromMe: return L10n.localized( "From me")
+            case .unknown: return L10n.localized( "Unknown sender")
+            case .specific: return L10n.localized( "Specific handle")
             }
         }
     }
@@ -81,7 +81,7 @@ final class MessageInspectorModel: ObservableObject {
 
     func reload() async {
         guard let model, let base = model.baseURL else {
-            error = String(localized: "Server is not reachable. Start the server first.")
+            error = L10n.localized( "Server is not reachable. Start the server first.")
             return
         }
         loading = true
@@ -255,7 +255,7 @@ private struct GroupSummaryCard: View {
     @ObservedObject var vm: MessageInspectorModel
 
     var body: some View {
-        SectionCard(title: String(localized: "Groups (\(vm.groups.count))")) {
+        SectionCard(title: L10n.localized( "Groups (\(vm.groups.count))")) {
             ForEach(vm.groups) { g in
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 1) {
@@ -290,9 +290,9 @@ private struct ResultsCard: View {
     @Binding var selected: DebugMessage?
 
     var body: some View {
-        SectionCard(title: String(localized: "Messages (\(vm.messages.count))")) {
+        SectionCard(title: L10n.localized( "Messages (\(vm.messages.count))")) {
             if vm.messages.isEmpty {
-                Text(vm.loading ? String(localized: "Loading…") : String(localized: "No messages match the current filters."))
+                Text(vm.loading ? L10n.localized( "Loading…") : L10n.localized( "No messages match the current filters."))
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(vm.messages) { msg in
@@ -556,11 +556,11 @@ struct TestContactDebugCard: View {
         SectionCard(title: "Test Contact") {
             if !vm.available {
                 Text(vm.statusText.isEmpty
-                     ? String(localized: "The offline test contact passes messages between this Mac and the phone. Nothing is ever delivered.")
+                     ? L10n.localized( "The offline test contact passes messages between this Mac and the phone. Nothing is ever delivered.")
                      : vm.statusText)
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(vm.busy ? String(localized: "Enabling…") : String(localized: "Enable test contact")) {
+                Button(vm.busy ? L10n.localized( "Enabling…") : L10n.localized( "Enable test contact")) {
                     Task { await vm.setEnabled(true, model) }
                 }
                 .disabled(vm.busy)
@@ -606,7 +606,7 @@ struct TestContactDebugCard: View {
             TextField("Message as the test contact…", text: $draft, onCommit: submit)
                 .textFieldStyle(.roundedBorder)
                 .disabled(vm.busy || sending)
-            Button(sending ? String(localized: "Sending…") : String(localized: "Send"), action: submit)
+            Button(sending ? L10n.localized( "Sending…") : L10n.localized( "Send"), action: submit)
                 .disabled(!canSend)
         }
     }
@@ -678,7 +678,7 @@ final class TestContactDebugModel: ObservableObject {
     }
 
     func reload() async {
-        guard let client = client() else { statusText = String(localized: "Start the server first."); return }
+        guard let client = client() else { statusText = L10n.localized( "Start the server first."); return }
         do {
             let info = try await client.testContactInfo()
             available = info.enabled

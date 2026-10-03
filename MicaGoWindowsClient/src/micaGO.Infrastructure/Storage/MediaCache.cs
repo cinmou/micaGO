@@ -11,9 +11,15 @@ public sealed class MediaCache
         Directory.CreateDirectory(Root);
     }
     public string Root { get; }
+    public bool AccessAllowed { get; set; } = true;
+    private void EnsureAllowed()
+    {
+        if (!AccessAllowed) throw new MicaGo.Infrastructure.Api.MicaGoApiException("Pair again to access media.", 401);
+    }
 
     public string? TryGetPath(string attachmentId, bool preview = false, bool playable = false)
     {
+        EnsureAllowed();
         var suffix = playable ? ".playable" : preview ? ".preview" : ".original";
         var safe = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(attachmentId))).ToLowerInvariant();
         var path = Path.Combine(Root, safe + suffix);
@@ -28,6 +34,7 @@ public sealed class MediaCache
 
     public async Task<string> GetAsync(IMicaGoApi api, string attachmentId, bool preview = false, bool playable = false, CancellationToken cancellationToken = default)
     {
+        EnsureAllowed();
         var suffix = playable ? ".playable" : preview ? ".preview" : ".original";
         var safe = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(attachmentId))).ToLowerInvariant();
         var path = Path.Combine(Root, safe + suffix);
@@ -35,18 +42,20 @@ public sealed class MediaCache
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            EnsureAllowed();
             if (File.Exists(path)) return path;
             var bytes = await api.GetAttachmentBytesAsync(attachmentId, preview, playable, cancellationToken);
             var part = path + "." + Guid.NewGuid().ToString("N") + ".part";
             await File.WriteAllBytesAsync(part, bytes, cancellationToken);
-            File.Move(part, path, true);
-            return path;
+            try { EnsureAllowed(); File.Move(part, path, true); return path; }
+            finally { if (File.Exists(part)) File.Delete(part); }
         }
         finally { _gate.Release(); }
     }
 
     public async Task SeedAsync(string attachmentId, string sourcePath, CancellationToken cancellationToken = default)
     {
+        EnsureAllowed();
         var safe = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(attachmentId))).ToLowerInvariant();
         var path = Path.Combine(Root, safe + ".original");
         await using var source = File.OpenRead(sourcePath); await using var destination = File.Create(path); await source.CopyToAsync(destination, cancellationToken);

@@ -22,5 +22,6 @@ type Notification struct {
 	// HasAttachments lets the client render the shared attachment placeholder
 	// when the notification body is intentionally empty.
 	HasAttachments bool  `json:"hasAttachments"`
+	DateCreated    int64 `json:"dateCreated"`
 	CreatedAt      int64 `json:"createdAt"`
 }

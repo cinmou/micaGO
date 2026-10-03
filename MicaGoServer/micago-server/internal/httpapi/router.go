@@ -8,6 +8,14 @@ import (
 
 func NewRouter(h *Handlers, hub *realtime.Hub, auth AuthConfig) http.Handler {
 	mux := http.NewServeMux()
+	if auth.Devices != nil {
+		mux.HandleFunc("POST /api/pairing/create", auth.Devices.CreateCode)
+		mux.HandleFunc("POST /api/pairing/status", auth.Devices.CodeStatus)
+		mux.HandleFunc("POST /api/pairing/redeem", auth.Devices.Redeem)
+	}
+	mux.Handle("PUT /api/server/lan-visibility", auth.Wrap(http.HandlerFunc(h.PutLANVisibility)))
+	mux.Handle("GET /api/read-state", auth.Wrap(http.HandlerFunc(h.GetReadState)))
+	mux.Handle("PATCH /api/read-state", auth.Wrap(http.HandlerFunc(h.PatchReadState)))
 	mux.Handle("GET /api/message-preferences", auth.Wrap(http.HandlerFunc(h.GetMessagePreferences)))
 	mux.Handle("PATCH /api/message-preferences", auth.Wrap(http.HandlerFunc(h.PatchMessagePreferences)))
 	mux.Handle("GET /api/chat-preferences", auth.Wrap(http.HandlerFunc(h.GetChatPreferences)))
@@ -66,6 +74,9 @@ func NewRouter(h *Handlers, hub *realtime.Hub, auth AuthConfig) http.Handler {
 func websocketAuthHandler(hub *realtime.Hub, auth AuthConfig) http.Handler {
 	if hub == nil {
 		return http.NotFoundHandler()
+	}
+	if auth.Devices != nil {
+		return http.HandlerFunc(auth.Devices.Socket)
 	}
 	if !auth.Enabled {
 		return hub

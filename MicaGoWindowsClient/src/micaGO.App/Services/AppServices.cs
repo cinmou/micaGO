@@ -17,8 +17,10 @@ public sealed class AppServices : IDisposable
         Cache = new LocalCacheStore();
         ChatPreferences = new ChatPreferenceSync(Cache, () => Connection.Api);
         MessagePreferences = new MessagePreferenceSync(Cache, () => Connection.Api);
+        ReadState = new ReadStateSync(Cache, () => Connection.Api);
         DevicePresence = new DevicePresenceService(Connection, Cache);
         Media = new MediaCache();
+        Connection.ConnectionChanged += (_, _) => Media.AccessAllowed = Connection.IsConnected && !Connection.TokenRejected;
         Localization = new LocalizationService();
         Notifications = new NotificationService();
         Appearance = new AppearanceService(Cache);
@@ -31,6 +33,7 @@ public sealed class AppServices : IDisposable
     public LocalCacheStore Cache { get; }
     public ChatPreferenceSync ChatPreferences { get; }
     public MessagePreferenceSync MessagePreferences { get; }
+    public ReadStateSync ReadState { get; }
     public DevicePresenceService DevicePresence { get; }
     public MediaCache Media { get; }
     public LocalizationService Localization { get; }
@@ -38,6 +41,21 @@ public sealed class AppServices : IDisposable
     public AppearanceService Appearance { get; }
     public VcfContactImporter VcfContacts { get; }
     public SettingsBackupService Backup { get; }
+
+    private readonly SemaphoreSlim _rejectedCacheGate = new(1, 1);
+    public async Task ClearRejectedContentAsync(bool rejected = false)
+    {
+        await _rejectedCacheGate.WaitAsync();
+        try
+        {
+            if (rejected) await Cache.SetSettingAsync("auth.rejected", "true");
+            if (await Cache.GetSettingAsync("auth.rejected") != "true") return;
+            await Cache.ClearContentCacheAsync();
+            await Media.ClearAsync();
+            await Cache.SetSettingAsync("auth.rejected", "false");
+        }
+        finally { _rejectedCacheGate.Release(); }
+    }
 
     public async Task RemoveLegacyGoogleContactsAsync(CancellationToken cancellationToken = default)
     {

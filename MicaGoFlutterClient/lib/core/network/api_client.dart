@@ -1,3 +1,6 @@
+import 'secure_transport.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -7,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../features/chats/models/chat_summary.dart';
 import '../../features/chats/models/message_model.dart';
 import '../models/server_urls.dart';
+import '../l10n/app_localizations.dart';
 import 'endpoint_utils.dart';
 
 /// Result of a cursor delta fetch (C21 catch-up). [cursor] is the new persistent
@@ -123,6 +127,19 @@ class ApiException implements Exception {
       'ApiException($code'
       '${statusCode != null ? ' [$statusCode]' : ''}): $message';
 
+  String localizedMessage({bool forMessages = false}) {
+    final strings = MicaLocalizations.current;
+    return switch (code) {
+      'unauthorized' => strings.t('error.tokenRejected'),
+      'timeout' => strings.t(
+        forMessages ? 'error.timeoutMessages' : 'error.timeoutChats',
+      ),
+      'network_error' => strings.t('error.unreachable'),
+      'not_found' when forMessages => strings.t('error.chatNotFound'),
+      _ => message,
+    };
+  }
+
   /// A plain-language explanation suitable for the UI. Never contains the token.
   /// Cloudflare 5xx (520–530) are mapped to tunnel/origin guidance.
   String get friendly {
@@ -195,15 +212,63 @@ class _ProgressMultipartRequest extends http.MultipartRequest {
 class ApiClient {
   final String baseUrl;
   final String token;
+  final String? tlsFingerprint;
   final http.Client _http;
   final Duration timeout;
 
   ApiClient({
     required this.baseUrl,
     required this.token,
+    this.tlsFingerprint,
     http.Client? httpClient,
+    void Function()? onUnauthorized,
     this.timeout = const Duration(seconds: 12),
-  }) : _http = httpClient ?? http.Client();
+  }) : _http = _AuthObservingClient(
+         httpClient ?? secureHttpClient(baseUrl, fingerprint: tlsFingerprint),
+         onUnauthorized,
+       );
+
+  Future<Map<String, dynamic>> redeemPairingCode(String code) async {
+    final response = await _http
+        .post(
+          _uri('/api/pairing/redeem'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'pairingCode': code}),
+        )
+        .timeout(timeout);
+    if (response.statusCode != 200) throw _errorFrom(response);
+    return _decodeObject(response);
+  }
+
+  /// Native media decoders cannot use Dart TLS callbacks. Download through the
+  /// same authenticated, pinned client, then hand the verified file to them.
+  Future<File> downloadPlayableFile(String guid) async {
+    final directory = await getTemporaryDirectory();
+    final file = File(
+      '${directory.path}/micago-playable-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    final response = await _http
+        .send(
+          http.Request(
+            'GET',
+            _uri('/api/attachments/${Uri.encodeComponent(guid)}/playable'),
+          )..headers.addAll(_authHeaders),
+        )
+        .timeout(timeout);
+    if (response.statusCode != 200) {
+      await response.stream.drain<void>();
+      throw StateError('Media download failed (${response.statusCode})');
+    }
+    final sink = file.openWrite();
+    try {
+      await response.stream.timeout(const Duration(seconds: 30)).pipe(sink);
+      return file;
+    } catch (_) {
+      await sink.close();
+      if (await file.exists()) await file.delete();
+      rethrow;
+    }
+  }
 
   Uri _uri(String path, [Map<String, String>? query]) {
     final base = Uri.parse('${normalizeBaseUrl(baseUrl)}$path');
@@ -228,6 +293,32 @@ class ApiClient {
       () => _http
           .patch(
             _uri('/api/chat-preferences'),
+            headers: _jsonHeaders,
+            body: jsonEncode(mutation),
+          )
+          .timeout(timeout),
+    );
+    if (response.statusCode != 200) throw _errorFrom(response);
+    return _decodeObject(response);
+  }
+
+  Future<Map<String, dynamic>> getReadState() async {
+    final response = await _send(
+      () => _http
+          .get(_uri('/api/read-state'), headers: _authHeaders)
+          .timeout(timeout),
+    );
+    if (response.statusCode != 200) throw _errorFrom(response);
+    return _decodeObject(response);
+  }
+
+  Future<Map<String, dynamic>> patchReadState(
+    Map<String, dynamic> mutation,
+  ) async {
+    final response = await _send(
+      () => _http
+          .patch(
+            _uri('/api/read-state'),
             headers: _jsonHeaders,
             body: jsonEncode(mutation),
           )
@@ -915,6 +1006,8 @@ class ApiClient {
       res = await http.Response.fromStream(
         streamed,
       ).timeout(const Duration(seconds: 30));
+    } on ApiException {
+      rethrow;
     } on TimeoutException {
       throw const ApiException(
         code: 'timeout',
@@ -1010,6 +1103,8 @@ class ApiClient {
   Future<http.Response> _send(Future<http.Response> Function() run) async {
     try {
       return await run();
+    } on ApiException {
+      rethrow;
     } on TimeoutException {
       throw const ApiException(
         code: 'timeout',
@@ -1059,4 +1154,28 @@ class ApiClient {
       statusCode: res.statusCode,
     );
   }
+}
+
+/// Observe all authenticated REST/media/upload responses, including streams.
+class _AuthObservingClient extends http.BaseClient {
+  final http.Client inner;
+  final void Function()? onUnauthorized;
+  _AuthObservingClient(this.inner, this.onUnauthorized);
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response = await inner.send(request);
+    if (response.statusCode == 401 &&
+        request.headers['Authorization']?.isNotEmpty == true) {
+      onUnauthorized?.call();
+      throw const ApiException(
+        code: 'unauthorized',
+        message: 'Device token rejected.',
+        statusCode: 401,
+      );
+    }
+    return response;
+  }
+
+  @override
+  void close() => inner.close();
 }

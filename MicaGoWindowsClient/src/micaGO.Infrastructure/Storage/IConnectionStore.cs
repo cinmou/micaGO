@@ -4,6 +4,7 @@ namespace MicaGo.Infrastructure.Storage;
 
 public interface IConnectionStore
 {
+    Task PrepareAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task<SavedConnection?> LoadAsync(CancellationToken cancellationToken = default);
     Task SaveAsync(ConnectionProfile profile, string token, CancellationToken cancellationToken = default);
     Task ClearAsync(CancellationToken cancellationToken = default);

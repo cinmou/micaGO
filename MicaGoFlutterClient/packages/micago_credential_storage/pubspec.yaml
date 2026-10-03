@@ -1,0 +1,15 @@
+name: micago_credential_storage
+description: Android software credential storage for explicitly opted-in compatibility mode.
+version: 1.0.0
+publish_to: none
+environment:
+  sdk: ^3.12.1
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.micago.credentials
+        pluginClass: CredentialStoragePlugin

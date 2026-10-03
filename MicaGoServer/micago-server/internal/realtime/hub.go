@@ -29,6 +29,7 @@ func NewHub() *Hub {
 // push-device registry: it contains only ephemeral connection metadata for the
 // companion's privacy-facing Paired Devices view.
 type ClientSession struct {
+	DeviceID      string `json:"deviceId,omitempty"`
 	ID            string `json:"id"`
 	ClientName    string `json:"clientName,omitempty"`
 	ClientType    string `json:"clientType,omitempty"`
@@ -41,14 +42,21 @@ type ClientSession struct {
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.ServeAuthorized(w, r, "", func() {})
+}
+
+func (h *Hub) ServeAuthorized(w http.ResponseWriter, r *http.Request, deviceID string, admitted func()) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
+		admitted()
 		return
 	}
-
-	h.add(conn, sessionFromRequest(r))
+	session := sessionFromRequest(r)
+	session.DeviceID = deviceID
+	h.add(conn, session)
+	admitted()
 	defer h.remove(conn)
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
@@ -184,4 +192,21 @@ func remoteHost(r *http.Request) string {
 		return h
 	}
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+// DisconnectDevice removes sockets before closing so subsequent broadcasts
+// cannot target a revoked device, including sockets that are still handshaking.
+func (h *Hub) DisconnectDevice(id string) {
+	h.mu.Lock()
+	var conns []*websocket.Conn
+	for conn, session := range h.clients {
+		if session.DeviceID == id {
+			conns = append(conns, conn)
+			delete(h.clients, conn)
+		}
+	}
+	h.mu.Unlock()
+	for _, conn := range conns {
+		_ = conn.CloseNow()
+	}
 }

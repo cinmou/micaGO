@@ -13,6 +13,7 @@ public sealed class ConnectionStore : IConnectionStore
         Converters = { new JsonStringEnumConverter() },
     };
 
+    private readonly SemaphoreSlim _stateGate=new(1,1);
     private readonly ISecretStore _secrets;
     private readonly string _profilePath;
 
@@ -25,59 +26,75 @@ public sealed class ConnectionStore : IConnectionStore
         _profilePath = Path.Combine(root, "connection-profile.json");
     }
 
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        await _stateGate.WaitAsync(cancellationToken);
+        var key = "credential-probe-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var value = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+            _secrets.Write(key, value);
+            if (_secrets.Read(key) != value) throw new System.ComponentModel.Win32Exception("Credential Manager verification failed.");
+        }
+        finally { try { _secrets.Delete(key); } finally { _stateGate.Release(); } }
+    }
+
     public async Task<SavedConnection?> LoadAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(_profilePath))
+        await _stateGate.WaitAsync(cancellationToken);
+        try
         {
-            return null;
+            if (!File.Exists(_profilePath)) return null;
+            var token = _secrets.Read(TokenKey);
+            if (string.IsNullOrWhiteSpace(token)) return null;
+            await using var stream = File.OpenRead(_profilePath);
+            var profile = await JsonSerializer.DeserializeAsync<ConnectionProfile>(stream, JsonOptions, cancellationToken);
+            return profile is null ? null : new SavedConnection(profile, token);
         }
-
-        var token = _secrets.Read(TokenKey);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return null;
-        }
-
-        await using var stream = File.OpenRead(_profilePath);
-        var profile = await JsonSerializer.DeserializeAsync<ConnectionProfile>(stream, JsonOptions, cancellationToken);
-        return profile is null ? null : new SavedConnection(profile, token);
+        finally { _stateGate.Release(); }
     }
 
     public async Task SaveAsync(ConnectionProfile profile, string token, CancellationToken cancellationToken = default)
     {
-        var directory = Path.GetDirectoryName(_profilePath)!;
-        Directory.CreateDirectory(directory);
-        _secrets.Write(TokenKey, token);
-
-        var temporaryPath = _profilePath + ".tmp";
+        await _stateGate.WaitAsync(cancellationToken);
         try
         {
-            await using (var stream = File.Create(temporaryPath))
+            Directory.CreateDirectory(Path.GetDirectoryName(_profilePath)!);
+            var temporaryPath = _profilePath + ".tmp";
+            try
             {
-                await JsonSerializer.SerializeAsync(stream, profile, JsonOptions, cancellationToken);
-                await stream.FlushAsync(cancellationToken);
+                await using (var stream = File.Create(temporaryPath))
+                {
+                    await JsonSerializer.SerializeAsync(stream, profile, JsonOptions, cancellationToken);
+                    await stream.FlushAsync(cancellationToken);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                var priorToken = _secrets.Read(TokenKey);
+                _secrets.Write(TokenKey, token);
+                try { File.Move(temporaryPath, _profilePath, true); }
+                catch
+                {
+                    if (priorToken is null) _secrets.Delete(TokenKey);
+                    else _secrets.Write(TokenKey, priorToken);
+                    throw;
+                }
             }
-
-            File.Move(temporaryPath, _profilePath, true);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
+            finally
             {
-                File.Delete(temporaryPath);
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
         }
+        finally { _stateGate.Release(); }
     }
 
-    public Task ClearAsync(CancellationToken cancellationToken = default)
+    public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        _secrets.Delete(TokenKey);
-        if (File.Exists(_profilePath))
+        await _stateGate.WaitAsync(cancellationToken);
+        try
         {
-            File.Delete(_profilePath);
+            if (File.Exists(_profilePath)) File.Delete(_profilePath);
+            _secrets.Delete(TokenKey);
         }
-
-        return Task.CompletedTask;
+        finally { _stateGate.Release(); }
     }
 }

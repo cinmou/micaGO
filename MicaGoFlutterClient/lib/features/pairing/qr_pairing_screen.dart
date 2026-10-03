@@ -1,7 +1,7 @@
+import 'pairing_dialogs.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
@@ -142,7 +142,9 @@ class _QrPairingScreenState extends State<QrPairingScreen>
   }
 
   Future<void> _useScanned() async {
-    final ok = await _pairing.useScanned();
+    final ok = await _pairing.useScanned(
+      confirmCompatibility: () => confirmCompatibilityStorage(context),
+    );
     if (ok && mounted) {
       context.go(Routes.home);
     }
@@ -272,34 +274,8 @@ class _QrPairingScreenState extends State<QrPairingScreen>
   }
 
   Future<void> _pasteConnectionJson() async {
-    final clip = await Clipboard.getData(Clipboard.kTextPlain);
+    final raw = await requestPairingJson(context);
     if (!mounted) return;
-    final controller = TextEditingController(text: clip?.text?.trim() ?? '');
-    final raw = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(MicaLocalizations.of(ctx).t('pair.pasteJson')),
-        content: TextField(
-          controller: controller,
-          maxLines: 6,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: MicaLocalizations.of(ctx).t('pair.pasteJsonHint'),
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(MicaLocalizations.of(ctx).t('settings.cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: Text(MicaLocalizations.of(ctx).t('pair.connect')),
-          ),
-        ],
-      ),
-    );
     if (raw != null && raw.isNotEmpty) _pairing.onScan(raw);
   }
 }

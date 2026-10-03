@@ -11,7 +11,10 @@ public sealed class RealtimeSyncService(
     LocalCacheStore cache,
     ChatPreferenceSync? preferences = null,
     Func<CancellationToken, Task>? reselectRoute = null,
-    MessagePreferenceSync? messagePreferences = null) : IAsyncDisposable
+    MessagePreferenceSync? messagePreferences = null,
+    ReadStateSync? readState = null,
+    Func<CancellationToken,Task>? refreshEndpoints = null,
+    Func<bool>? credentialRejected = null) : IAsyncDisposable
 {
     private const string CursorKey = "sync.cursor";
     private readonly CancellationTokenSource _shutdown = new();
@@ -20,6 +23,7 @@ public sealed class RealtimeSyncService(
 
     public event EventHandler<RealtimeMessageBatch>? MessagesChanged;
     public event EventHandler<string>? StatusChanged;
+    public event EventHandler<MessageActionCapabilities>? CapabilitiesChanged;
 
     public void Start()
     {
@@ -33,18 +37,22 @@ public sealed class RealtimeSyncService(
         {
             if(preferences is not null) await preferences.SyncAsync(cancellationToken);
             if(messagePreferences is not null) await messagePreferences.SyncAsync(cancellationToken);
+            if(readState is not null) await readState.SyncAsync(cancellationToken);
             var raw = await cache.GetSettingAsync(CursorKey, cancellationToken);
             long? cursor = long.TryParse(raw, out var parsed) ? parsed : null;
             do
             {
                 var delta = await api.GetMessagesDeltaAsync(cursor, cancellationToken: cancellationToken);
                 cursor = delta.Cursor;
-                await cache.SetSettingAsync(CursorKey, delta.Cursor.ToString(), cancellationToken);
                 if (delta.Messages.Count > 0)
                 {
                     await cache.UpsertMessagesAsync(delta.Messages, cancellationToken);
-                    MessagesChanged?.Invoke(this, new RealtimeMessageBatch(delta.Messages, allowNotifications));
                 }
+                // Persist rows before advancing the recovery cursor. A failed
+                // cache write must leave this page eligible for replay.
+                await cache.SetSettingAsync(CursorKey, delta.Cursor.ToString(), cancellationToken);
+                if (delta.Messages.Count > 0)
+                    MessagesChanged?.Invoke(this, new RealtimeMessageBatch(delta.Messages, allowNotifications));
                 if (!delta.HasMore) break;
             } while (!cancellationToken.IsCancellationRequested);
         }
@@ -55,10 +63,12 @@ public sealed class RealtimeSyncService(
     {
         var attempt = 0;
         var completedInitialCatchUp = false;
-        while (!cancellationToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested && credentialRejected?.Invoke() != true)
         {
             try
             {
+                if(refreshEndpoints is not null) await refreshEndpoints(cancellationToken);
+                await RefreshCapabilitiesAsync(cancellationToken);
                 StatusChanged?.Invoke(this, "Catching up");
                 // The first delta pass can contain everything accumulated while
                 // the app was closed (or the complete history when no cursor is
@@ -71,11 +81,17 @@ public sealed class RealtimeSyncService(
                 attempt = 0;
                 await foreach (var realtimeEvent in api.ListenRealtimeAsync(cancellationToken))
                 {
+                    if(realtimeEvent.Type=="capabilities:updated") {
+                        await RefreshCapabilitiesAsync(cancellationToken);
+                    }
+                    if(realtimeEvent.Type=="connection:updated" && refreshEndpoints is not null) await refreshEndpoints(cancellationToken);
                     // Frames that carry the full message JSON apply immediately —
                     // read receipts and edits update rows the rowid-based delta
                     // cursor never re-surfaces.
                     if (realtimeEvent.Message is { } message)
                     {
+                        if(readState is not null)await readState.SyncAsync(cancellationToken);
+                        if(messagePreferences is not null)await messagePreferences.SyncAsync(cancellationToken);
                         await cache.UpsertMessagesAsync([message], cancellationToken);
                         MessagesChanged?.Invoke(this, new RealtimeMessageBatch([message], true));
                     }
@@ -83,8 +99,11 @@ public sealed class RealtimeSyncService(
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (MicaGo.Infrastructure.Api.MicaGoApiException error) when (error.StatusCode == 401) { break; }
+            catch (CredentialRejectedException) { break; }
             catch
             {
+                if (credentialRejected?.Invoke() == true) break;
                 attempt++;
                 StatusChanged?.Invoke(this, "Reconnecting");
                 // W-UI9: re-run route selection before reconnecting, so a dropped
@@ -99,6 +118,17 @@ public sealed class RealtimeSyncService(
                 try { await Task.Delay(delay, cancellationToken); } catch (OperationCanceledException) { break; }
             }
         }
+    }
+
+    private async Task RefreshCapabilitiesAsync(CancellationToken cancellationToken) {
+        try {
+            var capabilities=await api.GetMessageActionCapabilitiesAsync(cancellationToken);
+            CapabilitiesChanged?.Invoke(this,capabilities);
+        }
+        catch(OperationCanceledException) when(cancellationToken.IsCancellationRequested) {throw;}
+        catch(OperationCanceledException) { }
+        catch(HttpRequestException) { }
+        catch(MicaGo.Infrastructure.Api.MicaGoApiException) { }
     }
 
     public async ValueTask DisposeAsync()

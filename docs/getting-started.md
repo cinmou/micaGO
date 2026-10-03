@@ -51,21 +51,14 @@ organized into a few cards:
 - **Connection Endpoints** — three sections, **Local / loopback**,
   **LAN / same Wi‑Fi**, and **Public / remote**, each with copy buttons. The
   Public section is where you paste and validate your remote URL.
-- **Client Setup** (Pair Android) — pick an endpoint (Auto / Local / LAN /
-  Public), then **Show QR code** or **Copy setup JSON** to pair a phone. The
-  **bearer token** is shown masked with a Reveal/Copy action.
-
-> ⚠️ **Keep your token private.** The bearer token is effectively a password.
-> It stays masked by default — only reveal it when no one is watching, and keep it
-> out of screenshots, logs, bug reports, or chats. If it leaks, generate a
-> new token and re‑pair your devices.
+- **Client Setup** — create a new pairing code, then scan the QR or copy its JSON. The invitation expires after five minutes and can be redeemed once. Each device receives its own credential; revoke a device in Companion if it is lost. Upgrading to 0.84 requires pairing again and preserves chat caches and sync queues.
 
 ## First connection options
 
 - **This Mac / local** — `http://127.0.0.1:<PORT>`. Fastest way to confirm the
   server is alive. Note: `127.0.0.1` only works **on the Mac itself**, not from
   your phone.
-- **LAN / same Wi‑Fi** — `http://<Mac-LAN-IP>:<PORT>`. Use this from a phone or
+- **LAN / same Wi‑Fi** — `https://<Mac-LAN-IP>:3001`. Use this from a phone or
   laptop on the same network. Find `<Mac-LAN-IP>` in the Mac app's connection
   list, or in macOS System Settings → Network.
 - **Public / remote domain** — `https://micago.example.com`. Use this from
@@ -78,7 +71,7 @@ Test connections in this order — each step builds on the previous one:
 1. **Test the local server.** On the Mac, confirm the server is running and
    reachable at `http://127.0.0.1:<PORT>`.
 2. **Test LAN.** From another device on the same Wi‑Fi, reach
-   `http://<Mac-LAN-IP>:<PORT>` and confirm the token is accepted.
+   `https://<Mac-LAN-IP>:3001` and confirm the token is accepted.
 3. **Set up a remote URL** (optional). Follow
    [Remote Access with Cloudflare Tunnel](remote-access-cloudflare.md) to get
    `https://micago.example.com`, then in **Connection Endpoints → Public /

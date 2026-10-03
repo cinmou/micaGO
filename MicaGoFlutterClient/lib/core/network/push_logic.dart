@@ -2,6 +2,8 @@
 /// be unit-tested and reasoned about in isolation. [PushService] composes these.
 library;
 
+import 'dart:convert';
+
 const String testContactChatGuid = 'iMessage;-;test@micago.cinmou';
 const String testContactHandle = 'test@micago.cinmou';
 const String testContactDisplayName = 'MicaGo Test';
@@ -136,3 +138,31 @@ String? localNotificationBody(String? text, String previewMode) {
   final t = text?.trim() ?? '';
   return t.isEmpty ? null : t;
 }
+
+String? notificationChatFromPayload(String? payload) {
+  if (payload == null || payload.isEmpty) return null;
+  if (!payload.startsWith('{')) return payload;
+  try {
+    final value = jsonDecode(payload);
+    return value is Map && value['chatGuid'] is String
+        ? value['chatGuid'] as String
+        : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+String? notificationDeviceFromPayload(String? payload) {
+  if (payload == null) return null;
+  try {
+    final value = jsonDecode(payload);
+    return value is Map && value['deviceId'] is String
+        ? value['deviceId'] as String
+        : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+String notificationPayload(String chatGuid, String deviceId) =>
+    jsonEncode({'chatGuid': chatGuid, 'deviceId': deviceId});

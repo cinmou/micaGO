@@ -9,7 +9,8 @@ public sealed record EndpointProbeResult(
     ConnectionEndpoint Endpoint,
     bool IsAvailable,
     TimeSpan Latency,
-    string? Error = null);
+    string? Error = null,
+    bool CredentialRejected = false);
 
 public sealed class EndpointSelector
 {
@@ -68,6 +69,7 @@ public sealed class EndpointSelector
 
         var results = await Task.WhenAll(endpoints.Select(endpoint => ProbeCoreAsync(endpoint, token, cancellationToken)));
         foreach (var result in results) observe?.Invoke(result);
+        if (results.Any(result => result.CredentialRejected)) throw new CredentialRejectedException();
         return results
             .Where(result => result.IsAvailable)
             .OrderBy(result => result.Latency)
@@ -91,7 +93,7 @@ public sealed class EndpointSelector
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(ProbeTimeout);
-            using var client = new HttpClient { BaseAddress = new Uri($"{endpoint.BaseUrl}/") };
+            using var client = SecureTransport.CreateClient(endpoint.BaseUrl, endpoint.TlsFingerprint);
 
             using var healthRequest = new HttpRequestMessage(HttpMethod.Get, "api/health");
             healthRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -117,7 +119,8 @@ public sealed class EndpointSelector
                 var reason = authResponse.StatusCode == System.Net.HttpStatusCode.Unauthorized
                     ? "The token was rejected."
                     : $"Authentication returned HTTP {(int)authResponse.StatusCode}.";
-                return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, reason);
+                return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, reason,
+                    authResponse.StatusCode == System.Net.HttpStatusCode.Unauthorized);
             }
 
             return new EndpointProbeResult(endpoint, true, stopwatch.Elapsed);
@@ -126,6 +129,7 @@ public sealed class EndpointSelector
         {
             return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, "Connection timed out.");
         }
+        catch (ConnectionException error) { return new(endpoint, false, stopwatch.Elapsed, error.Message); }
         catch (HttpRequestException exception)
         {
             return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, exception.Message);

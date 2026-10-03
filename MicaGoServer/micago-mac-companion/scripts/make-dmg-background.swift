@@ -29,16 +29,6 @@ func drawString(_ text: String, at point: NSPoint, size fontSize: CGFloat, weigh
     text.draw(in: NSRect(x: point.x, y: point.y, width: 660 - point.x * 2, height: fontSize + 12), withAttributes: attrs)
 }
 
-func drawCentered(_ text: String, centerX: CGFloat, y: CGFloat, size fontSize: CGFloat, weight: NSFont.Weight, color textColor: NSColor) {
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = .center
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: fontSize, weight: weight),
-        .foregroundColor: textColor,
-        .paragraphStyle: paragraph,
-    ]
-    text.draw(in: NSRect(x: centerX - 92, y: y, width: 184, height: fontSize + 12), withAttributes: attrs)
-}
 
 image.lockFocus()
 
@@ -80,8 +70,6 @@ arrow.lineCapStyle = .round
 arrow.lineJoinStyle = .round
 arrow.stroke()
 
-drawCentered("micaGO", centerX: 180, y: 96, size: 14, weight: .medium, color: color(0x2b3346))
-drawCentered("Applications", centerX: 480, y: 96, size: 14, weight: .medium, color: color(0x2b3346))
 
 image.unlockFocus()
 

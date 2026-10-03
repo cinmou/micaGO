@@ -18,6 +18,13 @@ class _MemoryStore implements SecureStore {
   ConnectionProfile? _saved;
 
   @override
+  Future<bool> compatibilityStorageEnabled() async => false;
+  @override
+  Future<void> prepareCredentialStorage({
+    Future<bool> Function()? confirmCompatibility,
+  }) async {}
+
+  @override
   Future<ConnectionProfile?> loadProfile() async => _saved;
 
   @override
@@ -71,7 +78,8 @@ void main() {
 
       expect(find.text('Scan QR code'), findsOneWidget);
       expect(find.text('Paste connection JSON'), findsOneWidget);
-      expect(find.text('Advanced manual setup'), findsOneWidget);
+      expect(find.text('Advanced manual setup'), findsNothing);
+      expect(find.byType(TextFormField), findsNothing);
       expect(find.text('WebSocket URL (optional)'), findsNothing);
       expect(find.text('Server URL'), findsNothing);
     },

@@ -41,7 +41,7 @@ type ServiceAccount struct {
 func LoadServiceAccount(path string) (*ServiceAccount, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read service account: %w", err)
+		return nil, fmt.Errorf("service account file could not be read")
 	}
 	return ParseServiceAccount(data)
 }

@@ -115,7 +115,8 @@ type fileConfig struct {
 		PreferredPairingEndpoint string `yaml:"preferred_pairing_endpoint"`
 	} `yaml:"network"`
 	Auth struct {
-		Token string `yaml:"token"`
+		Token           string `yaml:"token"`
+		SecurityVersion int    `yaml:"security_version,omitempty"`
 	} `yaml:"auth"`
 	Sync struct {
 		Interval       string `yaml:"interval"`
@@ -287,7 +288,10 @@ func ValidatePublicBaseURL(raw string) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return errors.New("public_base_url must start with http:// or https://")
 	}
-	if u.Host == "" {
+	if u.User != nil {
+		return errors.New("public_base_url must not contain credentials")
+	}
+	if u.Hostname() == "" {
 		return errors.New("public_base_url must include a host")
 	}
 	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
@@ -455,6 +459,17 @@ func ensureConfigFile(baseDir, cfgPath string) (bool, fileConfig, error) {
 	if err != nil {
 		return false, fileConfig{}, err
 	}
+	if cfg.Auth.SecurityVersion < 84 {
+		token, err := generateToken()
+		if err != nil {
+			return false, fileConfig{}, err
+		}
+		cfg.Auth.Token = token
+		cfg.Auth.SecurityVersion = 84
+		if err = writeConfigFile(cfgPath, cfg); err != nil {
+			return false, fileConfig{}, err
+		}
+	}
 	return false, cfg, nil
 }
 
@@ -466,6 +481,7 @@ func defaultFileConfig(token string) fileConfig {
 	cfg.Network.VerifyTLS = true
 	cfg.Network.PreferredPairingEndpoint = defaultPreferredPairing
 	cfg.Auth.Token = token
+	cfg.Auth.SecurityVersion = 84
 	cfg.Sync.Interval = defaultSyncInterval.String()
 	cfg.Sync.UpdateLookback = defaultUpdateLookback.String()
 	cfg.Notifications.Enabled = false
@@ -557,6 +573,7 @@ func insertSectionBlankLines(rendered string) string {
 // old handwritten parser.
 func parseConfig(body string) (fileConfig, error) {
 	cfg := defaultFileConfig("")
+	cfg.Auth.SecurityVersion = 0
 	if err := yaml.Unmarshal([]byte(body), &cfg); err != nil {
 		return fileConfig{}, fmt.Errorf("parse config file: %w", err)
 	}

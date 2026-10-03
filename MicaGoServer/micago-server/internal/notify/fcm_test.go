@@ -115,7 +115,7 @@ func TestFCMMessagePayloadIsDataOnly(t *testing.T) {
 	// contact book, no message history.
 	for k := range data {
 		switch k {
-		case "type", "messageGuid", "chatGuid", "sourceRowId", "title", "body", "senderName", "conversationTitle", "isGroup", "handle", "previewMode", "hasAttachments", "createdAt":
+		case "type", "messageGuid", "chatGuid", "sourceRowId", "title", "body", "senderName", "conversationTitle", "isGroup", "handle", "previewMode", "hasAttachments", "createdAt", "dateCreated":
 		default:
 			t.Fatalf("unexpected data key %q", k)
 		}

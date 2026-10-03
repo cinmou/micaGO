@@ -1,6 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'notification_store.dart';
+import 'push_logic.dart';
 
 /// C31/C32 — the single place that defines how a message notification looks and
 /// is identified. Every path that shows one (the FCM background isolate and the
@@ -85,11 +86,14 @@ Future<bool?> requestSystemNotificationPermission() async {
 /// (contact name, preview mode applied). The chat's preview buffer accumulates
 /// across pushes so prior unread lines remain visible, and dedupes by
 /// [messageGuid] so an FCM + keep-alive delivery of the same message is shown
-/// once. No reply action this pass (deferred). [chatGuid] is the tap payload.
+/// once. Inline reply sends an ordinary new message on the notified route.
 Future<void> showMessageNotification(
   FlutterLocalNotificationsPlugin plugin, {
   required String? chatGuid,
   required String messageGuid,
+  String? deviceId,
+  String replyLabel = 'Reply',
+  String replyHint = 'Message',
   required String senderName,
   required String conversationTitle,
   String? senderKey,
@@ -166,6 +170,17 @@ Future<void> showMessageNotification(
     styleInformation: style,
     largeIcon: largeIcon,
     when: ts,
+    actions: chatGuid?.isNotEmpty == true && deviceId?.isNotEmpty == true
+        ? [
+            AndroidNotificationAction(
+              notificationReplyActionId,
+              replyLabel,
+              inputs: [AndroidNotificationActionInput(label: replyHint)],
+              cancelNotification: false,
+              showsUserInterface: false,
+            ),
+          ]
+        : null,
   );
 
   await plugin.show(
@@ -173,7 +188,11 @@ Future<void> showMessageNotification(
     conversationTitle,
     preview,
     NotificationDetails(android: android),
-    payload: chatGuid,
+    payload: chatGuid == null
+        ? null
+        : deviceId?.isNotEmpty == true
+        ? notificationPayload(chatGuid, deviceId!)
+        : chatGuid,
   );
 }
 

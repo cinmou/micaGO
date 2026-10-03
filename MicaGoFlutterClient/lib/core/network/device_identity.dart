@@ -1,22 +1,9 @@
-import 'dart:math';
-
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 
 /// App version embedded in the device label so the Companion can show which
 /// client build is connected (C19). Bump alongside pubspec `version`.
-const String kAppVersion = '0.78.0';
-
-/// Generates a stable, client-side device id (C21u). Persisted locally and sent
-/// on **every** registration so the server upserts the same device row instead
-/// of creating a duplicate on each reconnect/debug-refresh. Not derived from any
-/// private hardware identifier — just a random opaque token.
-String generateStableDeviceId() {
-  final rng = Random.secure();
-  final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
-  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return 'flutter-$hex';
-}
+const String kAppVersion = '0.87.0';
 
 /// The device's real name for the Companion's Paired Devices list (C53).
 ///   • iOS → the user-set device name ("Alex's iPhone").

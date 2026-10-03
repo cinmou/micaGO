@@ -8,14 +8,22 @@ import (
 )
 
 type AuthConfig struct {
+	Devices *DeviceAuth
 	Enabled bool
 	Token   string
 	Logger  *log.Logger
 }
 
 func (c AuthConfig) Wrap(next http.Handler) http.Handler {
+	if c.Devices != nil {
+		return c.Devices.Wrap(next)
+	}
 	if !c.Enabled {
-		return next
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if limitRequestBody(w, r) {
+				next.ServeHTTP(w, r)
+			}
+		})
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !validBearerToken(r, c.Token) {
@@ -26,7 +34,9 @@ func (c AuthConfig) Wrap(next http.Handler) http.Handler {
 			writeUnauthorized(w)
 			return
 		}
-		next.ServeHTTP(w, r)
+		if limitRequestBody(w, r) {
+			next.ServeHTTP(w, r)
+		}
 	})
 }
 
@@ -61,7 +71,7 @@ func validBearerToken(r *http.Request, expected string) bool {
 }
 
 func constantTimeEqual(a, b string) bool {
-	if len(a) != len(b) {
+	if b == "" || len(a) != len(b) {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1

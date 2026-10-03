@@ -42,3 +42,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## ZXing.Net
+
+Optional camera and image pairing uses ZXing.Net 0.16.11, the .NET port of
+ZXing, licensed under Apache License 2.0. Copyright ZXing authors and contributors.
+Source: https://github.com/micjahn/ZXing.Net
+The complete license is distributed as `ZXING-LICENSE.txt`.

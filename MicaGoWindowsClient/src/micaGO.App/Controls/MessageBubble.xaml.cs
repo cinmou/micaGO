@@ -47,6 +47,8 @@ public sealed partial class MessageBubble : UserControl
     public static void RefreshAppearance() => AppearanceChanged?.Invoke(null, EventArgs.Empty);
 
     /// <summary>Clears transient per-thread effect state when another chat opens.</summary>
+    public static void ClearPrivateMedia() { lock (ThumbnailGate) { ThumbnailCache.Clear(); ThumbnailLru.Clear(); } ResetTransientState(); }
+
     public static void ResetTransientState()
     {
         RevealedInkKeys.Clear();
@@ -478,6 +480,7 @@ public sealed partial class MessageBubble : UserControl
 
     private async Task LoadTileImageAsync(Message message, Attachment attachment, Action<BitmapImage, bool> apply)
     {
+        if (!AppServices.Current.Media.AccessAllowed) return;
         lock (ThumbnailGate)
         {
             if (ThumbnailCache.TryGetValue(attachment.Id, out var cached))
@@ -509,6 +512,7 @@ public sealed partial class MessageBubble : UserControl
             using IRandomAccessStream stream = await file.OpenAsync(FileAccessMode.Read);
             var bitmap = new BitmapImage { DecodePixelWidth = 720 };
             await bitmap.SetSourceAsync(stream);
+            if (!AppServices.Current.Media.AccessAllowed) return;
             lock (ThumbnailGate)
             {
                 ThumbnailCache[attachment.Id] = bitmap;

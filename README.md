@@ -77,7 +77,7 @@ project.
 
 - **Mac Companion:** macOS 13 or newer, signed in to iMessage, with Full Disk
   Access granted for Messages data.
-- **Android client:** Android 6.0 or newer (API 23+). The client includes layouts
+- **Android client:** Android 7.0 or newer (API 24+). The client includes layouts
   for phones, tablets, and large screens.
 - **Network:** LAN is recommended for first setup. Remote access is optional and
   requires your own public URL or tunnel.
@@ -135,7 +135,7 @@ project.
   upload. Edit / Unsend / Delete use an optional bundled
   [IMCore helper](#-optional-features).
 - **Pairing** — the Companion shows a QR code / connection JSON with the LAN/public
-  candidates + a bearer token; the client scans or pastes it.
+  candidates, a five-minute single-use pairing code, and the server certificate pin. The client scans or pastes it and receives its own device credential.
 
 ---
 
@@ -145,8 +145,8 @@ micaGO is **local‑first** and built so your data stays yours.
 
 | Concern | How micaGO handles it |
 | --- | --- |
-| **Auth** | Every API call needs a server‑generated **bearer token** (`~/.micago/config.yaml`). Anyone with your URL **and** token can reach your Mac — treat it like a password. |
-| **Network** | Default bind is your **LAN**. Public exposure is opt‑in and your responsibility; prefer HTTPS for anything leaving your network. |
+| **Auth** | Each paired device has an independent bearer credential. Revoke a device in Companion to stop future access and close its sockets. The config token is local administration only. |
+| **Network** | LAN uses HTTPS/WSS with the paired certificate pin (default port 3001); public routes use verified HTTPS. HTTP port 3000 is loopback-only for Companion/local proxies. |
 | **Your data** | Messages are served from your Mac to paired devices. Contacts are matched on-device. |
 | **Push** | If you enable FCM, payloads carry a small wake/preview for notification delivery. |
 | **Private APIs** | The optional IMCore helper (edit/unsend/delete) is gated behind capability checks. |

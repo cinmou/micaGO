@@ -29,6 +29,29 @@ MessageModel _optimistic(String tempId, String text, int at) =>
     MessageModel.optimistic(tempId: tempId, text: text, dateCreated: at);
 
 void main() {
+  test('merged routes keep identical GUIDs, updates and unsends distinct', () {
+    final c = MessageCollection();
+    final a = _server(
+      guid: 'same',
+      text: 'A',
+      dateCreated: 100,
+    ).copyWith(chatGuid: 'a');
+    final b = _server(
+      guid: 'same',
+      text: 'B',
+      dateCreated: 200,
+    ).copyWith(chatGuid: 'b');
+    c.mergeServerPage([a, b]);
+    expect(c.ordered.map((m) => m.text), ['A', 'B']);
+    expect(c.serverByGuid('same'), isNull);
+    c.applyUpdate(b.copyWith(text: 'updated B'));
+    expect(c.serverByGuid('same', chatGuid: 'a')!.text, 'A');
+    expect(c.applyUnsend('same', 300, chatGuid: 'b'), isTrue);
+    expect(c.serverByGuid('same', chatGuid: 'a')!.isRetracted, isFalse);
+    c.removeServerMessages(['a\u001fsame']);
+    expect(c.ordered.single.chatGuid, 'b');
+  });
+
   group('server message events', () {
     test('message:new inserts and orders by date', () {
       final c = MessageCollection();

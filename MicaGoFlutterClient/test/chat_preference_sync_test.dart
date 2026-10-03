@@ -95,6 +95,35 @@ class PreferenceServer {
 }
 
 void main() {
+  test(
+    'undo window persists visibility without waiting for transport',
+    () async {
+      final server = PreferenceServer();
+      final cache = MemoryCache();
+      final device = server.device(cache);
+      await device.sync();
+      await device.setHidden(
+        ['route-a', 'route-b'],
+        true,
+        syncImmediately: false,
+      );
+      expect(cache.visible, {'route-a', 'route-b'});
+      expect(server.patches, 0);
+      await device.setHidden(
+        ['route-a', 'route-b'],
+        false,
+        syncImmediately: false,
+      );
+      expect(cache.visible, isEmpty);
+      expect(server.patches, 0);
+      await device.sync();
+      expect(server.rows['route-a']!['hidden'], false);
+      expect(server.rows['route-b']!['hidden'], false);
+      expect(device.pending, false);
+      device.dispose();
+    },
+  );
+
   test('two devices hide and restore every selected route', () async {
     final server = PreferenceServer();
     final a = server.device();

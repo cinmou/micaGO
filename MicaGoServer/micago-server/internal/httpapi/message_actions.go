@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -31,7 +32,7 @@ type capabilityRefresher interface{ InvalidateCapabilities() }
 // RefreshMessageActionCapabilities drops any cached helper probe, re-scans, and
 // returns the fresh capabilities. The Companion calls this right after a helper
 // install so /api/server/status + the dedicated capability endpoint report the
-// new state without a backend restart. It also broadcasts connection:updated so
+// new state without a backend restart. It also broadcasts capabilities:updated so
 // connected clients re-check their gating.
 func (h *Handlers) RefreshMessageActionCapabilities(w http.ResponseWriter, r *http.Request) {
 	if rf, ok := h.actions.(capabilityRefresher); ok {
@@ -89,7 +90,7 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req editMessageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeActionBody(w, r, &req, false); err != nil || req.PartIndex < 0 {
 		writeBadRequest(w, "invalid JSON body")
 		return
 	}
@@ -116,7 +117,11 @@ func (h *Handlers) RetractMessage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	req := decodeMessageActionRequest(r)
+	var req messageActionRequest
+	if err := decodeActionBody(w, r, &req, true); err != nil || req.PartIndex < 0 {
+		writeBadRequest(w, "invalid JSON body or partIndex")
+		return
+	}
 	if err := h.requireMessageActions().Retract(r.Context(), imessage.Request{
 		Action:      imessage.ActionRetract,
 		ChatGUID:    chatGUID,
@@ -178,8 +183,21 @@ func (h *Handlers) syncAfterMessageAction(r *http.Request) {
 	}
 }
 
-func decodeMessageActionRequest(r *http.Request) messageActionRequest {
-	var req messageActionRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	return req
+func decodeActionBody(w http.ResponseWriter, r *http.Request, target any, allowEmpty bool) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONRequestBytes))
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(target)
+	if allowEmpty && err == io.EOF {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		if err == nil {
+			return io.ErrUnexpectedEOF
+		}
+		return err
+	}
+	return nil
 }

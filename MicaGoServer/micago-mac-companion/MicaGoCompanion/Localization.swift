@@ -1,20 +1,48 @@
 import Foundation
 
 enum L10n {
-    static func tr(_ key: String) -> String {
-        let lang = Locale.preferredLanguages.first?.lowercased() ?? "en"
-        let table: [String: String]
-        if lang.hasPrefix("zh-hant") || lang.hasPrefix("zh-tw") || lang.hasPrefix("zh-hk") {
-            table = zhHant
-        } else if lang.hasPrefix("zh") {
-            table = zhHans
-        } else {
-            table = en
+    static let languageKey = "appLanguage"
+    static let supportedLanguages = ["system", "en", "zh-Hans", "zh-Hant"]
+
+    static var languageIdentifier: String {
+        languageIdentifier(for: UserDefaults.standard.string(forKey: languageKey) ?? "system")
+    }
+
+    static func languageIdentifier(for choice: String, preferredLanguage: String = Locale.preferredLanguages.first ?? "en") -> String {
+        let requested = supportedLanguages.contains(choice) && choice != "system"
+            ? choice : preferredLanguage
+        let language = requested.lowercased()
+        if language.hasPrefix("zh-hant") || language.hasPrefix("zh-tw") || language.hasPrefix("zh-hk") || language.hasPrefix("zh-mo") {
+            return "zh-Hant"
         }
+        return language.hasPrefix("zh") ? "zh-Hans" : "en"
+    }
+
+    static var locale: Locale { Locale(identifier: languageIdentifier) }
+
+    static func localized(_ key: String.LocalizationValue) -> String {
+        // Select the catalog's language bundle explicitly. Locale also controls
+        // formatting; it does not replace Bundle's preferred-language lookup.
+        let bundle = Bundle.main.path(forResource: languageIdentifier, ofType: "lproj")
+            .flatMap(Bundle.init(path:)) ?? Bundle.main
+        return String(localized: key, bundle: bundle, locale: locale)
+    }
+
+    static func tr(_ key: String) -> String {
+        let table = languageIdentifier == "zh-Hant" ? zhHant
+            : languageIdentifier == "zh-Hans" ? zhHans : en
         return table[key] ?? en[key] ?? key
     }
 
     private static let en = [
+        "language.title": "Language",
+        "language.system": "System language",
+        "language.help": "Changes apply immediately.",
+        "pairing.remaining": "Pairing code expires in %@. It can be used once.",
+        "pairing.awaitingDevice": "Awaiting device connection",
+        "pairing.used": "Pairing code used. Create a new code to connect another device.",
+        "pairing.expired": "Pairing code expired. Create a new code to continue.",
+        "pairing.invalidated": "Pairing code replaced. Create a new code to continue.",
         "prefs.title": "Hidden Chats",
         "prefs.description": "Hidden chats keep syncing, but they leave the chat list and stop notifying on every device. Sync Control rules don't change.",
         "prefs.select": "Choose a chat",
@@ -64,6 +92,14 @@ enum L10n {
     ]
 
     private static let zhHans = [
+        "language.title": "语言",
+        "language.system": "跟随系统",
+        "language.help": "更改立即生效。",
+        "pairing.remaining": "配对码将在 %@ 后过期，仅可使用一次。",
+        "pairing.awaitingDevice": "等待设备连接",
+        "pairing.used": "配对码已使用。连接其他设备请生成新配对码。",
+        "pairing.expired": "配对码已过期，请生成新配对码。",
+        "pairing.invalidated": "配对码已被替换，请生成新配对码。",
         "prefs.title": "隐藏聊天",
         "prefs.description": "隐藏的聊天照常同步，但会从所有设备的聊天列表中消失，也不再通知。同步控制规则不变。",
         "prefs.select": "选择聊天",
@@ -112,6 +148,14 @@ enum L10n {
     ]
 
     private static let zhHant = [
+        "language.title": "語言",
+        "language.system": "跟隨系統",
+        "language.help": "變更立即生效。",
+        "pairing.remaining": "配對碼將在 %@ 後過期，僅可使用一次。",
+        "pairing.awaitingDevice": "等待裝置連線",
+        "pairing.used": "配對碼已使用。連線其他裝置請產生新配對碼。",
+        "pairing.expired": "配對碼已過期，請產生新配對碼。",
+        "pairing.invalidated": "配對碼已被替換，請產生新配對碼。",
         "prefs.title": "隱藏聊天",
         "prefs.description": "隱藏的聊天照常同步，但會從所有裝置的聊天列表中消失，也不再通知。同步控制規則不變。",
         "prefs.select": "選擇聊天",

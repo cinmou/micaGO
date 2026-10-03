@@ -150,3 +150,14 @@ func TestValidateSecurityRejectsDisableAuthOnNonLocalAddress(t *testing.T) {
 		t.Fatal("expected disable-auth validation error")
 	}
 }
+
+func TestPublicBaseURLRejectsEmbeddedCredentials(t *testing.T) {
+	for _, target := range []string{"https://user:pass@example.com", "https://user@example.com", "http://:3000"} {
+		if ValidatePublicBaseURL(target) == nil {
+			t.Fatal("accepted credentials or empty hostname")
+		}
+	}
+	if err := ValidatePublicBaseURL("https://example.com:3000"); err != nil {
+		t.Fatal(err)
+	}
+}

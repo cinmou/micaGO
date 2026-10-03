@@ -58,6 +58,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
+    @AppStorage(L10n.languageKey) private var appLanguage = "system"
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var runtime: RuntimeMonitor
     @EnvironmentObject var backend: BackendController
@@ -97,7 +98,7 @@ struct ContentView: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        detailContent
+                        detailContent.id(appLanguage)
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -108,12 +109,13 @@ struct ContentView: View {
                 // gives each its own Liquid-Glass treatment instead of fusing
                 // them into one oversized capsule.
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) { ServerStatusToolbarPill() }
-                    ToolbarItem(placement: .primaryAction) { ServerPrimaryToolbarButton() }
+                    ToolbarItem(placement: .primaryAction) { ServerStatusToolbarPill().id(appLanguage) }
+                    ToolbarItem(placement: .primaryAction) { ServerPrimaryToolbarButton().id(appLanguage) }
                 }
             }
         }
         .environmentObject(nav)
+        .environment(\.locale, Locale(identifier: L10n.languageIdentifier(for: appLanguage)))
         .frame(minWidth: 820, idealWidth: 1000, minHeight: 560, idealHeight: 720)
         // Expose the WindowGroup's openWindow to AppKit so the menu-bar "Open
         // Dashboard" reopens THIS window (native toolbar/titlebar) rather than a
@@ -247,7 +249,7 @@ private struct ServerPrimaryToolbarButton: View {
         case .starting, .stopping:
             ProgressView()
                 .controlSize(.small)
-                .help(backend.processState == .stopping ? String(localized: "Stopping server…") : String(localized: "Starting server…"))
+                .help(backend.processState == .stopping ? L10n.localized( "Stopping server…") : L10n.localized( "Starting server…"))
         case .running:
             Button { backend.stop() } label: {
                 Label("Stop server", systemImage: "stop.fill")
@@ -270,10 +272,10 @@ private struct ServerPrimaryToolbarButton: View {
 
     private func startHelp(_ state: ServerDisplayState) -> String {
         if state == .externalUnmanaged {
-            return String(localized: "An external server is running, so Companion can't control it")
+            return L10n.localized( "An external server is running, so Companion can't control it")
         }
-        if !backend.binaryExists { return String(localized: "No backend binary installed") }
-        return String(localized: "Start server")
+        if !backend.binaryExists { return L10n.localized( "No backend binary installed") }
+        return L10n.localized( "Start server")
     }
 }
 
@@ -334,7 +336,7 @@ private struct ServerRemoteCard: View {
             if !visibleLANs.isEmpty {
                 ForEach(Array(visibleLANs.enumerated()), id: \.element.id) { index, lan in
                     LabeledRow(
-                        label: index == 0 ? String(localized: "LAN address") : "",
+                        label: index == 0 ? L10n.localized( "LAN address") : "",
                         value: lan.baseUrl)
                 }
             }
@@ -397,12 +399,12 @@ private struct ServerRemoteCard: View {
     private var tunnelStatusChip: some View {
         let (color, label): (Color, String) = {
             switch tunnel.state {
-            case .stopped: return (.secondary, String(localized: "Stopped"))
-            case .starting: return (.orange, String(localized: "Starting…"))
-            case .running: return (.green, String(localized: "Running"))
-            case .failed: return (.red, String(localized: "Failed"))
-            case .runningExternally: return (.blue, String(localized: "Running externally"))
-            case .unknown: return (.secondary, String(localized: "Unknown"))
+            case .stopped: return (.secondary, L10n.localized( "Stopped"))
+            case .starting: return (.orange, L10n.localized( "Starting…"))
+            case .running: return (.green, L10n.localized( "Running"))
+            case .failed: return (.red, L10n.localized( "Failed"))
+            case .runningExternally: return (.blue, L10n.localized( "Running externally"))
+            case .unknown: return (.secondary, L10n.localized( "Unknown"))
             }
         }()
         return HStack(spacing: 8) {
@@ -424,7 +426,7 @@ private struct DashboardDevicesCard: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        SectionCard(title: String(localized: "Paired Devices (\(model.devices.count))")) {
+        SectionCard(title: L10n.localized( "Paired Devices (\(model.devices.count))")) {
             if model.devices.isEmpty {
                 if model.activeConnections.isEmpty {
                     Text("No devices have registered with the server yet.")
@@ -511,7 +513,8 @@ private struct DeviceCardRow: View {
                     Circle()
                         .fill(device.isConnected ? Color.green : Color.secondary)
                         .frame(width: 8, height: 8)
-                    Text(device.isConnected ? String(localized: "Connected") : String(localized: "Disconnected"))
+                    Text(device.awaitingRegistration ? L10n.tr("pairing.awaitingDevice") :
+                         (device.isConnected ? L10n.localized("Connected") : L10n.localized("Disconnected")))
                         .font(.caption)
                         .foregroundStyle(device.isConnected ? Color.green : Color.secondary)
                 }
@@ -519,7 +522,7 @@ private struct DeviceCardRow: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Menu {
-                Button("Remove Device", role: .destructive) {
+                Button("Revoke Device Access", role: .destructive) {
                     Task { await model.deleteDevice(deviceID: device.id) }
                 }
             } label: {
@@ -541,17 +544,17 @@ private struct TutorialsPage: View {
     /// Localized guides ship as `name.zh-Hans.md` / `name.zh-Hant.md` beside the
     /// English `name.md`; English-only guides ignore the suffix.
     private static let entries: [(title: String, subtitle: String, path: String, localized: Bool)] = [
-        (String(localized: "Getting Started"), String(localized: "First setup, permissions, and your first connection."), "docs/getting-started", true),
-        (String(localized: "Documentation"), String(localized: "All user guides in one place."), "docs/index", true),
-        (String(localized: "Android Client"), String(localized: "Pair the Android app with a QR code."), "docs/android-client-connection", false),
-        (String(localized: "Remote Access"), String(localized: "Reach your Mac from anywhere through your own tunnel."), "docs/remote-access-cloudflare", false),
-        (String(localized: "Notifications"), String(localized: "Set up push notifications and fix common problems."), "docs/notifications-setup", false),
+        (L10n.localized( "Getting Started"), L10n.localized( "First setup, permissions, and your first connection."), "docs/getting-started", true),
+        (L10n.localized( "Documentation"), L10n.localized( "All user guides in one place."), "docs/index", true),
+        (L10n.localized( "Android Client"), L10n.localized( "Pair the Android app with a QR code."), "docs/android-client-connection", false),
+        (L10n.localized( "Remote Access"), L10n.localized( "Reach your Mac from anywhere through your own tunnel."), "docs/remote-access-cloudflare", false),
+        (L10n.localized( "Notifications"), L10n.localized( "Set up push notifications and fix common problems."), "docs/notifications-setup", false),
     ]
 
     /// The `.md` filename suffix that matches the user's preferred language, so a
     /// localized guide opens in that language (English guides pass `localized:false`).
     private var docSuffix: String {
-        let lang = Locale.preferredLanguages.first?.lowercased() ?? "en"
+        let lang = L10n.languageIdentifier.lowercased()
         if lang.hasPrefix("zh-hant") || lang.hasPrefix("zh-tw") || lang.hasPrefix("zh-hk") {
             return ".zh-Hant"
         } else if lang.hasPrefix("zh") {
@@ -640,7 +643,7 @@ private struct AboutPage: View {
             }
         }
 
-        Text("An open source project.")
+        Text(verbatim: "made with ♥️ for everyone")
             .font(.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -751,7 +754,7 @@ private struct CapabilityRow: View {
                 .foregroundStyle(on ? Color.green : Color.secondary)
             Text(LocalizedStringKey(label))
             Spacer()
-            Text(on ? String(localized: "available") : String(localized: "unavailable")).font(.caption).foregroundStyle(.secondary)
+            Text(on ? L10n.localized( "available") : L10n.localized( "unavailable")).font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -865,16 +868,16 @@ private struct HelperUIState {
         switch actions.state {
         case "ready":
             icon = "checkmark.circle.fill"; color = .green
-            headline = String(localized: "IMCore helper is ready")
+            headline = L10n.localized( "IMCore helper is ready")
         case "not_runnable":
             icon = "exclamationmark.octagon.fill"; color = .orange
-            headline = String(localized: "Helper installed but not runnable")
+            headline = L10n.localized( "Helper installed but not runnable")
         case "unsupported_selectors":
             icon = "exclamationmark.triangle.fill"; color = .orange
-            headline = String(localized: "Not available on this version of macOS")
+            headline = L10n.localized( "Not available on this version of macOS")
         default: // missing or unknown
             icon = "arrow.down.circle"; color = .secondary
-            headline = String(localized: "IMCore helper not installed, so these actions are hidden in the app")
+            headline = L10n.localized( "IMCore helper not installed, so these actions are hidden in the app")
         }
     }
 }
@@ -905,7 +908,7 @@ private struct RuntimeCard: View {
             HStack(spacing: 8) {
                 StatusDot(on: runtime.messagesRunning)
                 Text("Messages.app")
-                Text(runtime.messagesRunning ? String(localized: "running") : String(localized: "not running"))
+                Text(runtime.messagesRunning ? L10n.localized( "running") : L10n.localized( "not running"))
                     .font(.caption)
                     .foregroundStyle(runtime.messagesRunning ? Color.secondary : Color.orange)
                 Spacer()
@@ -924,7 +927,7 @@ private struct RuntimeCard: View {
             )) {
                 Text("Keep this Mac awake while serving")
             }
-            Text("Status: \(runtime.keepAwakeActive ? String(localized: "active (power assertion)") : String(localized: "off"))")
+            Text("Status: \(runtime.keepAwakeActive ? L10n.localized( "active (power assertion)") : L10n.localized( "off"))")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
@@ -954,7 +957,7 @@ private struct LiveSyncMonitorCard: View {
             let d = model.syncDiagnostics
             HStack(spacing: 10) {
                 StatusDot(on: model.reachable)
-                Text(model.reachable ? String(localized: "Server running") : String(localized: "Server unreachable"))
+                Text(model.reachable ? L10n.localized( "Server running") : L10n.localized( "Server unreachable"))
                     .font(.headline)
                 Spacer()
                 if model.syncNowBusy { ProgressView().controlSize(.small) }
@@ -1027,9 +1030,9 @@ private struct BinaryPathRow: View {
 
     private var resolvedDescription: String {
         if let r = backend.resolveBinary() {
-            return String(localized: "Using \(r.source) binary: \(r.path)")
+            return L10n.localized( "Using \(r.source) binary: \(r.path)")
         }
-        return String(localized: "No runnable backend found. The bundled binary is missing and no valid path is set.")
+        return L10n.localized( "No runnable backend found. The bundled binary is missing and no valid path is set.")
     }
 
     private func chooseBinary() {
@@ -1052,8 +1055,8 @@ private enum BindMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .localNetwork: return String(localized: "Local network")
-        case .custom: return String(localized: "Custom")
+        case .localNetwork: return L10n.localized( "Local network")
+        case .custom: return L10n.localized( "Custom")
         }
     }
 }
@@ -1144,9 +1147,9 @@ private struct ServerBindAddressCard: View {
     private var explanation: String {
         switch mode {
         case .localNetwork:
-            return String(localized: "Devices on the same Wi‑Fi use the LAN address shown above. Recommended.")
+            return L10n.localized( "Devices on the same Wi‑Fi use the LAN address shown above. Recommended.")
         case .custom:
-            return String(localized: "Listen on one interface address. Only use this if you know which interface to pick.")
+            return L10n.localized( "Listen on one interface address. Only use this if you know which interface to pick.")
         }
     }
 
@@ -1254,45 +1257,56 @@ private struct LogsPage: View {
 // MARK: - Advanced page (general lifecycle/login + diagnostics)
 
 private struct AdvancedPage: View {
+    @AppStorage(L10n.languageKey) private var appLanguage = "system"
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var backend: BackendController
 
     var body: some View {
         // C23 cleanup: "Startup & Lifecycle" + "Launch at Login" merged into one
         // section. General app/server lifecycle + login behavior only.
-        SectionCard(title: String(localized: "settings.general.title")) {
+        SectionCard(title: L10n.localized( "settings.general.title")) {
+            Picker(L10n.tr("language.title"), selection: $appLanguage) {
+                Text(L10n.tr("language.system")).tag("system")
+                Text("English").tag("en")
+                Text("简体中文").tag("zh-Hans")
+                Text("繁體中文").tag("zh-Hant")
+            }
+            .pickerStyle(.menu)
+            Text(L10n.tr("language.help"))
+                .font(.caption2).foregroundStyle(.secondary)
+            Divider()
             LaunchAtLoginControls()
-            Toggle(String(localized: "settings.server.lifecycleWithApp"), isOn: $backend.manageLifecycleWithApp)
-            Toggle(String(localized: "settings.server.restartOnCrash"), isOn: $backend.autoRestart)
-            Toggle(String(localized: "settings.app.launchHidden"), isOn: $backend.launchHidden)
-            Toggle(String(localized: "settings.app.hideDockIcon"), isOn: $backend.hideDockIcon)
+            Toggle(L10n.localized( "settings.server.lifecycleWithApp"), isOn: $backend.manageLifecycleWithApp)
+            Toggle(L10n.localized( "settings.server.restartOnCrash"), isOn: $backend.autoRestart)
+            Toggle(L10n.localized( "settings.app.launchHidden"), isOn: $backend.launchHidden)
+            Toggle(L10n.localized( "settings.app.hideDockIcon"), isOn: $backend.hideDockIcon)
                 .onChange(of: backend.hideDockIcon) { _ in
                     // Apply immediately: turning it off restores the Dock icon now.
                     applyActivationPolicy()
                 }
-            Text(String(localized: "settings.server.restartHelp"))
+            Text(L10n.localized( "settings.server.restartHelp"))
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
 
-        SectionCard(title: String(localized: "settings.developer.title")) {
+        SectionCard(title: L10n.localized( "settings.developer.title")) {
             HStack {
                 Label(
                     model.developerModeEnabled
-                        ? String(localized: "settings.developer.enabled")
-                        : String(localized: "settings.developer.off"),
+                        ? L10n.localized( "settings.developer.enabled")
+                        : L10n.localized( "settings.developer.off"),
                     systemImage: model.developerModeEnabled ? "checkmark.circle.fill" : "hammer"
                 )
                 .foregroundStyle(model.developerModeEnabled ? Color.green : Color.secondary)
                 Spacer()
                 Button(model.developerModeEnabled
-                    ? String(localized: "settings.developer.disable")
-                    : String(localized: "settings.developer.enable")
+                    ? L10n.localized( "settings.developer.disable")
+                    : L10n.localized( "settings.developer.enable")
                 ) {
                     model.developerModeEnabled.toggle()
                 }
             }
-            Text(String(localized: "settings.developer.help"))
+            Text(L10n.localized( "settings.developer.help"))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -1455,7 +1469,7 @@ private struct LANEndpointRow: View {
                     Image(systemName: hidden ? "eye.slash" : "eye")
                 }
                 .buttonStyle(.borderless)
-                .help(hidden ? String(localized: "Show this address for pairing") : String(localized: "Hide this address from pairing"))
+                .help(hidden ? L10n.localized( "Show this address for pairing") : L10n.localized( "Hide this address from pairing"))
             }
             EndpointURLRow(label: "Base", value: endpoint.baseUrl)
             EndpointURLRow(label: "WS", value: endpoint.wsUrl)
@@ -1503,9 +1517,6 @@ private struct PublicURLEditor: View {
                     .font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Toggle("Verify TLS certificate", isOn: $model.publicVerifyTLS)
-                .font(.caption)
 
             HStack(spacing: 12) {
                 Button("Save") { Task { await model.savePublicURL() } }
@@ -1555,12 +1566,12 @@ private struct PublicURLEditor: View {
                     d.ok ? "checkmark.circle" : "exclamationmark.triangle")
         }
         guard let pub = model.urls?.public, pub.enabled else {
-            return (String(localized: "Not configured"), .secondary, "minus.circle")
+            return (L10n.localized( "Not configured"), .secondary, "minus.circle")
         }
         switch pub.reachable {
-        case .yes: return (String(localized: "Reachable"), .green, "checkmark.circle")
-        case .no: return (String(localized: "Not reachable. Validate to see why."), .orange, "exclamationmark.triangle")
-        case .unknown: return (String(localized: "Not validated yet"), .secondary, "questionmark.circle")
+        case .yes: return (L10n.localized( "Reachable"), .green, "checkmark.circle")
+        case .no: return (L10n.localized( "Not reachable. Validate to see why."), .orange, "exclamationmark.triangle")
+        case .unknown: return (L10n.localized( "Not validated yet"), .secondary, "questionmark.circle")
         }
     }
 
@@ -1569,18 +1580,18 @@ private struct PublicURLEditor: View {
     private var publicDiagnostic: (text: String, ok: Bool)? {
         guard let r = model.publicCheckResult else { return nil }
         if r.ok {
-            return (String(localized: "Reachable, and the token was accepted. Public is ready for pairing."), true)
+            return (L10n.localized( "Reachable, and the token was accepted. Public is ready for pairing."), true)
         }
         if !r.reachable {
-            return (String(localized: "Couldn’t reach the public URL. Check that the tunnel is running and forwards to this server’s port."), false)
+            return (L10n.localized( "Couldn’t reach the public URL. Check that the tunnel is running and forwards to this server’s port."), false)
         }
         switch r.status {
         case 401, 403:
-            return (String(localized: "Reached a server, but it rejected the token (\(r.status)). The public URL may point to another server."), false)
+            return (L10n.localized( "Reached a server, but it rejected the token (\(r.status)). The public URL may point to another server."), false)
         case 502, 503, 504:
-            return (String(localized: "The tunnel answered, but no server is behind it (\(r.status)). Make sure micaGO is running and the tunnel forwards to its port."), false)
+            return (L10n.localized( "The tunnel answered, but no server is behind it (\(r.status)). Make sure micaGO is running and the tunnel forwards to its port."), false)
         default:
-            return (r.message.isEmpty ? String(localized: "Validation failed (HTTP \(r.status)).") : r.message, false)
+            return (r.message.isEmpty ? L10n.localized( "Validation failed (HTTP \(r.status)).") : r.message, false)
         }
     }
 
@@ -1602,13 +1613,13 @@ private struct PublicURLEditor: View {
               let scheme = comps.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               let host = comps.host, !host.isEmpty else {
-            return String(localized: "Enter a full origin like https://micago.example.com")
+            return L10n.localized( "Enter a full origin like https://micago.example.com")
         }
         if !(comps.path.isEmpty || comps.path == "/") {
-            return String(localized: "Remove the path. Enter only the origin, without /api, /ws, or any other path.")
+            return L10n.localized( "Remove the path. Enter only the origin, without /api, /ws, or any other path.")
         }
         if comps.query != nil || comps.fragment != nil {
-            return String(localized: "Remove the query or fragment. Enter only the origin.")
+            return L10n.localized( "Remove the query or fragment. Enter only the origin.")
         }
         return nil
     }
@@ -1641,47 +1652,72 @@ private struct CreateConnectionCard: View {
     @EnvironmentObject var model: AppModel
 
     private var hasEndpoint: Bool { model.hasLanCandidate || model.hasPublicCandidate }
-    private var ready: Bool { !model.token.isEmpty && hasEndpoint }
+    private func ready(at date: Date) -> Bool {
+        model.pairingState == "active" && !model.pairingCode.isEmpty && hasEndpoint &&
+            model.pairingExpiresAt > Int64(date.timeIntervalSince1970 * 1000)
+    }
 
     var body: some View {
-        SectionCard(title: "Create Connection") {
-            if !ready {
-                Text(emptyMessage)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                // QR code.
-                if let image = QRCode.image(from: model.pairingPayload) {
-                    Image(nsImage: image)
-                        .interpolation(.none)
-                        .resizable()
-                        .frame(width: 200, height: 200)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let ready = ready(at: context.date)
+            SectionCard(title: "Create Connection") {
+                if ready {
+                    if model.pairingPayload != "{}", let image = QRCode.image(from: model.pairingPayload) {
+                        Image(nsImage: image)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(width: 200, height: 200)
+                    }
+                    HStack(spacing: 12) {
+                        StatusFlag(on: model.hasLanCandidate, label: "LAN")
+                        StatusFlag(on: model.hasPublicCandidate, label: "Public")
+                        StatusFlag(on: true, label: "Pairing code")
+                    }.font(.caption)
+                    let seconds = max(0, Int(ceil(Double(model.pairingExpiresAt) / 1000 - context.date.timeIntervalSince1970)))
+                    Text(String(format: L10n.tr("pairing.remaining"), String(format: "%d:%02d", seconds / 60, seconds % 60)))
+                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                } else {
+                    Text(statusMessage(at: context.date))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                // Small status line.
-                HStack(spacing: 12) {
-                    StatusFlag(on: model.hasLanCandidate, label: "LAN")
-                    StatusFlag(on: model.hasPublicCandidate, label: "Public")
-                    StatusFlag(on: !model.token.isEmpty, label: "Token")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { pairingActions(ready: ready) }
+                    VStack(alignment: .leading, spacing: 10) { pairingActions(ready: ready) }
                 }
-                .font(.caption)
-
-                Button {
-                    copyToPasteboard(model.pairingPayload)
-                } label: {
-                    Label("Copy connection JSON", systemImage: "doc.on.doc")
-                }
-                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
         }
     }
 
-    private var emptyMessage: String {
-        if model.token.isEmpty { return String(localized: "Start the server to generate a connection.") }
-        if model.urls != nil {
-            return String(localized: "No endpoint devices can use yet. Put this Mac on Wi‑Fi or Ethernet, or set up Public for remote access.")
+    @ViewBuilder private func pairingActions(ready: Bool) -> some View {
+        Button {
+            let payload = model.pairingPayload
+            if payload != "{}" { copyToPasteboard(payload) }
+        } label: {
+            Label("Copy connection JSON", systemImage: "doc.on.doc")
+        }.disabled(!ready)
+        Button {
+            Task { await model.refreshPairingCode() }
+        } label: {
+            Label("New pairing code", systemImage: "arrow.clockwise")
+        }.disabled(!hasEndpoint || !model.reachable)
+    }
+
+    private func statusMessage(at date: Date) -> String {
+        if model.pairingState == "used" { return L10n.tr("pairing.used") }
+        if model.pairingState == "invalidated" { return L10n.tr("pairing.invalidated") }
+        if model.pairingState == "expired" ||
+            (model.pairingExpiresAt > 0 && model.pairingExpiresAt <= Int64(date.timeIntervalSince1970 * 1000)) {
+            return L10n.tr("pairing.expired")
         }
-        return String(localized: "No endpoint devices can use yet.")
+        if model.token.isEmpty { return L10n.localized("Start the server to generate a connection.") }
+        if hasEndpoint { return L10n.localized("Create a new pairing code to connect a device.") }
+        if model.urls != nil {
+            return L10n.localized("No endpoint devices can use yet. Put this Mac on Wi‑Fi or Ethernet, or set up Public for remote access.")
+        }
+        return L10n.localized("No endpoint devices can use yet.")
     }
 }
 
@@ -1700,29 +1736,6 @@ private struct StatusFlag: View {
 
 // MARK: - Devices
 
-private struct DevicesSection: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        SectionCard(title: String(localized: "Push Devices (\(model.devices.count))")) {
-            if model.devices.isEmpty {
-                Text("No push devices registered. FCM registration is optional and separate from server connections.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(model.devices) { device in
-                    DeviceCardRow(device: device)
-                    Divider()
-                }
-                if let result = model.notifResult {
-                    Text(result).font(.caption)
-                        .foregroundStyle(result.contains("sent") ? .green : .orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Notifications
 
 private struct NotificationsSection: View {
@@ -1731,10 +1744,10 @@ private struct NotificationsSection: View {
     var body: some View {
         SectionCard(title: "Notification Providers") {
             if let n = model.status?.notifications {
-                LabeledRow(label: "Enabled", value: n.enabled ? String(localized: "yes") : String(localized: "no"))
+                LabeledRow(label: "Enabled", value: n.enabled ? L10n.localized( "yes") : L10n.localized( "no"))
                 LabeledRow(label: "Provider", value: n.provider)
-                LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? String(localized: "configured") : String(localized: "not set"))
-                LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? String(localized: "configured") : String(localized: "not set"))
+                LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
+                LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
                 LabeledRow(label: "Implemented", value: n.implemented.joined(separator: ", "))
                 LabeledRow(label: "Stub", value: n.stub.isEmpty ? "—" : n.stub.joined(separator: ", "))
             } else {
@@ -1814,7 +1827,7 @@ private struct LaunchAtLoginControls: View {
 
     var body: some View {
         Toggle(isOn: $enabled) {
-            Text(String(localized: "settings.login.startAtLogin"))
+            Text(L10n.localized( "settings.login.startAtLogin"))
         }
         .disabled(!LaunchAtLogin.isSupported)
         .onChange(of: enabled) { newValue in
@@ -1826,7 +1839,7 @@ private struct LaunchAtLoginControls: View {
                 enabled = LaunchAtLogin.isEnabled
             }
         }
-        Text("\(String(localized: "settings.login.status")): \(LaunchAtLogin.statusDescription)")
+        Text("\(L10n.localized( "settings.login.status")): \(LaunchAtLogin.statusDescription)")
             .font(.caption).foregroundStyle(.secondary)
         if let error {
             Text(error).font(.caption).foregroundStyle(.orange)

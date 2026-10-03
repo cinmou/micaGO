@@ -160,7 +160,7 @@ func (d *Dispatcher) SyncPublicURL(ctx context.Context, publicURL string) {
 	d.mu.RLock()
 	fs := d.firestore
 	d.mu.RUnlock()
-	if fs == nil || strings.TrimSpace(publicURL) == "" {
+	if fs == nil {
 		return
 	}
 	if err := fs.SetPublicURL(ctx, publicURL); err != nil {
@@ -330,6 +330,7 @@ func buildNotification(event relaydb.NotificationEvent, previewMode string) Noti
 		IsGroup:           event.IsGroup,
 		Handle:            handle,
 		PreviewMode:       previewMode,
+		DateCreated:       int64Value(event.Message.DateCreated),
 		HasAttachments:    event.Message.CacheHasAttachments || len(event.Message.Attachments) > 0,
 		CreatedAt:         time.Now().UnixMilli(),
 	}
@@ -350,6 +351,13 @@ func messagePreviewText(message store.MessageJSON) string {
 func stringValue(value *string) string {
 	if value == nil {
 		return ""
+	}
+	return *value
+}
+
+func int64Value(value *int64) int64 {
+	if value == nil {
+		return 0
 	}
 	return *value
 }

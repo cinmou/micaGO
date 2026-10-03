@@ -63,6 +63,7 @@ class PairingPayload {
   final int version;
   final ConnectionMode mode;
   final String token;
+  final String tlsFingerprint;
   final String? serverName;
   final List<PairingEndpoint> endpoints;
 
@@ -75,6 +76,7 @@ class PairingPayload {
     required this.version,
     required this.mode,
     required this.token,
+    this.tlsFingerprint = '',
     required this.endpoints,
     this.serverName,
     this.configRevision = '',
@@ -113,6 +115,8 @@ class PairingPayload {
     return ConnectionProfile(
       baseUrl: normalizeBaseUrl(primary?.baseUrl ?? ''),
       token: token,
+      tlsFingerprint: tlsFingerprint,
+      pairingCode: version >= 4 ? token : null,
       wsUrlOverride: (primary?.wsUrl?.trim().isNotEmpty ?? false)
           ? primary!.wsUrl!.trim()
           : null,
@@ -151,14 +155,16 @@ PairingPayload parsePairingPayload(String raw) {
     );
   }
 
-  final token = (decoded['token'] as String?)?.trim() ?? '';
+  final version = (decoded['version'] as num?)?.toInt() ?? 1;
+  final token =
+      (decoded[version >= 4 ? 'pairingCode' : 'token'] as String?)?.trim() ??
+      '';
   if (token.isEmpty) {
     throw PairingParseException(
       MicaLocalizations.current.t('pair.missingToken'),
     );
   }
 
-  final version = (decoded['version'] as num?)?.toInt() ?? 1;
   // C23 v3: unified payload — all candidates, no mode, with a config revision.
   if (version >= 3 && decoded['candidates'] is List) {
     return _parseV3(decoded, token);
@@ -205,8 +211,19 @@ PairingPayload _parseV3(Map<String, dynamic> decoded, String token) {
     );
   }
 
+  if (((decoded['version'] as num?)?.toInt() ?? 3) >= 4) {
+    if (!RegExp(
+          r'^[a-fA-F0-9]{64}$',
+        ).hasMatch((decoded['tlsFingerprint'] as String?) ?? '') ||
+        usable.any((e) => !isSecureEndpointPair(e.baseUrl, e.effectiveWsUrl))) {
+      throw const PairingParseException(
+        'Invalid secure pairing endpoints or certificate fingerprint.',
+      );
+    }
+  }
   return PairingPayload(
-    version: 3,
+    version: (decoded['version'] as num?)?.toInt() ?? 3,
+    tlsFingerprint: (decoded['tlsFingerprint'] as String?) ?? '',
     // No user-facing mode in v3 — auto LAN-first, Public fallback.
     mode: ConnectionMode.lanFirst,
     token: token,

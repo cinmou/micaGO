@@ -69,12 +69,29 @@ public sealed class ShellViewModel : IAsyncDisposable
         RealtimeChanged?.Invoke(this, EventArgs.Empty);
     });
 
+    private void OnReadStateChanged(object? sender, EventArgs args) => Dispatch(() => {
+        foreach(var (route,at) in _services.ReadState.Positions) {
+            var marked=_services.ReadState.UnreadMarks.GetValueOrDefault(route);
+            if(_routeChats.TryGetValue(route,out var row) && (marked||row.UpdatedAt<=at))
+                _routeChats[route]=row with {HasUnread=marked,UnreadCount=0};
+            if(row is not null && row.UpdatedAt<=at)_ = _services.Notifications.DismissChatAsync(route);
+        }
+        foreach(var row in _allChats) {
+            var routes=row.RouteIds is {Count:>0}?row.RouteIds:[row.Id];
+            var members=routes.Select(route=>_routeChats.GetValueOrDefault(route)).Where(item=>item is not null).ToArray();
+            if(members.Length>0)row.UpdateFrom(row with {HasUnread=members.Any(item=>item!.HasUnread),UnreadCount=members.Sum(item=>item!.UnreadCount)});
+        }
+        RealtimeChanged?.Invoke(this,EventArgs.Empty);
+    });
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await _services.Cache.InitializeAsync(cancellationToken);
         _hiddenMessageKeys = await _services.Cache.GetHiddenMessageKeysAsync(cancellationToken);
         _services.ChatPreferences.Changed += OnChatPreferencesChanged;
         _services.MessagePreferences.Changed += OnMessagePreferencesChanged;
+        _services.ReadState.Changed += OnReadStateChanged;
+        await _services.ReadState.SyncAsync(cancellationToken);
         await _services.MessagePreferences.SyncAsync(cancellationToken);
         _hiddenMessageKeys = _services.MessagePreferences.Hidden;
         await _services.ChatPreferences.SyncAsync(cancellationToken);
@@ -90,8 +107,13 @@ public sealed class ShellViewModel : IAsyncDisposable
         catch when (cached.Count > 0) { SyncStatus = "Offline cache"; }
         try{ActionCapabilities=await _api.GetMessageActionCapabilitiesAsync(cancellationToken);}catch{ActionCapabilities=new(false,false,false);}
 
-        _realtime = new RealtimeSyncService(_api, _services.Cache, _services.ChatPreferences, _services.Connection.ReselectRouteAsync, _services.MessagePreferences);
+        if (_services.Connection.TokenRejected) return;
+        _realtime = new RealtimeSyncService(_api, _services.Cache, _services.ChatPreferences, _services.Connection.ReselectRouteAsync, _services.MessagePreferences, _services.ReadState, _services.Connection.RefreshEndpointsAsync, () => _services.Connection.TokenRejected);
         _realtime.MessagesChanged += OnRealtimeMessagesChanged;
+        _realtime.CapabilitiesChanged += (_, capabilities) => Dispatch(() => {
+            ActionCapabilities=capabilities;
+            RealtimeChanged?.Invoke(this,EventArgs.Empty);
+        });
         _realtime.StatusChanged += (_, status) =>
         {
             _services.Connection.SetRealtimeLive(status == "Live");
@@ -121,6 +143,14 @@ public sealed class ShellViewModel : IAsyncDisposable
         ApplyMessages(await DecorateMessageSendersAsync(_rawMessages,SelectedChat?.IsGroup==true,cancellationToken));
     }
 
+    public async Task SetChatUnreadAsync(ChatSummary chat, bool unread, CancellationToken ct=default)
+    {
+        if (_services.Connection.TokenRejected) return;
+        var positions=(chat.RouteIds is {Count:>0}?chat.RouteIds:[chat.Id]).ToDictionary(
+            route=>route,route=>_routeChats.GetValueOrDefault(route)?.UpdatedAt??chat.UpdatedAt);
+        await _services.ReadState.SetMarkedUnreadAsync(positions,unread,ct);
+    }
+
     public async Task HideChatAsync(ChatSummary chat,CancellationToken cancellationToken=default)
     {
         var routes=chat.RouteIds is{Count:>0}?chat.RouteIds:[chat.Id];
@@ -148,13 +178,14 @@ public sealed class ShellViewModel : IAsyncDisposable
     {
         var ids=messageIds.Distinct().ToArray();
         await _services.MessagePreferences.SetHiddenAsync(ids,false,cancellationToken);
-        var restored=ids.Length;
-        _hiddenMessageKeys=await _services.Cache.GetHiddenMessageKeysAsync(cancellationToken);
-        ApplyMessages(_rawMessages);return restored;
+        // The preference Changed event owns the visibility refresh; repeating
+        // it here can rebuild native rows while the restore page is reloading.
+        return ids.Length;
     }
 
     public async Task SelectChatAsync(ChatSummary chat, CancellationToken cancellationToken = default)
     {
+        if (_services.Connection.TokenRejected) return;
         _selectionCts?.Cancel(); _selectionCts?.Dispose(); _selectionCts=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);var token=_selectionCts.Token;
         var routes=chat.RouteIds is{Count:>0}?chat.RouteIds:[chat.Id];
         var nextRouteIds=routes.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -217,14 +248,18 @@ public sealed class ShellViewModel : IAsyncDisposable
 
     private async Task MarkSelectedChatReadAsync(ChatSummary chat,CancellationToken token)
     {
+        var positions=new Dictionary<string,long>();
         foreach(var route in chat.RouteIds is{Count:>0} routes?routes:[chat.Id])
         {
             var latest=_rawMessages.Where(row=>row.ChatId.Equals(route,StringComparison.OrdinalIgnoreCase)).Select(row=>row.DateCreated).DefaultIfEmpty(0).Max();
             latest=Math.Max(latest,_routeChats.GetValueOrDefault(route)?.UpdatedAt??0);
             var prior=await _services.Cache.GetSettingAsync("read.watermark."+route,token);long.TryParse(prior,out var previous);
             if(latest>previous)await _services.Cache.AdvanceReadWatermarkAsync(route,latest,token);
+            positions[route]=latest;
+            _ = _services.Notifications.DismissChatAsync(route);
             if(_routeChats.TryGetValue(route,out var routeRow)) _routeChats[route]=routeRow with{HasUnread=false,UnreadCount=0};
         }
+        _ = SynchronizeReadPositionsAsync(positions);
         var current=_allChats.FirstOrDefault(item=>item.ListKey==chat.ListKey);if(current is null)return;current.UpdateFrom(current with{UnreadCount=0,HasUnread=false});SelectedChat=current;
     }
 
@@ -422,7 +457,7 @@ public sealed class ShellViewModel : IAsyncDisposable
                 // are suppressed, then notify a genuinely new unknown route once.
                 var unknownRouteFirstObservation=RememberRealtimeMessage(message.ChatId,message.Id);
                 needsReload=true;
-                if(allowNotifications&&unknownRouteFirstObservation&&!message.IsOutgoing&&!_services.ChatPreferences.Hidden.Contains(message.ChatId))
+                if(allowNotifications&&unknownRouteFirstObservation&&!message.IsOutgoing&&message.DateCreated>_services.ReadState.Positions.GetValueOrDefault(message.ChatId)&&!_services.ChatPreferences.Hidden.Contains(message.ChatId)&&!_hiddenMessageKeys.Contains(message.ServerKey)&&!_hiddenMessageKeys.Contains(message.Id))
                 {
                     var title=string.IsNullOrWhiteSpace(message.SenderName)?_services.Localization["newMessage"]:message.SenderName;
                     _services.Notifications.Show(title,MessageSemantics.PreviewText(message),message.ChatId,message.SenderAvatarPath);
@@ -432,13 +467,17 @@ public sealed class ShellViewModel : IAsyncDisposable
             var chat=updates.GetValueOrDefault(canonical.ListKey,canonical);
             var isSelected=SelectedChat is{} selected&&MatchesRoute(selected,message.ChatId);
             var firstObservation = RememberRealtimeMessage(message.ChatId,message.Id);
+            var alreadyRead=message.DateCreated>0&&message.DateCreated<=_services.ReadState.Positions.GetValueOrDefault(message.ChatId);
             var routeChat = _routeChats.GetValueOrDefault(message.ChatId, chat);
             var advancesChat = message.DateCreated >= routeChat.UpdatedAt;
-            _routeChats[message.ChatId] = ChatUnreadSemantics.Advance(routeChat, message.DateCreated, message.IsOutgoing, isSelected, firstObservation);
+            var advancedRoute = ChatUnreadSemantics.Advance(routeChat, message.DateCreated, message.IsOutgoing, isSelected||alreadyRead, firstObservation);
+            if (_services.ReadState.UnreadMarks.GetValueOrDefault(message.ChatId) && !isSelected)
+                advancedRoute = advancedRoute with { HasUnread = true, UnreadCount = 0 };
+            _routeChats[message.ChatId] = advancedRoute;
             var routeRows = (chat.RouteIds is { Count: > 0 } chatRoutes ? chatRoutes : [chat.Id])
                 .Select(route => _routeChats.GetValueOrDefault(route)).OfType<ChatSummary>().ToArray();
             var updatesLatest = message.DateCreated >= chat.UpdatedAt;
-            var incomingUnseen=firstObservation&&advancesChat&&!message.IsOutgoing&&!isSelected;
+            var incomingUnseen=firstObservation&&advancesChat&&!message.IsOutgoing&&!isSelected&&!alreadyRead;
             var preview=MessageSemantics.PreviewText(message);
             updates[canonical.ListKey]=chat with
             {
@@ -472,7 +511,21 @@ public sealed class ShellViewModel : IAsyncDisposable
     {
         if (SelectedChat is not { } selected) return;
         if(!MatchesRoute(selected,message.ChatId)||message.DateCreated<=0)return;
-        _ = _services.Cache.AdvanceReadWatermarkAsync(message.ChatId, message.DateCreated);
+        _ = MarkRouteReadAsync(message);
+    }
+
+    private async Task MarkRouteReadAsync(Message message) {
+        try {
+            await _services.Cache.AdvanceReadWatermarkAsync(message.ChatId,message.DateCreated);
+            await SynchronizeReadPositionsAsync(new Dictionary<string,long>{{message.ChatId,message.DateCreated}});
+        } catch(OperationCanceledException) { }
+    }
+
+    private async Task SynchronizeReadPositionsAsync(IReadOnlyDictionary<string,long> positions) {
+        // Reading updates local state immediately. Network retries must not hold
+        // the selected conversation open or be cancelled by a route switch.
+        try { await _services.ReadState.MarkViewedAsync(positions); }
+        catch(Exception error) { System.Diagnostics.Debug.WriteLine($"[Read state] sync failed: {error.GetType().Name}"); }
     }
 
     private bool RememberRealtimeMessage(string chatId,string id)
@@ -487,6 +540,7 @@ public sealed class ShellViewModel : IAsyncDisposable
 
     private void ApplyChatSnapshot(IEnumerable<ChatSummary> rows)
     {
+        if (_services.Connection.TokenRejected) return;
         // C74: the server does not carry UnreadCount, so a plain assignment
         // zeroed the badge on every chat refresh while HasUnread stayed true
         // (derived from the watermark) — the number flickered off and on.
@@ -552,8 +606,9 @@ public sealed class ShellViewModel : IAsyncDisposable
                 watermark = chat.UpdatedAt;
                 await _services.Cache.AdvanceReadWatermarkAsync(chat.Id,watermark,cancellationToken);
             }
-            var hasUnread=!chat.LatestFromMe&&chat.UpdatedAt>0&&chat.UpdatedAt>watermark;
-            var decorated=chat with{UnreadCount=hasUnread?Math.Max(chat.UnreadCount,_routeChats.GetValueOrDefault(chat.Id)?.UnreadCount??0):0,IsMuted=chat.IsMuted||locallyMuted,IsPinned=chat.IsPinned||locallyPinned,HasUnread=hasUnread};
+            var marked=_services.ReadState.UnreadMarks.GetValueOrDefault(chat.Id);
+            var hasUnread=marked||(!chat.LatestFromMe&&chat.UpdatedAt>0&&chat.UpdatedAt>watermark);
+            var decorated=chat with{UnreadCount=hasUnread&&!marked?Math.Max(chat.UnreadCount,_routeChats.GetValueOrDefault(chat.Id)?.UnreadCount??0):0,IsMuted=chat.IsMuted||locallyMuted,IsPinned=chat.IsPinned||locallyPinned,HasUnread=hasUnread};
             if (chat.IsGroup || chat.Participants is not { Count: > 0 }) { result.Add(decorated); continue; }
             var contact = await _services.Cache.ResolveContactAsync(chat.Participants[0], cancellationToken);
             if (contact is null) { result.Add(decorated); continue; }
@@ -631,6 +686,7 @@ public sealed class ShellViewModel : IAsyncDisposable
     /// </summary>
     private void SyncMessages(IReadOnlyList<Message> target,IReadOnlyDictionary<string,MessageEntranceKind>? entrances=null)
     {
+        if (_services.Connection.TokenRejected) return;
         var inserted = 0;
         var updated = 0;
         var removed = 0;
@@ -731,6 +787,6 @@ public sealed class ShellViewModel : IAsyncDisposable
         await _services.Cache.UpdatePendingUploadAsync(upload with{State=state,Error=error},CancellationToken.None);
     }
     private static string MimeFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch { ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".gif" => "image/gif", ".webp" => "image/webp", ".heic" or ".heif" => "image/heic", ".mov" => "video/quicktime", ".mp4" or ".m4v" => "video/mp4", ".m4a" => "audio/mp4", ".caf" => "audio/x-caf", ".mp3" => "audio/mpeg", ".wav" => "audio/wav", _ => "application/octet-stream" };
-    private void Dispatch(Action action) { if (_dispatcher.HasThreadAccess) action(); else _dispatcher.TryEnqueue(() => action()); }
-    public async ValueTask DisposeAsync() { _services.ChatPreferences.Changed-=OnChatPreferencesChanged;_services.MessagePreferences.Changed-=OnMessagePreferencesChanged; foreach(var cancellation in _uploadCancellations.Values)cancellation.Cancel();_selectionCts?.Cancel();_selectionCts?.Dispose();if (_realtime is not null) await _realtime.DisposeAsync(); }
+    private void Dispatch(Action action) { if (_services.Connection.TokenRejected) return; if (_dispatcher.HasThreadAccess) action(); else _dispatcher.TryEnqueue(() => { if (!_services.Connection.TokenRejected) action(); }); }
+    public async ValueTask DisposeAsync() { _services.ReadState.Changed-=OnReadStateChanged;_services.ChatPreferences.Changed-=OnChatPreferencesChanged;_services.MessagePreferences.Changed-=OnMessagePreferencesChanged; foreach(var cancellation in _uploadCancellations.Values)cancellation.Cancel();_selectionCts?.Cancel();_selectionCts?.Dispose();if (_realtime is not null) await _realtime.DisposeAsync(); }
 }

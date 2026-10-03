@@ -16,7 +16,23 @@ enum ChatListState { idle, loading, loaded, empty, error }
 class ChatListController extends ChangeNotifier {
   final AppController app;
 
-  ChatListController(this.app);
+  ChatListController(this.app) {
+    app.tokenRejected.addListener(_onAuthChanged);
+  }
+  bool _disposed = false;
+  void _onAuthChanged() {
+    if (!app.tokenRejected.value) return;
+    _reloadDebounce?.cancel();
+    chats = const [];
+    error = null;
+    state = ChatListState.empty;
+    notifyListeners();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
 
   ChatListState state = ChatListState.idle;
   List<ChatSummary> chats = const [];
@@ -107,17 +123,16 @@ class ChatListController extends ChangeNotifier {
         error = null;
       } else {
         state = ChatListState.error;
-        error = _humanize(e);
+        error = e.localizedMessage();
       }
     }
     notifyListeners();
   }
 
   /// C42: hide every route of a (possibly merged) contact, then reload once.
-  Future<void> hideChats(Iterable<String> guids) async {
-    await app.chatPreferences.setHidden(guids, true);
-    chats = await app.cache.listChats(includeDebug: includeDebug);
-    notifyListeners();
+  Future<void> setChatsHidden(Iterable<String> guids, bool hidden) async {
+    await app.chatPreferences.setHidden(guids, hidden, syncImmediately: false);
+    await _reloadFromCache();
   }
 
   /// C42: pin/unpin every route of a contact so the merged card sorts to the top.
@@ -125,21 +140,7 @@ class ChatListController extends ChangeNotifier {
     for (final guid in guids) {
       await app.cache.setChatPinned(guid, pinned);
     }
-    chats = await app.cache.listChats(includeDebug: includeDebug);
-    notifyListeners();
-  }
-
-  String _humanize(ApiException e) {
-    switch (e.code) {
-      case 'unauthorized':
-        return MicaLocalizations.current.t('error.tokenRejected');
-      case 'timeout':
-        return MicaLocalizations.current.t('error.timeoutChats');
-      case 'network_error':
-        return MicaLocalizations.current.t('error.unreachable');
-      default:
-        return e.message;
-    }
+    await _reloadFromCache();
   }
 
   void _onWsEvent(WsEvent e) {
@@ -193,7 +194,7 @@ class ChatListController extends ChangeNotifier {
       // duplicate event (WS reconnect, FCM catch-up, resume) can never over-count.
       // Checked before upsert; otherwise every message would look known.
       final isNew =
-          msg.guid.isEmpty || !await app.cache.hasMessageGuid(msg.guid);
+          msg.guid.isEmpty || !await app.cache.hasMessage(chatGuid, msg.guid);
       await app.cache.upsertMessage(chatGuid, msg);
       // C47: ingestion only lights (or leaves) the dot; it never advances the
       // read watermark for someone else's message. The open thread owns marking
@@ -266,14 +267,19 @@ class ChatListController extends ChangeNotifier {
   int? _asInt(Object? value) => value is num ? value.toInt() : null;
 
   Future<void> markRoutesRead(Iterable<String> guids) async {
-    await app.cache.markChatsSeen(guids);
-    chats = await app.cache.listChats(includeDebug: includeDebug);
-    state = chats.isEmpty ? ChatListState.empty : ChatListState.loaded;
-    notifyListeners();
+    await app.markChatsViewed(guids);
+    await _reloadFromCache();
+  }
+
+  Future<void> markRoutesUnread(Iterable<String> guids) async {
+    await app.readState.markUnread(guids);
+    await _reloadFromCache();
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    app.tokenRejected.removeListener(_onAuthChanged);
     _reloadDebounce?.cancel();
     _wsSub?.cancel();
     _deltaSub?.cancel();

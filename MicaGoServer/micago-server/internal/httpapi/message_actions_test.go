@@ -174,3 +174,18 @@ func TestHelperPerformerUnsupportedWhenHelperMissing(t *testing.T) {
 		t.Fatalf("expected unsupported/501, got code=%s status=%d err=%v", imessage.ErrorCode(err), imessage.ErrorStatus(err), err)
 	}
 }
+
+func TestRetractRejectsMalformedOrAmbiguousBody(t *testing.T) {
+	for _, body := range []string{`{"partIndex":`, `{"partIndex":-1}`, `{"partIndex":1} {}`, `{"unknown":1}`} {
+		actions := &stubMessageActions{}
+		h, syncs := newActionHandlers(actions)
+		r := httptest.NewRequest(http.MethodPost, "/retract", bytes.NewBufferString(body))
+		r.SetPathValue("guid", "chat-1")
+		r.SetPathValue("messageGuid", "msg-1")
+		w := httptest.NewRecorder()
+		h.RetractMessage(w, r)
+		if w.Code != 400 || actions.retractReq.MessageGUID != "" || *syncs != 0 {
+			t.Fatalf("malformed body triggered action: %s status=%d", body, w.Code)
+		}
+	}
+}

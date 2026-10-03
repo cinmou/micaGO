@@ -76,17 +76,15 @@ enum ConfigReader {
     /// The Companion's control API must always talk to the local backend, never
     /// to the optional public/tunnel URL. Any-address binds (0.0.0.0, ::, [::],
     /// and Go's host-less ":3000") mean "listen everywhere"; the companion
-    /// connects via loopback. The result always has a non-empty host and a
+    /// connects via IPv4 loopback for every bind. The result has a non-empty host and a
     /// valid port (default 3000), so URL construction cannot fail.
     static func controlHostPort(_ addr: String) -> (host: String, port: Int) {
         let trimmed = addr.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        var host = ""
         var portText = ""
         if trimmed.hasPrefix("[") {
             // Bracketed IPv6: "[::1]:3000" or "[::1]".
             if let close = trimmed.firstIndex(of: "]") {
-                host = String(trimmed[trimmed.index(after: trimmed.startIndex)..<close])
                 let rest = trimmed[trimmed.index(after: close)...]
                 if rest.hasPrefix(":") { portText = String(rest.dropFirst()) }
             }
@@ -94,23 +92,13 @@ enum ConfigReader {
             let colonCount = trimmed.filter { $0 == ":" }.count
             if colonCount == 1, let colon = trimmed.firstIndex(of: ":") {
                 // "host:port" — including ":3000" with an empty host.
-                host = String(trimmed[..<colon])
                 portText = String(trimmed[trimmed.index(after: colon)...])
-            } else {
-                // No colon (bare host) or multiple colons (bare IPv6, no port).
-                host = trimmed
             }
         }
 
-        // Any-address (or missing) hosts → loopback for local control.
-        switch host {
-        case "", "0.0.0.0", "::":
-            host = "127.0.0.1"
-        default:
-            break
-        }
-
+        // The backend keeps the control listener on IPv4 loopback even when
+        // its encrypted client listener binds to a specific LAN address.
         let port = Int(portText).flatMap { (1...65535).contains($0) ? $0 : nil } ?? 3000
-        return (host, port)
+        return ("127.0.0.1", port)
     }
 }

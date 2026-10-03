@@ -6,6 +6,19 @@ import 'package:mica_go/core/network/push_logic.dart';
 import 'package:mica_go/core/network/push_service.dart';
 
 void main() {
+  test('notification routing carries device identity without credentials', () {
+    final payload = notificationPayload('route-a', 'device-a');
+    expect(jsonDecode(payload), {
+      'chatGuid': 'route-a',
+      'deviceId': 'device-a',
+    });
+    expect(notificationChatFromPayload(payload), 'route-a');
+    expect(notificationDeviceFromPayload(payload), 'device-a');
+    expect(notificationChatFromPayload('legacy-route'), 'legacy-route');
+    expect(notificationDeviceFromPayload('legacy-route'), isNull);
+    expect(notificationChatFromPayload('{broken'), isNull);
+  });
+
   group('C28 FCM options persistence (background-isolate init)', () {
     test('config → persisted map → FirebaseOptions round-trips', () {
       final cfg = {

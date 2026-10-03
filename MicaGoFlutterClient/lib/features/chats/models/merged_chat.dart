@@ -30,8 +30,9 @@ class MergedChat {
   /// Merged 1:1 routes share one key; group chats are standalone.
   String get localCustomizationKey => key;
 
-  int get unreadCount =>
-      routes.fold<int>(0, (sum, route) => sum + (route.unreadCount ?? 0));
+  int get unreadCount => routes
+      .where((route) => route.hasUnread)
+      .fold<int>(0, (sum, route) => sum + (route.unreadCount ?? 0));
 
   /// C43: the dot is derived (watermark-based) — any route reading as unread
   /// makes the merged contact unread, independent of the auxiliary count.

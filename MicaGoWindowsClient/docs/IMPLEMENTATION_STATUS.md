@@ -1,6 +1,6 @@
 # 功能完成度
 
-当前 Windows 产品版本：`0.78.0`。以下功能验收记录更新于 2026-07-20。
+当前 Windows 产品版本：`0.87.0`。本次配对、令牌拒绝和未读状态适配更新于 2026-10-03；其他行保留原有验收记录。
 
 “代码完成”表示源码路径已经实现；“Windows 待验证”表示尚未通过 Windows 编译或运行，不能视为验收通过。
 
@@ -8,16 +8,16 @@
 | --- | --- | --- | --- |
 | WinUI 3 工程 | Debug x64 已验证 | .NET 10、WinAppSDK 2.2、x64/ARM64、unpackaged；VS 2026 + .NET 10.0.302 编译 0 warning/error | 验证 ARM64 和 Release |
 | Mica、标题栏与 DPI | Windows 11 暗色已验证 | 原生 caption buttons、低 tint Mica 标题栏/侧栏、独立联系人栏、纯色聊天画布、局部圆角、Per-Monitor V2 | 验证浅色、高对比度和跨显示器切换 |
-| 配对 JSON | 代码完成，Windows 待验证 | v1/v2/v3、隐藏地址过滤、URL 校验 | 使用真实 Companion JSON 验收 |
+| 配对 JSON 与可选扫码 | 契约与托管代码检查通过，Windows 待验证 | v4 一次性邀请、TLS pin、JSON / 摄像头 / 二维码图片共享验证 | Windows 上验证摄像头、权限拒绝、无摄像头与图片识别 |
 | LAN/Public 选择 | 代码完成，Windows 待验证 | 多 LAN 并行 health+auth、最快线路、Public 回退；W-UI9 设置页线路卡（逐线路可用性/延迟、手动切换并保持到断开）、断线重连前重新选线路 | Windows 上验证切换与断线回退 |
-| 凭据安全 | 代码完成，Windows 待验证 | Windows Credential Manager，配置不含 token | Windows 上检查写入、恢复和删除 |
+| 凭据安全 | 契约与托管代码检查通过，Windows 待验证 | Credential Manager 兑换前预检查；401 终止会话、清凭据、锁定并清理历史/媒体，无顶部常驻提示 | Windows 上验证撤销设备、媒体播放中撤销和重新配对 |
 | 会话列表 | 已接入 | 真实 `/api/chats`、搜索、SQLite 缓存、Google 名称/头像、多路由联系人合并、本地置顶排序 | 自定义别名与群聊组合头像 |
 | 历史消息 | 已接入 | cache-first、50 条分页、切换取消旧请求、服务端页合并后从 SQLite 重建视图 | 将“加载更早”按钮改为纯滚动触发并补加载骨架 |
 | 文本发送 | 已接入 | 乐观气泡、失败状态、tempGuid/文本时间窗对账、稳定 presentation key | 文字失败气泡点击重试 |
 | WebSocket | 已接入 | Authorization header、重连退避、事件作为 delta catch-up 提示 | 完善前后台生命周期与网络变化监听 |
 | delta 补漏 | 已接入 | cursor 持久化、循环拉取、SQLite GUID upsert | 增加 API fake 与乱序压力测试 |
 | SQLite | 已接入 | WAL；chats/messages/settings/contacts/hidden_messages | schema 版本迁移与未读 watermark |
-| 未读/置顶/静音/隐藏 | 部分 | 本地 read watermark、实时未读递增、当前会话通知抑制、置顶/静音设置 | 已读回执写回、隐藏管理和同步规则接口 |
+| 未读/置顶/静音/隐藏 | 同步契约通过，Windows 交互待验证 | 服务端已读/手动未读、路由级 CAS 队列、菜单切换已读/未读、隐藏后 5 秒撤销 | 与 Flutter 互测合并联系人、离线重放、隐藏撤销 |
 | 媒体 | 已接入 | 原生图片缩放/前后切换、WinUI 音视频播放、HEVC playable 回退、另存/系统打开、缓存与详情缩略图 | Share Contract、视频加载骨架和完整媒体页筛选 |
 | 附件发送 | 已接入 | 文件多选、批量乐观气泡、顺序上传、进度、取消、失败重试、SQLite 重启自动恢复、安全对账 | 后台传输 API（当前随应用生命周期） |
 | 通知与托盘 | 已接入 | AppNotification、点通知打开对应会话、关闭到托盘、托盘最近联系人菜单、设置持久化 | 启动/退出菜单 |

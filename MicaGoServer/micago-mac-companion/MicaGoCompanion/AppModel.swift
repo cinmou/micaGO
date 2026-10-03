@@ -28,7 +28,6 @@ final class AppModel: ObservableObject {
     // Connection endpoints (v0.11)
     @Published var urls: ServerURLs?
     @Published var publicURLInput: String = ""
-    @Published var publicVerifyTLS: Bool = true
     @Published var publicCheckResult: PublicURLCheckResult?
     @Published var publicBusy = false
 
@@ -40,13 +39,13 @@ final class AppModel: ObservableObject {
 
     // C23 cleanup: the per-pairing LAN selection (`selectedPairingBaseURL`),
     // the `pairingMode` (lanOnly/lanFirst), `selectedPairingTarget`, and
-    // `tokenRevealed` were removed. The unified v3 payload includes every LAN
+    // `tokenRevealed` were removed. The unified v4 payload includes every LAN
     // candidate plus Public when configured — there is no manual mode or
     // single-LAN selection anymore.
 
     /// LAN base URLs the user has hidden from pairing/QR selection. This is a
-    /// UI/pairing filter only — it does not change server networking; the
-    /// endpoints remain present in `GET /api/server/urls`.
+    /// Pairing visibility is mirrored to the backend for connected clients.
+    /// It does not change the server listening interfaces.
     @Published var hiddenLANBaseURLs: Set<String> =
         Set(UserDefaults.standard.stringArray(forKey: "hiddenLANEndpoints") ?? [])
 
@@ -111,7 +110,7 @@ final class AppModel: ObservableObject {
 
     /// Redaction-safe, copyable diagnostics text (no token, no message text).
     var syncDiagnosticsText: String {
-        guard let d = syncDiagnostics else { return String(localized: "No sync diagnostics yet.") }
+        guard let d = syncDiagnostics else { return L10n.localized( "No sync diagnostics yet.") }
         func ms(_ v: Int64?) -> String { v.map { "\($0)" } ?? "—" }
         return """
         micaGO sync diagnostics
@@ -159,7 +158,35 @@ final class AppModel: ObservableObject {
     /// LAN-only vs LAN+Public mode anymore. Carries the server's connection
     /// config revision so paired clients can detect later URL changes without
     /// rescanning. Loopback/local is never included. Token redacted when asked.
-    func pairingPayloadV3(redacted: Bool) -> String {
+    @Published var pairingCode = ""
+    @Published var pairingExpiresAt: Int64 = 0
+    @Published var pairingFingerprint = ""
+    @Published var pairingState = "idle"
+    private var creatingPairingCode = false
+
+    func refreshPairingCode() async {
+        guard !creatingPairingCode, let baseURL else { return }
+        creatingPairingCode = true
+        defer { creatingPairingCode = false }
+        do {
+            let invitation = try await APIClient(baseURL: baseURL, token: token).createPairingCode()
+            pairingCode = invitation.pairingCode
+            pairingExpiresAt = invitation.expiresAt
+            pairingFingerprint = invitation.tlsFingerprint
+            pairingState = "active"
+        } catch { lastError = error.localizedDescription }
+    }
+
+    private func refreshPairingStatus(client: APIClient) async {
+        guard !pairingCode.isEmpty, pairingState == "active" else { return }
+        let code = pairingCode
+        if let state = try? await client.pairingStatus(code: code),
+           code == pairingCode, ["active", "used", "expired", "invalidated"].contains(state) {
+            pairingState = state
+        }
+    }
+ func pairingPayloadV4(redacted: Bool) -> String {
+  guard pairingState == "active", !pairingCode.isEmpty, pairingExpiresAt > Int64(Date().timeIntervalSince1970*1000) else {return "{}"}
         // LAN and Public are independent: LAN candidates always go in (when the
         // server is bound to a LAN address); Public is an optional extra.
         let lan = pairingTargets
@@ -170,18 +197,19 @@ final class AppModel: ObservableObject {
         return unifiedConnectionPayload(
             lan: lan,
             publicCandidate: pub,
-            token: token,
+            token: pairingCode,
             serverName: Host.current().localizedName ?? "micaGO Server",
             configRevision: urls?.connectionRevision ?? "",
-            redacted: redacted
+            redacted: redacted,
+ tlsFingerprint:pairingFingerprint,expiresAt:pairingExpiresAt
         )
     }
 
-    /// Unified connection payload encoded into the QR code (v3).
-    var pairingPayload: String { pairingPayloadV3(redacted: false) }
+    /// Single-use secure invitation encoded into the QR code (v4).
+    var pairingPayload: String { pairingPayloadV4(redacted: false) }
 
     /// Same payload with the token redacted — safe to show/copy.
-    var pairingPayloadRedacted: String { pairingPayloadV3(redacted: true) }
+    var pairingPayloadRedacted: String { pairingPayloadV4(redacted: true) }
 
     /// Quick capability flags for the Create Connection status line.
     var hasLanCandidate: Bool { pairingTargets.contains { $0.scope == .lan } }
@@ -194,7 +222,7 @@ final class AppModel: ObservableObject {
         (urls?.lan ?? []).filter { !hiddenLANBaseURLs.contains($0.baseUrl) }
     }
 
-    // MARK: - Hidden LAN endpoints (pairing filter only)
+    // MARK: - Hidden LAN endpoints
 
     func isLANHidden(_ baseUrl: String) -> Bool { hiddenLANBaseURLs.contains(baseUrl) }
 
@@ -210,12 +238,13 @@ final class AppModel: ObservableObject {
 
     private func persistHiddenLAN() {
         UserDefaults.standard.set(Array(hiddenLANBaseURLs), forKey: "hiddenLANEndpoints")
+        Task { await refresh() }
     }
 
     func reloadConfig() {
         config = ConfigReader.read()
         if config == nil {
-            lastError = String(localized: "Could not read \(ConfigReader.configPath). Start the server once to create it.")
+            lastError = L10n.localized( "Could not read \(ConfigReader.configPath). Start the server once to create it.")
         } else if lastError?.contains(ConfigReader.configPath) == true {
             lastError = nil
         }
@@ -257,9 +286,7 @@ final class AppModel: ObservableObject {
     }
 
     func refresh() async {
-        if config == nil {
-            reloadConfig()
-        }
+        reloadConfig()
         guard let baseURL else {
             reachable = false
             authValid = false
@@ -273,6 +300,7 @@ final class AppModel: ObservableObject {
 
         let isUp = await client.health()
         reachable = isUp
+
         guard isUp else {
             status = nil
             devices = []
@@ -283,8 +311,13 @@ final class AppModel: ObservableObject {
 
         authValid = await client.checkAuth()
         guard authValid else {
-            lastError = String(localized: "The server is up but rejected the token. Check \(ConfigReader.configPath).")
+            lastError = L10n.localized( "The server is up but rejected the token. Check \(ConfigReader.configPath).")
             return
+        }
+        if pairingCode.isEmpty && pairingState == "idle" {
+            await refreshPairingCode()
+        } else {
+            await refreshPairingStatus(client: client)
         }
         await chatPreferences.sync(client: client)
 
@@ -299,7 +332,27 @@ final class AppModel: ObservableObject {
         do { activeConnections = try await client.activeConnections() } catch { pollError = error.localizedDescription }
         do { devices = try await client.devices() } catch { pollError = error.localizedDescription }
         do {
-            let fetched = try await client.serverURLs()
+            var fetched = try await client.serverURLs()
+            // Preserve hidden interfaces when upgrading from HTTP to TLS.
+            var migratedHidden = hiddenLANBaseURLs
+            for endpoint in fetched.lan {
+                guard var legacy = URLComponents(string: endpoint.baseUrl),
+                      legacy.scheme == "https", let port = legacy.port, port > 1 else { continue }
+                legacy.scheme = "http"
+                legacy.port = port - 1
+                if let oldURL = legacy.string, migratedHidden.remove(oldURL) != nil {
+                    migratedHidden.insert(endpoint.baseUrl)
+                }
+            }
+            if migratedHidden != hiddenLANBaseURLs {
+                hiddenLANBaseURLs = migratedHidden
+                UserDefaults.standard.set(Array(migratedHidden), forKey: "hiddenLANEndpoints")
+            }
+            let reportedHidden = Set(fetched.lan.filter { $0.hidden == true }.map(\.baseUrl))
+            if fetched.lan.contains(where: { $0.hidden == nil }) || reportedHidden != hiddenLANBaseURLs.intersection(Set(fetched.lan.map(\.baseUrl))) {
+                // Older backends keep the local pairing filter until upgraded.
+                if let updated = try? await client.setLANVisibility(hiddenLANBaseURLs) { fetched = updated }
+            }
             applyURLs(fetched)
         } catch {
             pollError = error.localizedDescription
@@ -336,10 +389,9 @@ final class AppModel: ObservableObject {
         let serverPublic = fetched.public.baseUrl
         if publicURLInput == lastSeededPublicURL {
             publicURLInput = serverPublic
-            publicVerifyTLS = fetched.public.verifyTls
         }
         lastSeededPublicURL = serverPublic
-        // No per-pairing LAN selection to maintain — the unified v3 payload
+        // No per-pairing LAN selection to maintain — the unified v4 payload
         // already includes every LAN candidate (C23/C25).
     }
 
@@ -353,13 +405,13 @@ final class AppModel: ObservableObject {
         do {
             let updated = try await client.setPublicURL(
                 publicURLInput.trimmingCharacters(in: .whitespacesAndNewlines),
-                verifyTLS: publicVerifyTLS,
+                verifyTLS: true,
                 preferred: urls?.preferredPairingEndpoint ?? "auto")
             applyURLs(updated)
             publicCheckResult = nil
             lastError = nil
         } catch {
-            lastError = String(localized: "Could not save public URL: \(error.localizedDescription)")
+            lastError = L10n.localized( "Could not save public URL: \(error.localizedDescription)")
         }
     }
 
@@ -372,7 +424,7 @@ final class AppModel: ObservableObject {
             publicCheckResult = try await client.checkPublicURL()
             await refresh()
         } catch {
-            lastError = String(localized: "Could not validate public URL: \(error.localizedDescription)")
+            lastError = L10n.localized( "Could not validate public URL: \(error.localizedDescription)")
         }
     }
 
@@ -423,7 +475,7 @@ final class AppModel: ObservableObject {
                 return
             }
             guard let baseURL else {
-                helperInstallMessage = String(localized: "Installed the IMCore helper at \(path). Start the server to turn on Edit, Unsend, and Delete.")
+                helperInstallMessage = L10n.localized( "Installed the IMCore helper at \(path). Start the server to turn on Edit, Unsend, and Delete.")
                 return
             }
             let client = APIClient(baseURL: baseURL, token: token)
@@ -438,7 +490,7 @@ final class AppModel: ObservableObject {
                 // restart it explicitly so the new helper is picked up, then
                 // reload status.
                 BackendController.shared.restart()
-                helperInstallMessage = String(localized: "Installed the IMCore helper at \(path). Restarting the server to apply…")
+                helperInstallMessage = L10n.localized( "Installed the IMCore helper at \(path). Restarting the server to apply…")
                 refreshAfterBackendStart()
             }
         }
@@ -458,7 +510,7 @@ final class AppModel: ObservableObject {
                 await refresh()
                 helperInstallMessage = installResultMessage(state: caps.state ?? "missing", path: caps.helper ?? "~/.micago/bin")
             } catch {
-                helperInstallMessage = String(localized: "Could not re-scan: \(error.localizedDescription)")
+                helperInstallMessage = L10n.localized( "Could not re-scan: \(error.localizedDescription)")
             }
         }
     }
@@ -480,20 +532,20 @@ final class AppModel: ObservableObject {
                 return
             }
             guard removed else {
-                helperInstallMessage = String(localized: "No IMCore helper was installed.")
+                helperInstallMessage = L10n.localized( "No IMCore helper was installed.")
                 return
             }
             guard let baseURL else {
-                helperInstallMessage = String(localized: "Removed the IMCore helper.")
+                helperInstallMessage = L10n.localized( "Removed the IMCore helper.")
                 return
             }
             let client = APIClient(baseURL: baseURL, token: token)
             do {
                 _ = try await client.refreshMessageActions()
                 await refresh()
-                helperInstallMessage = String(localized: "Removed the IMCore helper.")
+                helperInstallMessage = L10n.localized( "Removed the IMCore helper.")
             } catch {
-                helperInstallMessage = String(localized: "Removed the IMCore helper. Restart the server to refresh its status.")
+                helperInstallMessage = L10n.localized( "Removed the IMCore helper. Restart the server to refresh its status.")
             }
         }
     }
@@ -505,13 +557,13 @@ final class AppModel: ObservableObject {
     private func installResultMessage(state: String, path: String) -> String {
         switch state {
         case "ready":
-            return String(localized: "The IMCore helper is ready. Edit, Unsend, and Delete are available.")
+            return L10n.localized( "The IMCore helper is ready. Edit, Unsend, and Delete are available.")
         case "not_runnable":
-            return String(localized: "Installed at \(path), but the helper won\u{2019}t run. Check that macOS allows it to run.")
+            return L10n.localized( "Installed at \(path), but the helper won\u{2019}t run. Check that macOS allows it to run.")
         case "unsupported_selectors":
-            return String(localized: "Installed, but this version of macOS doesn’t offer the IMCore actions, so Edit, Unsend, and Delete stay off.")
+            return L10n.localized( "Installed, but this version of macOS doesn’t offer the IMCore actions, so Edit, Unsend, and Delete stay off.")
         default:
-            return String(localized: "Installed the IMCore helper at \(path), but the backend still reports it as unavailable.")
+            return L10n.localized( "Installed the IMCore helper at \(path), but the backend still reports it as unavailable.")
         }
     }
 
@@ -570,7 +622,7 @@ final class AppModel: ObservableObject {
                                                      syncMode: syncMode, pushMode: pushMode)
             lastError = nil
         } catch {
-            lastError = String(localized: "Save rule: \(error.localizedDescription)")
+            lastError = L10n.localized( "Save rule: \(error.localizedDescription)")
         }
     }
 
@@ -583,7 +635,7 @@ final class AppModel: ObservableObject {
             syncRules = try await client.deleteSyncRule(targetKind: targetKind, targetValue: targetValue)
             lastError = nil
         } catch {
-            lastError = String(localized: "Clear rule: \(error.localizedDescription)")
+            lastError = L10n.localized( "Clear rule: \(error.localizedDescription)")
         }
     }
 
@@ -596,7 +648,7 @@ final class AppModel: ObservableObject {
             syncRules = try await client.setSyncPolicy(defaultSync: sync, defaultPush: push)
             lastError = nil
         } catch {
-            lastError = String(localized: "Save policy: \(error.localizedDescription)")
+            lastError = L10n.localized( "Save policy: \(error.localizedDescription)")
         }
     }
 
@@ -612,7 +664,7 @@ final class AppModel: ObservableObject {
             lastError = nil
             await loadSyncControl()
         } catch {
-            lastError = String(localized: "Save sync settings: \(error.localizedDescription)")
+            lastError = L10n.localized( "Save sync settings: \(error.localizedDescription)")
         }
     }
 
@@ -670,7 +722,7 @@ final class AppModel: ObservableObject {
         devices = (try? await client.devices()) ?? devices
     }
 
-    /// C21u: remove a stale/historical paired device, then refresh the list.
+    /// Revoke device credentials and active sockets, then refresh the list.
     func deleteDevice(deviceID: String) async {
         guard let baseURL else { return }
         let client = APIClient(baseURL: baseURL, token: token)
@@ -679,7 +731,7 @@ final class AppModel: ObservableObject {
             devices.removeAll { $0.id == deviceID }
             devices = (try? await client.devices()) ?? devices
         } catch {
-            notifResult = "Could not remove device: \(error.localizedDescription)"
+            notifResult = "Could not revoke device: \(error.localizedDescription)"
         }
     }
 }

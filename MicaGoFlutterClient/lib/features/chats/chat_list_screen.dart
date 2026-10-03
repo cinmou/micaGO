@@ -1,3 +1,4 @@
+import '../../core/ui/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -24,7 +25,6 @@ import 'models/merged_chat.dart';
 /// (push a thread) and two-pane (select into the detail pane).
 class ChatListScreen extends StatefulWidget {
   final void Function(MergedChat merged) onOpen;
-  final String? selectedGuid;
   final ValueListenable<int>? searchRequests;
   final bool compact;
   final bool sidebar;
@@ -32,7 +32,6 @@ class ChatListScreen extends StatefulWidget {
   const ChatListScreen({
     super.key,
     required this.onOpen,
-    this.selectedGuid,
     this.searchRequests,
     this.compact = false,
     this.sidebar = false,
@@ -198,25 +197,57 @@ class _ChatListScreenState extends State<ChatListScreen> {
     widget.onOpen(merged);
   }
 
-  // Swipe right (startToEnd) = clear the unread dot; swipe left (endToStart) =
-  // pin/unpin the contact. Both are client-only and keep the row in place.
-  Future<bool> _onSwipe(
-    BuildContext context,
-    MergedChat m,
-    DismissDirection dir,
-  ) async {
-    if (dir == DismissDirection.startToEnd) {
-      // Swipe right → clear the unread dot; keep the row in place.
-      HapticFeedback.selectionClick();
-      await _controller.markRoutesRead(m.routes.map((r) => r.guid));
-      return false;
-    }
+  Future<void> _hideWithUndo(MergedChat chat) async {
+    final guids = chat.routes.map((route) => route.guid).toList();
     HapticFeedback.selectionClick();
-    await _controller.setPinned(
-      m.routes.map((r) => r.guid),
-      !m.primary.isPinned,
+    try {
+      await _controller.setChatsHidden(guids, true);
+    } catch (_) {
+      if (mounted && !_controller.app.tokenRejected.value) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              MicaLocalizations.of(context).t('common.notConnectedServer'),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted || _controller.app.tokenRejected.value) return;
+    final strings = MicaLocalizations.of(context);
+    final app = _controller.app;
+    final profile = app.profile;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    final notice = messenger.showSnackBar(
+      SnackBar(
+        content: Text(strings.t('chat.hiddenContact')),
+        duration: const Duration(seconds: 5),
+        persist: false,
+        action: SnackBarAction(
+          label: strings.t('chat.undoHide'),
+          onPressed: () {
+            if (!app.tokenRejected.value && identical(app.profile, profile)) {
+              unawaited(
+                app.chatPreferences.setHidden(
+                  guids,
+                  false,
+                  syncImmediately: false,
+                ),
+              );
+            }
+          },
+        ),
+      ),
     );
-    return false;
+    unawaited(
+      notice.closed.then((_) async {
+        if (!app.tokenRejected.value && identical(app.profile, profile)) {
+          await app.chatPreferences.sync();
+        }
+      }),
+    );
   }
 
   void _showChatMenu(BuildContext context, MergedChat m) async {
@@ -224,12 +255,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final strings = MicaLocalizations.of(context);
     final pinned = m.primary.isPinned;
     final guids = m.routes.map((r) => r.guid).toList();
-    final action = await showModalBottomSheet<String>(
+    final action = await showAppBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: Icon(
+                m.hasUnread
+                    ? Icons.mark_chat_read_outlined
+                    : Icons.mark_chat_unread_outlined,
+              ),
+              title: Text(
+                strings.t(m.hasUnread ? 'chat.markRead' : 'chat.markUnread'),
+              ),
+              onTap: () => Navigator.pop(ctx, m.hasUnread ? 'read' : 'unread'),
+            ),
             ListTile(
               leading: Icon(pinned ? Icons.push_pin_outlined : Icons.push_pin),
               title: Text(strings.t(pinned ? 'chat.unpin' : 'chat.pin')),
@@ -246,21 +288,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
     if (!context.mounted) return;
     switch (action) {
+      case 'read':
+        await _controller.markRoutesRead(guids);
+        break;
+      case 'unread':
+        await _controller.markRoutesUnread(guids);
+        break;
       case 'pin':
         await _controller.setPinned(guids, !pinned);
         break;
       case 'hide':
-        await _controller.hideChats(guids);
-        if (context.mounted) _showHiddenBanner(context);
+        await _hideWithUndo(m);
         break;
     }
-  }
-
-  void _showHiddenBanner(BuildContext context) {
-    final strings = MicaLocalizations.of(context);
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(strings.t('chat.hiddenContact'))));
   }
 
   List<ChatSummary> _filtered(
@@ -354,22 +394,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                 : const SizedBox(height: 2),
                             itemBuilder: (context, i) {
                               final m = merged[i];
-                              final selected = m.routes.any(
-                                (r) => r.guid == widget.selectedGuid,
-                              );
                               if (widget.compact) {
                                 return _ChatRailRow(
                                   merged: m,
-                                  selected: selected,
                                   onTap: () => _openMerged(m),
                                   onLongPress: () => _showChatMenu(context, m),
                                 );
                               }
                               return Dismissible(
                                 key: ValueKey('chat-${m.primary.guid}'),
+                                direction: DismissDirection.horizontal,
                                 dismissThresholds: const {
                                   DismissDirection.startToEnd: 0.48,
-                                  DismissDirection.endToStart: 0.58,
+                                  DismissDirection.endToStart: 0.48,
                                 },
                                 background: _SwipeBg(
                                   alignment: Alignment.centerLeft,
@@ -384,21 +421,25 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                   color: Theme.of(
                                     context,
                                   ).colorScheme.secondary,
-                                  icon: m.primary.isPinned
-                                      ? Icons.push_pin_outlined
-                                      : Icons.push_pin,
-                                  label: MicaLocalizations.of(context).t(
-                                    m.primary.isPinned
-                                        ? 'chat.unpin'
-                                        : 'chat.pinShort',
-                                  ),
+                                  icon: Icons.visibility_off_outlined,
+                                  label: MicaLocalizations.of(
+                                    context,
+                                  ).t('chat.hide'),
                                 ),
-                                confirmDismiss: (dir) =>
-                                    _onSwipe(context, m, dir),
+                                confirmDismiss: (direction) async {
+                                  if (direction ==
+                                      DismissDirection.startToEnd) {
+                                    await _controller.markRoutesRead(
+                                      m.routes.map((r) => r.guid),
+                                    );
+                                  } else {
+                                    await _hideWithUndo(m);
+                                  }
+                                  return false;
+                                },
                                 child: _ChatRow(
                                   merged: m,
                                   sidebar: widget.sidebar,
-                                  selected: selected,
                                   onTap: () => _openMerged(m),
                                   onLongPress: () => _showChatMenu(context, m),
                                   onDismissUnread: () =>
@@ -494,13 +535,11 @@ class _SearchField extends StatelessWidget {
 
 class _ChatRailRow extends StatelessWidget {
   final MergedChat merged;
-  final bool selected;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
   const _ChatRailRow({
     required this.merged,
-    required this.selected,
     required this.onTap,
     this.onLongPress,
   });
@@ -524,7 +563,7 @@ class _ChatRailRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Material(
-        color: selected
+        color: hasUnread && !muted
             ? scheme.primaryContainer.withValues(alpha: 0.65)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(24),
@@ -599,7 +638,6 @@ class _NoMatches extends StatelessWidget {
 
 class _ChatRow extends StatelessWidget {
   final MergedChat merged;
-  final bool selected;
   final bool sidebar;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
@@ -611,7 +649,6 @@ class _ChatRow extends StatelessWidget {
     this.sidebar = false,
     this.onLongPress,
     this.onDismissUnread,
-    this.selected = false,
   });
 
   @override
@@ -633,15 +670,7 @@ class _ChatRow extends StatelessWidget {
         : null;
     final muted = app.areChatsMuted(merged.routes.map((r) => r.guid));
     final loudUnread = hasUnread && !muted;
-    final rowColor = hasUnread
-        ? loudUnread
-              ? scheme.primary
-              : selected
-              ? scheme.primaryContainer.withValues(alpha: 0.52)
-              : Colors.transparent
-        : selected
-        ? scheme.primaryContainer.withValues(alpha: 0.52)
-        : Colors.transparent;
+    final rowColor = loudUnread ? scheme.primary : Colors.transparent;
     final onUnread = scheme.onPrimary;
     final primaryTextColor = loudUnread ? onUnread : scheme.onSurface;
     final secondaryTextColor = loudUnread
@@ -661,6 +690,7 @@ class _ChatRow extends StatelessWidget {
         vertical: verticalMargin,
       ),
       child: Material(
+        key: ValueKey('chat-row-${merged.key}'),
         color: rowColor,
         borderRadius: BorderRadius.circular(24),
         child: InkWell(
@@ -811,11 +841,9 @@ class _ChatRow extends StatelessWidget {
     final badge = hasUnread
         ? _DraggableUnreadBadge(
             onDismiss: onDismissUnread ?? () {},
-            child: muted
+            child: muted || unreadCount <= 0
                 ? const _UnreadDot()
-                : unreadCount > 0
-                ? _UnreadCountPill(count: unreadCount)
-                : const _UnreadDot(),
+                : _UnreadCountPill(count: unreadCount),
           )
         : null;
     // C45: time on top, badge below, centered on a single vertical line so the

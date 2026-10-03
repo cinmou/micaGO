@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:async/async.dart';
 import '../storage/local_cache_store.dart';
 import 'dart:convert';
 
@@ -8,6 +9,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../app_controller.dart';
+import '../models/connection_profile.dart';
+import '../l10n/app_localizations.dart';
+import '../../features/chats/models/message_model.dart';
 import '../storage/secure_store.dart';
 import 'api_client.dart';
 import 'notification_contact_cache.dart';
@@ -68,6 +72,11 @@ class PushService {
 
   final AppController app;
 
+  bool _disposed = false;
+  final _startup = AsyncCache<void>.ephemeral();
+  StreamSubscription<String>? _tokenSubscription;
+  StreamSubscription<RemoteMessage>? _messageSubscription;
+  StreamSubscription<RemoteMessage>? _tapSubscription;
   bool available = false;
   bool _localReady = false;
   String? token;
@@ -78,10 +87,14 @@ class PushService {
   /// Idempotent start. Safe to call on every (re)connect. It always brings up
   /// local notifications first (the keep-alive path needs them and does NOT need
   /// Firebase), then does the FCM-specific work only when Firebase is configured.
-  Future<void> start() async {
+  Future<void> start() => _startup.fetch(_start);
+
+  Future<void> _start() async {
+    if (_disposed || !app.hasProfile) return;
     // 0) Local notifications + the keep-alive shower — independent of Firebase,
     //    so background WebSocket/delta messages can notify even with no FCM.
     await _ensureLocalNotifications();
+    if (_disposed || !app.hasProfile) return;
 
     if (defaultTargetPlatform != TargetPlatform.android) {
       return;
@@ -139,11 +152,14 @@ class PushService {
     }
     debugPrint('PushService: FCM token ready (${token!.length} chars)');
 
+    if (_disposed || !app.hasProfile) return;
     available = true;
 
     // 4) Register the token + react to refreshes.
     await _registerToken();
-    messaging.onTokenRefresh.listen((t) {
+    if (_disposed || !app.hasProfile) return;
+    _tokenSubscription = messaging.onTokenRefresh.listen((t) {
+      if (_disposed || !app.hasProfile) return;
       token = t;
       unawaited(_registerToken());
     });
@@ -152,10 +168,22 @@ class PushService {
     //    handler. The background registration persists natively, so a later
     //    killed-app delivery still spawns the isolate and runs our handler.
     registerMicaGoFirebaseBackgroundHandler();
-    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
-    FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTap);
+    _messageSubscription = FirebaseMessaging.onMessage.listen(
+      _onForegroundMessage,
+    );
+    _tapSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+      _onNotificationTap,
+    );
     final initial = await messaging.getInitialMessage();
     if (initial != null) _onNotificationTap(initial);
+  }
+
+  void dispose() {
+    _disposed = true;
+    unawaited(_tokenSubscription?.cancel());
+    unawaited(_messageSubscription?.cancel());
+    unawaited(_tapSubscription?.cancel());
+    app.showLocalNotification = null;
   }
 
   Future<void> _persistOptions(Map<String, dynamic> cfg) async {
@@ -183,6 +211,7 @@ class PushService {
   // socket happens to be down, run a delta catch-up so the open thread/list
   // still update — GUID dedup prevents duplicate bubbles.
   void _onForegroundMessage(RemoteMessage message) {
+    if (_disposed || !app.hasProfile) return;
     if (!pushShouldCatchUp(realtimeConnected: app.isRealtimeConnected)) {
       return; // socket already handled it (BlueBubbles dedup)
     }
@@ -193,6 +222,7 @@ class PushService {
   // Tap (from background or terminated): delta-sync FIRST so we don't show stale
   // content, then ask the shell to open the conversation.
   void _onNotificationTap(RemoteMessage message) {
+    if (_disposed || !app.hasProfile) return;
     app.noteNotificationSource('FCM');
     unawaited(app.runDeltaSync(reason: 'fcm-tap'));
     final chatGuid = pushChatGuid(message.data);
@@ -205,6 +235,7 @@ class PushService {
   Future<void> _ensureLocalNotifications() async {
     if (_localReady) return;
     await _initLocalNotifications();
+    if (_disposed || !app.hasProfile) return;
     _localReady = true;
     // The keep-alive path (in AppController) shows local notifications through
     // the same initialized plugin, so FCM + keep-alive dedupe by notification id.
@@ -220,11 +251,14 @@ class PushService {
           String? conversationAvatarFilePath,
           bool isGroup = false,
           int? timestampMs,
-        }) => app.isChatMuted(chatGuid ?? '')
+        }) => _disposed || !app.hasProfile || app.isChatMuted(chatGuid ?? '')
         ? Future<void>.value()
         : showMessageNotification(
             _local,
             chatGuid: chatGuid,
+            deviceId: app.profile?.deviceId,
+            replyLabel: MicaLocalizations.current.t('notif.reply'),
+            replyHint: MicaLocalizations.current.t('common.message'),
             messageGuid: messageGuid,
             senderName: senderName,
             senderKey: senderKey,
@@ -265,20 +299,32 @@ class PushService {
         // Inline reply (app alive): send it; otherwise a plain tap opens the chat.
         if (resp.actionId == notificationReplyActionId) {
           final text = cleanReplyText(resp.input);
-          final guid = resp.payload;
+          final guid = notificationChatFromPayload(resp.payload);
           if (text != null && guid != null && guid.isNotEmpty) {
             unawaited(
-              sendNotificationReply(guid, text).then(app.noteReplyResult),
+              handleNotificationReply(
+                resp.payload!,
+                text,
+                app: app,
+              ).then(app.noteReplyResult),
             );
           }
           return;
         }
-        final guid = resp.payload;
+        final guid = notificationChatFromPayload(resp.payload);
         if (guid != null && guid.isNotEmpty) app.requestOpenChat(guid);
       },
       onDidReceiveBackgroundNotificationResponse:
           notificationBackgroundResponse,
     );
+    final launch = await _local.getNotificationAppLaunchDetails();
+    if (launch?.didNotificationLaunchApp == true) {
+      final response = launch?.notificationResponse;
+      if (response?.actionId != notificationReplyActionId) {
+        final guid = notificationChatFromPayload(response?.payload);
+        if (guid != null) app.requestOpenChat(guid);
+      }
+    }
     await _local
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -336,6 +382,10 @@ Future<bool> ensureBackgroundFirebase() async {
 final _notificationCache = LocalCacheStore();
 
 Future<void> showPushNotification(RemoteMessage message) async {
+  final store = SecureStore();
+  if (await store.readValue(AppController.rejectedCredentialKey) == '1') return;
+  final profile = await store.loadProfile();
+  if (profile == null) return;
   final data = message.data;
   // Single source of truth for "is there anything to show" (test pushes and
   // preview-disabled empty pushes are skipped) — shared with the pure logic test.
@@ -349,6 +399,20 @@ Future<void> showPushNotification(RemoteMessage message) async {
     }
   }
 
+  if (chatGuid != null) {
+    final guid = data['messageGuid'] ?? data['guid'];
+    final hidden = await _notificationCache.hiddenMessageGuids();
+    if (guid != null &&
+        (hidden.contains('$chatGuid\u001f$guid') || hidden.contains(guid))) {
+      return;
+    }
+    final at = int.tryParse('${data['dateCreated'] ?? ''}');
+    if (at != null && at > 0) {
+      final positions = await _notificationCache.readPositions([chatGuid]);
+      if (at <= (positions[chatGuid] ?? 0)) return;
+    }
+  }
+
   final plugin = FlutterLocalNotificationsPlugin();
   await plugin.initialize(
     const InitializationSettings(
@@ -356,6 +420,7 @@ Future<void> showPushNotification(RemoteMessage message) async {
         '@drawable/$androidNotificationSmallIcon',
       ),
     ),
+    onDidReceiveBackgroundNotificationResponse: notificationBackgroundResponse,
   );
   await plugin
       .resolvePlatformSpecificImplementation<
@@ -384,6 +449,7 @@ Future<void> showPushNotification(RemoteMessage message) async {
   await showMessageNotification(
     plugin,
     chatGuid: chatGuid,
+    deviceId: profile.deviceId,
     messageGuid: (data['messageGuid'] as String?) ?? '',
     senderName: sender,
     senderKey: data['handle'] as String? ?? sender,
@@ -405,9 +471,9 @@ Future<void> showPushNotification(RemoteMessage message) async {
 void notificationBackgroundResponse(NotificationResponse response) {
   if (response.actionId != notificationReplyActionId) return;
   final text = cleanReplyText(response.input);
-  final guid = response.payload;
-  if (text == null || guid == null || guid.isEmpty) return;
-  sendNotificationReply(guid, text).ignore();
+  final payload = response.payload;
+  if (text == null || payload == null) return;
+  handleNotificationReply(payload, text).ignore();
 }
 
 /// C30/C31: sends an inline-reply message to [chatGuid] using the persisted
@@ -417,25 +483,115 @@ void notificationBackgroundResponse(NotificationResponse response) {
 /// app is alive); failures are reported, not thrown — the user can reopen and
 /// resend.
 @pragma('vm:entry-point')
-Future<String> sendNotificationReply(String chatGuid, String text) async {
-  final profile = await SecureStore().loadProfile();
-  if (profile == null || !profile.isComplete) {
-    return 'reply failed: not paired';
-  }
-  final api = ApiClient(
-    baseUrl: profile.effectiveBaseUrl,
-    token: profile.token,
-  );
+Future<String> handleNotificationReply(
+  String payload,
+  String text, {
+  AppController? app,
+}) async {
+  final result = await sendNotificationReply(payload, text, app: app);
+  final guid = notificationChatFromPayload(payload);
+  if (guid == null) return result;
+  final plugin = FlutterLocalNotificationsPlugin();
   try {
+    if (app == null) {
+      await plugin.initialize(
+        const InitializationSettings(
+          android: AndroidInitializationSettings(
+            '@drawable/$androidNotificationSmallIcon',
+          ),
+        ),
+        onDidReceiveBackgroundNotificationResponse:
+            notificationBackgroundResponse,
+      );
+    }
+    if (result == 'reply sent') {
+      await cancelChatNotification(plugin, guid);
+    } else {
+      final message = result == 'reply pending'
+          ? 'Delivery is awaiting confirmation. Open micaGO to check before resending.'
+          : result == 'reply rejected'
+          ? 'Device credential rejected. Open micaGO to pair again.'
+          : 'Reply could not be sent. Open micaGO to send your message.';
+      await plugin.show(
+        notificationIdForMessage('reply-status:$guid'),
+        'micaGO',
+        message,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            messageChannelId,
+            messageChannelName,
+            icon: androidNotificationSmallIcon,
+            importance: Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+          ),
+        ),
+        payload: payload,
+      );
+    }
+  } catch (_) {}
+  return result;
+}
+
+@pragma('vm:entry-point')
+Future<String> sendNotificationReply(
+  String payload,
+  String text, {
+  AppController? app,
+}) async {
+  final chatGuid = notificationChatFromPayload(payload);
+  final deviceId = notificationDeviceFromPayload(payload);
+  if (cleanReplyText(text) == null || chatGuid == null || deviceId == null) {
+    return 'reply failed';
+  }
+  final store = app?.store ?? SecureStore();
+  ApiClient? backgroundApi;
+  ConnectionProfile? issuedProfile;
+  try {
+    if (await store.readValue(AppController.rejectedCredentialKey) == '1') {
+      return 'reply rejected';
+    }
+    final profile = app?.profile ?? await store.loadProfile();
+    if (profile == null || !profile.isComplete) return 'reply rejected';
+    if (profile.deviceId != deviceId) return 'reply failed';
+    issuedProfile = profile;
+    final api =
+        app?.api ??
+        (backgroundApi = ApiClient(
+          baseUrl: profile.effectiveBaseUrl,
+          token: profile.token,
+          tlsFingerprint: profile.pinFor(profile.effectiveBaseUrl),
+        ));
     await api.sendText(
       chatGuid: chatGuid,
-      tempGuid: 'reply-${DateTime.now().millisecondsSinceEpoch}',
-      message: text,
+      tempGuid: 'reply-${DateTime.now().microsecondsSinceEpoch}',
+      message: text.trim(),
     );
+    if (app != null) unawaited(app.runDeltaSync(reason: 'notification-reply'));
     return 'reply sent';
-  } catch (e) {
-    return 'reply failed: $e';
+  } on ApiException catch (e) {
+    if (e.statusCode == 401) {
+      if (app != null && issuedProfile != null) {
+        app.rejectCredential(issuedProfile);
+      } else {
+        try {
+          final current = await store.loadProfile();
+          if (current?.deviceId == deviceId) {
+            await store.writeValue(AppController.rejectedCredentialKey, '1');
+            await store.clearProfile();
+          }
+        } catch (_) {
+          /* Retry terminal cleanup when the app resumes. */
+        }
+      }
+      return 'reply rejected';
+    }
+    return e.sendState == LocalSendState.pending ||
+            e.sendState == LocalSendState.sentUnconfirmed
+        ? 'reply pending'
+        : 'reply failed';
+  } catch (_) {
+    return 'reply failed';
   } finally {
-    api.close();
+    backgroundApi?.close();
   }
 }

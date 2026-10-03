@@ -50,7 +50,7 @@ for the rationale.
 
 ## Running locally
 
-Requires Go 1.24+ and macOS with Full Disk Access granted to the terminal (so
+Requires Go 1.26.7+ and macOS with Full Disk Access granted to the terminal (so
 the process can read `~/Library/Messages/chat.db`).
 
 ```bash
@@ -86,16 +86,26 @@ auth:
 
 ## Authentication
 
-A single shared **bearer token** guards every endpoint except
-`GET /api/health`.
+Version 0.84 uses a separate random bearer credential for each paired device.
+The Companion generates a five-minute, single-use pairing invitation; the QR
+includes the persisted server certificate fingerprint, not the administrator
+credential. Devices redeem it over HTTPS and save their own credential in secure
+storage. Credential hashes and revocation state persist in `relay.db`. Deleting a
+device revokes its future requests and closes its active WebSockets.
 
-- REST: send `Authorization: Bearer <token>`.
-- WebSocket (`/ws`): send the same `Authorization` header, **or** a
-  `?token=<token>` query parameter (for browser clients that cannot set
-  WebSocket headers).
+Client TLS listens on the configured port plus one (default `https://Mac:3001`).
+The configured HTTP port is loopback-only (`http://127.0.0.1:3000`) for Companion
+control and local reverse proxies. LAN clients validate the certificate pin;
+public HTTPS/WSS routes use system certificate trust and cannot fall back to
+plain HTTP. TLS uses the platform implementations. This does not add application
+end-to-end encryption for third-party proxies or FCM message previews.
 
-Auth may be disabled for localhost-only development with `--disable-auth`.
-Details: [`docs/spec-v0.6.0-security.md`](docs/spec-v0.6.0-security.md).
+On upgrade the old shared token is rotated into a local-only administrator
+credential and old clients must pair again. Chat caches and privacy outboxes are
+preserved. Back up `relay.db`, `config.yaml`, and the private `tls` directory;
+losing the TLS identity requires re-pairing. `--disable-auth` does not bypass the
+production device authorization path. Browser query-string WebSocket credentials
+are not accepted by this path.
 
 ## Smoke scripts
 
@@ -138,7 +148,7 @@ The Mac-side control surface is a native SwiftUI app under
 launches/stops this server binary and reads its local control API
 (`/api/server/status`, `/api/server/urls`, `/api/server/connections`,
 `/api/devices`, …) to show status,
-**connection endpoints** (local/LAN/optional public), the bearer token,
+**connection endpoints** (local/LAN/optional public), single-use pairing invitations,
 active connected clients, registered push devices, notification provider status,
 and permission diagnostics.
 See [`docs/spec-v0.10.0-mac-companion.md`](docs/spec-v0.10.0-mac-companion.md)

@@ -1,4 +1,11 @@
 :root {
+  color-scheme: light dark;
+  --header-background: rgba(255, 255, 255, 0.86);
+  --on-primary: #ffffff;
+  --privacy-background: #0a1317;
+  --privacy-heading: #ffffff;
+  --hero-start: #fff7fb;
+  --hero-end: #eef5ff;
   --primary: #0064e0;
   --primary-deep: #0457cb;
   --primary-soft: #e7f1ff;
@@ -57,9 +64,9 @@ a {
   width: min(1180px, calc(100% - 32px));
   margin: 16px auto 0;
   padding: 12px 14px;
-  border: 1px solid rgba(222, 227, 233, 0.76);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.86);
+  background: var(--header-background);
   backdrop-filter: blur(18px);
 }
 
@@ -231,7 +238,7 @@ h3 {
 
 .button-buy {
   background: var(--primary);
-  color: var(--canvas);
+  color: var(--on-primary);
 }
 
 .button-buy:hover {
@@ -243,7 +250,7 @@ h3 {
   width: min(100%, 380px);
   padding: 14px;
   border-radius: 46px;
-  background: linear-gradient(180deg, #fff7fb 0%, #eef5ff 100%);
+  background: linear-gradient(180deg, var(--hero-start) 0%, var(--hero-end) 100%);
   box-shadow: var(--shadow-soft);
 }
 
@@ -399,7 +406,7 @@ h3 {
 .screenshot-grid img {
   width: 100%;
   height: auto;
-  border: 1px solid rgba(222, 227, 233, 0.8);
+  border: 1px solid var(--hairline);
   border-radius: 22px;
   background: var(--surface);
   box-shadow: 0 16px 42px rgba(10, 19, 23, 0.11);
@@ -453,7 +460,7 @@ h3 {
   place-items: center;
   border-radius: 50%;
   background: var(--primary);
-  color: var(--canvas);
+  color: var(--on-primary);
   font-weight: 800;
 }
 
@@ -464,12 +471,12 @@ h3 {
   margin-bottom: 80px;
   padding: 54px;
   border-radius: 40px;
-  background: var(--ink-deep);
+  background: var(--privacy-background);
 }
 
 .privacy-section .eyebrow,
 .privacy-section h2 {
-  color: var(--canvas);
+  color: var(--privacy-heading);
 }
 
 .privacy-list {
@@ -799,4 +806,25 @@ h3 {
 
 :lang(zh) h1 span {
   display: inline-block;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #86b9ff;
+    --primary-deep: #b5d4ff;
+    --primary-soft: #1c324b;
+    --on-primary: #09213e;
+    --canvas: #12171e;
+    --surface: #1d2530;
+    --surface-strong: #293341;
+    --ink-deep: #f1f5fa;
+    --ink: #e0e7ef;
+    --muted: #b3c0cf;
+    --hairline: #354252;
+    --header-background: rgba(18, 23, 30, 0.88);
+    --hero-start: #292333;
+    --hero-end: #1c324b;
+    --privacy-background: #1a2431;
+    --shadow-soft: 0 24px 80px rgba(0, 0, 0, 0.3);
+  }
 }

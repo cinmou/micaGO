@@ -12,7 +12,8 @@ func (db *DB) UpsertDevice(ctx context.Context, device store.DeviceRecord) (*sto
 	_, err := db.sqlDB.ExecContext(ctx, `
 INSERT INTO devices (
 	id, name, platform, client_type, app_version, mode, push_provider, push_token, push_enabled, background, last_seen_at, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+WHERE NOT EXISTS(SELECT 1 FROM device_credentials WHERE device_id=? AND revoked=1)
 ON CONFLICT(id) DO UPDATE SET
 	name = excluded.name,
 	platform = excluded.platform,
@@ -25,7 +26,7 @@ ON CONFLICT(id) DO UPDATE SET
 	background = excluded.background,
 	last_seen_at = excluded.last_seen_at,
 	updated_at = excluded.updated_at;
-`, device.ID, device.Name, device.Platform, device.ClientType, device.AppVersion, device.Mode, device.PushProvider, device.PushToken, boolToInt(device.PushEnabled), boolToInt(device.Background), device.LastSeenAt, device.CreatedAt, device.UpdatedAt)
+`, device.ID, device.Name, device.Platform, device.ClientType, device.AppVersion, device.Mode, device.PushProvider, device.PushToken, boolToInt(device.PushEnabled), boolToInt(device.Background), device.LastSeenAt, device.CreatedAt, device.UpdatedAt, device.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,10 +155,7 @@ WHERE id = ?;
 	return db.GetDeviceByID(ctx, id)
 }
 
-func (db *DB) DeleteDevice(ctx context.Context, id string) error {
-	_, err := db.sqlDB.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, id)
-	return err
-}
+func (db *DB) DeleteDevice(ctx context.Context, id string) error { return db.RevokeDevice(ctx, id) }
 
 // ClearDevicePushToken removes a device's push token and disables push (v0.12),
 // used to prune dead/unregistered FCM tokens reported by Google.

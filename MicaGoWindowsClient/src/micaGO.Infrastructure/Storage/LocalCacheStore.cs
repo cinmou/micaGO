@@ -187,7 +187,7 @@ public sealed class LocalCacheStore : IDisposable
         try {
             await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken);
             await using var command = db.CreateCommand();
-            command.CommandText = "INSERT INTO settings(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE SET value=CAST(MAX(CAST(settings.value AS INTEGER),CAST(excluded.value AS INTEGER)) AS TEXT)";
+            command.CommandText = "INSERT INTO settings(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE CAST(settings.value AS INTEGER)<CAST(excluded.value AS INTEGER)";
             command.Parameters.AddWithValue("$key", "read.watermark." + route);
             command.Parameters.AddWithValue("$value", timestamp.ToString(System.Globalization.CultureInfo.InvariantCulture));
             await command.ExecuteNonQueryAsync(cancellationToken);

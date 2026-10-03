@@ -119,7 +119,7 @@ class ThreadPresentationBuilder {
     final presentationKeyFor =
         resolvePresentationKey ?? (message) => message.dedupeKey;
     final rows = buildDisplayRows(messages, prefs);
-    final byGuid = {for (final m in messages) m.guid: m};
+    final byGuid = {for (final m in messages) m.serverKey: m};
 
     // Delivery-label visibility: compact = latest outgoing plus separate
     // read/delivered boundaries, so the footer shows where the recipient read
@@ -161,13 +161,16 @@ class ThreadPresentationBuilder {
 
     ReplyPreview? replyFor(MessageModel m) {
       if (!isReply(m)) return null;
-      final target = byGuid[m.threadOriginatorGuid];
+      final targetKey = (m.chatGuid?.isNotEmpty ?? false)
+          ? '${m.chatGuid}\u001f${m.threadOriginatorGuid}'
+          : m.threadOriginatorGuid;
+      final target = byGuid[targetKey];
       if (target == null) {
         return ReplyPreview(
           sender: '',
           text: null,
           targetLoaded: false,
-          targetGuid: m.threadOriginatorGuid,
+          targetGuid: targetKey,
         );
       }
       return ReplyPreview(
@@ -178,7 +181,7 @@ class ThreadPresentationBuilder {
         ),
         text: displayText(target),
         targetLoaded: true,
-        targetGuid: target.guid,
+        targetGuid: target.serverKey,
       );
     }
 
