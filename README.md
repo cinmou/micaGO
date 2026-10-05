@@ -255,8 +255,8 @@ MicaGo/
 - **Notifications while the app is killed** lean on the keep‑alive service, or on
   your own `google-services.json` if you prefer Firebase. Without either, alerts are
   best‑effort, and the socket plus delta sync still catch everything up on reopen.
-- **Verified on Android only.** The Flutter client can in principle build for other
-  platforms, but Android is the only one tested. The API is client‑agnostic by design.
+- **Android and Linux tested.** The Flutter client has been tested on Android and Linux.
+  Windows has a separate native client. The API is client-agnostic by design.
 - micaGO is an independent project. Use at your own risk.
 
 ---

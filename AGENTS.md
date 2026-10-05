@@ -8,7 +8,7 @@ Four components:
 
 - **Go relay server** — `MicaGoServer/micago-server`. Reads the Mac's Messages DB, exposes a local control + chat API, syncs into `relay.db`, serves chats/messages/delta + WebSocket. Tests: `go test ./...`, `go vet ./...`.
 - **macOS Companion** (SwiftUI) — `MicaGoServer/micago-mac-companion`. Menu-bar + dashboard that launches/monitors the server, manages pairing/URLs, sync rules, devices, notifications. Build: `xcodebuild`.
-- **Flutter Android client** — `MicaGoFlutterClient`. Pairs over LAN/public URL, syncs, sends, optional FCM push. Checks: `flutter analyze`, `flutter test`, `flutter build apk --debug`.
+- **Flutter client (Android + Linux)** — `MicaGoFlutterClient`. Pairs over LAN/public URL, syncs, sends, optional FCM push. Checks: `flutter analyze`, `flutter test`, `flutter build apk --debug`.
 - **Windows client** — `MicaGoWindowsClient` (WinUI 3/.NET). Uses cache-first SQLite, REST delta + authenticated WebSocket hints, persistent media cache, optimistic sends, native notifications/tray, and optional local vCard contact matching. Build: `dotnet build MicaGoWindowsClient/micaGO.Windows.sln -c Debug`; contract checks: run `tests/micaGO.Core.ContractTests`.
 
 ## Important rules
@@ -28,7 +28,9 @@ Four components:
 
 - Notification inline replies use Android RemoteInput through the existing local-notifications plugin and Windows AppNotificationBuilder. Payloads carry the chat route and device ID, never credentials; old-device notifications cannot send. Replies are ordinary new messages, and uncertain delivery is never automatically retried.
 - Flutter foreground recovery reconnects before delta catch-up. History requests capture a foreground generation so late pre-lock network failures stay silent; an interrupted history load retries when the foreground connection recovers. Authentication rejection remains terminal.
+- Website lists Android and Linux as tested (Linux confirmed by the user); Windows remains a separate native client. Landing copy leads with screenshots and everyday features; notification replies stay in documentation until device verification.
 - Website colors follow `prefers-color-scheme`; product footers use the fixed phrase `made with ♥️ for everyone` in every locale.
+- Website FAQ documents source-checked OS requirements, default ports (local 3000 / device TLS 3001), 5-minute single-use v4 pairing, TLS 1.2 minimum, certificate pinning, hashed per-device credentials, 5-second database polling, and optional Firebase data boundaries in all three languages. Keep parameters aligned with code; polling intervals are not delivery guarantees.
 
 
 - Android baseline is API 24 (Android 7.0) with the current Flutter engine. Credential persistence allows 30 seconds for slow Keystore initialization; bootstrap profile loading allows 35 seconds. If secure save fails after redemption, retry reuses the already-issued credential in memory. Profiles never fall back to plaintext preferences. If both RSA/AES Keystore probes fail, Android pairing offers explicit software-storage opt-in before invitation redemption. Tink AES-GCM stores a random keyset plus ciphertext atomically in `noBackupFilesDir`; this protects against ordinary app access, not root. Normal devices keep Keystore. Both credential stores clear on disconnect/revocation; selectors never fall back to older credentials. The local Flutter plugin is auto-registered for background engines too. Companion distinguishes issued-but-unregistered devices as awaiting connection.

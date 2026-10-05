@@ -235,8 +235,8 @@ MicaGo/
 - **编辑/撤回/删除** 取决于你的 Mac 是否授予私有 API(IMCore)访问;不可用之处会隐藏这些操作。
 - **应用被杀后的通知** 靠保活服务;你愿意用 Firebase 的话,也可以靠你自己的
   `google-services.json`。重新打开后,socket 加增量同步会补齐消息。
-- **只在安卓上验证过。** Flutter 客户端理论上也能构建到其他平台,只是目前只测试过安卓。API
-  在设计上与客户端无关。
+- **Android 和 Linux 已测试。** Flutter 客户端已在 Android 和 Linux 上测试可用。
+  Windows 提供独立的原生客户端。API 在设计上与客户端无关。
 - micaGO 是独立项目。使用风险自负。
 
 ---
