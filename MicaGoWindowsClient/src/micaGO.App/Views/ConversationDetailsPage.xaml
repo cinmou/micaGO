@@ -92,7 +92,7 @@
 
                 <TextBlock x:Name="RoutesHeader"
                            Style="{StaticResource MicaGoSettingsHeaderStyle}"
-                           Text="Routes"
+                           Text="Accounts &amp; merging"
                            Visibility="Collapsed" />
                 <Border x:Name="RoutesCard"
                         Style="{StaticResource MicaGoSettingsCardStyle}"
@@ -105,11 +105,13 @@
                         </Grid.ColumnDefinitions>
                         <FontIcon VerticalAlignment="Top" Margin="0,3,0,0" FontSize="18" Glyph="&#xE8AB;" />
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
-                            <TextBlock x:Name="MergeRoutesLabel" Text="Merge all routes of this contact" />
+                            <TextBlock x:Name="MergeRoutesLabel" Text="Merge this contact’s conversations" />
                             <TextBlock x:Name="RoutesListText"
                                        FontSize="11"
                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                        TextWrapping="Wrap" />
+                            <TextBlock x:Name="MergeRoutesHint" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <TextBlock x:Name="SendRouteLabel"
                                        Margin="0,7,0,0"
                                        Text="Send using"

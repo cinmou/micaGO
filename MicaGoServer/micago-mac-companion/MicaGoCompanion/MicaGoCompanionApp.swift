@@ -278,6 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppModel.shared.reloadConfig()
             installTunnelFollower()
             await AppModel.shared.refresh()
+            await BackendController.shared.resumeAfterAppUpdateIfNeeded(externalReachable: AppModel.shared.reachable)
             BackendController.shared.autoStartIfNeeded(externalReachable: AppModel.shared.reachable)
             AppModel.shared.refreshAfterBackendStart()
             AppModel.shared.startPolling()

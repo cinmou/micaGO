@@ -108,30 +108,41 @@ public sealed partial class ConversationDetailsPage : Page
         if (_chat is null || _chat.IsGroup) return;
         var mergeKey = "chat.mergeRoutes." + (_chat.ContactId ?? _chat.Id);
         var stored = await AppServices.Current.Cache.GetSettingAsync(mergeKey);
-        var routes = _chat.RouteIds;
+        _loadingSendRoute=true;
+        SendRoutePicker.Items.Clear();
+        SendRouteLabel.Visibility=Visibility.Collapsed;
+        SendRoutePicker.Visibility=Visibility.Collapsed;
+        var candidates = _context?.Host.GetContactRoutes(_chat) ?? [];
+        var routes = candidates.Select(route=>route.Id).ToArray();
         RoutesHeader.Visibility = Visibility.Visible;
         RoutesCard.Visibility = Visibility.Visible;
         RoutesHeader.Text = l["routes"];
         MergeRoutesLabel.Text = l["mergeRoutes"];
         RoutesListText.Text = string.Join('\n',
-            routes is { Count: > 0 } ? routes : [_chat.Participants?.FirstOrDefault() ?? _chat.Id]);
+            candidates.Count>0 ? candidates.Select(route=>$"{route.Participants?.FirstOrDefault() ?? route.Id} · {route.ServiceLabel}") : [_chat.Participants?.FirstOrDefault() ?? _chat.Id]);
         // The merge toggle only matters when this contact actually has (or
         // had) more than one route.
-        var toggleRelevant = (routes?.Count ?? 0) > 1 || stored == "0";
-        MergeRoutesToggle.Visibility = toggleRelevant ? Visibility.Visible : Visibility.Collapsed;
+        var toggleRelevant = routes.Length > 1 || stored == "0";
+        MergeRoutesToggle.Visibility = Visibility.Visible;
+        MergeRoutesToggle.IsEnabled = toggleRelevant && _chat.ContactId is not null;
+        MergeRoutesHint.Text = _chat.ContactId is null ? l["mergeNeedsContact"] : !toggleRelevant ? l["mergeSingleRoute"] : string.Empty;
+        MergeRoutesHint.Visibility = string.IsNullOrEmpty(MergeRoutesHint.Text) ? Visibility.Collapsed : Visibility.Visible;
         _loadingMergeToggle = true;
-        MergeRoutesToggle.IsOn = stored != "0";
+        MergeRoutesToggle.IsOn = toggleRelevant && stored != "0";
         _loadingMergeToggle = false;
-        if (routes is { Count: > 1 })
+        if (routes is { Length: > 1 } && MergeRoutesToggle.IsOn)
         {
             SendRouteLabel.Text=l["sendUsing"];
             SendRouteLabel.Visibility=Visibility.Visible;
             SendRoutePicker.Visibility=Visibility.Visible;
             _loadingSendRoute=true;
-            foreach(var route in routes)SendRoutePicker.Items.Add(new ComboBoxItem{Content=route,Tag=route});
-            SendRoutePicker.SelectedIndex=Math.Max(0,routes.ToList().FindIndex(route=>route.Equals(_chat.PrimaryRouteId,StringComparison.OrdinalIgnoreCase)));
-            _loadingSendRoute=false;
+            foreach(var route in candidates.Where(route=>route.CanSendText))
+                SendRoutePicker.Items.Add(new ComboBoxItem{Content=$"{route.Participants?.FirstOrDefault() ?? route.Id} · {route.ServiceLabel}",Tag=route.Id});
+            var savedRoute=await AppServices.Current.Cache.GetSettingAsync("chat.sendRoute."+(_chat.ContactId??_chat.Id));
+            var activeRoute=ContactConversationSemantics.Merge(candidates,savedRoute).PrimaryRouteId;
+            SendRoutePicker.SelectedIndex=SendRoutePicker.Items.Cast<ComboBoxItem>().ToList().FindIndex(item=>string.Equals(item.Tag as string,activeRoute,StringComparison.OrdinalIgnoreCase));
         }
+        _loadingSendRoute=false;
     }
 
     private async void MergeRoutesToggle_Toggled(object sender, RoutedEventArgs e)
@@ -140,6 +151,7 @@ public sealed partial class ConversationDetailsPage : Page
         var mergeKey = "chat.mergeRoutes." + (_chat.ContactId ?? _chat.Id);
         await AppServices.Current.Cache.SetSettingAsync(mergeKey, MergeRoutesToggle.IsOn ? "1" : "0");
         if (_context is not null) await _context.Host.RefreshContactsAsync();
+        await LoadRoutesCardAsync(AppServices.Current.Localization);
     }
 
     private async void SendRoutePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)

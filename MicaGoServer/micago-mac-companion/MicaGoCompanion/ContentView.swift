@@ -641,6 +641,19 @@ private struct AboutPage: View {
             ) {
                 updates.checkForUpdates()
             }
+            .disabled(!updates.canCheckForUpdates)
+        }
+
+        SectionCard(title: "Updates") {
+            Toggle("Automatically check for updates", isOn: $updates.automaticallyChecksForUpdates)
+            Toggle("Automatically download updates", isOn: $updates.automaticallyDownloadsUpdates)
+                .disabled(!updates.automaticallyChecksForUpdates)
+            Text("Updates are verified before installation. Installing an update briefly restarts Companion and its managed server.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !BackendController.shared.userBinaryPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("A custom backend path is selected. Updating Companion does not update that external backend.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
 
         Text(verbatim: "made with ♥️ for everyone")

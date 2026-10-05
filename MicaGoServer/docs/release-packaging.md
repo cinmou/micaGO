@@ -51,9 +51,13 @@ VERSION=0.87.0 \
 scripts/package-dmg.sh
 ```
 
+Notarized builds generate the Sparkle appcast by default; `GENERATE_APPCAST=0` explicitly skips it for packaging-only work. Appcast generation requires a signed, notarized package. Before accepting the appcast, the script verifies its download URL, archive byte length, and Ed25519 signature against the public key embedded in the built app.
+
 Upload `build/release/micaGO-Companion-0.87.0-mac.dmg` and
 `build/release/appcast.xml` from the same run — the appcast's signature and
-length only match that exact DMG.
+length only match that exact DMG. CI creates new releases as drafts. Upload both Mac assets, then publish the draft; a public release without `appcast.xml` breaks the current feed URL.
+
+In Companion → About → Updates, users can choose automatic checks and downloads. Sparkle owns download verification, installation and relaunch. Installation briefly stops the Companion-owned backend and restores it on relaunch if it was running; external servers and custom binary-path overrides remain under user control. Test an actual signed old→new update before publishing: confirm the version, backend version, pairing identity, settings, and cached history survive. An unsigned Debug build does not establish release-update readiness.
 
 The DMG is styled as a standard drag-to-install disk image: it contains the
 Companion app, an `Applications` shortcut, and a Finder background image.

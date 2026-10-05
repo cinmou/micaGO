@@ -6,6 +6,16 @@
     xmlns:controls="using:MicaGo.App.Controls"
     xmlns:models="using:MicaGo.Core.Models">
 
+    <Page.Resources>
+        <Flyout x:Key="HideUndoFlyoutResource" x:Name="HideUndoFlyout">
+            <StackPanel Spacing="12" MaxWidth="320">
+                <TextBlock x:Name="HideUndoMessage" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite" />
+                <Button x:Name="HideUndoButton" Click="HideUndoButton_Click" HorizontalAlignment="Left" />
+            </StackPanel>
+        </Flyout>
+    </Page.Resources>
+
     <Grid x:Name="ShellRoot" Background="Transparent">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="SidebarColumn" Width="340" MinWidth="280" MaxWidth="420" />
@@ -601,11 +611,6 @@
                                     PointerReleased="SidebarResizeGrip_PointerReleased"
                                     PointerCanceled="SidebarResizeGrip_PointerCanceled"
                                     PointerCaptureLost="SidebarResizeGrip_PointerCaptureLost" />
-        <InfoBar x:Name="HideUndoBar" Grid.ColumnSpan="2" VerticalAlignment="Bottom"
-                 Margin="16" Canvas.ZIndex="30" IsOpen="False" Severity="Informational">
-            <InfoBar.ActionButton>
-                <Button x:Name="HideUndoButton" Click="HideUndoButton_Click" />
-            </InfoBar.ActionButton>
-        </InfoBar>
+
     </Grid>
 </Page>

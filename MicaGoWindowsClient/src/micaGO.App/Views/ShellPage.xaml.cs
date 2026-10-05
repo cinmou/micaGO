@@ -56,7 +56,8 @@ public sealed partial class ShellPage : Page
     public ShellPage()
     {
         InitializeComponent();
-        _hideUndoTimer.Tick += (_, _) => { _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoBar.IsOpen = false; };
+        _hideUndoTimer.Tick += (_, _) => { _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoFlyout.Hide(); };
+        HideUndoFlyout.Closed += (_, _) => { _hideUndoTimer.Stop(); _undoHiddenChat = null; };
         NavigationCacheMode=Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
         Loaded += ShellPage_Loaded;
         ShellRoot.SizeChanged += ShellRoot_SizeChanged;
@@ -222,9 +223,16 @@ public sealed partial class ShellPage : Page
             var wasSelected=_viewModel.SelectedChat is{} selected&&(selected.Id==chat.Id||chat.RouteIds?.Contains(selected.Id)==true);
             await _viewModel.HideChatAsync(chat);
             _undoHiddenChat = chat;
-            HideUndoBar.Message = AppServices.Current.Localization["chatHidden"];
+            HideUndoMessage.Text = AppServices.Current.Localization["chatHidden"];
             HideUndoButton.Content = AppServices.Current.Localization["undo"];
-            HideUndoBar.IsOpen = true; _hideUndoTimer.Stop(); _hideUndoTimer.Start();
+            _hideUndoTimer.Stop();
+            // Let the context menu finish closing before opening another native flyout.
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if(_undoHiddenChat is null||_shutDown)return;
+                HideUndoFlyout.ShowAt(ChatList,new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions{Placement=Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft});
+                _hideUndoTimer.Start();
+            });
             if(!wasSelected)return;
             ChatList.SelectedItem=null;
             if(_viewModel.Chats.FirstOrDefault() is{} next){ChatList.SelectedItem=next;await SelectChatAsync(next);return;}
@@ -236,7 +244,7 @@ public sealed partial class ShellPage : Page
     private async void HideUndoButton_Click(object sender, RoutedEventArgs e)
     {
         var chat = _undoHiddenChat;
-        _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoBar.IsOpen = false;
+        _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoFlyout.Hide();
         if (chat is not null && _viewModel is not null) await _viewModel.RestoreHiddenChatsAsync([chat.Id]);
     }
 
@@ -246,7 +254,8 @@ public sealed partial class ShellPage : Page
         ShowConversationPane();
         if (_viewModel.SelectedChat is { } current
             && _viewModel.Messages.Count > 0
-            && (current.Id == chat.Id || current.RouteIds?.Contains(chat.Id) == true || chat.RouteIds?.Contains(current.Id) == true))
+            && current.ListKey==chat.ListKey
+            && ContactConversationSemantics.SameRoutes(chat,current.RouteIds??[current.Id]))
         {
             // Clicking the already-open row must not restart cache + REST loading;
             // doing so replaced the complete timeline twice and recycled every
@@ -543,7 +552,7 @@ public sealed partial class ShellPage : Page
     public async Task ShutdownAsync()
     {
         if (_shutDown) return; _shutDown = true;
-        _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoBar.IsOpen = false;
+        _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoFlyout.Hide();
         _timestampTimer.Stop();
         _voiceTimer.Stop();
         _voiceRecorder.Dispose();
@@ -652,10 +661,17 @@ public sealed partial class ShellPage : Page
         if (_viewModel is not null) await _viewModel.ReloadChatsAsync();
     }
 
+    public IReadOnlyList<ChatSummary> GetContactRoutes(ChatSummary chat)=>_viewModel?.GetContactRoutes(chat)??[];
+
     public async Task RefreshContactsAsync()
     {
         if(_viewModel is null)return;await _viewModel.RefreshContactsAsync();
-        if(_viewModel.SelectedChat is{} chat){ThreadAvatar.DisplayName=chat.Title;ThreadAvatar.ProfilePicture=Ui.Image(chat.AvatarPath);ThreadTitle.Text=chat.Title;}
+        if(_viewModel.SelectedChat is{} chat)
+        {
+            ChatList.SelectedItem=_viewModel.Chats.FirstOrDefault(row=>row.ListKey==chat.ListKey);
+            ThreadAvatar.DisplayName=chat.Title;ThreadAvatar.ProfilePicture=Ui.Image(chat.AvatarPath);ThreadTitle.Text=chat.Title;
+            Composer.IsEnabled=chat.CanSendText;EmojiButton.IsEnabled=chat.CanSendText;UpdateComposerActions();
+        }
     }
 
     public int HiddenChatCount=>_viewModel?.HiddenChatCount??0;

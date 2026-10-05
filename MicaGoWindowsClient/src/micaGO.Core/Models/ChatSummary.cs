@@ -29,6 +29,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
     private bool _hasUnread;
     private string? _primaryRouteId;
     private string? _contactId;
+    private bool _keepRoutesSeparate;
 
     public ChatSummary(
         string Id,
@@ -49,7 +50,8 @@ public sealed record ChatSummary : INotifyPropertyChanged
         bool LatestFromMe = false,
         bool HasUnread = false,
         string? PrimaryRouteId = null,
-        string? ContactId = null)
+        string? ContactId = null,
+        bool KeepRoutesSeparate = false)
     {
         this.Id = Id;
         _title = Title;
@@ -70,6 +72,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
         _hasUnread = HasUnread;
         _primaryRouteId = PrimaryRouteId;
         _contactId = ContactId;
+        _keepRoutesSeparate = KeepRoutesSeparate;
     }
 
     // A record's generated copy constructor would also copy the
@@ -96,6 +99,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
         _hasUnread = source.HasUnread;
         _primaryRouteId = source._primaryRouteId;
         _contactId = source._contactId;
+        _keepRoutesSeparate = source._keepRoutesSeparate;
     }
 
     public string Id { get; init; }
@@ -129,12 +133,15 @@ public sealed record ChatSummary : INotifyPropertyChanged
     {
         get
         {
-            if(!string.IsNullOrWhiteSpace(ContactId))return "contact:"+ContactId.ToUpperInvariant();
+            if(!KeepRoutesSeparate&&!string.IsNullOrWhiteSpace(ContactId))return "contact:"+ContactId.ToUpperInvariant();
             var routes = RouteIds is { Count: > 0 } ? RouteIds : [Id];
             if (routes.Count == 1) return "route:" + routes[0].ToUpperInvariant();
             return "routes:" + string.Join('\u001f', routes.Order(StringComparer.OrdinalIgnoreCase).Select(route => route.ToUpperInvariant()));
         }
     }
+
+    [JsonIgnore]
+    public bool KeepRoutesSeparate { get => _keepRoutesSeparate; init => _keepRoutesSeparate = value; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -158,6 +165,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
         Set(ref _hasUnread, source.HasUnread, nameof(HasUnread));
         Set(ref _primaryRouteId, source._primaryRouteId, nameof(PrimaryRouteId));
         Set(ref _contactId, source._contactId, nameof(ContactId));
+        Set(ref _keepRoutesSeparate, source.KeepRoutesSeparate, nameof(KeepRoutesSeparate));
     }
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

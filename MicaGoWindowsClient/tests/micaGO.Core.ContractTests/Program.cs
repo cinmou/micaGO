@@ -20,6 +20,7 @@ var tests = new (string Name, Action Run)[]
     ("Flutter-compatible unread badge and per-route advancement", ChatUnreadTests.Run),
     ("stable chat row notifications", UpdatesChatRowInPlace),
     ("stable merged contact reorder", KeepsMergedContactRowStable),
+    ("contact split, merge scope and send route capabilities", ContactConversationTests.Run),
     ("stable message row notifications", UpdatesMessageRowInPlace),
     ("vCard folded and escaped contacts", ParsesVCardContacts),
     ("private and group presentation", PresentsPrivateAndGroupThreads),

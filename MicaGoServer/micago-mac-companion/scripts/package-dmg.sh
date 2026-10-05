@@ -16,6 +16,11 @@ COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
 VERSION="${VERSION:-0.87.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
+GENERATE_APPCAST="${GENERATE_APPCAST:-${NOTARIZE:-0}}"
+if [ "$GENERATE_APPCAST" = "1" ] && { [ -z "${SIGN_IDENTITY:-}" ] || [ "${NOTARIZE:-0}" != "1" ]; }; then
+  echo "error: public update packages require SIGN_IDENTITY and NOTARIZE=1" >&2
+  exit 1
+fi
 DERIVED_DATA="${DERIVED_DATA:-$COMPANION_DIR/build/DerivedData}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
 BACKEND_DIR="$ARTIFACT_DIR/backend"
@@ -250,6 +255,7 @@ if [ "${GENERATE_APPCAST:-0}" = "1" ]; then
   else
     "$GENERATE_APPCAST_TOOL" "${APPCAST_ARGS[@]}"
   fi
+  xcrun swift "$SCRIPT_DIR/validate-update.swift" "$APPCAST_STAGING_DIR/appcast.xml" "$DMG_PATH" "$APP_PATH/Contents/Info.plist" "$VERSION"
   cp "$APPCAST_STAGING_DIR/appcast.xml" "$APPCAST_PATH"
   rm -rf "$APPCAST_STAGING_DIR"
   echo "Appcast: $APPCAST_PATH"

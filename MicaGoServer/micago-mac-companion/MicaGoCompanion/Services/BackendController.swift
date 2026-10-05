@@ -453,6 +453,35 @@ final class BackendController: ObservableObject {
         }
     }
 
+    /// Sparkle owns application replacement; only stop the backend child we launched.
+    func prepareForAppUpdate() {
+        defaults.set(process?.isRunning == true, forKey: "backend.resumeAfterAppUpdate")
+        shutdownForQuit()
+    }
+
+    func resumeAfterAppUpdateIfNeeded(externalReachable: Bool) async {
+        guard defaults.bool(forKey: "backend.resumeAfterAppUpdate") else { return }
+        // Aborted installs may still be waiting for our termination callback.
+        for _ in 0..<10 where process != nil {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        var reachable = externalReachable
+        // The old child's final HTTP response can briefly outlive its termination request.
+        if reachable {
+            for _ in 0..<10 {
+                try? await Task.sleep(for: .milliseconds(200))
+                await AppModel.shared.refresh()
+                reachable = AppModel.shared.reachable
+                if !reachable { break }
+            }
+        }
+        defaults.removeObject(forKey: "backend.resumeAfterAppUpdate")
+        // Preserve an external server and deliberate binary overrides. start() uses normal resolution.
+        guard process == nil, binaryExists, !reachable else { return }
+        appendLog("app update: restoring previously running backend")
+        start()
+    }
+
     /// Auto-start at companion launch when lifecycle management is enabled, the
     /// binary exists, and no external/unmanaged server already answers.
     func autoStartIfNeeded(externalReachable: Bool) {

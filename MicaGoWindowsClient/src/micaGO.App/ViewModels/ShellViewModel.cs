@@ -135,12 +135,25 @@ public sealed class ShellViewModel : IAsyncDisposable
 
     public string FormatActivityTimestamp(long milliseconds) => ChatTimestamp(milliseconds);
 
+    public IReadOnlyList<ChatSummary> GetContactRoutes(ChatSummary chat) => _routeChats.Values
+        .Where(route => !route.IsGroup && !IsChatHidden(route) &&
+            (chat.ContactId is not null ? string.Equals(route.ContactId,chat.ContactId,StringComparison.OrdinalIgnoreCase) : route.Id==chat.Id))
+        .OrderByDescending(route=>route.UpdatedAt).ToArray();
+
     public async Task RefreshContactsAsync(CancellationToken cancellationToken=default)
     {
         ApplyChatSnapshot(await ApplyContactNamesAsync(await _services.Cache.GetChatsAsync(cancellationToken),cancellationToken));
         if(SelectedChat is not{} selected)return;
-        var updated=_allChats.FirstOrDefault(chat=>chat.ListKey==selected.ListKey||MatchesRoute(chat,selected.Id));if(updated is not null)SelectedChat=updated;
-        ApplyMessages(await DecorateMessageSendersAsync(_rawMessages,SelectedChat?.IsGroup==true,cancellationToken));
+        var updated=_allChats.FirstOrDefault(chat=>chat.ListKey==selected.ListKey||MatchesRoute(chat,selected.Id));
+        if(updated is null)return;
+        if(!ContactConversationSemantics.SameRoutes(updated,_selectedRouteIds))
+        {
+            await SelectChatAsync(updated,cancellationToken);
+            return;
+        }
+        SelectedChat=updated;
+        ApplyMessages(await DecorateMessageSendersAsync(_rawMessages,updated.IsGroup,cancellationToken));
+        StateChanged?.Invoke(this,EventArgs.Empty);
     }
 
     public async Task SetChatUnreadAsync(ChatSummary chat, bool unread, CancellationToken ct=default)
@@ -626,13 +639,9 @@ public sealed class ShellViewModel : IAsyncDisposable
             var routes=group.OrderByDescending(chat=>chat.UpdatedAt).ToArray();var primary=routes[0];
             var mergeKey="chat.mergeRoutes."+(primary.ContactId??primary.Id);
             var mergeAllowed=routes.Length>1&&await _services.Cache.GetSettingAsync(mergeKey,cancellationToken)!="0";
-            if(routes.Length>1&&!mergeAllowed){merged.AddRange(routes);continue;}
+            if(routes.Length>1&&!mergeAllowed){merged.AddRange(routes.Select(route=>route with{KeepRoutesSeparate=true}));continue;}
             var savedRoute=await _services.Cache.GetSettingAsync("chat.sendRoute."+(primary.ContactId??primary.Id),cancellationToken);
-            var sendRoute=routes.FirstOrDefault(route=>route.Id.Equals(savedRoute,StringComparison.OrdinalIgnoreCase))
-                ?? routes.FirstOrDefault(route=>route.ServiceLabel.Equals("iMessage",StringComparison.OrdinalIgnoreCase)&&route.CanSendText)
-                ?? routes.FirstOrDefault(route=>route.CanSendText)
-                ?? primary;
-            merged.Add(routes.Length>1?primary with{RouteIds=routes.Select(route=>route.Id).ToArray(),PrimaryRouteId=sendRoute.Id,Preview=primary.Preview,UnreadCount=routes.Sum(route=>route.UnreadCount),HasUnread=routes.Any(route=>route.HasUnread)}:primary);
+            merged.Add(ContactConversationSemantics.Merge(routes,savedRoute));
         }
         return merged.OrderByDescending(chat=>chat.IsPinned).ThenByDescending(chat=>chat.UpdatedAt).Select(chat=>chat with{Time=ChatTimestamp(chat.UpdatedAt),ContactId=IsChatHidden(chat)?null:chat.ContactId}).ToArray();
     }

@@ -94,8 +94,10 @@ public sealed class LocalizationService
         values["backupSaved"] = traditional ? "已匯出 {0} 項設定。" : chinese ? "已导出 {0} 项设置。" : "Exported {0} settings.";
         values["backupRestored"] = traditional ? "已還原 {0} 項設定。" : chinese ? "已恢复 {0} 项设置。" : "Restored {0} settings.";
         values["backupFailed"] = traditional ? "備份操作失敗：{0}" : chinese ? "备份操作失败：{0}" : "Backup operation failed: {0}";
-        values["routes"] = traditional ? "路由" : chinese ? "路由" : "Routes";
-        values["mergeRoutes"] = traditional ? "合併此聯絡人的全部路由" : chinese ? "合并此联系人的全部路由" : "Merge all routes of this contact";
+        values["routes"] = traditional ? "帳號與合併" : chinese ? "账号与合并" : "Accounts & merging";
+        values["mergeRoutes"] = traditional ? "合併此聯絡人的對話" : chinese ? "合并此联系人的对话" : "Merge this contact’s conversations";
+        values["mergeNeedsContact"] = traditional ? "匯入包含此人的電話與電子郵件的 .vcf 聯絡人卡片，才能將不同帳號的對話合併。" : chinese ? "导入包含此人号码和邮箱的 .vcf 联系人卡片，才能将不同账号的对话合并。" : "Import a .vcf contact card containing this person’s phone numbers and emails to merge their conversations.";
+        values["mergeSingleRoute"] = traditional ? "目前只找到此聯絡人的一個對話帳號。其他帳號的對話出現後可在這裡合併。" : chinese ? "目前只找到此联系人的一个对话账号。其他账号的对话出现后可在这里合并。" : "Only one conversation account was found for this contact. More accounts can be merged here when their conversations appear.";
         values["sendUsing"] = traditional ? "傳送時使用" : chinese ? "发送时使用" : "Send using";
         values["general"] = traditional ? "一般" : chinese ? "通用" : "General";
         values["data"] = traditional ? "資料" : chinese ? "数据" : "Data";
