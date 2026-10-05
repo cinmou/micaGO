@@ -236,8 +236,8 @@ MicaGo/
 - **編輯/收回/刪除** 取決於你的 Mac 是否授予私有 API(IMCore)存取;不可用之處會隱藏這些操作。
 - **程式被終止後的通知** 靠保活服務;你願意用 Firebase 的話,也可以靠你自己的
   `google-services.json`。重新開啟後,socket 加增量同步會補齊訊息。
-- **只在 Android 上驗證過。** Flutter 用戶端理論上也能建置到其他平台,只是目前只測試過
-  Android。API 在設計上與用戶端無關。
+- **Android 與 Linux 已測試。** Flutter 用戶端已在 Android 與 Linux 上測試可用。
+  Windows 提供獨立的原生用戶端。API 在設計上與用戶端無關。
 - micaGO 是獨立專案。使用風險自負。
 
 ---
