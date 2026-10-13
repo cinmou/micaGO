@@ -1,3 +1,4 @@
+import '../../core/ui/top_banner.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -151,7 +152,5 @@ Future<bool> importSettingsBackup(BuildContext context) async {
 }
 
 void _toast(BuildContext context, String message) {
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(SnackBar(content: Text(message)));
+  TopBanner.show(context, message);
 }

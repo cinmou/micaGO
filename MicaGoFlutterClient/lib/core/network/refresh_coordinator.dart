@@ -21,6 +21,9 @@ class RefreshCoordinator {
   /// Live WebSocket status (so scheduled work can no-op once reconnected).
   final WsStatus Function() wsStatus;
 
+  /// Authenticated liveness probe for a retained foreground socket.
+  final Future<bool> Function()? checkConnection;
+
   /// Conservative poll cadence while the socket is down. Injectable for tests.
   final Duration fallbackPollInterval;
 
@@ -28,12 +31,15 @@ class RefreshCoordinator {
     required this.reconnect,
     required this.catchUp,
     required this.wsStatus,
+    this.checkConnection,
     this.fallbackPollInterval = const Duration(seconds: 20),
   });
 
   Timer? _reconnectTimer;
   Timer? _fallbackPoll;
   int _reconnectAttempt = 0;
+  int _generation = 0;
+  Future<void>? _reconnecting;
 
   /// Whether a fallback poll is currently running (exposed for tests/diagnostics).
   bool get isPolling => _fallbackPoll != null;
@@ -54,6 +60,8 @@ class RefreshCoordinator {
         _startFallbackPoll();
         break;
       case WsStatus.connecting:
+        _cancelReconnect();
+        break;
       case WsStatus.idle:
         break;
     }
@@ -61,27 +69,74 @@ class RefreshCoordinator {
 
   /// App returned to the foreground: reconnect promptly and do a light catch-up.
   Future<void>? _resume;
-  Future<void> onResume() =>
-      _resume ??= _resumeInner().whenComplete(() => _resume = null);
+  Future<void> onResume({bool wasBackgrounded = true}) => _resume ??=
+      _resumeInner(wasBackgrounded).whenComplete(() => _resume = null);
 
-  Future<void> _resumeInner() async {
-    if (wsStatus() != WsStatus.connected) await reconnect();
-    await catchUp('resume');
+  Future<void> _resumeInner(bool wasBackgrounded) async {
+    final generation = _generation;
+    var status = wsStatus();
+    var attemptedReconnect = false;
+    // Permission dialogs and short focus changes do not replace a healthy socket.
+    if (!wasBackgrounded && status == WsStatus.connected) return;
+    if (wasBackgrounded &&
+        status == WsStatus.connected &&
+        checkConnection != null) {
+      final alive = await checkConnection!();
+      if (generation != _generation) return;
+      status = wsStatus();
+      if (!alive && status == WsStatus.connected) {
+        _cancelReconnect();
+        attemptedReconnect = true;
+        await _reconnect();
+      }
+    }
+    if (generation != _generation) return;
+    status = wsStatus();
+    if (!attemptedReconnect &&
+        status != WsStatus.connected &&
+        status != WsStatus.connecting) {
+      _cancelReconnect();
+      await _reconnect();
+    }
+    if (generation == _generation) await catchUp('resume');
   }
 
   void dispose() {
+    _generation++;
     _cancelReconnect();
     _stopFallbackPoll();
   }
 
   void _scheduleReconnect() {
-    _reconnectTimer?.cancel();
+    if (_reconnectTimer != null || _reconnecting != null) return;
     final delay = reconnectBackoff(_reconnectAttempt);
     _reconnectAttempt++;
     _reconnectTimer = Timer(delay, () {
       _reconnectTimer = null;
-      if (wsStatus() != WsStatus.connected) unawaited(reconnect());
+      if (wsStatus() == WsStatus.failed ||
+          wsStatus() == WsStatus.disconnected) {
+        // Endpoint probes may fail without changing the socket status. Keep
+        // retrying with backoff, but never overlap a probe or handshake.
+        unawaited(_reconnect().catchError((Object _) {}));
+      }
     });
+  }
+
+  Future<void> _reconnect() {
+    final pending = _reconnecting;
+    if (pending != null) return pending;
+    final generation = _generation;
+    late final Future<void> attempt;
+    attempt = Future<void>.sync(reconnect).whenComplete(() {
+      if (identical(_reconnecting, attempt)) _reconnecting = null;
+      if (generation == _generation &&
+          (wsStatus() == WsStatus.failed ||
+              wsStatus() == WsStatus.disconnected)) {
+        _scheduleReconnect();
+      }
+    });
+    _reconnecting = attempt;
+    return attempt;
   }
 
   void _cancelReconnect() {

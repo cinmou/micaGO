@@ -139,16 +139,23 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
     _loadRecent();
   }
 
+  bool get _hasNativeGallery => Platform.isAndroid || Platform.isIOS;
+
   Future<void> _loadRecent() async {
-    // Like BB: request extended permission (covers iOS limited library) and
-    // load the most recent gallery items for the grid.
-    final ps = await PhotoManager.requestPermissionExtend();
-    _permission = ps;
-    if (!ps.hasAccess) {
+    if (!_hasNativeGallery) {
       if (mounted) setState(() => _loading = false);
       return;
     }
+    // Like BB: request extended permission (covers iOS limited library) and
+    // load the most recent gallery items for the grid.
     try {
+      final ps = await PhotoManager.requestPermissionExtend();
+      if (!mounted) return;
+      _permission = ps;
+      if (!ps.hasAccess) {
+        setState(() => _loading = false);
+        return;
+      }
       final albums = await PhotoManager.getAssetPathList(
         onlyAll: true,
         type: RequestType.common, // images + videos
@@ -162,6 +169,7 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
         _recent = await albums.first.getAssetListRange(start: 0, end: 31);
       }
     } catch (e) {
+      if (!mounted) return;
       widget.onError(
         MicaLocalizations.current
             .t('chat.recentMediaFailed')
@@ -177,15 +185,14 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
     try {
       final picker = ImagePicker();
       final file = await picker.pickImage(source: ImageSource.camera);
-      if (file == null) return;
+      if (file == null || !mounted) return;
+      final size = await file.length();
+      if (!mounted) return;
       widget.onPicked([
-        StagedAttachment.file(
-          path: file.path,
-          size: await file.length(),
-          filename: file.name,
-        ),
+        StagedAttachment.file(path: file.path, size: size, filename: file.name),
       ]);
     } catch (e) {
+      if (!mounted) return;
       widget.onError(
         MicaLocalizations.current
             .t('chat.cameraFailed')
@@ -211,8 +218,9 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
           );
         }
       }
-      if (picked.isNotEmpty) widget.onPicked(picked);
+      if (mounted && picked.isNotEmpty) widget.onPicked(picked);
     } catch (e) {
+      if (!mounted) return;
       widget.onError(
         MicaLocalizations.current
             .t('chat.filesFailed')
@@ -234,8 +242,9 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
           ),
         );
       }
-      if (picked.isNotEmpty) widget.onPicked(picked);
+      if (mounted && picked.isNotEmpty) widget.onPicked(picked);
     } catch (e) {
+      if (!mounted) return;
       widget.onError(
         MicaLocalizations.current
             .t('chat.photoPickerFailed')
@@ -296,13 +305,22 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
                               // removed — recent videos are pickable straight from the
                               // grid below (they carry a play badge and send like any
                               // other attachment).
-                              _ActionTile(
-                                icon: Icons.photo_camera_outlined,
-                                label: MicaLocalizations.of(
-                                  context,
-                                ).t('chat.camera'),
-                                onTap: _pickCamera,
-                              ),
+                              if (_hasNativeGallery)
+                                _ActionTile(
+                                  icon: Icons.photo_camera_outlined,
+                                  label: MicaLocalizations.of(
+                                    context,
+                                  ).t('chat.camera'),
+                                  onTap: _pickCamera,
+                                ),
+                              if (!_hasNativeGallery)
+                                _ActionTile(
+                                  icon: Icons.photo_library_outlined,
+                                  label: MicaLocalizations.of(
+                                    context,
+                                  ).t('chat.photos'),
+                                  onTap: _pickMoreImages,
+                                ),
                               _ActionTile(
                                 icon: Icons.folder_open_outlined,
                                 label: MicaLocalizations.of(
@@ -352,7 +370,7 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
                               }, childCount: _recent.length + 1),
                             ),
                           )
-                        else
+                        else if (_hasNativeGallery)
                           SliverToBoxAdapter(
                             child: _PermissionPrompt(state: _permission),
                           ),

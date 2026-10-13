@@ -327,7 +327,6 @@ class _RouteSwitcherState extends State<_RouteSwitcher> {
 
   Future<void> _switchTo(String baseUrl) async {
     final strings = MicaLocalizations.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final result = await widget.app.selectRoute(baseUrl);
     final key = switch (result) {
       RouteSwitchResult.switched => 'settings.routeSwitchedToast',
@@ -336,9 +335,14 @@ class _RouteSwitcherState extends State<_RouteSwitcher> {
       RouteSwitchResult.superseded => null,
     };
     if (key == null) return;
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(strings.t(key))));
+    if (!mounted) return;
+    TopBanner.show(
+      context,
+      strings.t(key),
+      kind: result == RouteSwitchResult.unreachable
+          ? TopBannerKind.error
+          : TopBannerKind.info,
+    );
   }
 
   @override
@@ -482,9 +486,7 @@ class _DeviceRegisterDebugState extends State<_DeviceRegisterDebug> {
     await _refresh();
     if (!mounted) return;
     setState(() => _busy = false);
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(result)));
+    TopBanner.show(context, result);
   }
 
   @override
@@ -614,13 +616,10 @@ class _NotificationsCardState extends State<_NotificationsCard> {
     widget.app.noteNotificationPermission(granted);
     if (!mounted) return;
     if (granted == false) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(MicaLocalizations.of(context).t('notif.permBlocked')),
-          ),
-        );
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('notif.permBlocked'),
+      );
     }
   }
 
@@ -762,11 +761,7 @@ class _NotificationDiagnosticsTile extends StatelessWidget {
                 for (final r in rows) '${r.key}: ${r.value}',
               ].join('\n');
               Clipboard.setData(ClipboardData(text: text));
-              ScaffoldMessenger.of(context)
-                ..clearSnackBars()
-                ..showSnackBar(
-                  SnackBar(content: Text(strings.t('notif.diagnosticsCopied'))),
-                );
+              TopBanner.show(context, strings.t('notif.diagnosticsCopied'));
             },
           ),
         ),
@@ -1480,9 +1475,7 @@ void _toastRestore(BuildContext context, int n, String key) {
   final msg = n == 0
       ? strings.t('settings.nothingHidden')
       : strings.t(key).replaceAll('{n}', '$n');
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(SnackBar(content: Text(msg)));
+  TopBanner.show(context, msg);
 }
 
 /// C54: export/import a `.micagobak` settings backup.
@@ -1618,26 +1611,16 @@ class _ChatBackgroundPicker extends StatelessWidget {
     try {
       await theme.setChatBackgroundFromFile(image.path);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              MicaLocalizations.of(context).t('settings.backgroundUpdated'),
-            ),
-          ),
-        );
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('settings.backgroundUpdated'),
+      );
     } catch (_) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              MicaLocalizations.of(context).t('chat.imageUnusable'),
-            ),
-          ),
-        );
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('chat.imageUnusable'),
+      );
     }
   }
 }
@@ -1994,29 +1977,19 @@ class _AboutBodyState extends State<_AboutBody> {
     final remaining = _debugUnlockTaps - _versionTapCount;
     if (remaining <= 0) {
       unawaited(context.read<AppController>().setDeveloperModeEnabled(true));
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              MicaLocalizations.of(context).t('settings.debugUnlocked'),
-            ),
-          ),
-        );
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('settings.debugUnlocked'),
+      );
       return;
     }
     if (remaining <= 3) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              MicaLocalizations.of(
-                context,
-              ).t('settings.debugUnlockHint').replaceAll('{n}', '$remaining'),
-            ),
-          ),
-        );
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(
+          context,
+        ).t('settings.debugUnlockHint').replaceAll('{n}', '$remaining'),
+      );
     }
   }
 

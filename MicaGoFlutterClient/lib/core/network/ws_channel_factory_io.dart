@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'secure_transport.dart';
 import 'dart:io';
 import 'package:web_socket_channel/io.dart';
@@ -12,6 +14,7 @@ WebSocketChannel connectAuthedWebSocket(
   String token,
   Map<String, String> metadata, [
   String? fingerprint,
+  Duration handshakeTimeout = const Duration(seconds: 15),
 ]) {
   final uri = baseUri.replace(
     queryParameters: {...baseUri.queryParameters, ...metadata},
@@ -19,11 +22,34 @@ WebSocketChannel connectAuthedWebSocket(
   final headers = <String, dynamic>{};
   if (token.isNotEmpty) headers['Authorization'] = 'Bearer $token';
   final client = secureIoClient(uri.toString(), fingerprint: fingerprint);
+  var timedOut = false;
   return IOWebSocketChannel(
     WebSocket.connect(
-      uri.toString(),
-      headers: headers.isEmpty ? null : headers,
-      customClient: client,
-    ).whenComplete(() => client.close()),
+          uri.toString(),
+          headers: headers.isEmpty ? null : headers,
+          customClient: client,
+        )
+        .then((socket) {
+          if (timedOut) {
+            unawaited(socket.close());
+          } else {
+            socket.pingInterval = const Duration(seconds: 25);
+          }
+          return socket;
+        })
+        .timeout(
+          handshakeTimeout,
+          onTimeout: () {
+            timedOut = true;
+            // Future.timeout alone leaves the TLS/HTTP upgrade running. Abort
+            // it so each retry cannot leave another stalled socket behind.
+            client.close(force: true);
+            throw TimeoutException(
+              'WebSocket handshake timed out',
+              handshakeTimeout,
+            );
+          },
+        )
+        .whenComplete(() => client.close()),
   );
 }

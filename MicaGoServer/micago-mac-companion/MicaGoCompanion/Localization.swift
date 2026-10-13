@@ -35,6 +35,7 @@ enum L10n {
     }
 
     private static let en = [
+        "tunnel.retry": "Automatic retry interval: %d s",
         "language.title": "Language",
         "language.system": "System language",
         "language.help": "Changes apply immediately.",
@@ -92,6 +93,7 @@ enum L10n {
     ]
 
     private static let zhHans = [
+        "tunnel.retry": "自动重试间隔：%d 秒",
         "language.title": "语言",
         "language.system": "跟随系统",
         "language.help": "更改立即生效。",
@@ -148,6 +150,7 @@ enum L10n {
     ]
 
     private static let zhHant = [
+        "tunnel.retry": "自動重試間隔：%d 秒",
         "language.title": "語言",
         "language.system": "跟隨系統",
         "language.help": "變更立即生效。",

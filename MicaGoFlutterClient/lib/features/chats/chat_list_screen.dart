@@ -1,3 +1,4 @@
+import '../../core/ui/top_banner.dart';
 import '../../core/ui/app_dialog.dart';
 import 'dart:async';
 
@@ -192,8 +193,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }());
   }
 
+  Future<void> _markRoutesRead(Iterable<String> guids) async {
+    try {
+      await _controller.markRoutesRead(guids);
+    } catch (_) {
+      if (mounted && !_controller.app.tokenRejected.value) {
+        TopBanner.show(
+          context,
+          MicaLocalizations.of(context).t('common.notConnectedServer'),
+          kind: TopBannerKind.error,
+        );
+      }
+    }
+  }
+
   void _openMerged(MergedChat merged) {
-    _controller.markRoutesRead(merged.routes.map((r) => r.guid));
+    _markRoutesRead(merged.routes.map((r) => r.guid));
     widget.onOpen(merged);
   }
 
@@ -204,12 +219,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
       await _controller.setChatsHidden(guids, true);
     } catch (_) {
       if (mounted && !_controller.app.tokenRejected.value) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              MicaLocalizations.of(context).t('common.notConnectedServer'),
-            ),
-          ),
+        TopBanner.show(
+          context,
+          MicaLocalizations.of(context).t('common.notConnectedServer'),
         );
       }
       return;
@@ -218,31 +230,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final strings = MicaLocalizations.of(context);
     final app = _controller.app;
     final profile = app.profile;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.removeCurrentSnackBar();
-    final notice = messenger.showSnackBar(
-      SnackBar(
-        content: Text(strings.t('chat.hiddenContact')),
-        duration: const Duration(seconds: 5),
-        persist: false,
-        action: SnackBarAction(
-          label: strings.t('chat.undoHide'),
-          onPressed: () {
-            if (!app.tokenRejected.value && identical(app.profile, profile)) {
-              unawaited(
-                app.chatPreferences.setHidden(
-                  guids,
-                  false,
-                  syncImmediately: false,
-                ),
-              );
-            }
-          },
-        ),
-      ),
+    final notice = TopBanner.show(
+      context,
+      strings.t('chat.hiddenContact'),
+      duration: const Duration(seconds: 5),
+      actionLabel: strings.t('chat.undoHide'),
+      onAction: () async {
+        if (!app.tokenRejected.value && identical(app.profile, profile)) {
+          await app.chatPreferences.setHidden(
+            guids,
+            false,
+            syncImmediately: false,
+          );
+        }
+      },
     );
     unawaited(
-      notice.closed.then((_) async {
+      notice.then((_) async {
         if (!app.tokenRejected.value && identical(app.profile, profile)) {
           await app.chatPreferences.sync();
         }
@@ -289,7 +293,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (!context.mounted) return;
     switch (action) {
       case 'read':
-        await _controller.markRoutesRead(guids);
+        await _markRoutesRead(guids);
         break;
       case 'unread':
         await _controller.markRoutesUnread(guids);
@@ -429,7 +433,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                 confirmDismiss: (direction) async {
                                   if (direction ==
                                       DismissDirection.startToEnd) {
-                                    await _controller.markRoutesRead(
+                                    await _markRoutesRead(
                                       m.routes.map((r) => r.guid),
                                     );
                                   } else {
@@ -442,10 +446,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                   sidebar: widget.sidebar,
                                   onTap: () => _openMerged(m),
                                   onLongPress: () => _showChatMenu(context, m),
-                                  onDismissUnread: () =>
-                                      _controller.markRoutesRead(
-                                        m.routes.map((r) => r.guid),
-                                      ),
+                                  onDismissUnread: () => _markRoutesRead(
+                                    m.routes.map((r) => r.guid),
+                                  ),
                                 ),
                               );
                             },

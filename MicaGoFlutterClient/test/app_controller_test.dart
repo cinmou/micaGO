@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:mica_go/core/network/api_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
@@ -198,9 +199,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.chatPreferences.isHidden('row'), true);
     expect(row, findsNothing);
-    final snack = tester.widget<SnackBar>(find.byType(SnackBar));
-    expect(snack.duration, const Duration(seconds: 5));
-    expect(snack.persist, false);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(
+      find.text(MicaLocalizations.current.t('chat.hiddenContact')),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(app.chatPreferences.isHidden('row'), false);
@@ -212,8 +215,96 @@ void main() {
     expect(find.text('Undo'), findsNothing);
     expect(app.chatPreferences.isHidden('row'), true);
     expect(tester.takeException(), isNull);
+    TopBanner.dismiss();
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'dragging unread badge clears its row before a slow cache write',
+    (tester) async {
+      final store = _MemoryStore();
+      final cache = _SlowReadCache();
+      cache.rows = [
+        const ChatSummary(guid: 'drag-row', hasUnread: true, unreadCount: 3),
+      ];
+      final app = _CachedApp(store: store, fixture: cache);
+      final contacts = ContactsService(store: store);
+      final display = MessageDisplayController(store: store);
+      addTearDown(app.dispose);
+      addTearDown(contacts.dispose);
+      addTearDown(display.dispose);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AppController>.value(value: app),
+            ChangeNotifierProvider<ContactsService>.value(value: contacts),
+            ChangeNotifierProvider<MessageDisplayController>.value(
+              value: display,
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(body: ChatListScreen(onOpen: (_) {})),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final row = find.byKey(const ValueKey('chat-row-chat:drag-row'));
+      expect(tester.widget<Material>(row).color, isNot(Colors.transparent));
+      final center = tester.getCenter(find.text('3'));
+      final gesture = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 600));
+      await gesture.moveTo(center + const Offset(-80, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('3'), findsNothing);
+      expect(tester.widget<Material>(row).color, Colors.transparent);
+      expect(
+        cache.rows.single.hasUnread,
+        true,
+        reason: 'cache write is still pending',
+      );
+      cache.ready.complete();
+      await tester.pumpAndSettle();
+      expect(cache.rows.single.hasUnread, false);
+      expect(tester.widget<Material>(row).color, Colors.transparent);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  test(
+    'manual read clears badge and emphasis while cache is pending, preserves new arrivals',
+    () async {
+      final cache = _SlowReadCache();
+      cache.rows = [
+        const ChatSummary(
+          guid: 'row',
+          hasUnread: true,
+          unreadCount: 3,
+          lastMessageAt: 100,
+        ),
+      ];
+      final app = _CachedApp(store: _MemoryStore(), fixture: cache);
+      final list = ChatListController(app);
+      addTearDown(app.dispose);
+      addTearDown(list.dispose);
+      list.chats = cache.rows;
+      final marking = list.markRoutesRead(['row']);
+      expect(list.chats.single.hasUnread, false);
+      expect(list.chats.single.unreadCount, 0);
+      list.chats = [
+        list.chats.single.copyWith(
+          lastMessageAt: 200,
+          hasUnread: true,
+          unreadCount: 1,
+        ),
+      ];
+      expect(list.chats.single.hasUnread, true);
+      cache.ready.completeError(StateError('cache unavailable'));
+      await expectLater(marking, throwsStateError);
+      expect(list.chats.single.hasUnread, true);
+      expect(list.chats.single.unreadCount, 3);
+    },
+  );
 
   testWidgets(
     'read-watermark state clears row emphasis despite stale unread count',
@@ -310,63 +401,107 @@ void main() {
   );
 
   testWidgets(
-    'timeout dialog becomes the rejection dialog without duplicate errors',
+    'persistent retry notice sits below the title bar in a compact card',
     (tester) async {
       final app = _PairingApp(store: _MemoryStore());
-      final profile = ConnectionProfile(
-        baseUrl: 'https://relay.example',
-        token: 'credential',
-        deviceId: 'device',
-      );
-      await app.saveAndActivate(profile);
       addTearDown(app.dispose);
-      addTearDown(() {
-        MediaCache.instance.accessAllowed = true;
-        TopBanner.blocked = false;
-      });
+      final strings = MicaLocalizations.current;
       await tester.pumpWidget(
         ChangeNotifierProvider<AppController>.value(
           value: app,
           child: MaterialApp(
-            home: const ConnectionNoticeHost(
-              child: Scaffold(body: Text('screen')),
+            home: ConnectionNoticeHost(
+              child: Scaffold(
+                appBar: AppBar(title: const Text('micaGO')),
+                body: const SizedBox.expand(key: Key('notice-body')),
+              ),
             ),
           ),
         ),
       );
+      final bodyTop = tester
+          .getTopLeft(find.byKey(const Key('notice-body')))
+          .dy;
+      final titleBottom = tester.getBottomLeft(find.byType(AppBar)).dy;
       app.connectionProblemConfirmed.value = true;
       await tester.pumpAndSettle();
-      final strings = MicaLocalizations.current;
-      expect(
-        find.text(strings.t('connection.cannotReachTitle')),
-        findsOneWidget,
-      );
-      app.rejectCredential(profile);
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
-      expect(
-        find.text(strings.t('connection.tokenRejectedTitle')),
-        findsOneWidget,
-      );
-      expect(find.text(strings.t('connection.cannotReachTitle')), findsNothing);
-      expect(find.text(strings.t('common.retry')), findsNothing);
-      expect(find.text(strings.t('common.dismiss')), findsNothing);
-      await tester.tap(find.text(strings.t('connection.pairAgain')));
-      await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
+      final label = find.text(strings.t('connection.serverUnavailable'));
+      expect(label, findsOneWidget);
       expect(
-        find.text(strings.t('connection.tokenRejectedBody')),
-        findsNothing,
+        tester.getTopLeft(label).dy,
+        greaterThanOrEqualTo(titleBottom + 8),
       );
-      expect(find.text(strings.t('connection.pairAgain')), findsNothing);
-      expect(tester.getTopLeft(find.text('screen')).dy, 0);
       expect(
-        find.text(strings.t('connection.serverUnavailable')),
-        findsNothing,
+        tester.getTopLeft(find.byKey(const Key('notice-body'))).dy,
+        bodyTop,
       );
+      final material = find
+          .ancestor(of: label, matching: find.byType(Material))
+          .first;
+      expect(tester.getSize(material).height, lessThanOrEqualTo(64));
+      expect(tester.getSize(material).width, lessThanOrEqualTo(560));
+      final card = tester.widget<Material>(material);
+      expect(card.borderRadius, BorderRadius.circular(14));
+      app.connectionProblemConfirmed.value = false;
+      await tester.pumpAndSettle();
+      expect(label, findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('offline notice never opens a dialog; rejection takes priority', (
+    tester,
+  ) async {
+    final app = _PairingApp(store: _MemoryStore());
+    final profile = ConnectionProfile(
+      baseUrl: 'https://relay.example',
+      token: 'credential',
+      deviceId: 'device',
+    );
+    await app.saveAndActivate(profile);
+    addTearDown(app.dispose);
+    addTearDown(() {
+      MediaCache.instance.accessAllowed = true;
+      TopBanner.blocked = false;
+    });
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppController>.value(
+        value: app,
+        child: MaterialApp(
+          home: const ConnectionNoticeHost(
+            child: Scaffold(body: Text('screen')),
+          ),
+        ),
+      ),
+    );
+    app.connectionProblemConfirmed.value = true;
+    await tester.pumpAndSettle();
+    final strings = MicaLocalizations.current;
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(
+      find.text(strings.t('connection.serverUnavailable')),
+      findsOneWidget,
+    );
+    app.rejectCredential(profile);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(
+      find.text(strings.t('connection.tokenRejectedTitle')),
+      findsOneWidget,
+    );
+    expect(find.text(strings.t('connection.cannotReachTitle')), findsNothing);
+    expect(find.text(strings.t('common.retry')), findsNothing);
+    expect(find.text(strings.t('common.dismiss')), findsNothing);
+    await tester.tap(find.text(strings.t('connection.pairAgain')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text(strings.t('connection.tokenRejectedBody')), findsNothing);
+    expect(find.text(strings.t('connection.pairAgain')), findsNothing);
+    expect(tester.getTopLeft(find.text('screen')).dy, 0);
+    expect(find.text(strings.t('connection.serverUnavailable')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   test(
     'failed storage preflight never redeems the single-use invitation',
@@ -537,5 +672,14 @@ class _UnavailableStore extends _MemoryStore {
     Future<bool> Function()? confirmCompatibility,
   }) async {
     throw const CompatibilityStorageRequired();
+  }
+}
+
+class _SlowReadCache extends _ChatFixtureCache {
+  final ready = Completer<void>();
+  @override
+  Future<void> markChatsSeen(Iterable<String> guids, {int? upTo}) async {
+    await ready.future;
+    await super.markChatsSeen(guids, upTo: upTo);
   }
 }

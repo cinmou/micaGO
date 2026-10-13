@@ -371,11 +371,15 @@ private struct ServerRemoteCard: View {
                     Text(err).font(.caption).foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if let delay = tunnel.retryDelay {
+                    Text(String(format: L10n.tr("tunnel.retry"), Int(delay)))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack(spacing: 12) {
                     Button { tunnel.start() } label: { Label("Start", systemImage: "play.fill") }
                         .disabled(!tunnel.installed || !tunnel.configFound || tunnel.isProcessAlive || tunnel.state == .runningExternally)
                     Button { tunnel.stop() } label: { Label("Stop", systemImage: "stop.fill") }
-                        .disabled(!tunnel.isProcessAlive)
+                        .disabled(!tunnel.isProcessAlive && tunnel.retryDelay == nil)
                     Button { tunnel.restart() } label: { Label("Restart", systemImage: "arrow.clockwise") }
                         .disabled(!tunnel.installed || !tunnel.configFound)
                     Spacer()

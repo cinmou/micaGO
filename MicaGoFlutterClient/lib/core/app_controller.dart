@@ -252,6 +252,7 @@ class AppController extends ChangeNotifier {
   /// socket is down). Realtime + targeted refresh stay in the controllers.
   late final RefreshCoordinator _refresh = RefreshCoordinator(
     reconnect: () => selectReachableCandidate(reason: 'reconnect'),
+    checkConnection: _checkRetainedConnection,
     catchUp: (reason) => catchUp(reason: reason, minInterval: Duration.zero),
     wsStatus: () => ws.status,
   );
@@ -447,7 +448,18 @@ class AppController extends ChangeNotifier {
   }
 
   /// Called by the app shell on foreground resume (lightweight refresh).
-  void onResume() {
+  Future<bool> _checkRetainedConnection() async {
+    final client = api;
+    if (client == null) return false;
+    try {
+      await client.authCheck();
+      return identical(client, api);
+    } on ApiException {
+      return false;
+    }
+  }
+
+  void onResume({bool wasBackgrounded = true}) {
     if (!hasProfile) return;
     final generation = _foregroundGeneration;
     _foregroundRecovering = true;
@@ -458,7 +470,7 @@ class AppController extends ChangeNotifier {
           if (_profile case final profile?) rejectCredential(profile);
           return;
         }
-        await _refresh.onResume();
+        await _refresh.onResume(wasBackgrounded: wasBackgrounded);
       } catch (_) {
         // The foreground watchdog owns connectivity notices.
       } finally {
@@ -1357,9 +1369,7 @@ class AppController extends ChangeNotifier {
       _clearConnectionProblem();
       return;
     }
-    final healthy =
-        ws.status == WsStatus.connected &&
-        (_serverReachable || ws.status == WsStatus.connected);
+    final healthy = ws.status == WsStatus.connected;
     connectionHealthy.value = healthy;
     if (healthy) {
       _clearConnectionProblem();
@@ -1401,7 +1411,11 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  WsStatus? _lastObservedWsStatus;
+
   void _onWebSocketStatusChanged() {
+    if (_lastObservedWsStatus == ws.status) return;
+    _lastObservedWsStatus = ws.status;
     if (tokenRejected.value) return;
     if (ws.status == WsStatus.connected) {
       _serverReachable = true;

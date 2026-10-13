@@ -1,3 +1,4 @@
+import '../../core/ui/top_banner.dart';
 import 'pairing_dialogs.dart';
 import 'dart:async';
 
@@ -135,9 +136,7 @@ class _QrPairingScreenState extends State<QrPairingScreen>
       // itself; this just cuts the feed within the same frame.
       unawaited(_scanner?.stop().catchError((_) {}));
     } else if (_pairing.message != null && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_pairing.message!)));
+      TopBanner.show(context, _pairing.message!);
     }
   }
 

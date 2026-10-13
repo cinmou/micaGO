@@ -35,7 +35,20 @@ class ChatListController extends ChangeNotifier {
   }
 
   ChatListState state = ChatListState.idle;
-  List<ChatSummary> chats = const [];
+  List<ChatSummary> _chats = const [];
+  final Map<String, ({Object request, int through})> _reading = {};
+  List<ChatSummary> get chats => _reading.isEmpty
+      ? _chats
+      : _chats
+            .map((chat) {
+              final read = _reading[chat.guid];
+              // Only clear the messages covered by this action; a later arrival remains unread.
+              return read != null && (chat.lastMessageAt ?? 0) <= read.through
+                  ? chat.copyWith(hasUnread: false, unreadCount: 0)
+                  : chat;
+            })
+            .toList(growable: false);
+  set chats(List<ChatSummary> value) => _chats = value;
   String? error;
   StreamSubscription<WsEvent>? _wsSub;
   StreamSubscription<MessageModel>? _deltaSub;
@@ -267,8 +280,24 @@ class ChatListController extends ChangeNotifier {
   int? _asInt(Object? value) => value is num ? value.toInt() : null;
 
   Future<void> markRoutesRead(Iterable<String> guids) async {
-    await app.markChatsViewed(guids);
-    await _reloadFromCache();
+    final routes = guids.toSet();
+    final request = Object();
+    for (final chat in chats) {
+      if (routes.contains(chat.guid)) {
+        _reading[chat.guid] = (
+          request: request,
+          through: chat.lastMessageAt ?? 0,
+        );
+      }
+    }
+    // The badge and row emphasis change together, before async cache work.
+    notifyListeners();
+    try {
+      await app.markChatsViewed(routes);
+    } finally {
+      _reading.removeWhere((_, read) => identical(read.request, request));
+      if (!_disposed) await _reloadFromCache();
+    }
   }
 
   Future<void> markRoutesUnread(Iterable<String> guids) async {

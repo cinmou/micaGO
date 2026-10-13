@@ -41,3 +41,22 @@ enum TunnelAutopilot {
         return .none
     }
 }
+
+/// Bounded child-process restart cadence, independent of server polling.
+/// A brief registration must not reset a crash loop's backoff.
+struct TunnelRecovery {
+    private(set) var enabled = false
+    private var delay: Double = 2
+
+    mutating func arm() { enabled = true; delay = 2 }
+    mutating func cancel() { enabled = false; delay = 2 }
+    mutating func didDisconnect(stableFor: Double) {
+        if stableFor >= 60 { delay = 2 }
+    }
+    mutating func nextDelay() -> Double? {
+        guard enabled else { return nil }
+        let result = delay
+        delay = min(delay * 2, 60)
+        return result
+    }
+}
