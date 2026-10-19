@@ -6,13 +6,14 @@ import (
 	"micagoserver/internal/realtime"
 )
 
-func NewRouter(h *Handlers, hub *realtime.Hub, auth AuthConfig) http.Handler {
+func NewRouter(h *Handlers, hub *realtime.Hub, auth *DeviceAuth) http.Handler {
 	mux := http.NewServeMux()
-	if auth.Devices != nil {
-		mux.HandleFunc("POST /api/pairing/create", auth.Devices.CreateCode)
-		mux.HandleFunc("POST /api/pairing/status", auth.Devices.CodeStatus)
-		mux.HandleFunc("POST /api/pairing/redeem", auth.Devices.Redeem)
+	if auth == nil {
+		panic("device authorization is required")
 	}
+	mux.HandleFunc("POST /api/pairing/create", auth.CreateCode)
+	mux.HandleFunc("POST /api/pairing/status", auth.CodeStatus)
+	mux.HandleFunc("POST /api/pairing/redeem", auth.Redeem)
 	mux.Handle("PUT /api/server/lan-visibility", auth.Wrap(http.HandlerFunc(h.PutLANVisibility)))
 	mux.Handle("GET /api/read-state", auth.Wrap(http.HandlerFunc(h.GetReadState)))
 	mux.Handle("PATCH /api/read-state", auth.Wrap(http.HandlerFunc(h.PatchReadState)))
@@ -66,26 +67,7 @@ func NewRouter(h *Handlers, hub *realtime.Hub, auth AuthConfig) http.Handler {
 	mux.Handle("PUT /api/sync/policy", auth.Wrap(http.HandlerFunc(h.PutSyncPolicy)))
 	mux.Handle("POST /api/server/notifications", auth.Wrap(http.HandlerFunc(h.PutNotificationsConfig)))
 	if hub != nil {
-		mux.Handle("GET /ws", websocketAuthHandler(hub, auth))
+		mux.HandleFunc("GET /ws", auth.Socket)
 	}
 	return mux
-}
-
-func websocketAuthHandler(hub *realtime.Hub, auth AuthConfig) http.Handler {
-	if hub == nil {
-		return http.NotFoundHandler()
-	}
-	if auth.Devices != nil {
-		return http.HandlerFunc(auth.Devices.Socket)
-	}
-	if !auth.Enabled {
-		return hub
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !auth.ValidateWebSocketRequest(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		hub.ServeHTTP(w, r)
-	})
 }

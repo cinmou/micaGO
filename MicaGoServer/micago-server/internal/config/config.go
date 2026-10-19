@@ -40,7 +40,6 @@ var ValidPairingPreferences = []string{"auto", "local", "lan", "public"}
 type Options struct {
 	Addr            string
 	Token           string
-	DisableAuth     bool
 	PublicURL       string
 	SyncInterval    string
 	DisableSyncLoop bool
@@ -61,7 +60,6 @@ type Config struct {
 	PublicBaseURL            string
 	VerifyTLS                bool
 	PreferredPairingEndpoint string
-	AuthDisabled             bool
 	InitialSyncLimit         int
 	SyncInterval             time.Duration
 	UpdateLookback           time.Duration
@@ -167,9 +165,8 @@ func Load(opts Options) (Config, error) {
 	// such a config silently breaks LAN no matter how often endpoints refresh —
 	// the user is forced to configure a Public URL. Loopback is no longer a
 	// supported pairing bind, so migrate a file-configured loopback bind up to
-	// the LAN-capable default and persist it. An explicit --addr override and
-	// --disable-auth (which legitimately requires a local bind) are respected.
-	if !firstRun && strings.TrimSpace(opts.Addr) == "" && !opts.DisableAuth &&
+	// the LAN-capable default and persist it. An explicit --addr override is respected.
+	if !firstRun && strings.TrimSpace(opts.Addr) == "" &&
 		IsLocalAddress(fileCfg.Server.Addr) {
 		fileCfg.Server.Addr = defaultAddr
 		if err := writeConfigFile(cfgPath, fileCfg); err != nil {
@@ -216,7 +213,6 @@ func Load(opts Options) (Config, error) {
 		VerifyTLS:                fileCfg.Network.VerifyTLS,
 		PreferredPairingEndpoint: valueOrDefault("", fileCfg.Network.PreferredPairingEndpoint, defaultPreferredPairing),
 		AuthToken:                valueOrDefault(opts.Token, fileCfg.Auth.Token, ""),
-		AuthDisabled:             opts.DisableAuth,
 		InitialSyncLimit:         defaultInitialSyncLimit,
 		SyncInterval:             syncInterval,
 		UpdateLookback:           updateLookback,
@@ -246,7 +242,7 @@ func Load(opts Options) (Config, error) {
 		FirstRun: firstRun,
 	}
 
-	if cfg.AuthToken == "" && !cfg.AuthDisabled {
+	if cfg.AuthToken == "" {
 		return Config{}, errors.New("auth token is empty")
 	}
 	if cfg.NotificationPreview != "none" && cfg.NotificationPreview != "sender" && cfg.NotificationPreview != "sender_and_text" {
@@ -374,13 +370,6 @@ func UpdateNotificationsConfig(cfgPath string, u NotificationsUpdate) error {
 	fileCfg.FCM.GoogleServicesPath = strings.TrimSpace(u.GoogleServicesPath)
 	fileCfg.Firebase.PublicURLSync = u.PublicURLSync
 	return writeConfigFile(cfgPath, fileCfg)
-}
-
-func ValidateSecurity(cfg Config) error {
-	if cfg.AuthDisabled && !IsLocalAddress(cfg.HTTPAddr) {
-		return errors.New("--disable-auth can only be used with localhost, 127.0.0.1, or ::1")
-	}
-	return nil
 }
 
 func IsLocalAddress(addr string) bool {

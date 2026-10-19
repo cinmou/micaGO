@@ -61,6 +61,15 @@ public sealed partial class ShellPage : Page
         NavigationCacheMode=Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
         Loaded += ShellPage_Loaded;
         ShellRoot.SizeChanged += ShellRoot_SizeChanged;
+        var searchShortcut = new KeyboardAccelerator { Key = VirtualKey.F, Modifiers = VirtualKeyModifiers.Control };
+        searchShortcut.Invoked += (_, args) =>
+        {
+            if (ChatSidebar.Visibility != Visibility.Visible) return;
+            SearchBox.Focus(FocusState.Keyboard);
+            args.Handled = true;
+        };
+        KeyboardAccelerators.Add(searchShortcut);
+        AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(Shell_KeyDown), true);
         _timestampTimer.Tick+=(_,_)=>_viewModel?.RefreshChatTimestamps();
         Controls.MessageBubble.ReplyJumpRequested += OnReplyJumpRequested;
         Controls.MessageBubble.ScreenEffectRequested += OnScreenEffectRequested;
@@ -120,6 +129,16 @@ public sealed partial class ShellPage : Page
     private void ApplyLocalizedText()
     {
         var l=AppServices.Current.Localization;
+        foreach (var (element, key) in new (DependencyObject, string)[] {
+            (SearchBox, "search"), (Composer, "message"), (MessageList, "conversation"),
+            (AttachButton, "attach"), (EmojiButton, "emoji"), (SendButton, "send"),
+            (VoiceSendButton, "send"), (VoiceButton, "voiceMessage"),
+            (ThreadDetailsButton, "details"), (JumpToBottomButton, "jumpToBottom"),
+            (SelectionCancelButton, "cancel"), (SidebarSettingsButton, "settings") })
+        {
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(element, l[key]);
+        }
+
         SearchBox.PlaceholderText=l["search"]; Composer.PlaceholderText=l["message"];
         ThreadTitle.Text=l["selectConversation"]; ThreadSubtitle.Text=string.Empty; EmptyStateText.Text=l["chooseConversation"];
         SettingsSidebarTitle.Text=l["settings"]; GeneralSettingsLabel.Text=l["general"]; AppearanceSettingsLabel.Text=l["appearance"];
@@ -1003,9 +1022,81 @@ public sealed partial class ShellPage : Page
         await SendComposerAttachmentsAsync(files.Select(file=>file.Path).ToArray());
     }
 
-    private async void MessageList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    private void MessageList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        if (_viewModel is null || (e.OriginalSource as FrameworkElement)?.DataContext is not MessageRow row) return;
+        var row = FindMessageRow(e.OriginalSource as DependencyObject);
+        if (row is null) return;
+        ShowMessageMenu(row, MessageList, e.GetPosition(MessageList));
+        e.Handled = true;
+    }
+
+    private static MessageRow? FindMessageRow(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is FrameworkElement { DataContext: MessageRow row }) return row;
+            source = VisualTreeHelper.GetParent(source);
+        }
+        return null;
+    }
+
+    private void MessageList_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var shift = (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift) & CoreVirtualKeyStates.Down) != 0;
+        if (e.Key != VirtualKey.Application && !(e.Key == VirtualKey.F10 && shift)) return;
+        var focused = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+        var row = FindMessageRow(focused);
+        if (row is null || MessageList.ContainerFromItem(row) is not FrameworkElement anchor) return;
+        ShowMessageMenu(row, anchor);
+        e.Handled = true;
+    }
+
+    // F6 changes regions; arrows/Tab retain their native control behavior.
+    private async void Shell_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.F6 || ConversationPane.Visibility != Visibility.Visible) return;
+        var reverse = (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift) & CoreVirtualKeyStates.Down) != 0;
+        var focused = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+        var current = IsInside(focused, MessageList) ? 1 : IsInside(focused, ComposerRegion) ? 2 : 0;
+        var next = (current + (reverse ? 2 : 1)) % 3;
+        e.Handled = true;
+        if (next == 0)
+        {
+            SearchBox.Focus(FocusState.Keyboard);
+            return;
+        }
+        if (next == 2)
+        {
+            if (Composer.IsEnabled) Composer.Focus(FocusState.Keyboard);
+            else SearchBox.Focus(FocusState.Keyboard);
+            return;
+        }
+        if (_viewModel?.Messages.LastOrDefault() is not { } last)
+        {
+            MessageList.Focus(FocusState.Keyboard);
+            return;
+        }
+        MessageList.ScrollIntoView(last);
+        await Task.Yield();
+        if (_shutDown || ConversationPane.Visibility != Visibility.Visible) return;
+        MessageList.UpdateLayout();
+        if (MessageList.ContainerFromItem(last) is Control item) item.Focus(FocusState.Keyboard);
+        else MessageList.Focus(FocusState.Keyboard);
+    }
+
+    private static bool IsInside(DependencyObject? element, DependencyObject parent)
+    {
+        while (element is not null)
+        {
+            if (ReferenceEquals(element, parent)) return true;
+            element = VisualTreeHelper.GetParent(element);
+        }
+        return false;
+    }
+
+    private void ShowMessageMenu(MessageRow row, FrameworkElement anchor, Windows.Foundation.Point? position = null)
+    {
+        if (_viewModel is null) return;
         var message=row.Value;
         var menu = new MenuFlyout();
         if(message.IsPending && message.DeliveryState==MessageDeliveryState.Failed && message.Media.Count>0)
@@ -1031,7 +1122,8 @@ public sealed partial class ShellPage : Page
             select.Click+=(_,_)=>EnterSelectMode(message);
             menu.Items.Add(select);
         }
-        menu.ShowAt(MessageList, e.GetPosition(MessageList));
+        if (position is { } point) menu.ShowAt(anchor, point);
+        else menu.ShowAt(anchor);
     }
 
     // ----- voice messages -----

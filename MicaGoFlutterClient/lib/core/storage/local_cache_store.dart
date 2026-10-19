@@ -732,6 +732,31 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
     await upsertMessage(chatGuid, msg);
   }
 
+  /// SQLite serializes notification preview updates across Flutter engines.
+  Future<String> updateMetadata(
+    String key,
+    String Function(String?) update,
+  ) async {
+    final db = await _ready();
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'metadata',
+        where: 'key = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
+      final value = update(
+        rows.isEmpty ? null : rows.first['value'] as String?,
+      );
+      await txn.insert('metadata', {
+        'key': key,
+        'value': value,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      return value;
+    });
+  }
+
   Future<void> writeMetadata(String key, String value) async {
     final db = await _ready();
     await db.insert('metadata', {

@@ -20,7 +20,7 @@ type fakeUpdateSource struct {
 	rows []store.MessageUpdateRow
 }
 
-func (f *fakeUpdateSource) ListMessageUpdatesSince(_ context.Context, _ int64, _ int, _ store.SchemaCapabilities) ([]store.MessageUpdateRow, error) {
+func (f *fakeUpdateSource) ListMessageUpdatesPage(_ context.Context, _ int64, _ int64, _ int, _ store.SchemaCapabilities) ([]store.MessageUpdateRow, error) {
 	return f.rows, nil
 }
 

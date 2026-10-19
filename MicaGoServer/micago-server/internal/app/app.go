@@ -35,7 +35,6 @@ type Options struct {
 	DisableSyncLoop bool
 	Addr            string
 	Token           string
-	DisableAuth     bool
 	PublicURL       string
 }
 
@@ -171,16 +170,12 @@ func Run(options Options) error {
 	cfg, err := config.Load(config.Options{
 		Addr:            options.Addr,
 		Token:           options.Token,
-		DisableAuth:     options.DisableAuth,
 		PublicURL:       options.PublicURL,
 		SyncInterval:    options.SyncInterval,
 		DisableSyncLoop: options.DisableSyncLoop,
 		SyncOnce:        options.SyncOnce,
 	})
 	if err != nil {
-		return err
-	}
-	if err := config.ValidateSecurity(cfg); err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -209,7 +204,9 @@ func Run(options Options) error {
 		return fmt.Errorf("open relay.db: %w", err)
 	}
 	defer relay.Close()
- if err:=relay.RemoveLegacyDevices(ctx);err!=nil{return fmt.Errorf("migrate device authorization: %w",err)}
+	if err := relay.RemoveLegacyDevices(ctx); err != nil {
+		return fmt.Errorf("migrate device authorization: %w", err)
+	}
 
 	// Probe chat.db schema once so the update pass and status diagnostics know
 	// which version-sensitive columns are available (v0.11.x).
@@ -481,12 +478,7 @@ func Run(options Options) error {
 	handler := httpapi.NewRouter(
 		handlers,
 		hub,
-		httpapi.AuthConfig{
-			Devices: deviceAuth,
-			Enabled: !cfg.AuthDisabled,
-			Token:   cfg.AuthToken,
-			Logger:  log.Default(),
-		},
+		deviceAuth,
 	)
 
 	srv := &http.Server{

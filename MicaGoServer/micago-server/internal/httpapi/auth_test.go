@@ -9,16 +9,18 @@ import (
 	"testing"
 
 	"micagoserver/internal/config"
+	"micagoserver/internal/relaydb"
+	"path/filepath"
 )
 
 func TestHealthIsUnauthenticated(t *testing.T) {
 	router := NewRouter(
 		NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", &stubDeviceStore{}, stubNotifier{}, config.Config{HTTPAddr: "127.0.0.1:3000"}, StatusDeps{}),
 		nil,
-		AuthConfig{Enabled: true, Token: "secret"},
+		newTestAuth(t, "secret"),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req := newLocalRequest(http.MethodGet, "/api/health", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -31,7 +33,7 @@ func TestAuthMissingWrongAndCorrect(t *testing.T) {
 	router := NewRouter(
 		NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", &stubDeviceStore{}, stubNotifier{}, config.Config{HTTPAddr: "127.0.0.1:3000"}, StatusDeps{}),
 		nil,
-		AuthConfig{Enabled: true, Token: "secret"},
+		newTestAuth(t, "secret"),
 	)
 
 	for _, tc := range []struct {
@@ -44,7 +46,7 @@ func TestAuthMissingWrongAndCorrect(t *testing.T) {
 		{name: "correct", header: "Bearer secret", want: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/chats", nil)
+			req := newLocalRequest(http.MethodGet, "/api/chats", nil)
 			if tc.header != "" {
 				req.Header.Set("Authorization", tc.header)
 			}
@@ -57,31 +59,6 @@ func TestAuthMissingWrongAndCorrect(t *testing.T) {
 	}
 }
 
-func TestAuthLogsRejectedDeviceRegistration(t *testing.T) {
-	var logs strings.Builder
-	router := NewRouter(
-		NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", &stubDeviceStore{}, stubNotifier{}, config.Config{HTTPAddr: "127.0.0.1:3000"}, StatusDeps{}),
-		nil,
-		AuthConfig{
-			Enabled: true,
-			Token:   "secret",
-			Logger:  log.New(&logs, "", 0),
-		},
-	)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/devices/register", strings.NewReader(`{}`))
-	req.Header.Set("Authorization", "Bearer wrong")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", rec.Code)
-	}
-	if got := logs.String(); !strings.Contains(got, "auth rejected POST /api/devices/register") {
-		t.Fatalf("missing auth rejection log: %q", got)
-	}
-}
-
 func TestServerInfoDoesNotExposeToken(t *testing.T) {
 	router := NewRouter(
 		NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", &stubDeviceStore{}, stubNotifier{}, config.Config{
@@ -89,10 +66,10 @@ func TestServerInfoDoesNotExposeToken(t *testing.T) {
 			PublicURL: "https://example.com",
 		}, StatusDeps{}),
 		nil,
-		AuthConfig{Enabled: true, Token: "secret"},
+		newTestAuth(t, "secret"),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/server/info", nil)
+	req := newLocalRequest(http.MethodGet, "/api/server/info", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -106,12 +83,28 @@ func TestServerInfoDoesNotExposeToken(t *testing.T) {
 }
 
 func TestEmptyConfiguredTokenNeverAuthenticates(t *testing.T) {
-	auth := AuthConfig{Enabled: true}
+	auth := newTestAuth(t, "")
 	for _, target := range []string{"/ws", "/ws?token="} {
-		r := httptest.NewRequest(http.MethodGet, target, nil)
+		r := newLocalRequest(http.MethodGet, target, nil)
 		r.Header.Set("Authorization", "Bearer ")
-		if auth.ValidateRequest(r) || auth.ValidateWebSocketRequest(r) {
+		if _, ok := auth.authorize(r); ok {
 			t.Fatal("empty configured token authenticated")
 		}
 	}
+}
+
+func newTestAuth(t *testing.T, token string) *DeviceAuth {
+	t.Helper()
+	db, err := relaydb.Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return NewDeviceAuth(db, nil, token, "test-pin")
+}
+
+func newLocalRequest(method, target string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, target, body)
+	r.RemoteAddr = "127.0.0.1:12345"
+	return r
 }

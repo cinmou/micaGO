@@ -64,7 +64,6 @@ Useful flags (all optional; config file values are used otherwise):
 | --- | --- |
 | `--addr` | HTTP listen address (default `0.0.0.0:3000`, LAN-reachable) |
 | `--token` | Override the bearer token |
-| `--disable-auth` | Disable auth — **localhost only** |
 | `--public-url` | Public base URL reported by `/api/server/info` |
 | `--sync-interval` | Override periodic sync interval |
 | `--disable-sync-loop` | Disable the periodic sync loop |
@@ -103,9 +102,8 @@ end-to-end encryption for third-party proxies or FCM message previews.
 On upgrade the old shared token is rotated into a local-only administrator
 credential and old clients must pair again. Chat caches and privacy outboxes are
 preserved. Back up `relay.db`, `config.yaml`, and the private `tls` directory;
-losing the TLS identity requires re-pairing. `--disable-auth` does not bypass the
-production device authorization path. Browser query-string WebSocket credentials
-are not accepted by this path.
+losing the TLS identity requires re-pairing. Browser query-string WebSocket
+credentials are not accepted.
 
 ## Smoke scripts
 

@@ -3,6 +3,7 @@ package relaydb
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"time"
 
 	"micagoserver/internal/store"
@@ -12,7 +13,7 @@ import (
 const updateWindowLimit = 5000
 
 type updateSource interface {
-	ListMessageUpdatesSince(ctx context.Context, afterUnixMilli int64, limit int, caps store.SchemaCapabilities) ([]store.MessageUpdateRow, error)
+	ListMessageUpdatesPage(context.Context, int64, int64, int, store.SchemaCapabilities) ([]store.MessageUpdateRow, error)
 }
 
 // UpdatePass runs the bounded lookback update pass (v0.11.x). It detects mutable
@@ -34,7 +35,18 @@ func UpdatePass(ctx context.Context, source updateSource, relay *DB, caps store.
 	}
 
 	after := time.Now().Add(-lookback).UnixMilli()
-	rows, err := source.ListMessageUpdatesSince(ctx, after, updateWindowLimit, caps)
+	value, _, err := relay.GetSyncState("update_scan_rowid")
+	if err != nil {
+		return result, err
+	}
+	var cursor int64
+	if value != "" {
+		cursor, err = strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return result, err
+		}
+	}
+	rows, err := source.ListMessageUpdatesPage(ctx, after, cursor, updateWindowLimit, caps)
 	if err != nil {
 		return result, err
 	}
@@ -82,7 +94,10 @@ func UpdatePass(ctx context.Context, source updateSource, relay *DB, caps store.
 		fingerprint := current.Fingerprint(caps)
 
 		if !had {
-			// Seed without emitting.
+			// Refresh persisted data while seeding, without a startup broadcast storm.
+			if _, err := updateMessageMutableTx(tx, row); err != nil {
+				return result, err
+			}
 			if err := upsertMessageStateTx(tx, row.GUID, current, fingerprint, now); err != nil {
 				return result, err
 			}
@@ -90,13 +105,31 @@ func UpdatePass(ctx context.Context, source updateSource, relay *DB, caps store.
 			continue
 		}
 		if old.Fingerprint(caps) == fingerprint {
-			continue // unchanged
+			// Repair rows left stale by older seed-only versions, and content
+			// changes without a new state timestamp. The SQL guard avoids writes
+			// for genuinely unchanged messages.
+			repairFields, err := persistedMutableDiffTx(tx, row, caps)
+			if err != nil {
+				return result, err
+			}
+			affected, err := updateMessageMutableTx(tx, row)
+			if err != nil {
+				return result, err
+			}
+			if affected > 0 {
+				if caps.UnsentMessages && row.DateRetracted != nil && *row.DateRetracted > 0 {
+					result.Unsent = append(result.Unsent, UnsentEvent{GUID: row.GUID, ChatGUID: row.ChatGUID, DateRetracted: row.DateRetracted})
+				} else if len(repairFields) > 0 {
+					pendingUpdates = append(pendingUpdates, pendingUpdate{guid: row.GUID, changed: repairFields})
+				}
+			}
+			continue
 		}
 
 		changed, retracted := store.DiffMessageState(old, current, caps)
 
 		// Reflect the new mutable state into the relay row.
-		if err := updateMessageMutableTx(tx, row); err != nil {
+		if _, err := updateMessageMutableTx(tx, row); err != nil {
 			return result, err
 		}
 		if err := upsertMessageStateTx(tx, row.GUID, current, fingerprint, now); err != nil {
@@ -112,6 +145,14 @@ func UpdatePass(ctx context.Context, source updateSource, relay *DB, caps store.
 		} else if len(changed) > 0 {
 			pendingUpdates = append(pendingUpdates, pendingUpdate{guid: row.GUID, changed: changed})
 		}
+	}
+
+	var next int64
+	if len(rows) == updateWindowLimit {
+		next = rows[len(rows)-1].SourceRowID
+	}
+	if err := setSyncStateTx(tx, "update_scan_rowid", strconv.FormatInt(next, 10)); err != nil {
+		return result, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -212,8 +253,8 @@ ON CONFLICT(guid) DO UPDATE SET
 	return err
 }
 
-func updateMessageMutableTx(tx *sql.Tx, row store.MessageUpdateRow) error {
-	_, err := tx.Exec(`
+func updateMessageMutableTx(tx *sql.Tx, row store.MessageUpdateRow) (int64, error) {
+	res, err := tx.Exec(`
 UPDATE messages SET
 	text = ?,
 	subject = ?,
@@ -221,7 +262,10 @@ UPDATE messages SET
 	date_delivered = ?,
 	is_read = ?,
 	is_delivered = ?
-WHERE guid = ?;
+WHERE guid = ? AND (
+ text IS NOT ? OR subject IS NOT ? OR date_read IS NOT ? OR date_delivered IS NOT ?
+ OR is_read IS NOT ? OR is_delivered IS NOT ?
+);
 `,
 		row.Text,
 		row.Subject,
@@ -230,8 +274,12 @@ WHERE guid = ?;
 		boolToInt(row.IsRead),
 		boolToInt(row.IsDelivered),
 		row.GUID,
+		row.Text, row.Subject, row.DateRead, row.DateDelivered, boolToInt(row.IsRead), boolToInt(row.IsDelivered),
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func nullToPtr(v sql.NullInt64) *int64 {
@@ -240,4 +288,31 @@ func nullToPtr(v sql.NullInt64) *int64 {
 	}
 	out := v.Int64
 	return &out
+}
+
+// The persistent state fingerprint may already be current while relay.messages
+// was left stale by an older release. Compare only fields supported by source.
+func persistedMutableDiffTx(tx *sql.Tx, row store.MessageUpdateRow, caps store.SchemaCapabilities) ([]string, error) {
+	var text, read, dateRead, delivered, dateDelivered bool
+	err := tx.QueryRow(`SELECT (text IS NOT ? OR subject IS NOT ?),is_read IS NOT ?,date_read IS NOT ?,is_delivered IS NOT ?,date_delivered IS NOT ? FROM messages WHERE guid=?`, row.Text, row.Subject, boolToInt(row.IsRead), row.DateRead, boolToInt(row.IsDelivered), row.DateDelivered, row.GUID).Scan(&text, &read, &dateRead, &delivered, &dateDelivered)
+	if err != nil {
+		return nil, err
+	}
+	var fields []string
+	if caps.EditedMessages && text {
+		fields = append(fields, store.ChangeText)
+	}
+	if caps.ReadStatus && read {
+		fields = append(fields, store.ChangeIsRead)
+	}
+	if caps.ReadStatus && dateRead {
+		fields = append(fields, store.ChangeDateRead)
+	}
+	if caps.DeliveredStatus && delivered {
+		fields = append(fields, store.ChangeIsDelivered)
+	}
+	if caps.DeliveredStatus && dateDelivered {
+		fields = append(fields, store.ChangeDateDelivered)
+	}
+	return fields, nil
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -18,6 +19,7 @@ import 'network/connection_candidate.dart';
 import 'network/endpoint_utils.dart';
 import 'network/device_identity.dart';
 import 'network/notification_contact_cache.dart';
+import 'network/notification_display.dart' show clearAndroidNotificationState;
 import 'network/push_logic.dart';
 import 'network/refresh_coordinator.dart';
 import 'network/websocket_client.dart';
@@ -142,12 +144,12 @@ class AppController extends ChangeNotifier {
     api: () => api,
     onChanged: (positions) async {
       final chats = await cache.listChats(includeHidden: true);
-      final clear = clearChatNotification;
+      final clear = clearReadNotification;
       if (clear != null) {
         for (final chat in chats) {
           if (positions.containsKey(chat.guid) &&
               (chat.lastMessageAt ?? 0) <= positions[chat.guid]!) {
-            await clear(chat.guid);
+            await clear(chat.guid, positions[chat.guid]!);
           }
         }
       }
@@ -207,6 +209,7 @@ class AppController extends ChangeNotifier {
       } catch (_) {}
       try {
         await store.clearProfile();
+        await clearAndroidNotificationState();
       } catch (_) {}
       try {
         await cache.clearAll();
@@ -1776,6 +1779,7 @@ class AppController extends ChangeNotifier {
   /// Clears a chat's stacked conversation notification + buffer (set by
   /// [PushService]); called when the user opens that chat.
   Future<void> Function(String chatGuid)? clearChatNotification;
+  Future<void> Function(String chatGuid, int through)? clearReadNotification;
 
   // The server's notification preview mode governs how much a local notification
   // shows. We default to the common "sender + text" layout; `none`/`sender` hide
@@ -2143,11 +2147,10 @@ class AppController extends ChangeNotifier {
                 avatarDir = Directory(p.join(support.path, 'notif-avatars'));
                 await avatarDir.create(recursive: true);
               }
-              final safe = handle.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
+              final safe = sha256.convert(utf8.encode(handle)).toString();
               final file = File(p.join(avatarDir.path, '$safe.png'));
-              // Cheap change detector: rewrite only when the size differs.
               if (!await file.exists() ||
-                  (await file.length()) != bytes.length) {
+                  !listEquals(await file.readAsBytes(), bytes)) {
                 await file.writeAsBytes(bytes, flush: true);
               }
               avatarPath = file.path;
@@ -2163,9 +2166,7 @@ class AppController extends ChangeNotifier {
           );
         }
       }
-      if (entries.isNotEmpty) {
-        await writeNotificationContactCache(store, entries);
-      }
+      await writeNotificationContactCache(store, entries);
     } catch (_) {
       // Best-effort; pushes fall back to the server-provided name/handle.
     }
@@ -2481,6 +2482,7 @@ class AppController extends ChangeNotifier {
     _redeemedInvitationCode = null;
     _redeemedProfile = null;
     await store.clearProfile();
+    await clearAndroidNotificationState();
     await cache.clearAll();
     _api?.close();
     _api = null;

@@ -248,16 +248,18 @@
                 CornerRadius="{ThemeResource NavigationViewContentGridCornerRadius}">
             <Grid>
                 <Grid x:Name="ConversationPane">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.Transitions>
                         <TransitionCollection>
                             <EntranceThemeTransition FromHorizontalOffset="-32" IsStaggeringEnabled="False" />
                         </TransitionCollection>
                     </Grid.Transitions>
-                    <!-- The same backdrop acrylic and content-grid stroke used by
-                         Unigram's native chat sub-header. -->
-                    <Border MinHeight="60"
-                            VerticalAlignment="Top"
-                            Canvas.ZIndex="3"
+                    <!-- Commanding, message content and editor occupy distinct layout rows. -->
+                    <Border Grid.Row="0" MinHeight="64"
                             Background="{ThemeResource MicaGoContactBarBrush}"
                             BackgroundSizing="InnerBorderEdge"
                             BorderBrush="{ThemeResource NavigationViewContentGridBorderBrush}"
@@ -276,14 +278,13 @@
                                     VerticalAlignment="Center"
                                     Spacing="1">
                             <TextBlock x:Name="ThreadTitle"
-                                       FontSize="15"
-                                       FontWeight="SemiBold"
-                                       Foreground="{ThemeResource MicaGoPageHeaderForegroundBrush}"
+                                       Style="{StaticResource BodyStrongTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                        Text="Select a conversation"
                                        TextTrimming="CharacterEllipsis" />
                             <TextBlock x:Name="ThreadSubtitle"
-                                       FontSize="11"
-                                       Foreground="{ThemeResource MicaGoPageHeaderSecondaryBrush}"
+                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        Text=""
                                        TextTrimming="CharacterEllipsis" />
                         </StackPanel>
@@ -298,7 +299,7 @@
                     </Grid>
                     </Border>
 
-                    <Grid>
+                    <Grid Grid.Row="1">
                     <Image x:Name="ChatBackgroundImage"
                            Stretch="UniformToFill"
                            IsHitTestVisible="False"
@@ -328,9 +329,10 @@
                                    Text="Choose a conversation to start" />
                     </StackPanel>
                     <ListView x:Name="MessageList"
-                              Padding="4,74,4,94"
+                              Padding="16,12,16,12"
                               Background="Transparent"
-                              IsTabStop="False"
+                              IsTabStop="True"
+                              KeyDown="MessageList_KeyDown"
                               ItemContainerStyle="{StaticResource MicaGoMessageListStyle}"
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                               ScrollViewer.HorizontalScrollMode="Disabled"
@@ -367,7 +369,7 @@
                     <Button x:Name="JumpToBottomButton"
                             Width="40"
                             Height="40"
-                            Margin="0,0,22,84"
+                            Margin="0,0,16,16"
                             Padding="0"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Bottom"
@@ -375,15 +377,20 @@
                             BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
                             BorderThickness="1"
                             Canvas.ZIndex="2"
-                            CornerRadius="20"
+                            CornerRadius="4"
                             Visibility="Collapsed"
                             Click="JumpToBottomButton_Click">
                         <FontIcon FontSize="14" Glyph="&#xE74B;" />
                     </Button>
 
-                    <Grid Padding="16,8,16,14"
-                          VerticalAlignment="Bottom"
-                          Canvas.ZIndex="2">
+                    <!-- Full-screen send effects (confetti, hearts, …) play on
+                         top of the whole conversation area. -->
+                    <Canvas x:Name="EffectCanvas"
+                            IsHitTestVisible="False" />
+                    </Grid>
+                    <Border x:Name="ComposerRegion" Grid.Row="2" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+                    <Grid Padding="16,12,16,16">
                         <Border x:Name="ComposerBorder"
                                 MinHeight="56"
                                 MaxWidth="920"
@@ -391,7 +398,7 @@
                                 Background="{ThemeResource MicaGoComposerBrush}"
                                 BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
                                 BorderThickness="1"
-                                CornerRadius="28">
+                                CornerRadius="8">
                             <Grid Padding="4" ColumnSpacing="0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -414,33 +421,13 @@
                                         VerticalAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         AcceptsReturn="True"
-                                        Background="Transparent"
-                                        BorderBrush="Transparent"
-                                        BorderThickness="0"
-                                        CornerRadius="20"
-                                        FocusVisualPrimaryThickness="0"
-                                        FocusVisualSecondaryThickness="0"
+                                        CornerRadius="4"
                                         IsEnabled="False"
                                         PlaceholderText="Message"
                                         TextWrapping="Wrap"
                                         TextChanged="Composer_TextChanged"
                                         Paste="Composer_Paste"
-                                        PreviewKeyDown="Composer_KeyDown">
-                                    <TextBox.Resources>
-                                        <!-- The composer capsule owns focus/hover chrome. Keep
-                                             the native editor for selection, IME and text paste. -->
-                                        <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
-                                        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
-                                        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
-                                        <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="Transparent" />
-                                        <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
-                                        <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
-                                        <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
-                                        <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="Transparent" />
-                                        <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
-                                        <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
-                                    </TextBox.Resources>
-                                </TextBox>
+                                        PreviewKeyDown="Composer_KeyDown" />
                                 <Button x:Name="EmojiButton"
                                         Grid.Column="2"
                                         VerticalAlignment="Bottom"
@@ -459,7 +446,7 @@
                                         VerticalAlignment="Bottom"
                                         Background="{ThemeResource AccentFillColorDefaultBrush}"
                                         BorderThickness="0"
-                                        CornerRadius="20"
+                                        CornerRadius="4"
                                         ToolTipService.ToolTip="Voice message"
                                         IsEnabled="False"
                                         Click="VoiceButton_Click">
@@ -476,7 +463,7 @@
                                         VerticalAlignment="Bottom"
                                         Background="{ThemeResource AccentFillColorDefaultBrush}"
                                         BorderThickness="0"
-                                        CornerRadius="20"
+                                        CornerRadius="4"
                                         IsEnabled="False"
                                         Visibility="Collapsed"
                                         ToolTipService.ToolTip="Send"
@@ -496,7 +483,7 @@
                                 Background="{ThemeResource MicaGoComposerBrush}"
                                 BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
                                 BorderThickness="1"
-                                CornerRadius="23"
+                                CornerRadius="8"
                                 Visibility="Collapsed">
                             <Grid Padding="14,5,5,5" ColumnSpacing="10">
                                 <Grid.ColumnDefinitions>
@@ -527,7 +514,7 @@
                                         VerticalAlignment="Center"
                                         Background="{ThemeResource AccentFillColorDefaultBrush}"
                                         BorderThickness="0"
-                                        CornerRadius="18"
+                                        CornerRadius="4"
                                         Click="VoiceSendButton_Click">
                                     <FontIcon FontSize="15"
                                               Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
@@ -544,7 +531,7 @@
                                 Background="{ThemeResource MicaGoComposerBrush}"
                                 BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
                                 BorderThickness="1"
-                                CornerRadius="23"
+                                CornerRadius="8"
                                 Visibility="Collapsed">
                             <Grid Padding="14,5,5,5" ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
@@ -577,11 +564,8 @@
                         </Border>
                     </Grid>
 
-                    <!-- Full-screen send effects (confetti, hearts, …) play on
-                         top of the whole conversation area. -->
-                    <Canvas x:Name="EffectCanvas"
-                            IsHitTestVisible="False" />
-                    </Grid>
+                    </Border>
+
                 </Grid>
 
                 <Frame x:Name="DetailFrame"

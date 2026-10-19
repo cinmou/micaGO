@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'read_state_sync_test.dart' show ReadCache, ReadServer;
+import 'package:mica_go/core/network/read_state_sync.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -34,8 +36,145 @@ class _App extends AppController {
   }
 }
 
+class _ReadApp extends _App {
+  _ReadApp(super.client);
+  final ReadCache _readCache = ReadCache();
+  @override
+  ReadCache get cache => _readCache;
+  @override
+  ReadStateSync get readState => _readSync;
+  late final ReadStateSync _readSync = ReadStateSync(
+    cache: cache,
+    api: () => api,
+    onChanged: (_) async {},
+  );
+  @override
+  Future<void> runDeltaSync({required String reason}) async {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'mark read is route-scoped, monotonic, and refuses legacy or stale actions',
+    () async {
+      final server = ReadServer();
+      final app = _ReadApp(server.client);
+      addTearDown(() {
+        app.dispose();
+        server.client.close();
+      });
+      expect(
+        await markNotificationRead(
+          notificationPayload('a', 'old', readThrough: 100),
+          app: app,
+        ),
+        'read failed',
+      );
+      expect(
+        await markNotificationRead(
+          notificationPayload('a', 'current-device'),
+          app: app,
+        ),
+        'read failed',
+      );
+      expect(server.sentScopes, isEmpty);
+      server.rows['b'] = 200;
+      server.marks['a'] = {'markedUnread': true, 'unreadRevision': 3};
+      final payload = notificationPayload(
+        'a',
+        'current-device',
+        readThrough: 100,
+      );
+      expect(await markNotificationRead(payload, app: app), 'read saved');
+      expect(server.rows, {'a': 100, 'b': 200});
+      expect(server.marks['a']!['markedUnread'], false);
+      expect(app.cache.seen['a'], 100);
+      // An old action cannot regress read state or clear a newer manual mark.
+      server.rows['a'] = 300;
+      server.marks['a'] = {'markedUnread': true, 'unreadRevision': 5};
+      expect(await markNotificationRead(payload, app: app), 'read saved');
+      expect(server.rows['a'], 300);
+      expect(server.marks['a']!['markedUnread'], true);
+    },
+  );
+  test(
+    'concurrent manual unread revision prevents a stale notification clearing it',
+    () async {
+      Map<String, dynamic> snapshot(bool raced) => {
+        'serverId': 'server',
+        'revision': raced ? 1 : 0,
+        'data': [
+          {
+            'chatGuid': 'a',
+            'readThrough': 0,
+            'markedUnread': raced,
+            'unreadRevision': raced ? 1 : 0,
+          },
+        ],
+      };
+      final api = ApiClient(
+        baseUrl: 'https://relay.example',
+        token: 'test-only',
+        httpClient: MockClient((request) async {
+          if (request.method == 'PATCH') {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            expect((body['changes'] as List).single['baseUnreadRevision'], 0);
+            expect((body['changes'] as List).single['markedUnread'], false);
+          }
+          return http.Response(
+            jsonEncode(snapshot(request.method == 'PATCH')),
+            200,
+          );
+        }),
+      );
+      final app = _ReadApp(api);
+      addTearDown(() {
+        app.dispose();
+        api.close();
+      });
+      expect(
+        await markNotificationRead(
+          notificationPayload('a', 'current-device', readThrough: 100),
+          app: app,
+        ),
+        'read failed',
+      );
+      expect(app.cache.seen, isEmpty);
+    },
+  );
+  test(
+    'offline read retains unread and authenticated 401 rejects this credential',
+    () async {
+      var status = 503;
+      var count = 0;
+      final api = ApiClient(
+        baseUrl: 'https://relay.example',
+        token: 'test-only',
+        httpClient: MockClient((request) async {
+          count++;
+          return http.Response('{}', status);
+        }),
+      );
+      final app = _ReadApp(api);
+      addTearDown(() {
+        app.dispose();
+        api.close();
+      });
+      final payload = notificationPayload(
+        'a',
+        'current-device',
+        readThrough: 100,
+      );
+      expect(await markNotificationRead(payload, app: app), 'read failed');
+      expect(count, 1);
+      expect(app.cache.seen, isEmpty);
+      status = 401;
+      expect(await markNotificationRead(payload, app: app), 'read rejected');
+      expect(app.rejected?.deviceId, 'current-device');
+      expect(count, 2);
+    },
+  );
   test(
     'notification reply uses normal send and refuses old-device notifications',
     () async {

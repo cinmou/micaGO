@@ -182,7 +182,9 @@ class MainActivity : FlutterActivity() {
                 .setRank(index)
                 .build()
         }
-        manager.dynamicShortcuts = shortcuts
+        // Keep notification conversation metadata when refreshing share targets.
+        val conversations = manager.dynamicShortcuts.filterNot { it.id.startsWith("share_") }
+        manager.dynamicShortcuts = (conversations + shortcuts).take(manager.maxShortcutCountPerActivity)
         return true
     }
 

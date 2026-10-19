@@ -5,11 +5,8 @@ using Windows.UI;
 namespace MicaGo.App.Services;
 
 /// <summary>
-/// W-UI8: the thread's contact bar, composer, cards and chips are translucent
-/// so the Mica canvas shows through. Over a custom chat background that reads
-/// as see-through boxes, so they turn solid while one is set. Theme brushes are
-/// shared instances: changing them in place updates every XAML and code
-/// reference in both Light and Dark, and survives theme switches.
+/// Keep message cards and chips legible over a custom chat image. Header and
+/// editor surfaces use system theme layers and stay outside the image canvas.
 /// </summary>
 public static class ChatSurfaceBrushes
 {
@@ -35,11 +32,6 @@ public static class ChatSurfaceBrushes
                 var dark = name is "Default" or "Dark";
                 if (!dark && name != "Light") continue;
 
-                // MicaGoComposerBrush is a StaticResource alias of this acrylic.
-                if (theme.TryGetValue("MicaGoContactBarBrush", out var bar) && bar is AcrylicBrush acrylic)
-                {
-                    acrylic.AlwaysUseFallback = solid;
-                }
                 foreach (var (key, light, darkColor) in SolidColors)
                 {
                     if (!theme.TryGetValue(key, out var raw) || raw is not SolidColorBrush brush) continue;

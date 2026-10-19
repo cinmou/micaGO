@@ -18,7 +18,7 @@ public sealed class MainWindow : Window
     private const double MinimumWidth = 880;
     private const double MinimumHeight = 600;
     private readonly Grid _windowRoot = new() { Background = null };
-    private readonly RowDefinition _titleBarRow = new() { Height = new GridLength(48) };
+    private readonly RowDefinition _titleBarRow = new() { Height = new GridLength(32) };
     private readonly Grid _appTitleBar = new() { Background = null };
     private readonly ShellPage _shellPage;
 

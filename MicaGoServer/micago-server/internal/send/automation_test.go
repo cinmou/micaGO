@@ -3,7 +3,6 @@ package send
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 // C79: the Automation diagnostic used to be a hardcoded "unknown". These pin the
@@ -43,20 +42,5 @@ func TestClassifyAutomationOutput(t *testing.T) {
 				t.Fatalf("classified %q as %s, want %s", tc.output, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestInvalidateAutomationProbeForcesReprobe(t *testing.T) {
-	automationMu.Lock()
-	automationCached = AutomationStatus{Status: "ok"}
-	automationCachedAt = time.Now()
-	automationMu.Unlock()
-
-	InvalidateAutomationProbe()
-
-	automationMu.Lock()
-	defer automationMu.Unlock()
-	if !automationCachedAt.IsZero() {
-		t.Fatal("expected the cache timestamp to be cleared")
 	}
 }

@@ -32,7 +32,6 @@ type SyncEngine struct {
 	pending       bool
 	pendingReason string
 	pendingCount  int // total triggers coalesced (diagnostic)
-	running       bool
 }
 
 func NewSyncEngine(run func(ctx context.Context, reason string) error) *SyncEngine {
@@ -97,13 +96,11 @@ func (e *SyncEngine) worker(ctx context.Context) {
 		for {
 			e.mu.Lock()
 			if !e.pending {
-				e.running = false
 				e.mu.Unlock()
 				break
 			}
 			reason := e.pendingReason
 			e.pending = false
-			e.running = true
 			e.mu.Unlock()
 
 			e.runWithBackoff(ctx, reason)
