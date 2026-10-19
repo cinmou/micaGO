@@ -20,9 +20,9 @@ func TestPairingVisibilityPersistsAndChangesEndpointRevision(t *testing.T) {
 	}
 	h := newURLHandlers("192.168.4.2:3000", NewNetworkController(config.Config{}))
 	h.SetLANVisibility(db, nil)
-	router := NewRouter(h, nil, AuthConfig{Enabled: true, Token: "test-token"})
+	router := NewRouter(h, nil, newTestAuth(t, "test-token"))
 	call := func(body string, auth bool) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodPut, "/api/server/lan-visibility", strings.NewReader(body))
+		r := newLocalRequest(http.MethodPut, "/api/server/lan-visibility", strings.NewReader(body))
 		if auth {
 			r.Header.Set("Authorization", "Bearer test-token")
 		}

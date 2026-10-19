@@ -19,39 +19,46 @@ class TopBanner {
 
   static bool blocked = false;
   static OverlayEntry? _entry;
+  static Completer<void>? _closed;
   static String? _lastMessage;
   static DateTime? _lastShownAt;
 
   static void dismiss() {
     _entry?.remove();
     _entry = null;
+    if (_closed?.isCompleted == false) _closed!.complete();
+    _closed = null;
   }
 
   /// Shows [message] as a top banner over the root overlay. Repeated identical
   /// messages within 3s are suppressed to avoid noisy repeats.
-  static void show(
+  static Future<void> show(
     BuildContext context,
     String message, {
     TopBannerKind kind = TopBannerKind.info,
     Duration duration = const Duration(seconds: 3),
+    String? actionLabel,
+    FutureOr<void> Function()? onAction,
   }) {
-    if (blocked) return;
+    if (blocked) return Future.value();
     final trimmed = message.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) return Future.value();
     final now = DateTime.now();
-    if (_lastMessage == trimmed &&
+    if (onAction == null &&
+        _lastMessage == trimmed &&
         _lastShownAt != null &&
         now.difference(_lastShownAt!) < const Duration(seconds: 3)) {
-      return;
+      return _closed?.future ?? Future.value();
     }
     _lastMessage = trimmed;
     _lastShownAt = now;
 
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
+    if (overlay == null) return Future.value();
 
-    _entry?.remove();
-    _entry = null;
+    dismiss();
+    final closed = Completer<void>();
+    _closed = closed;
 
     late final OverlayEntry entry;
     entry = OverlayEntry(
@@ -59,16 +66,25 @@ class TopBanner {
         message: trimmed,
         kind: kind,
         duration: duration,
-        onDismissed: () {
+        actionLabel: actionLabel,
+        onAction: onAction,
+        onRemoved: () {
           if (identical(_entry, entry)) {
             _entry = null;
-            entry.remove();
+            _closed = null;
+          }
+          if (!closed.isCompleted) closed.complete();
+        },
+        onDismissed: () {
+          if (identical(_entry, entry)) {
+            dismiss();
           }
         },
       ),
     );
     _entry = entry;
     overlay.insert(entry);
+    return closed.future;
   }
 }
 
@@ -77,12 +93,18 @@ class _TopBannerView extends StatefulWidget {
   final TopBannerKind kind;
   final Duration duration;
   final VoidCallback onDismissed;
+  final VoidCallback onRemoved;
+  final String? actionLabel;
+  final FutureOr<void> Function()? onAction;
 
   const _TopBannerView({
     required this.message,
     required this.kind,
     required this.duration,
     required this.onDismissed,
+    required this.onRemoved,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
@@ -97,6 +119,7 @@ class _TopBannerViewState extends State<_TopBannerView>
   );
   Timer? _autoHide;
   bool _dismissing = false;
+  bool _acting = false;
 
   @override
   void initState() {
@@ -117,72 +140,118 @@ class _TopBannerViewState extends State<_TopBannerView>
   void dispose() {
     _autoHide?.cancel();
     _anim.dispose();
+    widget.onRemoved();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isError = widget.kind == TopBannerKind.error;
-    final bg = isError ? scheme.errorContainer : scheme.inverseSurface;
-    final fg = isError ? scheme.onErrorContainer : scheme.onInverseSurface;
-    final topInset = MediaQuery.of(context).padding.top;
-
     final curved = CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic);
     return Positioned(
-      top: topInset,
+      top: MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
       left: 12,
       right: 12,
-      child: IgnorePointer(
-        ignoring: false,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, -1.2),
-            end: Offset.zero,
-          ).animate(curved),
-          child: FadeTransition(
-            opacity: curved,
-            child: Material(
-              color: Colors.transparent,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, -1.2),
+              end: Offset.zero,
+            ).animate(curved),
+            child: FadeTransition(
+              opacity: curved,
               child: GestureDetector(
                 onTap: _dismiss,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isError ? Icons.error_outline : Icons.info_outline,
-                        size: 18,
-                        color: fg,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          widget.message,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyMedium?.copyWith(color: fg),
-                        ),
-                      ),
-                    ],
-                  ),
+                child: AppNoticeCard(
+                  message: widget.message,
+                  kind: TopBannerKind.info,
+                  actionLabel: widget.actionLabel,
+                  onAction: widget.onAction == null
+                      ? null
+                      : () async {
+                          if (_acting || _dismissing) return;
+                          _acting = true;
+                          try {
+                            await widget.onAction!();
+                          } finally {
+                            _acting = false;
+                            await _dismiss();
+                          }
+                        },
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared surface for transient notices and the connection retry notice.
+class AppNoticeCard extends StatelessWidget {
+  final String message;
+  final TopBannerKind kind;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  const AppNoticeCard({
+    super.key,
+    required this.message,
+    this.kind = TopBannerKind.info,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final error = kind == TopBannerKind.error;
+    final foreground = error
+        ? scheme.onErrorContainer
+        : scheme.onInverseSurface;
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: Material(
+        color: error ? scheme.errorContainer : scheme.inverseSurface,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: onAction == null ? 8 : 4,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                error ? Icons.error_outline : Icons.info_outline,
+                size: 16,
+                color: foreground,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: foreground),
+                ),
+              ),
+              if (onAction != null && actionLabel != null)
+                TextButton(
+                  onPressed: onAction,
+                  style: TextButton.styleFrom(
+                    foregroundColor: foreground,
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: Text(actionLabel!),
+                ),
+            ],
           ),
         ),
       ),

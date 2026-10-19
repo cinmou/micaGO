@@ -241,16 +241,12 @@ func IsTIFFAttachment(mimeType, uti, transferName, filename *string) bool {
 	return false
 }
 
-func NeedsPreviewConversion(isSticker bool, mimeType, uti, transferName, filename *string) bool {
-	// C39: stickers are NOT force-converted any more. A sticker is usually a plain
-	// PNG (in ~/Library/Messages/StickerCache) the client can render directly, so
-	// `isSticker` is intentionally unused now.
+func NeedsPreviewConversion(mimeType, uti, transferName, filename *string) bool {
 	// C48: HEIC/HEIF/TIFF AND JPEG are routed through the server preview. HEIC/TIFF
 	// because the Flutter/Skia client can't decode them; JPEG because iPhone photos
 	// bake their rotation into EXIF orientation and the client was still showing
 	// some sideways — the Quick Look preview bakes the orientation into the pixels
 	// so every device agrees. PNG stays direct (web-renderable, no EXIF orientation).
-	_ = isSticker
 	if IsTIFFAttachment(mimeType, uti, transferName, filename) {
 		return true
 	}
@@ -279,7 +275,7 @@ func IsPreviewableImage(kind string, mimeType, uti, transferName, filename *stri
 	if kind != AttachmentKindImage {
 		return false
 	}
-	return !NeedsPreviewConversion(false, mimeType, uti, transferName, filename)
+	return !NeedsPreviewConversion(mimeType, uti, transferName, filename)
 }
 
 // IsVideoAttachment reports whether an attachment is a video, so the server can
@@ -339,7 +335,7 @@ func DecorateAttachmentJSON(a *AttachmentJSON) {
 	a.MimeType = InferMimeType(a.MimeType, a.Uti, a.TransferName, a.Filename)
 	a.AttachmentKind = AttachmentKind(a.IsSticker, a.MimeType, a.Uti, a.TransferName, a.Filename)
 	a.IsVoiceMessage = IsVoiceMessage(a.Uti, a.MimeType, a.TransferName, a.Filename)
-	a.NeedsPreviewConversion = NeedsPreviewConversion(a.IsSticker, a.MimeType, a.Uti, a.TransferName, a.Filename)
+	a.NeedsPreviewConversion = NeedsPreviewConversion(a.MimeType, a.Uti, a.TransferName, a.Filename)
 	a.IsPreviewableImage = IsPreviewableImage(a.AttachmentKind, a.MimeType, a.Uti, a.TransferName, a.Filename)
 	a.DisplayKind = DisplayKind(a.AttachmentKind, a.IsVoiceMessage, a.NeedsPreviewConversion)
 }

@@ -1,3 +1,4 @@
+import 'package:micago_conversations/micago_conversations.dart';
 import 'dart:async';
 import 'package:async/async.dart';
 import '../storage/local_cache_store.dart';
@@ -184,6 +185,8 @@ class PushService {
     unawaited(_messageSubscription?.cancel());
     unawaited(_tapSubscription?.cancel());
     app.showLocalNotification = null;
+    app.clearChatNotification = null;
+    app.clearReadNotification = null;
   }
 
   Future<void> _persistOptions(Map<String, dynamic> cfg) async {
@@ -259,6 +262,7 @@ class PushService {
             deviceId: app.profile?.deviceId,
             replyLabel: MicaLocalizations.current.t('notif.reply'),
             replyHint: MicaLocalizations.current.t('common.message'),
+            readLabel: MicaLocalizations.current.t('notif.markRead'),
             messageGuid: messageGuid,
             senderName: senderName,
             senderKey: senderKey,
@@ -272,6 +276,14 @@ class PushService {
     // Opening a chat clears its stacked conversation notification.
     app.clearChatNotification = (chatGuid) =>
         cancelChatNotification(_local, chatGuid);
+    app.clearReadNotification = (chatGuid, through) =>
+        cancelNotificationThrough(
+          notificationPayload(
+            chatGuid,
+            app.profile?.deviceId ?? '',
+            readThrough: through,
+          ),
+        );
     await refreshNotificationPermission();
   }
 
@@ -296,23 +308,12 @@ class PushService {
     await _local.initialize(
       const InitializationSettings(android: android),
       onDidReceiveNotificationResponse: (resp) {
-        // Inline reply (app alive): send it; otherwise a plain tap opens the chat.
-        if (resp.actionId == notificationReplyActionId) {
-          final text = cleanReplyText(resp.input);
-          final guid = notificationChatFromPayload(resp.payload);
-          if (text != null && guid != null && guid.isNotEmpty) {
-            unawaited(
-              handleNotificationReply(
-                resp.payload!,
-                text,
-                app: app,
-              ).then(app.noteReplyResult),
-            );
-          }
+        if (resp.actionId == notificationReplyActionId ||
+            resp.actionId == notificationReadActionId) {
+          unawaited(handleNotificationAction(resp, app: app));
           return;
         }
-        final guid = notificationChatFromPayload(resp.payload);
-        if (guid != null && guid.isNotEmpty) app.requestOpenChat(guid);
+        _openNotification(resp.payload);
       },
       onDidReceiveBackgroundNotificationResponse:
           notificationBackgroundResponse,
@@ -320,9 +321,9 @@ class PushService {
     final launch = await _local.getNotificationAppLaunchDetails();
     if (launch?.didNotificationLaunchApp == true) {
       final response = launch?.notificationResponse;
-      if (response?.actionId != notificationReplyActionId) {
-        final guid = notificationChatFromPayload(response?.payload);
-        if (guid != null) app.requestOpenChat(guid);
+      if (response?.actionId != notificationReplyActionId &&
+          response?.actionId != notificationReadActionId) {
+        _openNotification(response?.payload);
       }
     }
     await _local
@@ -330,6 +331,19 @@ class PushService {
           AndroidFlutterLocalNotificationsPlugin
         >()
         ?.createNotificationChannel(messageNotificationChannel);
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await AndroidConversations.listen(_openNotification);
+      } catch (_) {}
+    }
+  }
+
+  void _openNotification(String? payload) {
+    if (_disposed || !app.hasProfile) return;
+    final device = notificationDeviceFromPayload(payload);
+    if (device != null && device != app.profile?.deviceId) return;
+    final guid = notificationChatFromPayload(payload);
+    if (guid?.isNotEmpty == true) app.requestOpenChat(guid!);
   }
 }
 
@@ -468,12 +482,31 @@ Future<void> showPushNotification(RemoteMessage message) async {
 /// backgrounded/killed (runs in a background isolate). Handles the inline reply
 /// by sending it to the chat; a plain tap is routed by app launch instead.
 @pragma('vm:entry-point')
-void notificationBackgroundResponse(NotificationResponse response) {
-  if (response.actionId != notificationReplyActionId) return;
-  final text = cleanReplyText(response.input);
+Future<void> notificationBackgroundResponse(
+  NotificationResponse response,
+) async {
+  await handleNotificationAction(response);
+}
+
+Future<void> handleNotificationAction(
+  NotificationResponse response, {
+  AppController? app,
+}) async {
   final payload = response.payload;
-  if (text == null || payload == null) return;
-  handleNotificationReply(payload, text).ignore();
+  if (payload == null) return;
+  if (response.actionId == notificationReplyActionId) {
+    final text = cleanReplyText(response.input);
+    if (text != null) {
+      final result = await handleNotificationReply(payload, text, app: app);
+      app?.noteReplyResult(result);
+    }
+  } else if (response.actionId == notificationReadActionId) {
+    final result = await markNotificationRead(payload, app: app);
+    if (result == 'read saved') {
+      await cancelNotificationThrough(payload);
+    }
+    // Failed/offline actions retain the original notification for retry.
+  }
 }
 
 /// C30/C31: sends an inline-reply message to [chatGuid] using the persisted
@@ -505,7 +538,7 @@ Future<String> handleNotificationReply(
       );
     }
     if (result == 'reply sent') {
-      await cancelChatNotification(plugin, guid);
+      await cancelNotificationThrough(payload);
     } else {
       final message = result == 'reply pending'
           ? 'Delivery is awaiting confirmation. Open micaGO to check before resending.'
@@ -538,21 +571,111 @@ Future<String> sendNotificationReply(
   String text, {
   AppController? app,
 }) async {
+  if (cleanReplyText(text) == null) return 'reply failed';
+  return _withNotificationSession(
+    payload,
+    app: app,
+    action: (api, chatGuid) async {
+      await api.sendText(
+        chatGuid: chatGuid,
+        tempGuid: 'reply-${DateTime.now().microsecondsSinceEpoch}',
+        message: text.trim(),
+      );
+      if (app != null) {
+        unawaited(app.runDeltaSync(reason: 'notification-reply'));
+      }
+    },
+    kind: 'reply',
+  );
+}
+
+/// Uses the notification's cutoff, never the cache's newer chat preview.
+Future<String> markNotificationRead(
+  String payload, {
+  AppController? app,
+}) async {
+  final through = notificationReadThrough(payload);
+  if (through == null) return 'read failed';
+  return _withNotificationSession(
+    payload,
+    app: app,
+    kind: 'read',
+    action: (api, chatGuid) async {
+      final snapshot = await api.getReadState();
+      final rows = snapshot['data'] as List;
+      final row = rows
+          .cast<Map<String, dynamic>>()
+          .where((r) => r['chatGuid'] == chatGuid)
+          .firstOrNull;
+      final change = <String, dynamic>{
+        'chatGuid': chatGuid,
+        'readThrough': through,
+      };
+      if (row == null || (row['readThrough'] as num).toInt() <= through) {
+        change.addAll({
+          'markedUnread': false,
+          'baseUnreadRevision': row?['unreadRevision'] ?? 0,
+        });
+      }
+      final reply = await api.patchReadState({
+        'serverId': snapshot['serverId'],
+        'changes': [change],
+      });
+      final acknowledged = (reply['data'] as List)
+          .cast<Map<String, dynamic>>()
+          .any(
+            (r) =>
+                r['chatGuid'] == chatGuid &&
+                (r['readThrough'] as num).toInt() >= through &&
+                (!change.containsKey('markedUnread') ||
+                    r['markedUnread'] == false),
+          );
+      if (reply['serverId'] != snapshot['serverId'] || !acknowledged) {
+        throw StateError('Read position was not acknowledged');
+      }
+      final cache = app?.cache ?? _notificationCache;
+      if (app != null && !identical(app.api, api)) {
+        throw StateError('Connection changed');
+      }
+      await cache.applyReadPositions({chatGuid: through});
+      final acknowledgedRow = (reply['data'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((r) => r['chatGuid'] == chatGuid);
+      if (acknowledgedRow['markedUnread'] == false) {
+        await cache.applyUnreadMarks({chatGuid: false});
+      }
+      if (app != null) {
+        await app.readState.sync();
+        unawaited(app.runDeltaSync(reason: 'notification-read'));
+      }
+    },
+  );
+}
+
+Future<String> _withNotificationSession(
+  String payload, {
+  AppController? app,
+  required String kind,
+  required Future<void> Function(ApiClient, String) action,
+}) async {
   final chatGuid = notificationChatFromPayload(payload);
   final deviceId = notificationDeviceFromPayload(payload);
-  if (cleanReplyText(text) == null || chatGuid == null || deviceId == null) {
-    return 'reply failed';
+  if (chatGuid == null ||
+      chatGuid.isEmpty ||
+      deviceId == null ||
+      deviceId.isEmpty) {
+    return '$kind failed';
   }
   final store = app?.store ?? SecureStore();
   ApiClient? backgroundApi;
   ConnectionProfile? issuedProfile;
   try {
     if (await store.readValue(AppController.rejectedCredentialKey) == '1') {
-      return 'reply rejected';
+      return '$kind rejected';
     }
-    final profile = app?.profile ?? await store.loadProfile();
-    if (profile == null || !profile.isComplete) return 'reply rejected';
-    if (profile.deviceId != deviceId) return 'reply failed';
+    final profile = app == null ? await store.loadProfile() : app.profile;
+    if (profile == null || !profile.isComplete) return '$kind rejected';
+    if (profile.deviceId != deviceId) return '$kind failed';
     issuedProfile = profile;
     final api =
         app?.api ??
@@ -561,13 +684,8 @@ Future<String> sendNotificationReply(
           token: profile.token,
           tlsFingerprint: profile.pinFor(profile.effectiveBaseUrl),
         ));
-    await api.sendText(
-      chatGuid: chatGuid,
-      tempGuid: 'reply-${DateTime.now().microsecondsSinceEpoch}',
-      message: text.trim(),
-    );
-    if (app != null) unawaited(app.runDeltaSync(reason: 'notification-reply'));
-    return 'reply sent';
+    await action(api, chatGuid);
+    return kind == 'reply' ? 'reply sent' : 'read saved';
   } on ApiException catch (e) {
     if (e.statusCode == 401) {
       if (app != null && issuedProfile != null) {
@@ -575,22 +693,24 @@ Future<String> sendNotificationReply(
       } else {
         try {
           final current = await store.loadProfile();
-          if (current?.deviceId == deviceId) {
+          if (current?.token == issuedProfile?.token && current != null) {
             await store.writeValue(AppController.rejectedCredentialKey, '1');
             await store.clearProfile();
+            await clearAndroidNotificationState();
           }
         } catch (_) {
-          /* Retry terminal cleanup when the app resumes. */
+          /* Terminal cleanup retries when the app resumes. */
         }
       }
-      return 'reply rejected';
+      return '$kind rejected';
     }
-    return e.sendState == LocalSendState.pending ||
-            e.sendState == LocalSendState.sentUnconfirmed
+    return kind == 'reply' &&
+            (e.sendState == LocalSendState.pending ||
+                e.sendState == LocalSendState.sentUnconfirmed)
         ? 'reply pending'
-        : 'reply failed';
+        : '$kind failed';
   } catch (_) {
-    return 'reply failed';
+    return '$kind failed';
   } finally {
     backgroundApi?.close();
   }

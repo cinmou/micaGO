@@ -1,0 +1,17 @@
+group = 'com.micago.conversations'
+version = '1.0'
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'com.android.tools.build:gradle:8.13.2' }
+}
+apply plugin: 'com.android.library'
+android {
+    namespace = 'com.micago.conversations'
+    compileSdk = 36
+    defaultConfig { minSdk = 24 }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+dependencies { implementation 'androidx.core:core:1.13.1' }

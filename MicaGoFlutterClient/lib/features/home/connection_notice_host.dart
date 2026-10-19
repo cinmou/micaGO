@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import '../../core/ui/app_dialog.dart';
+import '../../core/ui/top_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
 
-/// One app-wide notice surface. Authentication rejection takes priority over
-/// connectivity failures, including while a timeout dialog is already open.
+/// Connectivity is a quiet retry notice; rejected credentials require re-pairing.
 class ConnectionNoticeHost extends StatefulWidget {
   final Widget child;
   const ConnectionNoticeHost({super.key, required this.child});
@@ -17,13 +19,9 @@ class ConnectionNoticeHost extends StatefulWidget {
 
 class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
   AppController? _app;
-  bool _dialogOpen = false;
   DialogRoute<void>? _noticeRoute;
   NavigatorState? _noticeNavigator;
-
-  /// Connectivity failures may leave a retry strip after the dialog closes.
-  /// Rejected credentials are explained only by the dialog.
-  bool _showStickyBanner = false;
+  bool _retrying = false;
 
   @override
   void didChangeDependencies() {
@@ -48,137 +46,78 @@ class _ConnectionNoticeHostState extends State<ConnectionNoticeHost> {
   }
 
   void _onProblemChanged() {
-    final problem =
-        (_app?.tokenRejected.value ?? false) ||
-        (_app?.connectionProblemConfirmed.value ?? false);
-    if (!problem) {
-      // Recovered: drop the banner and close the dialog if it is still up.
-      if (_showStickyBanner && mounted) {
-        setState(() => _showStickyBanner = false);
-      }
-      if (_dialogOpen && mounted) {
-        final route = _noticeRoute;
-        if (route != null && route.isActive) {
-          _noticeNavigator?.removeRoute(route);
-        }
-      }
+    if (!mounted) return;
+    setState(() {});
+    if (!(_app?.tokenRejected.value ?? false)) {
+      final route = _noticeRoute;
+      if (route != null && route.isActive) _noticeNavigator?.removeRoute(route);
       return;
     }
-    if (_app?.tokenRejected.value ?? false) {
-      ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
-      // Remove unrelated pageless routes that could still show old records.
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).popUntil((route) => route == _noticeRoute || route.isFirst);
-    }
-    if (!_dialogOpen) {
-      if (_showStickyBanner && mounted) {
-        setState(() => _showStickyBanner = false);
-      }
-      unawaitedShowDialog();
-    }
+    TopBanner.dismiss();
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).popUntil((route) => route == _noticeRoute || route.isFirst);
+    if (_noticeRoute == null) unawaited(_showRejectedDialog());
   }
 
-  void unawaitedShowDialog() {
-    // Fire and forget — the dialog's own future flips the sticky banner on.
-    _showCannotConnectDialog();
-  }
-
-  Future<void> _showCannotConnectDialog() async {
-    _dialogOpen = true;
+  Future<void> _showRejectedDialog() async {
     final strings = MicaLocalizations.of(context);
     final route = DialogRoute<void>(
       context: context,
-      builder: (ctx) => ValueListenableBuilder<bool>(
-        valueListenable: _app!.tokenRejected,
-        builder: (context, rejected, _) => PopScope(
-          canPop: !rejected,
-          child: AppDialog(
-            icon: Icon(rejected ? Icons.lock_outline : Icons.cloud_off),
-            title: Text(
-              strings.t(
-                rejected
-                    ? 'connection.tokenRejectedTitle'
-                    : 'connection.cannotReachTitle',
-              ),
-            ),
-            content: Text(
-              strings.t(
-                rejected
-                    ? 'connection.tokenRejectedBody'
-                    : 'connection.cannotReachBody',
-              ),
-            ),
-            cancelLabel: rejected ? null : strings.t('common.dismiss'),
-            onCancel: rejected ? null : () => Navigator.of(ctx).pop(),
-            confirmLabel: strings.t(
-              rejected ? 'connection.pairAgain' : 'common.retry',
-            ),
-            onConfirm: () {
-              Navigator.of(ctx).pop();
-              if (!rejected) _app?.retryInitialConnect();
-            },
-          ),
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AppDialog(
+          icon: const Icon(Icons.lock_outline),
+          title: Text(strings.t('connection.tokenRejectedTitle')),
+          content: Text(strings.t('connection.tokenRejectedBody')),
+          confirmLabel: strings.t('connection.pairAgain'),
+          onConfirm: () => Navigator.of(ctx).pop(),
         ),
       ),
     );
     _noticeRoute = route;
     _noticeNavigator = Navigator.of(context, rootNavigator: true);
     await _noticeNavigator!.push(route);
-    _noticeRoute = null;
-    _dialogOpen = false;
-    if (!mounted) return;
-    // The banner takes over from the dialog, and only while still broken.
-    final stillBroken =
-        !(_app?.tokenRejected.value ?? false) &&
-        (_app?.connectionProblemConfirmed.value ?? false);
-    setState(() => _showStickyBanner = stillBroken);
+    if (identical(_noticeRoute, route)) _noticeRoute = null;
+  }
+
+  Future<void> _retry() async {
+    if (_retrying) return;
+    setState(() => _retrying = true);
+    try {
+      await _app?.retryInitialConnect();
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final rejected = context.watch<AppController>().tokenRejected.value;
-    final scheme = Theme.of(context).colorScheme;
+    final app = context.watch<AppController>();
     final strings = MicaLocalizations.of(context);
-    return Column(
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        if (_showStickyBanner && !rejected)
-          Material(
-            color: scheme.errorContainer,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.cloud_off,
-                      size: 16,
-                      color: scheme.onErrorContainer,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        strings.t('connection.serverUnavailable'),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onErrorContainer,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => _app?.retryInitialConnect(),
-                      child: Text(strings.t('common.retry')),
-                    ),
-                  ],
+        widget.child,
+        if (app.connectionProblemConfirmed.value && !app.tokenRejected.value)
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
+            left: 12,
+            right: 12,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: AppNoticeCard(
+                  message: strings.t('connection.serverUnavailable'),
+                  actionLabel: strings.t('common.retry'),
+                  onAction: _retrying ? null : _retry,
                 ),
               ),
             ),
           ),
-        Expanded(child: widget.child),
       ],
     );
   }

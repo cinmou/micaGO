@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:micago_conversations/micago_conversations.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'notification_store.dart';
@@ -22,7 +24,7 @@ const String messageGroupKey = 'micago.messages';
 /// Direct-reply (Android RemoteInput) action + input identifiers. Replying from
 /// the notification sends the text straight to the chat via the backend.
 const String notificationReplyActionId = 'micago_reply';
-const String notificationReplyInputId = 'micago_reply_text';
+const String notificationReadActionId = 'micago_mark_read';
 
 /// The Android channel created at init time. High importance so messages can
 /// surface as heads-up notifications.
@@ -94,6 +96,7 @@ Future<void> showMessageNotification(
   String? deviceId,
   String replyLabel = 'Reply',
   String replyHint = 'Message',
+  String readLabel = 'Mark as read',
   required String senderName,
   required String conversationTitle,
   String? senderKey,
@@ -110,7 +113,9 @@ Future<void> showMessageNotification(
   final chatKey = (chatGuid == null || chatGuid.isEmpty)
       ? messageGuid
       : chatGuid;
-  final ts = timestampMs ?? DateTime.now().millisecondsSinceEpoch;
+  final ts = timestampMs != null && timestampMs > 0
+      ? timestampMs
+      : DateTime.now().millisecondsSinceEpoch;
   final preview = (body == null || body.trim().isEmpty) ? 'New message' : body;
 
   final buffer = await appendChatNotification(
@@ -123,9 +128,23 @@ Future<void> showMessageNotification(
           : senderKey.trim(),
       text: preview,
       ts: ts,
+      readThrough: timestampMs,
+      avatarPath: avatarFilePath,
+      avatarResource: avatarDrawableResource,
     ),
+    deviceId: deviceId,
   );
 
+  if (avatarFilePath != null && !await File(avatarFilePath).exists()) {
+    avatarFilePath = null;
+  }
+  if (conversationAvatarFilePath != null &&
+      !await File(conversationAvatarFilePath).exists()) {
+    conversationAvatarFilePath = null;
+  }
+  final effectiveSenderKey = senderKey?.trim().isNotEmpty == true
+      ? senderKey!.trim()
+      : senderName;
   final avatar = avatarDrawableResource != null
       ? DrawableResourceAndroidIcon(avatarDrawableResource)
       : avatarFilePath != null
@@ -136,18 +155,27 @@ Future<void> showMessageNotification(
       : conversationAvatarFilePath != null
       ? FilePathAndroidBitmap(conversationAvatarFilePath)
       : null;
+  Person notificationSender(BufferedNotifMessage m) {
+    final icon = m.senderKey == effectiveSenderKey
+        ? avatar
+        : m.avatarResource != null
+        ? DrawableResourceAndroidIcon(m.avatarResource!)
+        : m.avatarPath != null && File(m.avatarPath!).existsSync()
+        ? BitmapFilePathAndroidIcon(m.avatarPath!)
+        : null;
+    return Person(
+      name: m.sender,
+      key: m.senderKey.isEmpty ? m.sender : m.senderKey,
+      icon: icon,
+    );
+  }
+
   final messages = <Message>[
     for (final m in buffer)
       Message(
         m.text,
         DateTime.fromMillisecondsSinceEpoch(m.ts),
-        Person(
-          name: m.sender,
-          key: m.senderKey.isEmpty ? m.sender : m.senderKey,
-          icon: m.senderKey == senderKey || m.sender == senderName
-              ? avatar
-              : null,
-        ),
+        notificationSender(m),
       ),
   ];
 
@@ -158,6 +186,37 @@ Future<void> showMessageNotification(
     messages: messages,
   );
 
+  final through = buffer.every((m) => (m.readThrough ?? 0) > 0)
+      ? buffer.fold<int>(
+          0,
+          (at, m) => m.readThrough! > at ? m.readThrough! : at,
+        )
+      : 0;
+  final payload = chatGuid == null
+      ? null
+      : deviceId?.isNotEmpty == true
+      ? notificationPayload(chatGuid, deviceId!, readThrough: through)
+      : chatGuid;
+  String? shortcutId;
+  if (Platform.isAndroid &&
+      chatGuid?.isNotEmpty == true &&
+      deviceId?.isNotEmpty == true) {
+    try {
+      shortcutId = await AndroidConversations.publish(
+        chatGuid: chatGuid!,
+        deviceId: deviceId!,
+        title: conversationTitle,
+        payload: payload!,
+        personName: senderName,
+        personKey: effectiveSenderKey,
+        personAvatarPath: avatarFilePath,
+        avatarPath:
+            conversationAvatarFilePath ?? (isGroup ? null : avatarFilePath),
+      );
+    } catch (_) {
+      /* System limits must not suppress message delivery. */
+    }
+  }
   final android = AndroidNotificationDetails(
     messageChannelId,
     messageChannelName,
@@ -168,6 +227,7 @@ Future<void> showMessageNotification(
     category: AndroidNotificationCategory.message,
     groupKey: messageGroupKey,
     styleInformation: style,
+    shortcutId: shortcutId,
     largeIcon: largeIcon,
     when: ts,
     actions: chatGuid?.isNotEmpty == true && deviceId?.isNotEmpty == true
@@ -179,6 +239,13 @@ Future<void> showMessageNotification(
               cancelNotification: false,
               showsUserInterface: false,
             ),
+            if (through > 0)
+              AndroidNotificationAction(
+                notificationReadActionId,
+                readLabel,
+                cancelNotification: false,
+                showsUserInterface: false,
+              ),
           ]
         : null,
   );
@@ -188,11 +255,7 @@ Future<void> showMessageNotification(
     conversationTitle,
     preview,
     NotificationDetails(android: android),
-    payload: chatGuid == null
-        ? null
-        : deviceId?.isNotEmpty == true
-        ? notificationPayload(chatGuid, deviceId!)
-        : chatGuid,
+    payload: payload,
   );
 }
 
@@ -205,4 +268,31 @@ Future<void> cancelChatNotification(
   if (chatGuid.isEmpty) return;
   await clearChatNotificationBuffer(chatGuid);
   await plugin.cancel(notificationIdForChat(chatGuid));
+}
+
+/// Native check-and-cancel stays on Android's main thread alongside posting.
+Future<void> cancelNotificationThrough(String payload) async {
+  final chat = notificationChatFromPayload(payload);
+  final through = notificationReadThrough(payload);
+  if (chat == null || through == null) return;
+  await clearChatNotificationBuffer(
+    chat,
+    through: through,
+    deviceId: notificationDeviceFromPayload(payload),
+  );
+  if (!Platform.isAndroid) return;
+  await AndroidConversations.cancelThrough(
+    notificationIdForChat(chat),
+    through,
+  );
+}
+
+Future<void> clearAndroidNotificationState() async {
+  if (!Platform.isAndroid) return;
+  try {
+    await FlutterLocalNotificationsPlugin().cancelAll();
+  } catch (_) {}
+  try {
+    await AndroidConversations.clear();
+  } catch (_) {}
 }

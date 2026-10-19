@@ -525,15 +525,10 @@ func (q *Queries) ListSyncRecentMessagesSince(ctx context.Context, afterRowID in
 	return messages, nil
 }
 
-// ListMessageUpdatesSince returns iMessage rows whose creation date falls within
-// the lookback window (afterUnixMilli, using the indexed message.date column), so
-// the v0.11.x update pass can detect mutable-state changes. Version-sensitive
-// columns (date_edited, date_retracted, error) are selected ONLY when caps allow,
-// so missing columns never cause a query error. Unlike the new-message queries,
-// this does NOT apply a renderable-content filter, so retracted/edited (possibly
-// empty) rows are still returned.
-func (q *Queries) ListMessageUpdatesSince(ctx context.Context, afterUnixMilli int64, limit int, caps SchemaCapabilities) ([]MessageUpdateRow, error) {
+// ListMessageUpdatesPage resumes a bounded state scan by source ROWID.
+func (q *Queries) ListMessageUpdatesPage(ctx context.Context, afterUnixMilli, afterRowID int64, limit int, caps SchemaCapabilities) ([]MessageUpdateRow, error) {
 	cols := []string{
+		"m.ROWID",
 		"c.guid AS chat_guid",
 		"m.guid",
 		"m.text",
@@ -569,12 +564,12 @@ JOIN chat AS c
   ON c.ROWID = cmj.chat_id
 LEFT JOIN handle AS h
   ON h.ROWID = m.handle_id
-WHERE m.date >= ?
-ORDER BY m.date ASC
+WHERE m.date >= ? AND m.ROWID > ?
+ORDER BY m.ROWID ASC
 LIMIT ?;`
 
 	afterApple := timeutil.UnixMilliToAppleNanos(afterUnixMilli)
-	rows, err := q.db.QueryContext(ctx, sqlText, afterApple, limit)
+	rows, err := q.db.QueryContext(ctx, sqlText, afterApple, afterRowID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -584,6 +579,7 @@ LIMIT ?;`
 	for rows.Next() {
 		// Base scan targets.
 		var (
+			sourceRowID                   int64
 			chatGUID                      *string
 			guid                          string
 			text                          *string
@@ -599,7 +595,7 @@ LIMIT ?;`
 			errorCode                       sql.NullInt64
 		)
 		targets := []any{
-			&chatGUID, &guid, &text, &attributedBody, &subject, &service, &dateRaw,
+			&sourceRowID, &chatGUID, &guid, &text, &attributedBody, &subject, &service, &dateRaw,
 			&dateReadRaw, &dateDeliveredRaw, &isFromMe, &isRead, &isDelivered,
 			&hasAttachments, &handleValue, &handleService,
 		}
@@ -620,6 +616,7 @@ LIMIT ?;`
 		}
 
 		updates = append(updates, MessageUpdateRow{
+			SourceRowID:         sourceRowID,
 			GUID:                guid,
 			ChatGUID:            *chatGUID,
 			Text:                ExtractMessageText(text, attributedBody),

@@ -86,7 +86,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   List<ThreadViewItem> _presentationItems = const [];
   List<AttachmentModel> _threadImages = const [];
   Map<String, int> _rowIndices = const {};
-  String? _reportedThreadError;
   final _scroll = ScrollController();
   late final ScrollCaptureRegistration _scrollCapture;
   final _composer = TextEditingController();
@@ -208,7 +207,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       topInset: () => 24,
       bottomInset: () => _bottomOverlayHeight + _keyboardInset(context),
     );
-    _controller.addListener(_onThreadChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_refreshOtherUnreadChats());
     });
@@ -248,8 +246,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
+    if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       // C50: close the keyboard before backgrounding. Otherwise a retained focus
       // can leave a stale MediaQuery.viewInsets.bottom on resume — a blank gap
@@ -283,13 +280,11 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   // real GUID. Staged attachments carry over; the composer text is preserved.
   void _switchRoute(ChatSummary route) {
     if (route.guid == _active.guid) return;
-    _controller.removeListener(_onThreadChanged);
     _controller.dispose();
     final app = context.read<AppController>();
     setState(() {
       _active = route;
       _controller = _createController(app, route)..start();
-      _controller.addListener(_onThreadChanged);
       app.setActiveChatGuids(_controller.threadGuids);
       unawaited(app.markChatsViewed(_controller.threadGuids));
     });
@@ -315,12 +310,10 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
 
   /// Rebuilds the controller in place after the merged-view toggle changes.
   void _rebuildActiveController() {
-    _controller.removeListener(_onThreadChanged);
     _controller.dispose();
     final app = context.read<AppController>();
     setState(() {
       _controller = _createController(app, _active)..start();
-      _controller.addListener(_onThreadChanged);
       app.setActiveChatGuids(_controller.threadGuids);
       unawaited(app.markChatsViewed(_controller.threadGuids));
     });
@@ -333,7 +326,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _seenDeltaSub?.cancel();
     _scroll.removeListener(_onScroll);
     _scrollCapture.dispose();
-    _controller.removeListener(_onThreadChanged);
     _controller.dispose();
     _scroll.dispose();
     _composer.dispose();
@@ -352,18 +344,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
 
   void _onComposerTextChanged() {
     _composerHasText.value = _composer.text.trim().isNotEmpty;
-  }
-
-  void _onThreadChanged() {
-    final error = _controller.error;
-    if (error != null &&
-        error != _reportedThreadError &&
-        _controller.state == ThreadState.loaded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) TopBanner.show(context, error, kind: TopBannerKind.error);
-      });
-    }
-    _reportedThreadError = error;
   }
 
   // The list is reversed (newest at the bottom), so the *top* of the history is
@@ -1384,10 +1364,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _exitSelectMode();
     await _controller.hideMessages(guids);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(MicaLocalizations.of(context).t('chat.messageHidden')),
-      ),
+    TopBanner.show(
+      context,
+      MicaLocalizations.of(context).t('chat.messageHidden'),
     );
   }
 
@@ -2210,9 +2189,7 @@ Future<void> showMessageActionMenu(
       if (text == null) return;
       await Clipboard.setData(ClipboardData(text: text));
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(strings.t('chat.messageCopied'))));
+      TopBanner.show(context, strings.t('chat.messageCopied'));
       break;
     case MessageAction.forward:
       if (api == null) return;
@@ -2239,10 +2216,9 @@ Future<void> showMessageActionMenu(
     case MessageAction.hide:
       await onHide?.call();
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(MicaLocalizations.of(context).t('chat.messageHidden')),
-        ),
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('chat.messageHidden'),
       );
       break;
     case MessageAction.edit:
@@ -2347,12 +2323,9 @@ Future<void> _forwardMessages(
     }
   }
   if (payloads.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          MicaLocalizations.of(context).t('chat.forwardUnavailable'),
-        ),
-      ),
+    TopBanner.show(
+      context,
+      MicaLocalizations.of(context).t('chat.forwardUnavailable'),
     );
     return;
   }
@@ -2424,10 +2397,9 @@ Future<ChatSummary?> _pickForwardTarget(
       .whereType<({MergedChat merged, ChatSummary route})>()
       .toList(growable: false);
   if (targets.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(MicaLocalizations.of(context).t('chat.forwardNoTarget')),
-      ),
+    TopBanner.show(
+      context,
+      MicaLocalizations.of(context).t('chat.forwardNoTarget'),
     );
     return null;
   }
@@ -2543,14 +2515,10 @@ Future<void> _runMessageAction(
     await run();
     await onChanged?.call();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(success)));
+    TopBanner.show(context, success);
   } on ApiException catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(e.friendly)));
+    TopBanner.show(context, e.friendly);
   }
 }
 
@@ -5098,7 +5066,12 @@ class EmojiPanel extends StatefulWidget {
     final maxHeight =
         MediaQuery.sizeOf(context).height * _EmojiPanelState._maxScreenFraction;
     return _EmojiPanelState._initialHeight
-        .clamp(_EmojiPanelState._minHeight, maxHeight)
+        .clamp(
+          maxHeight < _EmojiPanelState._minHeight
+              ? maxHeight
+              : _EmojiPanelState._minHeight,
+          maxHeight,
+        )
         .toDouble();
   }
 
@@ -5396,7 +5369,8 @@ class _EmojiPanelState extends State<EmojiPanel> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final maxHeight = MediaQuery.sizeOf(context).height * _maxScreenFraction;
-    final panelHeight = _height.clamp(_minHeight, maxHeight).toDouble();
+    final minHeight = maxHeight < _minHeight ? maxHeight : _minHeight;
+    final panelHeight = _height.clamp(minHeight, maxHeight).toDouble();
     final hasRecents = EmojiPanel._recents.isNotEmpty;
     final emoji = _category == 'Recent'
         ? EmojiPanel._recents
@@ -5419,7 +5393,7 @@ class _EmojiPanelState extends State<EmojiPanel> {
               onVerticalDragUpdate: (details) {
                 setState(() {
                   _height = (_height - details.delta.dy)
-                      .clamp(_minHeight, maxHeight)
+                      .clamp(minHeight, maxHeight)
                       .toDouble();
                 });
               },
@@ -6000,41 +5974,26 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
         cropped,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              MicaLocalizations.of(context).t('chat.localAvatarUpdated'),
-            ),
-          ),
-        );
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('chat.localAvatarUpdated'),
+      );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              MicaLocalizations.of(context).t('chat.imageUnusable'),
-            ),
-          ),
-        );
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('chat.imageUnusable'),
+      );
     }
   }
 
   Future<void> _clearCustomAvatar(String avatarKey) async {
     await context.read<AppController>().clearCustomAvatar(avatarKey);
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            MicaLocalizations.of(context).t('chat.localAvatarRemoved'),
-          ),
-        ),
-      );
+    TopBanner.show(
+      context,
+      MicaLocalizations.of(context).t('chat.localAvatarRemoved'),
+    );
   }
 }
 

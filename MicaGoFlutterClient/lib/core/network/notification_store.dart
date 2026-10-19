@@ -1,12 +1,12 @@
 import 'dart:convert';
 
-import '../storage/secure_store.dart';
+import '../storage/local_cache_store.dart';
 
 /// C32 — a tiny persisted per-chat buffer of recent message previews, used to
 /// drive Android MessagingStyle notifications. It must be reachable from BOTH
 /// the FCM background isolate (a fresh process per push) and the keep-alive main
 /// isolate. It is bounded and small; cleared when a chat is opened.
-const String _notifBufferKey = 'micago.notif_buffer.v1';
+const String _notifBufferKey = 'notification_previews.v2';
 
 /// Keep only the last few previews per chat (a MessagingStyle notification only
 /// shows a handful of lines).
@@ -19,12 +19,18 @@ class BufferedNotifMessage {
   final String senderKey;
   final String text;
   final int ts;
+  final int? readThrough;
+  final String? avatarPath;
+  final String? avatarResource;
   const BufferedNotifMessage({
     required this.guid,
     required this.sender,
     required this.senderKey,
     required this.text,
     required this.ts,
+    this.readThrough,
+    this.avatarPath,
+    this.avatarResource,
   });
 
   Map<String, dynamic> toJson() => {
@@ -33,6 +39,9 @@ class BufferedNotifMessage {
     'sk': senderKey,
     't': text,
     'ts': ts,
+    if (readThrough != null) 'rt': readThrough,
+    if (avatarPath != null) 'a': avatarPath,
+    if (avatarResource != null) 'ar': avatarResource,
   };
 
   factory BufferedNotifMessage.fromJson(Map<String, dynamic> j) =>
@@ -42,16 +51,17 @@ class BufferedNotifMessage {
         senderKey: j['sk'] as String? ?? j['s'] as String? ?? '',
         text: j['t'] as String? ?? '',
         ts: (j['ts'] as num?)?.toInt() ?? 0,
+        readThrough: (j['rt'] as num?)?.toInt(),
+        avatarPath: j['a'] as String?,
+        avatarResource: j['ar'] as String?,
       );
 }
 
-final SecureStore _storage = SecureStore();
+final LocalCacheStore _storage = LocalCacheStore();
 
-Future<Map<String, List<BufferedNotifMessage>>> _readAll() async {
+Map<String, List<BufferedNotifMessage>> _decode(String? raw) {
   try {
-    final raw = await _storage.readValue(_notifBufferKey);
-    if (raw == null || raw.isEmpty) return {};
-    final decoded = jsonDecode(raw) as Map<String, dynamic>;
+    final decoded = jsonDecode(raw ?? '{}') as Map<String, dynamic>;
     return decoded.map(
       (k, v) => MapEntry(
         k,
@@ -67,41 +77,61 @@ Future<Map<String, List<BufferedNotifMessage>>> _readAll() async {
   }
 }
 
-Future<void> _writeAll(Map<String, List<BufferedNotifMessage>> map) async {
-  try {
-    final encoded = jsonEncode(
-      map.map((k, v) => MapEntry(k, v.map((e) => e.toJson()).toList())),
-    );
-    await _storage.writeValue(_notifBufferKey, encoded);
-  } catch (_) {
-    // Best-effort; a failure just means the next notification won't stack.
-  }
-}
+String _encode(Map<String, List<BufferedNotifMessage>> map) => jsonEncode(
+  map.map((k, v) => MapEntry(k, v.map((e) => e.toJson()).toList())),
+);
 
-/// Appends [msg] to [chatGuid]'s buffer and returns the chat's current list
-/// (oldest→newest, capped). Dedupes by message guid, so a message delivered by
-/// BOTH FCM and keep-alive is buffered once (no duplicate line, no duplicate
-/// notification once both use the same per-chat notification id).
+/// SQLite transactions prevent FCM and realtime engines losing each other's rows.
 Future<List<BufferedNotifMessage>> appendChatNotification(
   String chatGuid,
-  BufferedNotifMessage msg,
-) async {
-  final all = await _readAll();
-  final list = all[chatGuid] ?? <BufferedNotifMessage>[];
-  if (msg.guid.isNotEmpty && list.any((m) => m.guid == msg.guid)) {
-    return list; // already buffered for this chat
-  }
-  list.add(msg);
-  while (list.length > _maxPerChat) {
-    list.removeAt(0);
-  }
-  all[chatGuid] = list;
-  await _writeAll(all);
-  return list;
+  BufferedNotifMessage msg, {
+  String? deviceId,
+}) async {
+  final key = deviceId == null ? chatGuid : "$deviceId\u001f$chatGuid";
+  final value = await _storage.updateMetadata(_notifBufferKey, (raw) {
+    final all = _decode(raw);
+    final list = all[key] ?? <BufferedNotifMessage>[];
+    list.removeWhere((m) => msg.guid.isNotEmpty && m.guid == msg.guid);
+    list.add(msg);
+    list.sort((a, b) => a.ts.compareTo(b.ts));
+    while (list.length > _maxPerChat) {
+      list.removeAt(0);
+    }
+    all.remove(key);
+    all[key] = list;
+    while (all.length > 100) {
+      all.remove(all.keys.first);
+    }
+    return _encode(all);
+  });
+  return _decode(value)[key] ?? [msg];
 }
 
-/// Drops a chat's buffer (called when the user opens that chat).
-Future<void> clearChatNotificationBuffer(String chatGuid) async {
-  final all = await _readAll();
-  if (all.remove(chatGuid) != null) await _writeAll(all);
+/// Clear only the lines acknowledged by the action; later arrivals survive.
+Future<void> clearChatNotificationBuffer(
+  String chatGuid, {
+  int? through,
+  String? deviceId,
+}) async {
+  await _storage.updateMetadata(_notifBufferKey, (raw) {
+    final all = _decode(raw);
+    final keys = all.keys
+        .where(
+          (k) => deviceId != null
+              ? k == "$deviceId\u001f$chatGuid"
+              : k == chatGuid || k.endsWith("\u001f$chatGuid"),
+        )
+        .toList();
+    for (final key in keys) {
+      if (through == null) {
+        all.remove(key);
+      } else {
+        all[key]?.removeWhere(
+          (m) => m.readThrough != null && m.readThrough! <= through,
+        );
+        if (all[key]?.isEmpty == true) all.remove(key);
+      }
+    }
+    return _encode(all);
+  });
 }

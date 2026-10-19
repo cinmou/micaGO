@@ -9,18 +9,14 @@
             <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="White" />
             <StaticResource x:Key="MicaGoChatSurfaceBrush"
                             ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
-            <AcrylicBrush x:Key="MicaGoContactBarBrush"
-                          FallbackColor="#F9F9F9"
-                          TintColor="#FCFCFC"
-                          TintLuminosityOpacity="0.82"
-                          TintOpacity="0.04" />
+            <StaticResource x:Key="MicaGoContactBarBrush" ResourceKey="LayerFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FFF3F3F3" />
             <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99000000" />
-            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FFF1F1F1" />
+            <StaticResource x:Key="MicaGoIncomingMessageBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
             <StaticResource x:Key="MicaGoComposerBrush"
-                            ResourceKey="MicaGoContactBarBrush" />
+                            ResourceKey="CardBackgroundFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
             <!-- W-UI8: chips/cards in the thread. Same values as SubtleFillColorSecondary /
                  CardBackgroundFillColorDefault; ChatSurfaceBrushes turns them solid
@@ -35,18 +31,14 @@
             <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="White" />
             <StaticResource x:Key="MicaGoChatSurfaceBrush"
                             ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
-            <AcrylicBrush x:Key="MicaGoContactBarBrush"
-                          FallbackColor="#2C2C2C"
-                          TintColor="#2C2C2C"
-                          TintLuminosityOpacity="0.88"
-                          TintOpacity="0.12" />
+            <StaticResource x:Key="MicaGoContactBarBrush" ResourceKey="LayerFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FF202020" />
             <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FF171717" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99FFFFFF" />
-            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#FF242426" />
+            <StaticResource x:Key="MicaGoIncomingMessageBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
             <StaticResource x:Key="MicaGoComposerBrush"
-                            ResourceKey="MicaGoContactBarBrush" />
+                            ResourceKey="CardBackgroundFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#16FFFFFF" />
             <SolidColorBrush x:Key="MicaGoChatChipBrush" Color="#0FFFFFFF" />
             <SolidColorBrush x:Key="MicaGoChatCardBrush" Color="#0DFFFFFF" />
@@ -88,15 +80,14 @@
         <Setter Property="BorderThickness" Value="0" />
     </Style>
 
-    <!-- Unigram composer actions: a 48-DIP slot with a transparent 40-DIP
-         native button surface; WinUI supplies the hover/pressed fills. -->
+    <!-- Standard rounded-rectangle command buttons, using native focus states. -->
     <Style x:Key="MicaGoComposerGlyphButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource MicaGoIconButtonStyle}">
         <Setter Property="Width" Value="40" />
         <Setter Property="Height" Value="40" />
         <Setter Property="Margin" Value="4" />
-        <Setter Property="CornerRadius" Value="20" />
+        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
     </Style>
 
@@ -246,6 +237,6 @@
         <Setter Property="Margin" Value="0" />
         <Setter Property="MinHeight" Value="0" />
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="IsTabStop" Value="True" />
     </Style>
 </ResourceDictionary>

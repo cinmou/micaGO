@@ -196,6 +196,7 @@ type SyncMessageRow struct {
 // Mutable-state fields are populated only when the corresponding capability is
 // available; otherwise they remain nil/zero and are ignored. Dates are Unix ms.
 type MessageUpdateRow struct {
+	SourceRowID         int64
 	GUID                string
 	ChatGUID            string
 	Text                *string

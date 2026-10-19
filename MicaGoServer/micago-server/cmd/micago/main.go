@@ -15,8 +15,7 @@ func main() {
 	syncInterval := flag.String("sync-interval", "", "periodic relay sync interval")
 	disableSyncLoop := flag.Bool("disable-sync-loop", false, "disable periodic relay sync loop")
 	addr := flag.String("addr", "", "HTTP listen address")
-	token := flag.String("token", "", "Bearer token for API and WebSocket auth")
-	disableAuth := flag.Bool("disable-auth", false, "disable auth for localhost-only development")
+	token := flag.String("token", "", "local administrator bearer token")
 	publicURL := flag.String("public-url", "", "public base URL used for server info")
 	flag.Parse()
 
@@ -31,7 +30,6 @@ func main() {
 		DisableSyncLoop: *disableSyncLoop,
 		Addr:            *addr,
 		Token:           *token,
-		DisableAuth:     *disableAuth,
 		PublicURL:       *publicURL,
 	}); err != nil {
 		log.Fatal(err)

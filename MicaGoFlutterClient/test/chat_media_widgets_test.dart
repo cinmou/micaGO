@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:mica_go/features/chats/attachment_panel.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -50,6 +52,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('❤️'), findsOneWidget);
   });
+
+  testWidgets(
+    'emoji panel fits a short landscape viewport and can be resized',
+    (tester) async {
+      tester.view.physicalSize = const Size(640, 320);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      double? initialHeight;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                initialHeight = EmojiPanel.initialHeightFor(context);
+                return Align(
+                  alignment: Alignment.bottomCenter,
+                  child: EmojiPanel(onPick: (_) {}),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      expect(initialHeight, lessThanOrEqualTo(320 * 0.58));
+      expect(tester.takeException(), isNull);
+      final handle = find.byWidgetPredicate(
+        (widget) =>
+            widget is GestureDetector && widget.onVerticalDragUpdate != null,
+      );
+      await tester.drag(handle, const Offset(0, -50));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(find.byType(EmojiPanel)).height,
+        lessThanOrEqualTo(320 * 0.58),
+      );
+    },
+  );
+
+  testWidgets(
+    'desktop attachment panel offers files and photos without mobile permission prompts',
+    (tester) async {
+      if (Platform.isAndroid || Platform.isIOS) return;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AttachmentPanel(
+              selectedAssetIds: const {},
+              onToggleAsset: (_) async {},
+              onPicked: (_) {},
+              onError: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
+      expect(find.byIcon(Icons.photo_library_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.folder_open_outlined), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('EmojiPanel.remember builds a Recent category', (tester) async {
     EmojiPanel.remember('🔥');

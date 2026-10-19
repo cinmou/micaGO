@@ -331,7 +331,7 @@ func (q *Queries) attachDebugAttachments(ctx context.Context, messages []DebugMe
 		mime := InferMimeType(a.MimeType, a.Uti, a.TransferName, a.Filename)
 		kind := AttachmentKind(a.IsSticker, mime, a.Uti, a.TransferName, a.Filename)
 		voice := IsVoiceMessage(a.Uti, mime, a.TransferName, a.Filename)
-		needsPreview := NeedsPreviewConversion(a.IsSticker, mime, a.Uti, a.TransferName, a.Filename)
+		needsPreview := NeedsPreviewConversion(mime, a.Uti, a.TransferName, a.Filename)
 		grouped[a.MessageGUID] = append(grouped[a.MessageGUID], DebugAttachmentJSON{
 			GUID:                   a.GUID,
 			Filename:               a.Filename,

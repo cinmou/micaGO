@@ -31,16 +31,42 @@ final class TunnelController: ObservableObject {
     @Published private(set) var state: TunnelState = .stopped
     @Published private(set) var logLines: [String] = []
     @Published private(set) var lastError: String?
+    @Published private(set) var retryDelay: TimeInterval?
 
     // Persisted settings
-    @Published var startWithServer: Bool { didSet { defaults.set(startWithServer, forKey: K.startWithServer) } }
-    @Published var stopWithServer: Bool { didSet { defaults.set(stopWithServer, forKey: K.stopWithServer) } }
+    @Published var startWithServer: Bool {
+        didSet {
+            defaults.set(startWithServer, forKey: K.startWithServer)
+            if !startWithServer { cancelRecovery() }
+        }
+    }
+    @Published var stopWithServer: Bool {
+        didSet {
+            defaults.set(stopWithServer, forKey: K.stopWithServer)
+            if stopWithServer && lastObservedServerHealthy == false { stop() }
+        }
+    }
 
     var publicURL: String { publicHostname.isEmpty ? "" : "https://\(publicHostname)" }
 
     private var process: Process?
     private var intentionalStop = false
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    private let externalProbe: () -> Bool
+    private let makeProcess: (String, String) -> Process
+    private let sleep: (TimeInterval) async throws -> Void
+    private let uptime: () -> TimeInterval
+    private var recovery = TunnelRecovery()
+    private var retryTask: Task<Void, Never>?
+    private var retryGeneration = UUID()
+    private var processGeneration: UUID?
+    private var outputHandle: FileHandle?
+    private var connectedAt: TimeInterval?
+    private var restartAfterTermination = false
+    private var quitting = false
+    private var lifecycleGeneration = UUID()
+    private var discoveryGeneration = UUID()
+    private var processOutput = ""
     private static let maxLogLines = 200
 
     private enum K {
@@ -48,14 +74,40 @@ final class TunnelController: ObservableObject {
         static let stopWithServer = "tunnelStopWithServer"
     }
 
-    init() {
+    init(
+        defaults: UserDefaults = .standard,
+        configuration: (path: String, tunnelName: String)? = nil,
+        externalProbe: @escaping () -> Bool = { TunnelController.externalTunnelRunning() },
+        makeProcess: @escaping (String, String) -> Process = { path, name in
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: path)
+            proc.arguments = ["tunnel", "run", name]
+            return proc
+        },
+        sleep: @escaping (TimeInterval) async throws -> Void = { seconds in
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        },
+        uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) {
+        self.defaults = defaults
+        self.externalProbe = externalProbe
+        self.makeProcess = makeProcess
+        self.sleep = sleep
+        self.uptime = uptime
         startWithServer = defaults.bool(forKey: K.startWithServer)
         stopWithServer = defaults.bool(forKey: K.stopWithServer)
         // C18: discovery is async, off the main thread. The old synchronous init
         // (login-shell `command -v` + pgrep, each with waitUntilExit) ran during
         // app bootstrap and could delay backend auto-start. The backend never
         // waits on tunnel discovery; the tunnel is purely optional.
-        refreshDiscovery()
+        if let configuration {
+            cloudflaredPath = configuration.path
+            tunnelName = configuration.tunnelName
+            installed = true
+            configFound = true
+        } else {
+            refreshDiscovery()
+        }
     }
 
     var isProcessAlive: Bool {
@@ -80,7 +132,10 @@ final class TunnelController: ObservableObject {
     /// externally-running tunnel. All probes (file stats, login shell, pgrep)
     /// run detached; only the published-state update touches the main actor.
     func refreshDiscovery() {
-        Task.detached(priority: .utility) {
+        let generation = UUID()
+        discoveryGeneration = generation
+        let observedLifecycle = lifecycleGeneration
+        Task.detached(priority: .utility) { [weak self] in
             let path = Self.findCloudflared()
             let config = Self.readConfigFile()
             let external = Self.externalTunnelRunning()
@@ -91,11 +146,12 @@ final class TunnelController: ObservableObject {
                 publicHostname: config?.hostname,
                 externalRunning: external
             )
-            await MainActor.run { TunnelController.shared.apply(discovery) }
+            await self?.apply(discovery, generation: generation, observedLifecycle: observedLifecycle)
         }
     }
 
-    private func apply(_ d: Discovery) {
+    private func apply(_ d: Discovery, generation: UUID, observedLifecycle: UUID) {
+        guard discoveryGeneration == generation, !quitting else { return }
         cloudflaredPath = d.cloudflaredPath
         installed = d.cloudflaredPath != nil
         configFound = d.configFound
@@ -103,8 +159,10 @@ final class TunnelController: ObservableObject {
         if let host = d.publicHostname, !host.isEmpty, publicHostname.isEmpty {
             publicHostname = host
         }
-        if process == nil {
+        if process == nil && lifecycleGeneration == observedLifecycle {
             if d.externalRunning {
+                cancelRecovery()
+                lastError = nil
                 state = .runningExternally
             } else if state == .runningExternally {
                 state = .stopped
@@ -183,18 +241,29 @@ final class TunnelController: ObservableObject {
     // MARK: - Lifecycle
 
     func start() {
-        guard process == nil else { return }
-        guard let path = cloudflaredPath else {
-            state = .failed("cloudflared is not installed.")
-            lastError = "cloudflared is not installed."
+        guard !quitting, process == nil else { return }
+        lifecycleGeneration = UUID()
+        cancelRecovery()
+        recovery.arm()
+        launch()
+    }
+
+    /// Only our child-process lifetime is supervised. cloudflared itself owns
+    /// connection retries while alive; never spawn a second copy for a 530.
+    private func launch() {
+        guard !quitting, process == nil, recovery.enabled else { return }
+        lifecycleGeneration = UUID()
+        guard let path = cloudflaredPath, configFound else {
+            cancelRecovery()
+            let reason = cloudflaredPath == nil
+                ? "cloudflared is not installed." : "No ~/.cloudflared/config.yml found."
+            state = .failed(reason)
+            lastError = reason
             return
         }
-        guard configFound else {
-            state = .failed("No ~/.cloudflared/config.yml found.")
-            lastError = "No ~/.cloudflared/config.yml found."
-            return
-        }
-        if Self.externalTunnelRunning() {
+        if externalProbe() {
+            cancelRecovery()
+            lastError = nil
             state = .runningExternally
             appendLog("a cloudflared tunnel is already running (not launched by micaGO)")
             return
@@ -202,68 +271,67 @@ final class TunnelController: ObservableObject {
 
         intentionalStop = false
         lastError = nil
+        connectedAt = nil
+        processOutput = ""
         state = .starting
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: path)
-        proc.arguments = ["tunnel", "run", tunnelName]
-
+        let generation = UUID()
+        processGeneration = generation
+        let proc = makeProcess(path, tunnelName)
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = pipe
+        outputHandle = pipe.fileHandleForReading
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
             Task { @MainActor in
-                for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-                    self?.appendLog(String(line))
-                }
-                // cloudflared prints "Registered tunnel connection" once connected.
-                if text.contains("Registered tunnel connection") || text.contains("Connection ") {
-                    self?.markRunning()
+                guard let self, self.processGeneration == generation, !self.intentionalStop else { return }
+                self.processOutput += text
+                while let end = self.processOutput.firstIndex(of: "\n") {
+                    let line = String(self.processOutput[..<end])
+                    self.processOutput.removeSubrange(...end)
+                    self.appendLog(line)
+                    if line.contains("Registered tunnel connection") { self.markRunning() }
                 }
             }
         }
         proc.terminationHandler = { [weak self] p in
             let code = p.terminationStatus
-            Task { @MainActor in self?.handleTermination(code: code) }
+            Task { @MainActor in self?.handleTermination(code: code, generation: generation) }
         }
-
         do {
             try proc.run()
             process = proc
             appendLog("started cloudflared tunnel run \(tunnelName)")
-            // Optimistically mark running after a short grace if no error.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                guard let self, self.process != nil, self.state == .starting else { return }
-                self.markRunning()
-            }
         } catch {
-            process = nil
+            releaseProcess()
             state = .failed("could not launch cloudflared: \(error.localizedDescription)")
             lastError = error.localizedDescription
             appendLog("error: \(error.localizedDescription)")
+            scheduleRecovery()
         }
     }
 
     func stop() {
+        lifecycleGeneration = UUID()
+        cancelRecovery()
+        restartAfterTermination = false
+        intentionalStop = true
         guard let proc = process else {
-            // Nothing of ours to stop; refresh in case an external one cleared.
-            refreshDiscovery()
+            if state != .runningExternally { state = .stopped; lastError = nil }
             return
         }
-        intentionalStop = true
         appendLog("stopping tunnel…")
-        proc.terminate()
+        if proc.isRunning { proc.terminate() }
     }
 
     func restart() {
+        guard !quitting else { return }
+        stop()
         if process != nil {
-            stop()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                self?.intentionalStop = false
-                self?.start()
-            }
+            // Restart after this exact child exits, rather than guessing how
+            // long terminate() takes. A later Stop/quit cancels this intent.
+            restartAfterTermination = true
         } else {
             start()
         }
@@ -286,7 +354,13 @@ final class TunnelController: ObservableObject {
             tunnelStopped: state == .stopped,
             tunnelProcessAlive: process != nil
         )
+        let previousHealthy = lastObservedServerHealthy
         lastObservedServerHealthy = healthy
+        // A failed child has no Process, but may still have a pending restart.
+        if previousHealthy == true && !healthy && stopWithServer && recovery.enabled {
+            stop()
+            return
+        }
         switch action {
         case .none: break
         case .start: start()
@@ -296,25 +370,72 @@ final class TunnelController: ObservableObject {
 
     /// Stop our child on app quit (never affects external processes).
     func shutdownForQuit() {
-        intentionalStop = true
-        process?.terminate()
+        quitting = true
+        stop()
     }
 
     private func markRunning() {
-        if state == .starting { state = .running; appendLog("tunnel connected") }
+        if state == .starting {
+            connectedAt = uptime()
+            state = .running
+            appendLog("tunnel connected")
+        }
     }
 
-    private func handleTermination(code: Int32) {
+    private func releaseProcess() {
+        lifecycleGeneration = UUID()
+        outputHandle?.readabilityHandler = nil
+        outputHandle = nil
         process = nil
+        processGeneration = nil
+    }
+
+    private func handleTermination(code: Int32, generation: UUID) {
+        guard processGeneration == generation else { return }
+        let stableFor = connectedAt.map { uptime() - $0 } ?? 0
+        connectedAt = nil
+        releaseProcess()
         if intentionalStop {
             state = .stopped
+            lastError = nil
             appendLog("tunnel stopped")
+            if restartAfterTermination && !quitting {
+                restartAfterTermination = false
+                start()
+            }
             return
         }
         let reason = code == 0 ? "tunnel exited" : "tunnel exited (code \(code))"
         state = .failed(reason)
         lastError = reason
         appendLog(reason)
+        recovery.didDisconnect(stableFor: stableFor)
+        scheduleRecovery()
+    }
+
+    private func cancelRecovery() {
+        retryTask?.cancel()
+        retryTask = nil
+        retryGeneration = UUID()
+        retryDelay = nil
+        restartAfterTermination = false
+        recovery.cancel()
+    }
+
+    private func scheduleRecovery() {
+        guard !quitting, process == nil, retryTask == nil,
+              let delay = recovery.nextDelay() else { return }
+        retryDelay = delay
+        let generation = UUID()
+        retryGeneration = generation
+        appendLog("retrying tunnel in \(Int(delay))s")
+        retryTask = Task { [weak self, sleep] in
+            do { try await sleep(delay) } catch { return }
+            guard let self, !Task.isCancelled, self.retryGeneration == generation else { return }
+            self.retryTask = nil
+            self.retryDelay = nil
+            self.launch()
+        }
     }
 
     private func appendLog(_ line: String) {

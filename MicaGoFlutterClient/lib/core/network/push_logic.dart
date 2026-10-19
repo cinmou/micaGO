@@ -56,7 +56,7 @@ bool _pushBool(Object? value) {
 }
 
 int? notificationTimestampMs(Map<String, dynamic> data) {
-  final value = data['createdAt'];
+  final value = data['dateCreated'];
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value);
   return null;
@@ -164,5 +164,22 @@ String? notificationDeviceFromPayload(String? payload) {
   }
 }
 
-String notificationPayload(String chatGuid, String deviceId) =>
-    jsonEncode({'chatGuid': chatGuid, 'deviceId': deviceId});
+int? notificationReadThrough(String? payload) {
+  try {
+    final value = jsonDecode(payload ?? '');
+    final at = value is Map ? value['readThrough'] : null;
+    return at is int && at > 0 ? at : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+String notificationPayload(
+  String chatGuid,
+  String deviceId, {
+  int? readThrough,
+}) => jsonEncode({
+  'chatGuid': chatGuid,
+  'deviceId': deviceId,
+  if (readThrough != null && readThrough > 0) 'readThrough': readThrough,
+});

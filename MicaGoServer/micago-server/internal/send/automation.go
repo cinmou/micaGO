@@ -64,14 +64,6 @@ func ProbeAutomation(ctx context.Context) AutomationStatus {
 	return status
 }
 
-// InvalidateAutomationProbe drops the cached result so the next status read
-// re-probes (used after the user grants access and asks for a re-check).
-func InvalidateAutomationProbe() {
-	automationMu.Lock()
-	automationCachedAt = time.Time{}
-	automationMu.Unlock()
-}
-
 func probeAutomationUncached(ctx context.Context) AutomationStatus {
 	if runtime.GOOS != "darwin" {
 		return AutomationStatus{
@@ -119,7 +111,7 @@ func probeAutomationUncached(ctx context.Context) AutomationStatus {
 		detail = err.Error()
 	}
 	return AutomationStatus{
-		Status:  "unknown",
-		Detail:  "could not determine Automation access: " + detail,
+		Status: "unknown",
+		Detail: "could not determine Automation access: " + detail,
 	}
 }

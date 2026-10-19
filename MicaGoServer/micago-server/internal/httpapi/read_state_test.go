@@ -22,9 +22,9 @@ func TestReadStateHTTPContract(t *testing.T) {
 	defer db.Close()
 	h := NewHandlers(&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", &stubDeviceStore{}, stubNotifier{}, config.Config{}, StatusDeps{})
 	h.SetReadState(db, nil)
-	router := NewRouter(h, nil, AuthConfig{Enabled: true, Token: "test-token"})
+	router := NewRouter(h, nil, newTestAuth(t, "test-token"))
 	call := func(method, body string, auth bool) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, "/api/read-state", strings.NewReader(body))
+		r := newLocalRequest(method, "/api/read-state", strings.NewReader(body))
 		if auth {
 			r.Header.Set("Authorization", "Bearer test-token")
 		}

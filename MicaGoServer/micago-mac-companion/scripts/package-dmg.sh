@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.87.0}"
+VERSION="${VERSION:-0.88.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 GENERATE_APPCAST="${GENERATE_APPCAST:-${NOTARIZE:-0}}"
 if [ "$GENERATE_APPCAST" = "1" ] && { [ -z "${SIGN_IDENTITY:-}" ] || [ "${NOTARIZE:-0}" != "1" ]; }; then

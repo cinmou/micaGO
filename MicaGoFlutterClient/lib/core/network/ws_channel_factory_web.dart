@@ -8,6 +8,7 @@ WebSocketChannel connectAuthedWebSocket(
   String token,
   Map<String, String> metadata, [
   String? fingerprint,
+  Duration handshakeTimeout = const Duration(seconds: 15),
 ]) {
   final uri = baseUri.replace(
     queryParameters: {

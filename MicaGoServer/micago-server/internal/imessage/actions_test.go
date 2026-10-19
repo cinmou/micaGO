@@ -94,18 +94,6 @@ func TestHelperPathFindsInstalledBinary(t *testing.T) {
 	}
 }
 
-func TestHelperInstallDir(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dir, err := HelperInstallDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(home, ".micago", "bin"); dir != want {
-		t.Fatalf("HelperInstallDir = %q, want %q", dir, want)
-	}
-}
-
 func TestCapabilitiesRejectsPreVenturaBeforeHelperInstall(t *testing.T) {
 	withMacOSVersion(t, "12.7")
 	p := &HelperPerformer{

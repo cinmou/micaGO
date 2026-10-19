@@ -309,7 +309,7 @@ func (h *Handlers) GetServerStatus(w http.ResponseWriter, r *http.Request) {
 			LAN:          lanAddresses(h.cfg.HTTPAddr),
 		},
 		Store: h.status.APIStore,
-		Auth:  store.ServerAuthStatus{Enabled: !h.cfg.AuthDisabled},
+		Auth:  store.ServerAuthStatus{Enabled: true},
 		Sync: store.ServerSyncStatus{
 			LoopEnabled:     !h.cfg.DisableSyncLoop,
 			IntervalSeconds: int64(h.cfg.SyncInterval / time.Second),
@@ -1165,12 +1165,14 @@ func (h *Handlers) prepareOutgoingVoiceAttachment(ctx context.Context, sourcePat
 	convertCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if err := exec.CommandContext(convertCtx, "afconvert", "-f", "caff", "-d", "aac", sourcePath, dest).Run(); err != nil {
+		_ = os.Remove(dest)
 		h.logInternal("convert outgoing voice to caf", err)
 		return "", false
 	}
 	if err := os.Chmod(dest, 0o600); err != nil {
 		h.logInternal("chmod outgoing voice caf", err)
 	}
+	_ = os.Remove(sourcePath)
 	return dest, true
 }
 
@@ -1323,23 +1325,20 @@ func (h *Handlers) GetAttachmentPlayable(w http.ResponseWriter, r *http.Request)
 	}
 
 	playablePath := filepath.Join(os.TempDir(), "micago-attachment-audio", safePreviewName(guid)+".m4a")
-	if _, err := os.Stat(playablePath); err != nil {
-		if err := os.MkdirAll(filepath.Dir(playablePath), 0o700); err != nil {
-			h.logInternal("create playable audio dir", err)
-			writeInternalError(w)
-			return
-		}
+	file, err := cachedMedia(r.Context(), playablePath, func(tmp string) error {
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
-		if err := exec.CommandContext(ctx, "afconvert", "-f", "m4af", "-d", "aac", source, playablePath).Run(); err != nil {
-			h.logInternal("convert playable audio", err)
-			writeAPIError(w, http.StatusNotImplemented, "playable_unavailable", "playable audio conversion is not available for this attachment")
-			return
-		}
+		return exec.CommandContext(ctx, "afconvert", "-f", "m4af", "-d", "aac", source, tmp).Run()
+	})
+	if err != nil {
+		h.logInternal("convert playable audio", err)
+		writeAPIError(w, http.StatusNotImplemented, "playable_unavailable", "playable audio conversion is not available for this attachment")
+		return
 	}
+	defer file.Close()
 	w.Header().Set("Content-Type", "audio/mp4")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": "Audio Message.m4a"}))
-	http.ServeFile(w, r, playablePath)
+	serveCachedMedia(w, r, file)
 }
 
 func (h *Handlers) serveAttachmentPath(w http.ResponseWriter, r *http.Request, meta *store.AttachmentMeta, resolvedPath string) {
@@ -1389,33 +1388,20 @@ func attachmentIsVideo(meta *store.AttachmentMeta) bool {
 // than the raw attachment.
 func (h *Handlers) servePlayableVideo(w http.ResponseWriter, r *http.Request, guid string, meta *store.AttachmentMeta, source string) {
 	playablePath := filepath.Join(os.TempDir(), "micago-attachment-video", safePreviewName(guid)+".mp4")
-	if _, err := os.Stat(playablePath); err != nil {
-		if err := os.MkdirAll(filepath.Dir(playablePath), 0o700); err != nil {
-			h.logInternal("create playable video dir", err)
-			h.serveAttachmentPath(w, r, meta, source)
-			return
-		}
-		// Unique temp name: concurrent requests may transcode the same guid;
-		// the rename at the end is atomic either way.
-		tmpPath := fmt.Sprintf("%s.%d.part.mp4", playablePath, time.Now().UnixNano())
+	file, err := cachedMedia(r.Context(), playablePath, func(tmp string) error {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 		defer cancel()
-		if err := exec.CommandContext(ctx, "avconvert", "--preset", "Preset1920x1080", "--source", source, "--output", tmpPath, "--replace").Run(); err != nil {
-			_ = os.Remove(tmpPath)
-			h.logInternal("convert playable video", err)
-			h.serveAttachmentPath(w, r, meta, source)
-			return
-		}
-		if err := os.Rename(tmpPath, playablePath); err != nil {
-			_ = os.Remove(tmpPath)
-			h.logInternal("finalize playable video", err)
-			h.serveAttachmentPath(w, r, meta, source)
-			return
-		}
+		return exec.CommandContext(ctx, "avconvert", "--preset", "Preset1920x1080", "--source", source, "--output", tmp, "--replace").Run()
+	})
+	if err != nil {
+		h.logInternal("convert playable video", err)
+		h.serveAttachmentPath(w, r, meta, source)
+		return
 	}
+	defer file.Close()
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": "Video.mp4"}))
-	http.ServeFile(w, r, playablePath)
+	serveCachedMedia(w, r, file)
 }
 
 func attachmentIsCAF(meta *store.AttachmentMeta) bool {
@@ -1476,22 +1462,19 @@ func (h *Handlers) GetAttachmentPreview(w http.ResponseWriter, r *http.Request) 
 		cacheSuffix = "-thumb-1200"
 	}
 	previewPath := filepath.Join(os.TempDir(), "micago-attachment-previews", safePreviewName(guid)+cacheSuffix+".png")
-	if _, err := os.Stat(previewPath); err != nil {
-		if err := os.MkdirAll(filepath.Dir(previewPath), 0o700); err != nil {
-			h.logInternal("create attachment preview dir", err)
-			writeInternalError(w)
-			return
-		}
+	file, err := cachedMedia(r.Context(), previewPath, func(tmp string) error {
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
-		if err := renderOrientedPreview(ctx, source, previewPath, maxDimension); err != nil {
-			h.logInternal("convert attachment preview", err)
-			writeAPIError(w, http.StatusNotImplemented, "preview_unavailable", "preview conversion is not available for this attachment")
-			return
-		}
+		return renderOrientedPreview(ctx, source, tmp, maxDimension)
+	})
+	if err != nil {
+		h.logInternal("convert attachment preview", err)
+		writeAPIError(w, http.StatusNotImplemented, "preview_unavailable", "preview conversion is not available for this attachment")
+		return
 	}
+	defer file.Close()
 	w.Header().Set("Content-Type", "image/png")
-	http.ServeFile(w, r, previewPath)
+	serveCachedMedia(w, r, file)
 }
 
 // renderOrientedPreview rasterizes an attachment (HEIC/TIFF/…) to an
@@ -1881,27 +1864,7 @@ func attachmentNeedsPreviewConversion(meta *store.AttachmentMeta) bool {
 	if meta == nil {
 		return false
 	}
-	// C39: drive by format, not the sticker flag — a PNG sticker is served as-is.
-	mimeType := strings.ToLower(strings.TrimSpace(ptrString(meta.MimeType)))
-	uti := strings.ToLower(strings.TrimSpace(ptrString(meta.Uti)))
-	name := strings.ToLower(strings.TrimSpace(attachmentFilename(meta)))
-	// C48: JPEG joins HEIC/HEIF/TIFF so iPhone photos with EXIF orientation are
-	// baked upright by the Quick Look preview. PNG is served as-is.
-	return mimeType == "image/jpeg" ||
-		mimeType == "image/jpg" ||
-		strings.Contains(mimeType, "image/tif") ||
-		strings.Contains(mimeType, "image/heic") ||
-		strings.Contains(mimeType, "image/heif") ||
-		uti == "public.jpeg" ||
-		uti == "public.tiff" ||
-		uti == "public.heic" ||
-		uti == "public.heif" ||
-		strings.HasSuffix(name, ".jpg") ||
-		strings.HasSuffix(name, ".jpeg") ||
-		strings.HasSuffix(name, ".tif") ||
-		strings.HasSuffix(name, ".tiff") ||
-		strings.HasSuffix(name, ".heic") ||
-		strings.HasSuffix(name, ".heif")
+	return store.NeedsPreviewConversion(meta.MimeType, meta.Uti, meta.TransferName, meta.Filename)
 }
 
 func ptrString(v *string) string {

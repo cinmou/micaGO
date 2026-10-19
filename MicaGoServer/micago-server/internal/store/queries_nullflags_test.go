@@ -43,10 +43,10 @@ func TestSyncReadsTolerateNullFlagColumns(t *testing.T) {
 		t.Fatalf("NULL flags should default to false, got %+v", recent[0])
 	}
 
-	// Update path (ListMessageUpdatesSince) — same NULL tolerance.
-	updates, err := q.ListMessageUpdatesSince(context.Background(), 0, 100, caps)
+	// Update path (ListMessageUpdatesPage) — same NULL tolerance.
+	updates, err := q.ListMessageUpdatesPage(context.Background(), 0, 0, 100, caps)
 	if err != nil {
-		t.Fatalf("ListMessageUpdatesSince with NULL flags: %v", err)
+		t.Fatalf("ListMessageUpdatesPage with NULL flags: %v", err)
 	}
 	if len(updates) != 1 {
 		t.Fatalf("expected 1 update row, got %d", len(updates))

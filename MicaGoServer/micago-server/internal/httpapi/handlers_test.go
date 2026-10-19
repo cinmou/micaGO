@@ -696,7 +696,6 @@ func TestGetServerStatus(t *testing.T) {
 		&stubQueries{}, log.New(io.Discard, "", 0), nil, nil, "", devices, stubNotifier{},
 		config.Config{
 			HTTPAddr:             "127.0.0.1:3000",
-			AuthDisabled:         false,
 			DisableSyncLoop:      false,
 			SyncInterval:         5 * time.Second,
 			NotificationsEnabled: true,

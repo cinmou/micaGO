@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
+import '../../core/platform/resume_tracker.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/push_service.dart';
 import '../../core/platform/incoming_share_service.dart';
@@ -25,6 +27,11 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
+  final _resumeTracker = ResumeTracker(
+    hiddenIsBackground:
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS,
+  );
   PushService? _push;
   AppController? _app;
   StreamSubscription<ForegroundMessageAlert>? _foregroundAlertSub;
@@ -123,19 +130,21 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final transition = _resumeTracker.update(state);
     final app = _app ?? context.read<AppController>();
     // C31: track foreground/background so the keep-alive path only raises a
     // system notification when the UI isn't already showing the message.
     app.setForeground(state == AppLifecycleState.resumed);
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
+    if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       FocusManager.instance.primaryFocus?.unfocus();
     }
-    if (state == AppLifecycleState.resumed) {
+    if (transition != ResumeTransition.none) {
       // C20: one entry point — reconnect if needed + lightweight catch-up.
       // C22: this resume → catchUp is also the post-FCM-wake correctness path.
-      app.onResume();
+      app.onResume(
+        wasBackgrounded: transition == ResumeTransition.backgroundReturned,
+      );
       unawaited(_push?.start() ?? Future<void>.value());
       // Refresh the Android 13+ notification-permission diagnostic on resume.
       unawaited(_push?.refreshNotificationPermission() ?? Future<void>.value());

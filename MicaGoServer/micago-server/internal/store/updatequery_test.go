@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func chatDBCommonDDL() []string {
 	}
 }
 
-func TestListMessageUpdatesSinceModernSchema(t *testing.T) {
+func TestListMessageUpdatesPageModernSchema(t *testing.T) {
 	ddl := append([]string{
 		`CREATE TABLE message (
 			ROWID INTEGER PRIMARY KEY, guid TEXT, text TEXT, attributedBody BLOB,
@@ -40,9 +41,9 @@ func TestListMessageUpdatesSinceModernSchema(t *testing.T) {
 	}
 
 	q := NewQueries(db)
-	updates, err := q.ListMessageUpdatesSince(context.Background(), 0, 100, caps)
+	updates, err := q.ListMessageUpdatesPage(context.Background(), 0, 0, 100, caps)
 	if err != nil {
-		t.Fatalf("ListMessageUpdatesSince: %v", err)
+		t.Fatalf("ListMessageUpdatesPage: %v", err)
 	}
 	if len(updates) != 1 {
 		t.Fatalf("expected 1 update row, got %d", len(updates))
@@ -55,7 +56,7 @@ func TestListMessageUpdatesSinceModernSchema(t *testing.T) {
 	}
 }
 
-func TestListMessageUpdatesSinceOldSchemaDoesNotCrash(t *testing.T) {
+func TestListMessageUpdatesPageOldSchemaDoesNotCrash(t *testing.T) {
 	// No date_edited / date_retracted / error columns at all.
 	ddl := append([]string{
 		`CREATE TABLE message (
@@ -79,7 +80,7 @@ func TestListMessageUpdatesSinceOldSchemaDoesNotCrash(t *testing.T) {
 
 	q := NewQueries(db)
 	// Must not reference missing columns -> must not error.
-	updates, err := q.ListMessageUpdatesSince(context.Background(), 0, 100, caps)
+	updates, err := q.ListMessageUpdatesPage(context.Background(), 0, 0, 100, caps)
 	if err != nil {
 		t.Fatalf("old-schema query should not crash, got: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestListMessageUpdatesSinceOldSchemaDoesNotCrash(t *testing.T) {
 }
 
 // guard: ensure the query handles an empty result set cleanly.
-func TestListMessageUpdatesSinceNoRows(t *testing.T) {
+func TestListMessageUpdatesPageNoRows(t *testing.T) {
 	ddl := append([]string{
 		`CREATE TABLE message (
 			ROWID INTEGER PRIMARY KEY, guid TEXT, text TEXT, attributedBody BLOB,
@@ -106,12 +107,46 @@ func TestListMessageUpdatesSinceNoRows(t *testing.T) {
 	db := newSchemaDB(t, ddl...)
 	caps, _ := ProbeCapabilities(context.Background(), db)
 	q := NewQueries(db)
-	updates, err := q.ListMessageUpdatesSince(context.Background(), 0, 100, caps)
+	updates, err := q.ListMessageUpdatesPage(context.Background(), 0, 0, 100, caps)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
 	if len(updates) != 0 {
 		t.Fatalf("expected 0 rows, got %d", len(updates))
+	}
+}
+
+func TestMessageUpdatePagesUseRowIDDespiteReorderedDates(t *testing.T) {
+	ddl := append([]string{`CREATE TABLE message (
+ ROWID INTEGER PRIMARY KEY, guid TEXT, text TEXT, attributedBody BLOB,
+ subject TEXT, service TEXT, date INTEGER, date_read INTEGER, date_delivered INTEGER,
+ is_from_me INTEGER, is_read INTEGER, is_delivered INTEGER, cache_has_attachments INTEGER,handle_id INTEGER
+ )`}, chatDBCommonDDL()...)
+	db := newSchemaDB(t, ddl...)
+	for i := 1; i <= 3; i++ {
+		if _, err := db.Exec(`INSERT INTO message(ROWID,guid,text,date) VALUES(?,?,?,?)`, i, fmt.Sprintf("m%d", i), "text", int64(700000000000000000-i)); err != nil {
+			t.Fatal(err)
+		}
+		if i > 1 {
+			if _, err := db.Exec(`INSERT INTO chat_message_join VALUES(1,?)`, i); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	q := NewQueries(db)
+	first, err := q.ListMessageUpdatesPage(context.Background(), 0, 0, 2, SchemaCapabilities{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 2 || first[0].SourceRowID != 1 || first[1].SourceRowID != 2 {
+		t.Fatalf("first page=%+v", first)
+	}
+	second, err := q.ListMessageUpdatesPage(context.Background(), 0, first[1].SourceRowID, 2, SchemaCapabilities{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].SourceRowID != 3 {
+		t.Fatalf("second page=%+v", second)
 	}
 }
 

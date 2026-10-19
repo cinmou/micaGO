@@ -124,6 +124,139 @@ void main() {
       },
     );
 
+    test('connecting cancels the backoff timer', () {
+      fakeAsync((async) {
+        var status = WsStatus.disconnected;
+        var attempts = 0;
+        final c = RefreshCoordinator(
+          reconnect: () async => attempts++,
+          catchUp: (_) async {},
+          wsStatus: () => status,
+        );
+        c.onWsStatusChanged(status);
+        status = WsStatus.connecting;
+        c.onWsStatusChanged(status);
+        async.elapse(const Duration(seconds: 20));
+        expect(attempts, 0);
+        c.dispose();
+      });
+    });
+
+    test('failed probes retry without another socket status event', () {
+      fakeAsync((async) {
+        var attempts = 0;
+        final c = RefreshCoordinator(
+          reconnect: () async => attempts++,
+          catchUp: (_) async {},
+          wsStatus: () => WsStatus.failed,
+        );
+        c.onWsStatusChanged(WsStatus.failed);
+        async.elapse(const Duration(seconds: 1));
+        expect(attempts, 1);
+        async.elapse(const Duration(seconds: 2));
+        expect(attempts, 2);
+        async.elapse(const Duration(seconds: 5));
+        expect(attempts, 3);
+        c.dispose();
+      });
+    });
+
+    test('disposal prevents an in-flight probe from restarting retries', () {
+      fakeAsync((async) {
+        final ready = Completer<void>();
+        var attempts = 0;
+        final c = RefreshCoordinator(
+          reconnect: () {
+            attempts++;
+            return ready.future;
+          },
+          catchUp: (_) async {},
+          wsStatus: () => WsStatus.failed,
+        );
+        c.onWsStatusChanged(WsStatus.failed);
+        async.elapse(const Duration(seconds: 1));
+        expect(attempts, 1);
+        c.dispose();
+        ready.complete();
+        async.flushMicrotasks();
+        async.elapse(const Duration(minutes: 1));
+        expect(attempts, 1);
+      });
+    });
+
+    test(
+      'permission focus returns do not probe, reconnect or catch up',
+      () async {
+        var probes = 0;
+        var reconnects = 0;
+        var catches = 0;
+        final c = RefreshCoordinator(
+          reconnect: () async {
+            reconnects++;
+          },
+          catchUp: (_) async {
+            catches++;
+          },
+          wsStatus: () => WsStatus.connected,
+          checkConnection: () async {
+            probes++;
+            return true;
+          },
+        );
+        await c.onResume(wasBackgrounded: false);
+        expect([probes, reconnects, catches], [0, 0, 0]);
+        await c.onResume();
+        expect([probes, reconnects, catches], [1, 0, 1]);
+        c.dispose();
+      },
+    );
+
+    test(
+      'background liveness failure rebuilds once, never replaces a handshake',
+      () async {
+        var status = WsStatus.connected;
+        var reconnects = 0;
+        final c = RefreshCoordinator(
+          reconnect: () async {
+            reconnects++;
+            status = WsStatus.connecting;
+          },
+          catchUp: (_) async {},
+          wsStatus: () => status,
+          checkConnection: () async => false,
+        );
+        await c.onResume();
+        expect(reconnects, 1);
+        await c.onResume();
+        expect(reconnects, 1);
+        c.dispose();
+      },
+    );
+
+    test(
+      'terminal disposal during liveness check prevents reconnect and catch-up',
+      () async {
+        final probe = Completer<bool>();
+        var reconnects = 0;
+        var catches = 0;
+        final c = RefreshCoordinator(
+          reconnect: () async {
+            reconnects++;
+          },
+          catchUp: (_) async {
+            catches++;
+          },
+          wsStatus: () => WsStatus.connected,
+          checkConnection: () => probe.future,
+        );
+        final resume = c.onResume();
+        c.dispose();
+        probe.complete(false);
+        await resume;
+        expect([reconnects, catches], [0, 0]);
+      },
+    );
+
     test('onResume reconnects before catching up', () async {
       var status = WsStatus.disconnected;
       var reconnects = 0;
@@ -138,7 +271,7 @@ void main() {
       expect(reconnects, 1);
       expect(reasons, contains('resume'));
 
-      // When already connected, resume only catches up.
+      // A retained connected socket survives resume; its liveness is checked by the app.
       status = WsStatus.connected;
       reconnects = 0;
       await c.onResume();

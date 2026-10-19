@@ -304,16 +304,6 @@ func (p *HelperPerformer) helperPath() (string, error) {
 	return "", errors.New("MicaGo IMCore helper is not installed")
 }
 
-// HelperInstallDir is the stable location the Companion installs the IMCore
-// helper into; the backend also looks here (see helperPath).
-func HelperInstallDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".micago", "bin"), nil
-}
-
 func (p *HelperPerformer) run(ctx context.Context, path string, env helperEnvelope) (helperEnvelope, error) {
 	if p.Runner != nil {
 		return p.Runner(ctx, path, env)

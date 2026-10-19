@@ -1,6 +1,6 @@
 # Release Packaging
 
-Current release version: `0.87.0` (codename Muscovite).
+Current release version: `0.88.0` (codename Muscovite).
 
 ## Mac Companion DMG
 
@@ -20,7 +20,7 @@ Local unsigned DMG:
 
 ```sh
 cd MicaGoServer/micago-mac-companion
-VERSION=0.87.0 scripts/package-dmg.sh
+VERSION=0.88.0 scripts/package-dmg.sh
 ```
 
 Signed DMG with the local Developer ID certificate (keeps the same code
@@ -31,7 +31,7 @@ carry over when it replaces an installed copy):
 cd MicaGoServer/micago-mac-companion
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPLE_TEAM_ID="TEAMID" \
-VERSION=0.87.0 \
+VERSION=0.88.0 \
 scripts/package-dmg.sh
 ```
 
@@ -47,13 +47,13 @@ APPLE_TEAM_ID="TEAMID" \
 NOTARIZE=1 \
 NOTARY_KEYCHAIN_PROFILE="micaGO-notary" \
 GENERATE_APPCAST=1 \
-VERSION=0.87.0 \
+VERSION=0.88.0 \
 scripts/package-dmg.sh
 ```
 
 Notarized builds generate the Sparkle appcast by default; `GENERATE_APPCAST=0` explicitly skips it for packaging-only work. Appcast generation requires a signed, notarized package. Before accepting the appcast, the script verifies its download URL, archive byte length, and Ed25519 signature against the public key embedded in the built app.
 
-Upload `build/release/micaGO-Companion-0.87.0-mac.dmg` and
+Upload `build/release/micaGO-Companion-0.88.0-mac.dmg` and
 `build/release/appcast.xml` from the same run — the appcast's signature and
 length only match that exact DMG. CI creates new releases as drafts. Upload both Mac assets, then publish the draft; a public release without `appcast.xml` breaks the current feed URL.
 
@@ -65,7 +65,7 @@ Companion app, an `Applications` shortcut, and a Finder background image.
 The output is:
 
 ```text
-MicaGoServer/micago-mac-companion/build/release/micaGO-Companion-0.87.0-mac.dmg
+MicaGoServer/micago-mac-companion/build/release/micaGO-Companion-0.88.0-mac.dmg
 ```
 
 Toolchain notes:
@@ -91,7 +91,7 @@ Release APK:
 ```sh
 cd MicaGoFlutterClient
 flutter pub get
-flutter build apk --release --build-name 0.87.0 --build-number 87
+flutter build apk --release --build-name 0.88.0 --build-number 88
 ```
 
 Output:
@@ -104,7 +104,7 @@ Release App Bundle for Play-style distribution:
 
 ```sh
 cd MicaGoFlutterClient
-flutter build appbundle --release --build-name 0.87.0 --build-number 87
+flutter build appbundle --release --build-name 0.88.0 --build-number 88
 ```
 
 Output:
@@ -139,8 +139,8 @@ The workflow lives at:
 Run it manually from GitHub Actions, or push a tag:
 
 ```sh
-git tag v0.87.0
-git push origin v0.87.0
+git tag v0.88.0
+git push origin v0.88.0
 ```
 
 The workflow builds:

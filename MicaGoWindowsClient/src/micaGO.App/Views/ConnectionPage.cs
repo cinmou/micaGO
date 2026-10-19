@@ -86,7 +86,7 @@ public sealed class ConnectionPage : Page
         if (!string.IsNullOrWhiteSpace(language)) AppServices.Current.Localization.SetLanguage(language);
         ApplyText();
         if (AppServices.Current.Connection.TokenRejected) await ShowRejectedDialogAsync();
-        else await RestoreConnectionAsync();
+        else ShowStatus(AppServices.Current.Localization["connPaste"]);
     }
 
     private async Task ShowRejectedDialogAsync()
@@ -111,22 +111,6 @@ public sealed class ConnectionPage : Page
         _tokenNote.Text = l["connTokenNote"];
         _connectButton.Content = l["connConnect"];
         _scanButton.Content = l["scanQr"]; _imageButton.Content = l["qrImage"];
-    }
-
-    private async Task RestoreConnectionAsync()
-    {
-        var l = AppServices.Current.Localization;
-        SetBusy(true, l["connChecking"]);
-        _connectionCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-        try
-        {
-            if (await AppServices.Current.Connection.TryRestoreAsync(_connectionCancellation.Token)) { App.ShowMainWindow(); return; }
-            if (AppServices.Current.Connection.TokenRejected) await ShowRejectedDialogAsync();
-            else ShowStatus(l["connPaste"]);
-        }
-        catch (OperationCanceledException) { ShowStatus(l["connTimeout"]); }
-        catch (Exception exception) { ShowStatus(string.Format(l["connRestoreFailed"], SafeMessage(exception))); }
-        finally { SetBusy(false, string.Empty); }
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)

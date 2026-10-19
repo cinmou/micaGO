@@ -27,13 +27,15 @@ class WsEvent {
 /// Connects to the MicaGo `/ws` endpoint and surfaces connection state plus a
 /// rolling debug log of received event names.
 ///
-/// The connection is server→client push only (per the v0.9 contract); this
-/// client only reads. Auth uses the `?token=` query parameter, which MicaGo
-/// accepts alongside the `Authorization` header and works on every platform
-/// (including web, where WebSocket headers cannot be set). The token is never
-/// written to the log.
+/// Application events flow from server to client. Native connections use
+/// protocol ping/pong to detect dead connections and send authentication in
+/// the Authorization header; web uses the query parameter. Credentials are
+/// never written to the log.
 class WebSocketClient extends ChangeNotifier {
   static const int _maxLog = 200;
+
+  final Duration handshakeTimeout;
+  WebSocketClient({this.handshakeTimeout = const Duration(seconds: 15)});
 
   WsStatus _status = WsStatus.idle;
   String? _lastError;
@@ -42,6 +44,7 @@ class WebSocketClient extends ChangeNotifier {
 
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
+  int _generation = 0;
   final StreamController<WsEvent> _events =
       StreamController<WsEvent>.broadcast();
 
@@ -67,6 +70,7 @@ class WebSocketClient extends ChangeNotifier {
     String? tlsFingerprint,
   }) {
     disconnect();
+    final generation = _generation;
 
     final base = Uri.tryParse(wsUrl);
     if (base == null || (base.scheme != 'ws' && base.scheme != 'wss')) {
@@ -74,6 +78,7 @@ class WebSocketClient extends ChangeNotifier {
       return;
     }
 
+    _lastError = null;
     _setStatus(WsStatus.connecting);
     _append('connecting…');
 
@@ -83,26 +88,36 @@ class WebSocketClient extends ChangeNotifier {
         token,
         metadata,
         tlsFingerprint,
+        handshakeTimeout,
       );
       _channel = channel;
       _sub = channel.stream.listen(
-        _onData,
-        onError: (Object error) => _fail('socket error: $error'),
-        onDone: _onDone,
+        (raw) {
+          if (_generation == generation) _onData(raw);
+        },
+        onError: (Object error) {
+          if (_generation == generation) _fail('socket error: $error');
+        },
+        onDone: () {
+          if (_generation == generation) _onDone();
+        },
         cancelOnError: true,
       );
       // We're optimistic: connect() does not await the handshake. The first
       // frame (or onDone/onError) confirms the real state. Mark connected once
       // ready completes where supported.
       channel.ready
+          .timeout(handshakeTimeout)
           .then((_) {
-            if (_channel == channel) {
+            if (_generation == generation && _channel == channel) {
               _setStatus(WsStatus.connected);
               _append('connected');
             }
           })
           .catchError((Object error) {
-            if (_channel == channel) _fail('handshake failed: $error');
+            if (_generation == generation && _channel == channel) {
+              _fail('handshake failed: $error');
+            }
           });
     } catch (e) {
       _fail('connect failed: $e');
@@ -111,6 +126,7 @@ class WebSocketClient extends ChangeNotifier {
 
   /// Closes the connection (if any) and resets to disconnected.
   void disconnect() {
+    _generation++;
     _sub?.cancel();
     _sub = null;
     _channel?.sink.close();
@@ -171,6 +187,11 @@ class WebSocketClient extends ChangeNotifier {
   }
 
   void _fail(String message) {
+    _generation++;
+    unawaited(_sub?.cancel());
+    _sub = null;
+    unawaited(_channel?.sink.close());
+    _channel = null;
     _lastError = message;
     _append('error: $message');
     _setStatus(WsStatus.failed);

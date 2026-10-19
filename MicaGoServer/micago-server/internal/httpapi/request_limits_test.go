@@ -10,7 +10,7 @@ import (
 )
 
 func TestAuthenticatedRequestLimits(t *testing.T) {
-	auth := AuthConfig{Enabled: true, Token: "test-token"}
+	auth := newTestAuth(t, "test-token")
 	for _, tc := range []struct {
 		path, pattern string
 		size          int64
@@ -24,7 +24,7 @@ func TestAuthenticatedRequestLimits(t *testing.T) {
 		t.Run(tc.pattern, func(t *testing.T) {
 			called := false
 			handler := auth.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true; w.WriteHeader(200) }))
-			r := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader("x"))
+			r := newLocalRequest(http.MethodPost, tc.path, strings.NewReader("x"))
 			r.Pattern = tc.pattern
 			r.ContentLength = tc.size
 			r.Header.Set("Authorization", "Bearer test-token")
@@ -38,7 +38,7 @@ func TestAuthenticatedRequestLimits(t *testing.T) {
 }
 
 func TestChunkedBodyCannotBypassLimit(t *testing.T) {
-	auth := AuthConfig{Enabled: true, Token: "test-token"}
+	auth := newTestAuth(t, "test-token")
 	var count int64
 	handler := auth.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
@@ -49,7 +49,7 @@ func TestChunkedBodyCannotBypassLimit(t *testing.T) {
 		}
 		w.WriteHeader(413)
 	}))
-	r := httptest.NewRequest(http.MethodPut, "/api/sync/settings", strings.NewReader(strings.Repeat("x", int(maxJSONRequestBytes+1))))
+	r := newLocalRequest(http.MethodPut, "/api/sync/settings", strings.NewReader(strings.Repeat("x", int(maxJSONRequestBytes+1))))
 	r.ContentLength = -1
 	r.Header.Set("Authorization", "Bearer test-token")
 	w := httptest.NewRecorder()

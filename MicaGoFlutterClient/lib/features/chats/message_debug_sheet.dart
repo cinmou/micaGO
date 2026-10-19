@@ -1,3 +1,4 @@
+import '../../core/ui/top_banner.dart';
 import '../../core/ui/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -48,14 +49,9 @@ class _MessageDebugSheet extends StatelessWidget {
                 FilledButton.tonalIcon(
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: json));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          MicaLocalizations.of(
-                            context,
-                          ).t('chat.debugJsonCopied'),
-                        ),
-                      ),
+                    TopBanner.show(
+                      context,
+                      MicaLocalizations.of(context).t('chat.debugJsonCopied'),
                     );
                   },
                   icon: const Icon(Icons.copy, size: 18),

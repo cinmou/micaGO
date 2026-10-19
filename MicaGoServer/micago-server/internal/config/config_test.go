@@ -120,7 +120,7 @@ func TestLoopbackBindMigratesToLAN(t *testing.T) {
 	}
 
 	// An explicit --addr override (incl. a deliberate local bind) is respected.
-	cfg, err = Load(Options{Addr: "127.0.0.1:3000", DisableAuth: true})
+	cfg, err = Load(Options{Addr: "127.0.0.1:3000"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,16 +138,6 @@ func TestParseConfigMissingAddrUsesLANDefault(t *testing.T) {
 	}
 	if cfg.Server.Addr != "0.0.0.0:3000" {
 		t.Fatalf("missing addr default = %q, want LAN-capable default", cfg.Server.Addr)
-	}
-}
-
-func TestValidateSecurityRejectsDisableAuthOnNonLocalAddress(t *testing.T) {
-	err := ValidateSecurity(Config{
-		HTTPAddr:     "0.0.0.0:3000",
-		AuthDisabled: true,
-	})
-	if err == nil {
-		t.Fatal("expected disable-auth validation error")
 	}
 }
 

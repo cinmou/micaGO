@@ -112,11 +112,11 @@ void main() {
 
     test('timestamp accepts FCM string data', () {
       expect(
-        notificationTimestampMs({'createdAt': '1782861203813'}),
+        notificationTimestampMs({'dateCreated': '1782861203813'}),
         1782861203813,
       );
-      expect(notificationTimestampMs({'createdAt': 123}), 123);
-      expect(notificationTimestampMs({'createdAt': 'bad'}), isNull);
+      expect(notificationTimestampMs({'dateCreated': 123}), 123);
+      expect(notificationTimestampMs({'dateCreated': 'bad'}), isNull);
     });
 
     test('reply text is trimmed and empty input rejected', () {

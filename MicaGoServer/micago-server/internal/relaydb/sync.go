@@ -79,6 +79,7 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 	mode := "incremental"
 	lookbackApplied := false
 	var messages []store.SyncMessageRow
+	var watermarkMessages []store.SyncMessageRow
 	if !hasLastRowID {
 		mode = "initial"
 		messages, err = source.ListSyncRecentMessages(ctx, limit)
@@ -102,6 +103,7 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 		if err != nil {
 			return SyncResult{}, fmt.Errorf("list incremental sync messages: %w", err)
 		}
+		watermarkMessages = messages
 		// C11: also scan a bounded date window (BlueBubbles-style) so rows the
 		// ROWID watermark skipped under WAL/rowid races are recovered. Idempotent
 		// — the relay upsert dedupes by guid and only truly-new rows broadcast.
@@ -120,7 +122,9 @@ func SyncOnce(ctx context.Context, source syncSource, relay *DB, limit int, look
 		}
 	}
 
-	watermarkMessages := messages
+	if !hasLastRowID {
+		watermarkMessages = messages
+	}
 	var reactionCursor int64
 	if reactions, ok := source.(customReactionSource); ok {
 		value, _, readErr := relay.GetSyncState("custom_reaction_rowid")
