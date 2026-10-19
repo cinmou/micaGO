@@ -40,7 +40,7 @@ internal static class ConnectionStoreTests
             Directory.CreateDirectory(Path.Combine(blockedRoot,"connection-profile.json"));
             var blockedStore=new ConnectionStore(secrets,blockedRoot);
             try {await blockedStore.SaveAsync(profile,"second-test-credential");throw new InvalidOperationException("Expected failed profile replacement");}
-            catch(IOException) { }
+            catch(Exception exception) when(exception is IOException or UnauthorizedAccessException) { }
             if((await store.LoadAsync())?.Token!="first-test-credential")throw new InvalidOperationException("Failed profile replacement changed credential");
             var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             secrets.OnWrite=()=>{entered.TrySetResult();if(!release.Wait(TimeSpan.FromSeconds(5)))throw new TimeoutException();};
