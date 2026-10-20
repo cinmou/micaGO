@@ -12,14 +12,15 @@ import (
 )
 
 type notificationsConfigRequest struct {
-	Enabled            bool   `json:"enabled"`
-	Provider           string `json:"provider"`
-	Preview            string `json:"preview"`
-	FCMEnabled         bool   `json:"fcmEnabled"`
-	FCMProjectID       string `json:"fcmProjectId"`
-	ServiceAccountPath string `json:"serviceAccountPath"`
-	GoogleServicesPath string `json:"googleServicesPath"`
-	PublicURLSync      bool   `json:"publicUrlSync"`
+	Enabled             bool   `json:"enabled"`
+	Provider            string `json:"provider"`
+	Preview             string `json:"preview"`
+	FCMEnabled          bool   `json:"fcmEnabled"`
+	FCMProjectID        string `json:"fcmProjectId"`
+	ServiceAccountPath  string `json:"serviceAccountPath"`
+	GoogleServicesPath  string `json:"googleServicesPath"`
+	PublicURLSync       bool   `json:"publicUrlSync"`
+	ClearFirebaseConfig bool   `json:"clearFirebaseConfig"`
 }
 
 // notificationsConfigResponse echoes the resulting status. It never returns the
@@ -70,14 +71,26 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Validate the service account up front so the user gets a clear error.
-	if req.FCMEnabled {
+	// An empty editor means "keep the saved files", including when disabling
+	// delivery. Removing configuration is a separate, explicit operation.
+	if req.ClearFirebaseConfig {
+		req.FCMEnabled = false
+		req.Enabled = false
+		req.Provider = "none"
+		req.FCMProjectID = ""
+		req.ServiceAccountPath = ""
+		req.GoogleServicesPath = ""
+		req.PublicURLSync = false
+	} else {
 		if req.ServiceAccountPath == "" {
 			req.ServiceAccountPath = h.cfg.FCM.ServiceAccountPath
 		}
 		if req.GoogleServicesPath == "" {
 			req.GoogleServicesPath = h.cfg.FCM.GoogleServicesPath
 		}
+	}
+	// Validate the service account up front so the user gets a clear error.
+	if req.FCMEnabled {
 		if req.ServiceAccountPath == "" {
 			writeBadRequest(w, "serviceAccountPath is required when fcmEnabled is true")
 			return

@@ -68,5 +68,9 @@ func LoadFirebaseClientConfig(path string) (FirebaseClientConfig, error) {
 		MessagingSenderID: gs.ProjectInfo.ProjectNumber,
 		StorageBucket:     gs.ProjectInfo.StorageBucket,
 	}
+	if strings.TrimSpace(cfg.ProjectID) == "" || strings.TrimSpace(cfg.AppID) == "" ||
+		strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.MessagingSenderID) == "" {
+		return FirebaseClientConfig{Configured: false}, errors.New("google-services.json is missing required client fields")
+	}
 	return cfg, nil
 }

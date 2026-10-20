@@ -39,7 +39,10 @@ private struct ProviderStatusCard: View {
 
     private func stateLabel(_ n: NotificationStatus) -> String {
         if !n.enabled { return L10n.localized( "disabled") }
-        if n.provider == "fcm" { return n.implemented.contains("fcm") ? L10n.localized( "configured (fcm)") : L10n.localized( "config invalid (fcm)") }
+        if n.provider == "fcm" {
+            let ready = n.implemented.contains("fcm") && n.fcmClientConfigured == true && n.fcmServiceAccountConfigured == true
+            return ready ? L10n.localized("configured (fcm)") : L10n.localized("config invalid (fcm)")
+        }
         return L10n.localized( "active (\(n.provider))")
     }
 }
@@ -182,8 +185,8 @@ private struct PushPrivacyCard: View {
             • micaGO has no cloud server. You use your own Firebase project.
             • Firebase is only used for Android push and the optional public URL lookup.
             • Windows clients get notifications over WebSocket while they run. Huawei/HarmonyOS push isn't supported yet, and iOS push isn't planned.
-            • Firebase never stores message content, contacts, phone numbers, tokens, attachments, chat history, the device list, or sync rules.
-            • A push only carries delivery data. Message history still syncs over your normal micaGO connection.
+            • FCM processes notification payloads. Depending on your preview setting, a push can include the sender and message text.
+            • Optional Firestore sync stores only the public server URL. Chat history and attachments still sync over your micaGO connection.
             """)
             .font(.caption)
             .foregroundStyle(.secondary)

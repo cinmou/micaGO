@@ -455,6 +455,8 @@ func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
 			stub = append(stub, p)
 		}
 	}
+	clientConfig, clientConfigErr := notify.LoadFirebaseClientConfig(h.cfg.FCM.GoogleServicesPath)
+	_, serviceAccountErr := notify.LoadServiceAccount(h.cfg.FCM.ServiceAccountPath)
 	return store.ServerNotificationStatus{
 		Enabled:                     enabled,
 		Provider:                    provider,
@@ -462,8 +464,11 @@ func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
 		Providers:                   providers,
 		Implemented:                 implemented,
 		Stub:                        stub,
-		FCMServiceAccountConfigured: strings.TrimSpace(h.cfg.FCM.ServiceAccountPath) != "",
-		FCMClientConfigured:         strings.TrimSpace(h.cfg.FCM.GoogleServicesPath) != "",
+		FCMServiceAccountConfigured: serviceAccountErr == nil,
+		FCMClientConfigured:         clientConfigErr == nil && clientConfig.Configured,
+		FCMEnabled:                  h.cfg.FCM.Enabled,
+		FCMProjectID:                h.cfg.FCM.ProjectID,
+		PublicURLSync:               h.cfg.Firebase.PublicURLSync,
 	}
 }
 

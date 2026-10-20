@@ -2,8 +2,7 @@ import Foundation
 import Combine
 
 /// Central observable state for the companion UI. Owns the server controller,
-/// reads the config/token, and periodically polls the local control API while
-/// the window is visible.
+/// reads the config/token, and polls while the app runs, including menu-bar mode.
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
@@ -64,7 +63,6 @@ final class AppModel: ObservableObject {
 
     // Notifications / FCM config (v0.12)
     @Published var notifEnabled = false
-    @Published var notifProvider = "none"
     @Published var notifPreview = "sender_and_text"
     @Published var fcmEnabled = false
     @Published var fcmProjectID = ""
@@ -74,7 +72,7 @@ final class AppModel: ObservableObject {
     @Published var notifBusy = false
     @Published var notifResult: String?
     @Published var firestoreSyncActive = false
-    private var didSeedNotif = false
+    private var lastSeededNotifications: NotificationFormValues?
 
     // Sync control (v0.11.3)
     @Published var syncRules: SyncRulesResponse?
@@ -91,8 +89,11 @@ final class AppModel: ObservableObject {
     @Published var lastSyncDiagnostics: SyncDiagnostics?
     private var lastSyncedContactCacheSignature: Int?
 
-    /// Effective sync diagnostics: the last manual run, else the live status poll.
-    var syncDiagnostics: SyncDiagnostics? { lastSyncDiagnostics ?? status?.sync.diagnostics }
+    /// Prefer the newest completed pass so manual snapshots cannot freeze the
+    /// monitor once background polling has newer results.
+    var syncDiagnostics: SyncDiagnostics? {
+        SyncDiagnostics.latest(live: status?.sync.diagnostics, manual: lastSyncDiagnostics)
+    }
 
     /// Triggers an immediate server sync (C11 debug) and refreshes status.
     func runSyncNow() async {
@@ -122,7 +123,7 @@ final class AppModel: ObservableObject {
         renderable: \(d.lastRenderableRows ?? 0)  hiddenDebug: \(d.lastHiddenDebugRows ?? 0)  updates: \(d.lastUpdatePassCount ?? 0)  unsent: \(d.lastUnsentCount ?? 0)
         scannedRowId: \(ms(d.lastScannedMessageRowId))
         chatDbMtime: \(ms(d.lastChatDbMtime))  walMtime: \(ms(d.lastWalMtime))  shmMtime: \(ms(d.lastShmMtime))
-        pendingTriggers: \(d.pendingTriggerCount ?? 0)  lockRetries: \(d.lockRetryCount ?? 0)
+        totalTriggers: \(d.pendingTriggerCount ?? 0)  lockRetries: \(d.lockRetryCount ?? 0)
         pendingSends: \(d.pendingSendsCount ?? 0)  lateMatchedSends: \(d.lateMatchedSendsCount ?? 0)
         lastEvent: \(d.lastEmittedEventType ?? "—")  chat: \(d.lastEmittedChatGuid ?? "—")
         lastError: \(d.lastSyncError ?? "—")
@@ -294,6 +295,7 @@ final class AppModel: ObservableObject {
             devices = []
             activeConnections = []
             urls = nil
+            lastSyncDiagnostics = nil
             return
         }
         let client = APIClient(baseURL: baseURL, token: token)
@@ -306,11 +308,18 @@ final class AppModel: ObservableObject {
             devices = []
             activeConnections = []
             authValid = false
+            urls = nil
+            lastSyncDiagnostics = nil
             return
         }
 
         authValid = await client.checkAuth()
         guard authValid else {
+            status = nil
+            devices = []
+            activeConnections = []
+            urls = nil
+            lastSyncDiagnostics = nil
             lastError = L10n.localized( "The server is up but rejected the token. Check \(ConfigReader.configPath).")
             return
         }
@@ -366,15 +375,25 @@ final class AppModel: ObservableObject {
         lastError = nil
     }
 
-    // Seed the notifications form once from the server status (the
-    // service-account path is never returned, so it stays user-entered).
+    // Mirror server changes without overwriting unsaved edits. File paths are
+    // never returned by status and remain user-entered.
     private func seedNotificationsForm() {
-        guard !didSeedNotif, let n = status?.notifications else { return }
-        notifEnabled = n.enabled
-        notifProvider = n.provider
-        notifPreview = n.preview
-        fcmEnabled = n.provider == "fcm" || n.implemented.contains("fcm")
-        didSeedNotif = true
+        guard let n = status?.notifications else { return }
+        firestoreSyncActive = (n.publicUrlSync ?? false) && n.implemented.contains("fcm")
+        let server = NotificationFormValues(enabled: n.enabled, preview: n.preview,
+            fcmEnabled: n.fcmEnabled ?? (n.provider == "fcm"),
+            projectID: n.fcmProjectId ?? "", publicURLSync: n.publicUrlSync ?? false)
+        let current = NotificationFormValues(enabled: notifEnabled, preview: notifPreview,
+            fcmEnabled: fcmEnabled, projectID: fcmProjectID, publicURLSync: firestoreURLSync)
+        let merged = current.merging(server: server, previousServer: lastSeededNotifications)
+        if merged != current {
+            notifEnabled = merged.enabled
+            notifPreview = merged.preview
+            fcmEnabled = merged.fcmEnabled
+            fcmProjectID = merged.projectID
+            firestoreURLSync = merged.publicURLSync
+        }
+        lastSeededNotifications = server
     }
 
     private func applyURLs(_ fetched: ServerURLs) {
@@ -675,8 +694,9 @@ final class AppModel: ObservableObject {
 
     // MARK: - Notifications / FCM config actions (v0.12)
 
-    func saveNotificationsConfig() async {
-        guard let baseURL else { return }
+    @discardableResult
+    func saveNotificationsConfig(clearFirebaseConfig: Bool = false) async -> Bool {
+        guard let baseURL else { return false }
         notifBusy = true
         defer { notifBusy = false }
         let client = APIClient(baseURL: baseURL, token: token)
@@ -690,26 +710,28 @@ final class AppModel: ObservableObject {
                 fcmEnabled: fcmEnabled, fcmProjectID: fcmProjectID,
                 serviceAccountPath: serviceAccountPath,
                 googleServicesPath: googleServicesPath,
-                publicURLSync: firestoreURLSync)
+                publicURLSync: firestoreURLSync,
+                clearFirebaseConfig: clearFirebaseConfig)
             firestoreSyncActive = resp.firestoreSyncEnabled
             let fcmReady = resp.implemented.contains("fcm")
             notifResult = "Saved. FCM \(fcmReady ? "configured" : (fcmEnabled ? "config invalid" : "off"))."
             await refresh()
             lastError = nil
+            return true
         } catch {
             notifResult = "Save failed: \(error.localizedDescription)"
+            return false
         }
     }
 
     func clearNotificationsConfig() async {
-        notifProvider = "none"
+        guard await saveNotificationsConfig(clearFirebaseConfig: true) else { return }
         notifEnabled = false
         fcmEnabled = false
         serviceAccountPath = ""
         googleServicesPath = ""
         fcmProjectID = ""
         firestoreURLSync = false
-        await saveNotificationsConfig()
         notifResult = "Firebase configuration cleared."
     }
 
