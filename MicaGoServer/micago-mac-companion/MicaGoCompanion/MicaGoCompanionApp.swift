@@ -252,10 +252,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let hidden = UserDefaults.standard.bool(forKey: "launchHidden")
         if hidden {
-            // Silent launch: close the window opened by the WindowGroup.
+            // Keep the SwiftUI scene alive so its window-opening bridge can
+            // register even when startup never displays a window.
             DispatchQueue.main.async {
                 for window in NSApp.windows where window.styleMask.contains(.titled) {
-                    window.close()
+                    window.orderOut(nil)
                 }
                 applyActivationPolicy()
             }
@@ -298,8 +299,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { NSApp.activate(ignoringOtherApps: true) }
-        return true
+        presentDashboardFromAppKit()
+        return false
     }
 
     @MainActor
@@ -329,61 +330,58 @@ extension BackendController {
     static let shared = BackendController()
 }
 
-/// Whether a main Dashboard window (titled, visible) is currently on screen.
-/// The MenuBarExtra's status window is an untitled panel and is excluded.
+/// Only the scene's dashboard counts here. An updater or permission window
+/// must not be mistaken for the dashboard by menu/Dock reopen actions.
 func hasVisibleDashboardWindow() -> Bool {
-    NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) }
+    existingDashboardWindow() != nil
 }
 
 private func existingDashboardWindow() -> NSWindow? {
-    NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) }
+    guard let window = DashboardWindowBridgeView.dashboardWindow,
+          window.isVisible || window.isMiniaturized else { return nil }
+    return window
+}
+
+private final class DashboardWindowBridgeView: NSView {
+    static weak var dashboardWindow: NSWindow?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window { Self.dashboardWindow = window }
+    }
 }
 
 /// Bridges SwiftUI's `openWindow` action to AppKit. The `WindowGroup` window has
 /// the correct native toolbar/titlebar (large inline title, trailing controls);
-/// a hand-rolled `NSWindow` does not. ContentView stores its `openWindow` action
-/// here on appear so the AppKit menu-bar item can reopen the SAME WindowGroup
-/// window instead of building a divergent one.
-@MainActor
-final class DashboardWindowOpener {
-    static let shared = DashboardWindowOpener()
-    var open: (() -> Void)?
+/// a hand-rolled `NSWindow` does not. Register the scene's open action while
+/// building its view, including when the initial window is hidden.
+private struct DashboardWindowOpeningBridge: NSViewRepresentable {
+    @Environment(\.openWindow) private var openWindow
+
+    func makeNSView(context: Context) -> NSView {
+        // Register before onAppear: a silently launched scene may never appear.
+        // Defer pending presentation until SwiftUI has finished this update.
+        let action = openWindow
+        let view = DashboardWindowBridgeView()
+        DispatchQueue.main.async { [weak view] in
+            DashboardWindowOpener.shared.install { [weak view] in
+                if let window = view?.window {
+                    window.deminiaturize(nil)
+                    window.makeKeyAndOrderFront(nil)
+                } else {
+                    action(id: "dashboard")
+                }
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-@MainActor
-private final class DashboardWindowPresenter {
-    static let shared = DashboardWindowPresenter()
-    private var window: NSWindow?
-
-    func show() {
-        if let existing = existingDashboardWindow() ?? window {
-            existing.deminiaturize(nil)
-            existing.makeKeyAndOrderFront(nil)
-            applyActivationPolicy()
-            return
-        }
-
-        let root = ContentView()
-            .environmentObject(AppModel.shared)
-            .environmentObject(RuntimeMonitor.shared)
-            .environmentObject(BackendController.shared)
-            .environmentObject(ContactsStore())
-            .environmentObject(TunnelController.shared)
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 720),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "micaGO"
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: root)
-        window.center()
-        window.setFrameAutosaveName("MicaGoDashboard")
-        window.makeKeyAndOrderFront(nil)
-        self.window = window
-        applyActivationPolicy()
+extension View {
+    func dashboardWindowOpeningBridge() -> some View {
+        background(DashboardWindowOpeningBridge().frame(width: 0, height: 0))
     }
 }
 
@@ -409,18 +407,13 @@ func presentDashboardFromAppKit(selection: SidebarItem? = nil) {
     // Reuse the real WindowGroup window so the menu-bar path looks identical to
     // launching from the Dock (native toolbar/titlebar). Prefer an already-open
     // window; otherwise reopen the WindowGroup via the captured SwiftUI action.
-    // The hand-rolled NSWindow is only a last resort (e.g. launched hidden and
-    // never once shown, so no openWindow action was captured yet).
+    // Early requests wait for the scene bridge instead of creating a second,
+    // differently styled AppKit window.
     if let existing = existingDashboardWindow() {
         existing.deminiaturize(nil)
         existing.makeKeyAndOrderFront(nil)
         applyActivationPolicy()
         return
     }
-    if let open = DashboardWindowOpener.shared.open {
-        open()
-        applyActivationPolicy()
-        return
-    }
-    DashboardWindowPresenter.shared.show()
+    DashboardWindowOpener.shared.requestOpen()
 }

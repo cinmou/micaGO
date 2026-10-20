@@ -141,6 +141,12 @@ struct SyncDiagnostics: Codable {
     var lateMatchedSendsCount: Int?
     var lastEmittedEventType: String?
     var lastEmittedChatGuid: String?
+
+    static func latest(live: SyncDiagnostics?, manual: SyncDiagnostics?) -> SyncDiagnostics? {
+        guard let live else { return manual }
+        guard let manual else { return live }
+        return (manual.lastCompletedAt ?? 0) > (live.lastCompletedAt ?? 0) ? manual : live
+    }
 }
 
 struct NotificationStatus: Codable {
@@ -152,6 +158,9 @@ struct NotificationStatus: Codable {
     var stub: [String]
     var fcmServiceAccountConfigured: Bool?
     var fcmClientConfigured: Bool?
+    var fcmEnabled: Bool?
+    var fcmProjectId: String?
+    var publicUrlSync: Bool?
 }
 
 struct DevicesStatus: Codable {

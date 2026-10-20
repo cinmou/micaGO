@@ -3412,19 +3412,19 @@
         }
       }
     },
-    "Pending triggers / lock retries": {
+    "Total triggers / lock retries": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "待处理触发 / 锁重试"
+            "value": "累计触发 / 锁重试"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "待處理觸發 / 鎖定重試"
+            "value": "累計觸發 / 鎖定重試"
           }
         }
       }
@@ -6812,18 +6812,18 @@
         }
       }
     },
-    "• micaGO has no cloud server. You use your own Firebase project.\n• Firebase is only used for Android push and the optional public URL lookup.\n• Windows clients get notifications over WebSocket while they run. Huawei/HarmonyOS push isn't supported yet, and iOS push isn't planned.\n• Firebase never stores message content, contacts, phone numbers, tokens, attachments, chat history, the device list, or sync rules.\n• A push only carries delivery data. Message history still syncs over your normal micaGO connection.": {
+    "• micaGO has no cloud server. You use your own Firebase project.\n• Firebase is only used for Android push and the optional public URL lookup.\n• Windows clients get notifications over WebSocket while they run. Huawei/HarmonyOS push isn't supported yet, and iOS push isn't planned.\n• FCM processes notification payloads. Depending on your preview setting, a push can include the sender and message text.\n• Optional Firestore sync stores only the public server URL. Chat history and attachments still sync over your micaGO connection.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "• micaGO 没有云端服务器，你用的是自己的 Firebase 项目。\n• Firebase 只用于安卓推送和可选的公网 URL 查询。\n• Windows 客户端运行时通过 WebSocket 接收通知。暂不支持华为/鸿蒙推送，也没有 iOS 推送计划。\n• Firebase 不会存储消息内容、联系人、电话号码、令牌、附件、聊天记录、设备列表或同步规则。\n• 推送只携带送达信息，消息记录仍通过你平常的 micaGO 连接同步。"
+            "value": "• micaGO 没有云端服务器，你用的是自己的 Firebase 项目。\n• Firebase 只用于安卓推送和可选的公网 URL 查询。\n• Windows 客户端运行时通过 WebSocket 接收通知。暂不支持华为/鸿蒙推送，也没有 iOS 推送计划。\n• FCM 会处理推送载荷。根据通知预览设置，推送可能包含发送者和消息正文。\n• 可选的 Firestore 同步只保存公网服务器 URL。聊天记录和附件仍通过 micaGO 连接同步。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "• micaGO 沒有雲端伺服器，你用的是自己的 Firebase 專案。\n• Firebase 只用於 Android 推播和選用的公開 URL 查詢。\n• Windows 用戶端執行時透過 WebSocket 接收通知。暫不支援華為/鴻蒙推播，也沒有 iOS 推播計畫。\n• Firebase 不會儲存訊息內容、聯絡人、電話號碼、權杖、附件、聊天記錄、裝置列表或同步規則。\n• 推播只攜帶送達資訊，訊息記錄仍透過你平常的 micaGO 連線同步。"
+            "value": "• micaGO 沒有雲端伺服器，你用的是自己的 Firebase 專案。\n• Firebase 只用於 Android 推播和選用的公開 URL 查詢。\n• Windows 用戶端執行時透過 WebSocket 接收通知。暫不支援華為/鴻蒙推播，也沒有 iOS 推播計畫。\n• FCM 會處理推播酬載。根據通知預覽設定，推播可能包含傳送者和訊息內容。\n• 選用的 Firestore 同步只儲存公開伺服器 URL。聊天記錄和附件仍透過 micaGO 連線同步。"
           }
         }
       }

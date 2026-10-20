@@ -38,13 +38,15 @@ struct APIClient {
         return req
     }
 
-    private static func session() -> URLSession {
+    private static let sharedSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.waitsForConnectivity = false
         // Was 4s — too tight for the larger Sync Control loads (see request()).
         config.timeoutIntervalForRequest = 20
         return URLSession(configuration: config)
-    }
+    }()
+
+    private static func session() -> URLSession { sharedSession }
 
     /// Liveness check against the unauthenticated health endpoint.
     func health() async -> Bool {
@@ -266,7 +268,7 @@ struct APIClient {
     func setNotificationsConfig(enabled: Bool, provider: String, preview: String,
                                 fcmEnabled: Bool, fcmProjectID: String,
                                 serviceAccountPath: String, googleServicesPath: String,
-                                publicURLSync: Bool) async throws -> NotificationsConfigResponse {
+                                publicURLSync: Bool, clearFirebaseConfig: Bool = false) async throws -> NotificationsConfigResponse {
         let req = try jsonRequest("api/server/notifications", method: "POST", body: [
             "enabled": enabled,
             "provider": provider,
@@ -276,6 +278,7 @@ struct APIClient {
             "serviceAccountPath": serviceAccountPath,
             "googleServicesPath": googleServicesPath,
             "publicUrlSync": publicURLSync,
+            "clearFirebaseConfig": clearFirebaseConfig,
         ])
         let (data, response) = try await Self.session().data(for: req)
         // Surface the server's validation message on 4xx (e.g. invalid service account).

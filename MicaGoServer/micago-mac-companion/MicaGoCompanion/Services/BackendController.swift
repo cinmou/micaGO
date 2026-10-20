@@ -57,6 +57,7 @@ final class BackendController: ObservableObject {
 
     private var process: Process?
     private var intentionalStop = false
+    private var restartAfterStop = false
     private var restartAttempt = 0
     private var restartWork: DispatchWorkItem?
     private var healthyResetWork: DispatchWorkItem?
@@ -65,7 +66,8 @@ final class BackendController: ObservableObject {
     private let maxConsecutiveCrashes = 5
     private static let maxLogLines = 300
     static let defaultLANBindAddress = "0.0.0.0:3000"
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    private let prepareConfiguration: () throws -> Void
 
     private enum K {
         static let binaryPath = "serverBinaryPath"
@@ -76,7 +78,9 @@ final class BackendController: ObservableObject {
         static let bindAddress = "serverBindAddress"
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard, prepareConfiguration: (() throws -> Void)? = nil) {
+        self.defaults = defaults
+        self.prepareConfiguration = prepareConfiguration ?? Self.ensureConfigFile
         userBinaryPath = defaults.string(forKey: K.binaryPath) ?? ""
         manageLifecycleWithApp = defaults.object(forKey: K.autoStart) as? Bool ?? true
         autoRestart = defaults.bool(forKey: K.autoRestart)
@@ -242,6 +246,7 @@ final class BackendController: ObservableObject {
     // MARK: - Lifecycle
 
     func start() {
+        restartAfterStop = false
         restartWork?.cancel(); restartWork = nil
         guard process == nil else { return }
         guard let resolved = resolveBinary() else {
@@ -270,7 +275,7 @@ final class BackendController: ObservableObject {
         }
 
         do {
-            try Self.ensureConfigFile()
+            try prepareConfiguration()
         } catch {
             processState = .failed("could not create config: \(error.localizedDescription)")
             appendLog("error: failed to prepare ~/.micago/config.yaml: \(error.localizedDescription)")
@@ -285,18 +290,22 @@ final class BackendController: ObservableObject {
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = pipe
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        pipe.fileHandleForReading.readabilityHandler = { [weak self, weak proc] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            guard let proc, !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
             Task { @MainActor in
+                guard let self, self.process === proc else { return }
                 for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-                    self?.appendLog(String(line))
+                    self.appendLog(String(line))
                 }
             }
         }
         proc.terminationHandler = { [weak self] p in
             let code = p.terminationStatus
-            Task { @MainActor in self?.handleTermination(code: code) }
+            Task { @MainActor in
+                guard let self, self.process === p else { return }
+                self.handleTermination(code: code)
+            }
         }
 
         do {
@@ -432,6 +441,7 @@ final class BackendController: ObservableObject {
     }
 
     func stop() {
+        restartAfterStop = false
         restartWork?.cancel(); restartWork = nil
         nextRestartInfo = nil
         guard let proc = process else { return }
@@ -444,10 +454,7 @@ final class BackendController: ObservableObject {
     func restart() {
         if process != nil {
             stop()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                self?.intentionalStop = false
-                self?.start()
-            }
+            restartAfterStop = true
         } else {
             start()
         }
@@ -493,14 +500,16 @@ final class BackendController: ObservableObject {
     /// Stop our child cleanly on app quit only when the app owns lifecycle
     /// management. Never affects external processes.
     func shutdownForQuitIfNeeded() {
-        guard manageLifecycleWithApp else { return }
+        restartAfterStop = false
         restartWork?.cancel()
+        guard manageLifecycleWithApp else { return }
         intentionalStop = true
         process?.terminate()
     }
 
     /// Force-stop our child on explicit user commands such as Stop Server.
     func shutdownForQuit() {
+        restartAfterStop = false
         restartWork?.cancel()
         intentionalStop = true
         process?.terminate()
@@ -518,6 +527,10 @@ final class BackendController: ObservableObject {
             nextRestartInfo = nil
             restartAttempt = 0
             appendLog("backend stopped")
+            if restartAfterStop {
+                restartAfterStop = false
+                start()
+            }
             return
         }
 

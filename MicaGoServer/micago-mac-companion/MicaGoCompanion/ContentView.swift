@@ -63,7 +63,6 @@ struct ContentView: View {
     @EnvironmentObject var runtime: RuntimeMonitor
     @EnvironmentObject var backend: BackendController
     @StateObject private var nav = NavState.shared
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         NavigationSplitView {
@@ -120,9 +119,7 @@ struct ContentView: View {
         // Expose the WindowGroup's openWindow to AppKit so the menu-bar "Open
         // Dashboard" reopens THIS window (native toolbar/titlebar) rather than a
         // hand-rolled NSWindow that renders the toolbar differently.
-        .onAppear {
-            DashboardWindowOpener.shared.open = { openWindow(id: "dashboard") }
-        }
+        .dashboardWindowOpeningBridge()
         .onChange(of: model.developerModeEnabled) { enabled in
             if !enabled, nav.selection == .debug || nav.selection == .log {
                 nav.selection = .advanced
@@ -997,7 +994,7 @@ private struct LiveSyncMonitorCard: View {
                            value: "\(d.lastInsertedMessages ?? 0) / \(d.lastUpdatePassCount ?? 0) / \(d.lastUnsentCount ?? 0)")
                 LabeledRow(label: "chat.db / WAL / SHM mtime",
                            value: "\(t(d.lastChatDbMtime)) / \(t(d.lastWalMtime)) / \(t(d.lastShmMtime))")
-                LabeledRow(label: "Pending triggers / lock retries",
+                LabeledRow(label: "Total triggers / lock retries",
                            value: "\(d.pendingTriggerCount ?? 0) / \(d.lockRetryCount ?? 0)")
                 LabeledRow(label: "Pending / late-matched sends",
                            value: "\(d.pendingSendsCount ?? 0) / \(d.lateMatchedSendsCount ?? 0)")

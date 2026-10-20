@@ -26,6 +26,10 @@ Four components:
 
 ## Known UI/state notes
 
+- **Companion cold launch:** dashboard presentation always uses the SwiftUI scene; early opens wait for its bridge. Silent launch hides the initial window without destroying the scene. Keep the hand-built NSWindow fallback removed. FCM client readiness must validate the readable google-services.json, not just its configured path.
+- Notification settings restore saved FCM/project/Firestore values from server status. Disabling delivery preserves file paths; explicit `clearFirebaseConfig` removes them. Sync diagnostics choose the newest completed result; `pendingTriggerCount` is a legacy API name for cumulative triggers, never queue depth.
+- Owned backend restart waits for the exact child termination instead of a timer; Stop/quit cancel the requested replacement. Dashboard window lookup uses the scene bridge, excluding updater/permission windows.
+
 
 - **Companion tunnel recovery:** supervise only the owned cloudflared child, leaving its in-process network retries to cloudflared. Unexpected exit (including code 0) retries at 2/4/8/16/32/60 seconds, capped at 60; reset only after a real registered connection lasts 60 seconds. Stop/quit, disabling auto-start, or opted-in server stop cancels pending recovery. External tunnels are never stopped or taken over. Restart waits for the exact old child to exit; stale output/termination callbacks cannot affect its replacement.
 

@@ -494,6 +494,9 @@ type ServerNotificationStatus struct {
 	Stub                        []string `json:"stub"`
 	FCMServiceAccountConfigured bool     `json:"fcmServiceAccountConfigured"`
 	FCMClientConfigured         bool     `json:"fcmClientConfigured"`
+	FCMEnabled                  bool     `json:"fcmEnabled"`
+	FCMProjectID                string   `json:"fcmProjectId"`
+	PublicURLSync               bool     `json:"publicUrlSync"`
 }
 
 type ServerDevicesStatus struct {
