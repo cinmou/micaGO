@@ -16,6 +16,14 @@ Companion. Solution entry point: `micaGO.Windows.sln`.
 > verification" currently covers) is
 > [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
+## Screenshots
+
+![Windows conversation](../docs/assets/windows-chat.jpg)
+
+![Windows conversation in dark mode](../docs/assets/windows-chat-dark.jpg)
+
+![Windows appearance settings](../docs/assets/windows-appearance.jpg)
+
 ## What it does today
 
 - **Pairing & connection** — paste the Companion's v4 connection JSON, scan its QR code

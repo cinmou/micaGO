@@ -37,6 +37,18 @@ micaGO 仍處在測試階段。它會讀取 macOS「訊息」的內部資料,並
 
 ## 應用程式截圖
 
+### Windows
+
+<p align="center">
+  <img src="docs/assets/windows-chat.jpg" alt="Windows 用戶端聊天介面" width="820" />
+</p>
+<p align="center">
+  <img src="docs/assets/windows-chat-dark.jpg" alt="Windows 用戶端深色聊天介面" width="820" />
+</p>
+<p align="center">
+  <img src="docs/assets/windows-appearance.jpg" alt="Windows 用戶端外觀設定" width="820" />
+</p>
+
 ### Android 用戶端
 
 |  |  |  |

@@ -41,6 +41,18 @@ project.
 
 ## Screenshots
 
+### Windows
+
+<p align="center">
+  <img src="docs/assets/windows-chat.jpg" alt="Windows conversation" width="820" />
+</p>
+<p align="center">
+  <img src="docs/assets/windows-chat-dark.jpg" alt="Windows conversation in dark mode" width="820" />
+</p>
+<p align="center">
+  <img src="docs/assets/windows-appearance.jpg" alt="Windows appearance settings" width="820" />
+</p>
+
 ### Android
 
 |  |  |  |
