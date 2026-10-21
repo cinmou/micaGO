@@ -21,6 +21,11 @@ var tests = new (string Name, Action Run)[]
     ("stable chat row notifications", UpdatesChatRowInPlace),
     ("stable merged contact reorder", KeepsMergedContactRowStable),
     ("contact split, merge scope and send route capabilities", ContactConversationTests.Run),
+    ("readable text on custom bubble colors", () => {
+        if (!TextContrast.UseDarkText(255,255,255) || TextContrast.UseDarkText(0,0,0)
+            || !TextContrast.UseDarkText(0,200,0) || TextContrast.UseDarkText(47,58,115))
+            throw new Exception("Bubble text must use the higher sRGB contrast ratio.");
+    }),
     ("stable message row notifications", UpdatesMessageRowInPlace),
     ("vCard folded and escaped contacts", ParsesVCardContacts),
     ("private and group presentation", PresentsPrivateAndGroupThreads),
@@ -54,10 +59,14 @@ foreach (var test in tests)
     }
 }
 
+try { await OutgoingSendTests.RunAsync(); Console.WriteLine("PASS durable text/file sends, explicit retry, forwarding and legacy migration"); }
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL outgoing sends: {exception.Message}");}
 try { await RealtimeSyncTests.RunAsync(); Console.WriteLine("PASS realtime delta dedup and websocket hint"); }
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL realtime delta dedup and websocket hint: {exception.Message}");}
 try { await HiddenChatStoreTests.RunAsync(); Console.WriteLine("PASS legacy hidden records and message restore"); }
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL legacy hidden records and message restore: {exception.Message}");}
+try { await ContactAccountLinkTests.RunAsync(); Console.WriteLine("PASS explicit contact account links, reimport and legacy identity repair"); }
+catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL contact account linking: {exception.Message}");}
 
 try { await ChatPreferenceSyncTests.RunAsync(); Console.WriteLine("PASS cross-device preferences, offline replay, conflicts and server scope"); }
 catch(Exception exception){failures++;Console.Error.WriteLine($"FAIL chat preferences: {exception.Message}");}
@@ -371,6 +380,11 @@ static void FooterFollowsLatestOptimisticSend()
     True(awaitingMatch[1].ShowFooter);
     Equal(MessageDeliveryState.Sent, awaitingMatch[1].DeliveryState);
     Equal("row-2", awaitingMatch[1].PresentationKey);
+    foreach(var group in new[]{false,true}) {
+        var failed=first with{DeliveryState=MessageDeliveryState.Failed};
+        var rows=ThreadPresentation.Build([failed,sentUnconfirmed],group,"en").Where(row=>!row.IsSeparator).ToArray();
+        True(rows[0].ShowFooter);
+    }
 }
 
 static void ParsesLinkPreviewMetadata()

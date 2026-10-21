@@ -24,6 +24,25 @@
                     </Border>
                     <TextBlock x:Name="BehaviorHeader" Style="{StaticResource MicaGoSettingsHeaderStyle}" Text="General"/>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE7F4;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="TrayLabel"/><TextBlock x:Name="TrayDescription" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/></StackPanel><ToggleSwitch x:Name="TrayToggle" Grid.Column="2" MinWidth="0" OffContent="" OnContent="" Toggled="TrayToggle_Toggled"/></Grid></Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18"
+                                      FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE968;"
+                                      IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw"/>
+                            <StackPanel Grid.Column="1" Spacing="2">
+                                <TextBlock x:Name="ConnectionStatusLabel"/>
+                                <TextBlock x:Name="ConnectionStatusDescription" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <ToggleSwitch x:Name="ConnectionStatusToggle" Grid.Column="2" MinWidth="0"
+                                          OffContent="" OnContent="" Toggled="ConnectionStatusToggle_Toggled"/>
+                        </Grid>
+                    </Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xF2B7;"/><TextBlock x:Name="LanguageLabel" Grid.Column="1" VerticalAlignment="Center"/><ComboBox x:Name="LanguagePicker" Grid.Column="2" MinWidth="180" SelectionChanged="LanguagePicker_SelectionChanged"><ComboBoxItem Content="System"/><ComboBoxItem Content="English"/><ComboBoxItem Content="简体中文"/><ComboBoxItem Content="繁體中文"/></ComboBox></Grid></Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE8BD;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="SmsLabel"/><TextBlock x:Name="SmsDescription" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/></StackPanel><ToggleSwitch x:Name="SmsToggle" Grid.Column="2" MinWidth="0" OffContent="" OnContent="" Toggled="SmsToggle_Toggled"/></Grid></Border>
                 </StackPanel>
@@ -32,8 +51,39 @@
                     <TextBlock x:Name="AppearanceHeader" Style="{StaticResource MicaGoSettingsHeaderStyle}"/>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE790;"/><TextBlock x:Name="ThemeLabel" Grid.Column="1" VerticalAlignment="Center"/><ComboBox x:Name="ThemePicker" Grid.Column="2" MinWidth="180" SelectionChanged="ThemePicker_SelectionChanged"><ComboBoxItem Content="System"/><ComboBoxItem Content="Light"/><ComboBoxItem Content="Dark"/></ComboBox></Grid></Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEB9F;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="ChatBackgroundLabel"/><TextBlock x:Name="ChatBackgroundStatus" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"><Button x:Name="ChooseBackgroundButton" Click="ChooseBackgroundButton_Click"/><Button x:Name="ClearBackgroundButton" Click="ClearBackgroundButton_Click"/></StackPanel></Grid></Border>
-                    <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE2B1;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="BubbleColorLabel"/><TextBlock x:Name="BubbleFollowSystemLabel" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><ToggleSwitch x:Name="BubbleFollowSystemToggle" Grid.Column="2" MinWidth="0" OffContent="" OnContent="" Toggled="BubbleFollowSystemToggle_Toggled"/></Grid></Border>
-                    <Border x:Name="BubbleColorCard" Style="{StaticResource MicaGoSettingsCardStyle}"><StackPanel Spacing="10"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE790;"/><TextBlock x:Name="BubbleColorPickLabel" Grid.Column="1" VerticalAlignment="Center"/><Button x:Name="BubbleColorButton" Grid.Column="2"><StackPanel Orientation="Horizontal" Spacing="8"><Border x:Name="BubbleColorPreview" Width="16" Height="16" VerticalAlignment="Center" CornerRadius="8" BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}" BorderThickness="1"/><TextBlock x:Name="BubbleColorButtonText"/></StackPanel><Button.Flyout><Flyout Closed="BubbleColorFlyout_Closed"><ColorPicker x:Name="BubbleColorPicker" IsAlphaEnabled="False" ColorSpectrumShape="Ring" ColorChanged="BubbleColorPicker_ColorChanged"/></Flyout></Button.Flyout></Button></Grid><VariableSizedWrapGrid x:Name="BubbleColorSwatches" Margin="30,0,0,0" Orientation="Horizontal" ItemWidth="40" ItemHeight="40"/></StackPanel></Border>
+                    <Border x:Name="BubbleColorCard" Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <StackPanel Spacing="12">
+                            <Grid x:Name="BubbleColorHeader" ColumnSpacing="16" SizeChanged="BubbleColorHeader_SizeChanged">
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE8F2;"/>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock x:Name="BubbleColorLabel" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="BubbleColorDescription" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <ComboBox x:Name="BubbleColorModePicker" Grid.Column="2" MinWidth="180"
+                                          VerticalAlignment="Center" SelectionChanged="BubbleColorModePicker_SelectionChanged">
+                                    <ComboBoxItem Content="Follow system accent"/><ComboBoxItem Content="Custom"/>
+                                </ComboBox>
+                            </Grid>
+                            <StackPanel x:Name="CustomBubbleColorPanel" Margin="34,0,0,0" Spacing="8" Visibility="Collapsed">
+                                <TextBlock x:Name="BubbleColorPickLabel" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                <VariableSizedWrapGrid x:Name="BubbleColorSwatches" Orientation="Horizontal" ItemWidth="40" ItemHeight="40"/>
+                                <Button x:Name="BubbleColorButton" HorizontalAlignment="Left" Margin="0,4,0,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Border x:Name="BubbleColorPreview" Width="16" Height="16" VerticalAlignment="Center"
+                                                CornerRadius="3" BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}" BorderThickness="1"/>
+                                        <TextBlock x:Name="BubbleColorButtonText"/>
+                                    </StackPanel>
+                                    <Button.Flyout><Flyout Closed="BubbleColorFlyout_Closed">
+                                        <ColorPicker x:Name="BubbleColorPicker" IsAlphaEnabled="False" ColorSpectrumShape="Box" ColorChanged="BubbleColorPicker_ColorChanged"/>
+                                    </Flyout></Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                     <TextBlock x:Name="EmojiHeader" Style="{StaticResource MicaGoSettingsHeaderStyle}"/>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE7C1;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="TwemojiFlagsLabel"/><TextBlock x:Name="TwemojiFlagsDescription" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/></StackPanel><ToggleSwitch x:Name="TwemojiFlagsToggle" Grid.Column="2" MinWidth="0" OffContent="" OnContent="" Toggled="TwemojiFlagsToggle_Toggled"/></Grid></Border>
                 </StackPanel>
@@ -60,7 +110,10 @@
                     <Border x:Name="AboutIdentity" Padding="20,16" Style="{StaticResource MicaGoSettingsCardStyle}" Tapped="AboutIdentity_Tapped"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Image Width="56" Height="56" Source="ms-appx:///Assets/micaGO.Windows.png"/><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2"><TextBlock FontSize="18" FontWeight="SemiBold" Text="micaGO"/><TextBlock x:Name="AboutSubtitleText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/><TextBlock x:Name="AboutVersionText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}"/></StackPanel></Grid></Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE774;"/><TextBlock x:Name="AboutGitHubLabel" Grid.Column="1" VerticalAlignment="Center"/><HyperlinkButton x:Name="AboutGitHubLink" Grid.Column="2" Content="github.com/cinmou/MicaGo" NavigateUri="https://github.com/cinmou/MicaGo"/></Grid></Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE895;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="AboutUpdateLabel"/><TextBlock x:Name="AboutUpdateStatus" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><Button x:Name="AboutUpdateButton" Grid.Column="2" Click="CheckForUpdates_Click"/></Grid></Border>
-                    <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Expander HorizontalAlignment="Stretch"><Expander.Header><StackPanel><TextBlock x:Name="AboutOpenSourceLabel" FontWeight="SemiBold"/><TextBlock x:Name="AboutAttributionText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel></Expander.Header><TextBlock x:Name="AboutDisclaimerText" Margin="0,8,0,4" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap"/></Expander></Border>
+                    <HyperlinkButton x:Name="AboutOpenSourceLink" Margin="16,12,0,0" Padding="0,4" MinHeight="28"
+                                     HorizontalAlignment="Left" Click="AboutOpenSourceLink_Click">
+                        <TextBlock x:Name="AboutOpenSourceLabel" Style="{StaticResource CaptionTextBlockStyle}"/>
+                    </HyperlinkButton>
                     <StackPanel x:Name="DeveloperPanel" Spacing="4" Visibility="Collapsed"><TextBlock x:Name="TestingHeader" Style="{StaticResource MicaGoSettingsHeaderStyle}"/><Border x:Name="TestContactCard" Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEBE8;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="TestContactLabel"/><TextBlock x:Name="TestContactHint" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/></StackPanel><ToggleSwitch x:Name="TestContactToggle" Grid.Column="2" MinWidth="0" OffContent="" OnContent="" Toggled="TestContactToggle_Toggled"/></Grid></Border></StackPanel>
                 <TextBlock Text="made with ♥️ for everyone" HorizontalAlignment="Center" Margin="0,20,0,12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>

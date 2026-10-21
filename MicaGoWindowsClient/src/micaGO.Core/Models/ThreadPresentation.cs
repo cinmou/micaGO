@@ -84,7 +84,7 @@ public static class ThreadPresentation
             result.Add(row with
             {
                 CompactWithPrevious=compactPrevious,CompactWithNext=compactNext,ShowBubbleTail=!row.IsPresentationSystem&&(!compactNext||(next is not null&&IsBigEmoji(MessageSemantics.VisibleText(next.Text)))),
-                ShowFooter=row.IsOutgoing&&!row.IsPresentationSystem&&(row.IsEdited||(!isGroup&&(i==latestOutgoing||i==latestRead||i==latestDelivered))),IsBigEmoji=bigEmoji,IsStickerOnly=stickerOnly,
+                ShowFooter=row.IsOutgoing&&!row.IsPresentationSystem&&(row.DeliveryState==MessageDeliveryState.Failed||row.IsEdited||(!isGroup&&(i==latestOutgoing||i==latestRead||i==latestDelivered))),IsBigEmoji=bigEmoji,IsStickerOnly=stickerOnly,
                 ShowSenderLabel=incomingGroup&&!sameSenderPrevious,ShowSenderAvatar=incomingGroup&&!sameSenderNext,
                 EffectLabel=row.IsPresentationSystem?null:Effect(row.ExpressiveSendStyleId),ReserveSenderAvatarSpace=incomingGroup
             });

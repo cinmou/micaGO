@@ -3,6 +3,12 @@ namespace MicaGo.Core.Models;
 /// <summary>Contact identity groups presentation; server routes still own history and sends.</summary>
 public static class ContactConversationSemantics
 {
+    public static ChatSummary? ForwardRoute(IEnumerable<ChatSummary> routes,string? preferred,bool needsText,bool needsAttachments)
+    {
+        var compatible=routes.Where(route=>(!needsText||route.CanSendText)&&(!needsAttachments||route.CanSendAttachments)).ToArray();
+        return compatible.FirstOrDefault(route=>route.Id.Equals(preferred,StringComparison.OrdinalIgnoreCase))??compatible.FirstOrDefault();
+    }
+
     public static ChatSummary Merge(IReadOnlyList<ChatSummary> routes, string? savedRoute)
     {
         if (routes.Count == 0) throw new ArgumentException("At least one route is required.", nameof(routes));
@@ -17,6 +23,7 @@ public static class ContactConversationSemantics
             RouteIds = ordered.Select(route => route.Id).ToArray(),
             PrimaryRouteId = sender.Id,
             CanSendText = sender.CanSendText,
+            CanSendAttachments = sender.CanSendAttachments,
             ServiceLabel = sender.ServiceLabel,
             UnreadCount = ordered.Sum(route => route.UnreadCount),
             HasUnread = ordered.Any(route => route.HasUnread),

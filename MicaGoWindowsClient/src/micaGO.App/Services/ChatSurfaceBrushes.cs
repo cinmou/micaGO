@@ -6,12 +6,14 @@ namespace MicaGo.App.Services;
 
 /// <summary>
 /// Keep message cards and chips legible over a custom chat image. Header and
-/// editor surfaces use system theme layers and stay outside the image canvas.
+/// editor material has separate acrylic resources so image contrast adjustments
+/// never turn its floating surfaces opaque.
 /// </summary>
 public static class ChatSurfaceBrushes
 {
     private static readonly (string Key, Color Light, Color Dark)[] SolidColors =
     [
+        ("MicaGoIncomingMessageBrush", Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), Color.FromArgb(0xFF, 0x33, 0x33, 0x33)),
         ("MicaGoChatChipBrush", Color.FromArgb(0xFF, 0xEC, 0xEC, 0xEC), Color.FromArgb(0xFF, 0x33, 0x33, 0x33)),
         ("MicaGoChatCardBrush", Color.FromArgb(0xFF, 0xFB, 0xFB, 0xFB), Color.FromArgb(0xFF, 0x2B, 0x2B, 0x2B)),
     ];
