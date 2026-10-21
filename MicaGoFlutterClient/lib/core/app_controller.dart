@@ -2101,34 +2101,74 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  /// Writes contact-avatar bytes to a stable temp file (one per contact key) so
-  /// the notification plugin can reference it as a bitmap. Best-effort.
   // C60: keep the FCM background isolate's contact cache fresh. The isolate
   // can't reach ContactsService, so the main isolate persists handle →
   // {contact name, avatar file} whenever the chat list is loaded; pushes then
   // show the real name + photo instead of the raw handle. Throttled — the
   // resolution walk + file writes shouldn't run on every silent reload.
   DateTime? _notifContactCacheSyncedAt;
+  Set<String> _notifContactCacheHandles = {};
+  Future<void> _notifContactCacheWrite = Future.value();
+
+  /// Contact loading may finish after startup or while the server is offline.
+  /// Rebuild from local routes immediately when the contacts index changes.
+  Future<void> refreshNotificationContactCache() async {
+    try {
+      final chats = await cache.listChats(
+        includeDebug: true,
+        includeHidden: true,
+      );
+      await syncNotificationContactCache(chats, force: true);
+    } catch (_) {
+      // Background notifications retain the last successfully written cache.
+    }
+  }
 
   Future<void> syncNotificationContactCache(
     List<ChatSummary> chats, {
     bool force = false,
+  }) {
+    // A slow photo read from an older refresh must not overwrite a newer index.
+    final update = _notifContactCacheWrite.then(
+      (_) => _writeNotificationContacts(chats, force: force),
+    );
+    _notifContactCacheWrite = update;
+    return update;
+  }
+
+  Future<void> _writeNotificationContacts(
+    List<ChatSummary> chats, {
+    required bool force,
   }) async {
+    final routes = <String, ChatSummary>{};
+    for (final chat in chats) {
+      for (final raw in [
+        if (!chat.isGroup) chat.chatIdentifier ?? '',
+        ...chat.participants,
+      ]) {
+        final handle = normalizeNotificationHandle(raw);
+        if (handle.isEmpty) continue;
+        final existing = routes[handle];
+        if (existing == null || (existing.isGroup && !chat.isGroup)) {
+          routes[handle] = chat;
+        }
+      }
+    }
+    final handles = routes.keys.toSet();
     final last = _notifContactCacheSyncedAt;
     if (!force &&
+        setEquals(handles, _notifContactCacheHandles) &&
         last != null &&
         DateTime.now().difference(last) < const Duration(minutes: 10)) {
       return;
     }
-    _notifContactCacheSyncedAt = DateTime.now();
     try {
       final entries = <String, NotificationContact>{};
       Directory? avatarDir;
-      for (final chat in chats) {
-        if (chat.isGroup) continue;
+      for (final route in routes.entries) {
         if (entries.length >= notificationContactCacheMax) break;
-        final handle = chat.chatIdentifier?.trim() ?? '';
-        if (handle.isEmpty) continue;
+        final handle = route.key;
+        final chat = route.value;
         final name = contactNameResolver?.call(handle)?.trim();
         // Custom avatar (user-set) wins; else the contact photo, written to a
         // stable file under app support (NOT the purgeable temp dir — the
@@ -2136,7 +2176,7 @@ class AppController extends ChangeNotifier {
         var avatarPath = await _customSenderAvatarPath(
           chatGuid: chat.guid,
           handle: handle,
-          isGroup: false,
+          isGroup: chat.isGroup,
         );
         if (avatarPath == null) {
           try {
@@ -2167,6 +2207,8 @@ class AppController extends ChangeNotifier {
         }
       }
       await writeNotificationContactCache(store, entries);
+      _notifContactCacheSyncedAt = DateTime.now();
+      _notifContactCacheHandles = handles;
     } catch (_) {
       // Best-effort; pushes fall back to the server-provided name/handle.
     }

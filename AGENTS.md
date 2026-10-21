@@ -384,13 +384,19 @@ Four components:
   reach ContactsService, so the main isolate persists a **handle → {name,
   avatar-file} cache** (`notification_contact_cache.dart`, SecureStore key
   `micago.notif_contact_cache.v1`, capped 300): `AppController.
-  syncNotificationContactCache` runs after each chat-list load (throttled 10 min),
+  syncNotificationContactCache` runs for network and cached chat-list loads
+  (throttled 10 min only for an unchanged handle roster). The app root listens
+  for contact-index changes and forces a rebuild from cached routes, including
+  contacts that finish loading after the startup deadline. Include group members;
+  serialize writes and advance the throttle only after a successful write,
   resolving names via `contactNameResolver` and writing contact photos to
   **app-support**/notif-avatars (not the purgeable temp dir); custom avatars win.
   `showPushNotification` looks the handle up, overrides the sender/conversation
   title for 1:1 chats, and passes `avatarFilePath` (existence-checked) into the
   MessagingStyle Person. Fallback stays server name → handle. Tests:
-  `notification_contact_cache_test.dart` (encode/decode/normalize/cap).
+  `notification_contact_cache_test.dart` (encode/decode/normalize/cap) and
+  `notification_contact_refresh_test.dart` (late/offline contacts, photos,
+  group-only senders, failed writes and competing refreshes).
 - Needs: **Companion rebuild** (picker) + **backend rebuild** (default) + **APK
   rebuild** (cache + isolate lookup); then set preview to "Sender & message" in
   the Companion and Save.

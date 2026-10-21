@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -35,6 +37,24 @@ class MicaGoApp extends StatefulWidget {
 
 class _MicaGoAppState extends State<MicaGoApp> {
   late final GoRouter _router = createRouter(widget.controller);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.contacts.addListener(_refreshNotificationContacts);
+    _refreshNotificationContacts();
+  }
+
+  void _refreshNotificationContacts() {
+    if (widget.contacts.status == ContactsStatus.requesting) return;
+    unawaited(widget.controller.refreshNotificationContactCache());
+  }
+
+  @override
+  void dispose() {
+    widget.contacts.removeListener(_refreshNotificationContacts);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
