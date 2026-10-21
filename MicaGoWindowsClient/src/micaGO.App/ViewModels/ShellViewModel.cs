@@ -17,8 +17,7 @@ public sealed class ShellViewModel : IAsyncDisposable
     private List<ChatSummary> _allChats = [];
     private readonly Dictionary<string, ChatSummary> _routeChats = new(StringComparer.OrdinalIgnoreCase);
     private List<Message> _rawMessages = [];
-    private readonly Dictionary<string, string> _pendingAttachmentPaths = [];
-    private readonly Dictionary<string,CancellationTokenSource> _uploadCancellations=[];
+    private readonly OutgoingSendService _outgoing;
     private CancellationTokenSource? _selectionCts;
     private IReadOnlySet<string> _hiddenMessageKeys = new HashSet<string>();
     private IReadOnlySet<string> _hiddenChatGuids = new HashSet<string>();
@@ -32,6 +31,24 @@ public sealed class ShellViewModel : IAsyncDisposable
     public ShellViewModel(DispatcherQueue dispatcher, IMicaGoApi api, AppServices services)
     {
         _dispatcher = dispatcher; _api = api; _services = services;
+        _outgoing=new(api,services.Cache,services.Media);
+        _outgoing.Changed+=(_,update)=>Dispatch(()=>{
+            var message=update.Message;
+            if(_selectedRouteIds.Contains(message.ChatId)) {
+                var raw=_rawMessages.ToList();var index=raw.FindIndex(row=>row.ChatId==message.ChatId&&row.PresentationKey==message.PresentationKey);
+                if(index>=0&&raw[index] is{} old&&old.IsPending&&message.IsPending&&old.DeliveryState==message.DeliveryState&&old.Text==message.Text&&old.ErrorText==message.ErrorText&&old.Media.SequenceEqual(message.Media)) {
+                    _rawMessages[index]=message;
+                    var row=Messages.FirstOrDefault(item=>item.PresentationKey==message.PresentationKey);
+                    if(row is not null)row.Update(row.Value with{UploadProgress=message.UploadProgress});
+                    return;
+                }
+                if(index>=0&&(!message.IsPending||raw[index].IsPending))raw[index]=message.IsPending?message:MessageSemantics.ReconcilePresentation(raw[index],message);
+                else if(update.IsNew)raw.Add(message);
+                ApplyMessages(raw,update.IsNew?new Dictionary<string,MessageEntranceKind>{{message.TimelineKey,MessageEntranceKind.LocalSend}}:null);
+            }
+            UpdateChatsForMessages([message],false);RealtimeChanged?.Invoke(this,EventArgs.Empty);
+        });
+        _outgoing.Removed+=(_,id)=>Dispatch(()=>ApplyMessages(_rawMessages.Where(row=>row.PresentationKey!=id)));
     }
 
     public ChatListCollection Chats { get; } = [];
@@ -87,6 +104,7 @@ public sealed class ShellViewModel : IAsyncDisposable
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await _services.Cache.InitializeAsync(cancellationToken);
+        await _outgoing.PruneFilesAsync(cancellationToken);
         _hiddenMessageKeys = await _services.Cache.GetHiddenMessageKeysAsync(cancellationToken);
         _services.ChatPreferences.Changed += OnChatPreferencesChanged;
         _services.MessagePreferences.Changed += OnMessagePreferencesChanged;
@@ -139,6 +157,11 @@ public sealed class ShellViewModel : IAsyncDisposable
         .Where(route => !route.IsGroup && !IsChatHidden(route) &&
             (chat.ContactId is not null ? string.Equals(route.ContactId,chat.ContactId,StringComparison.OrdinalIgnoreCase) : route.Id==chat.Id))
         .OrderByDescending(route=>route.UpdatedAt).ToArray();
+
+    public IReadOnlyList<ChatSummary> GetLinkableContactAccounts(ChatSummary chat) => _routeChats.Values
+        .Where(route => !route.IsGroup && !IsChatHidden(route) && route.ContactId is not null
+            && !string.Equals(route.ContactId, chat.ContactId, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(route => route.Title, StringComparer.CurrentCultureIgnoreCase).ToArray();
 
     public async Task RefreshContactsAsync(CancellationToken cancellationToken=default)
     {
@@ -224,13 +247,13 @@ public sealed class ShellViewModel : IAsyncDisposable
             cached=OrderTimeline((await Task.WhenAll(routes.Select(route=>_services.Cache.GetMessagesAsync(route,MessagePageSize,cancellationToken:token)))).SelectMany(row=>row)).TakeLast(MessagePageSize).ToArray();
             token.ThrowIfCancellationRequested(); if(SelectedChat?.ListKey!=chat.ListKey)return;
             MergeSnapshotMessages(await DecorateMessageSendersAsync(cached,chat.IsGroup,token));
-            await RestorePendingUploadsAsync(chat.PrimaryRouteId,token);
+            foreach(var route in _selectedRouteIds)await RestorePendingSendsAsync(route,token);
 
             var remote=await _api.GetMessageHistoryAsync(routes,MessagePageSize,cancellationToken:token);
             await _services.Cache.UpsertMessagesAsync(remote.Messages, token);
             token.ThrowIfCancellationRequested(); if(SelectedChat?.ListKey!=chat.ListKey)return;
             MergeSnapshotMessages(await DecorateMessageSendersAsync(remote.Messages,chat.IsGroup,token));
-            await RestorePendingUploadsAsync(chat.PrimaryRouteId,token);
+            foreach(var route in _selectedRouteIds)await RestorePendingSendsAsync(route,token);
             _historyCursor=remote.NextCursor;
             HasMoreMessages=remote.HasMore;
         }
@@ -276,62 +299,35 @@ public sealed class ShellViewModel : IAsyncDisposable
         var current=_allChats.FirstOrDefault(item=>item.ListKey==chat.ListKey);if(current is null)return;current.UpdateFrom(current with{UnreadCount=0,HasUnread=false});SelectedChat=current;
     }
 
-    public async Task SendTextAsync(string text, CancellationToken cancellationToken = default)
+    public async Task SendTextAsync(string text,CancellationToken cancellationToken=default)
     {
-        if (SelectedChat is null || string.IsNullOrWhiteSpace(text)) return;
-        var tempId = "local-" + Guid.NewGuid().ToString("N");
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var route = SelectedChat.PrimaryRouteId;
-        var pending = new Message(tempId, route, text.Trim(), DateTime.Now.ToString("HH:mm"), true, MessageDeliveryState.Sending, DateCreated: now, IsPending: true, PresentationId: tempId);
-        ApplyMessages(_rawMessages.Append(pending),new Dictionary<string,MessageEntranceKind>{{pending.TimelineKey,MessageEntranceKind.LocalSend}});
-        try
-        {
-            var confirmed = await _api.SendTextAsync(route, text.Trim(), tempId, cancellationToken);
-            var index = _rawMessages.FindIndex(item=>item.PresentationKey==pending.PresentationKey); if (index >= 0){var raw=_rawMessages.ToList();raw[index]=MessageSemantics.ReconcilePresentation(raw[index],confirmed);ApplyMessages(raw);}
-            await _services.Cache.UpsertMessagesAsync([confirmed], cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            var delivery=SendOutcome.FromException(exception,cancellationToken);
-            var index = _rawMessages.FindIndex(item=>item.PresentationKey==pending.PresentationKey); if (index >= 0&&_rawMessages[index].IsPending){var raw=_rawMessages.ToList();raw[index]=raw[index] with { DeliveryState = delivery, ErrorText = delivery==MessageDeliveryState.Failed?exception.Message:null };ApplyMessages(raw);}
-        }
+        if(SelectedChat is not{CanSendText:true} chat||string.IsNullOrWhiteSpace(text))return;
+        await _outgoing.SendTextAsync(chat.PrimaryRouteId,text,cancellationToken);
     }
-
-    public async Task SendAttachmentsAsync(IEnumerable<string> filePaths, bool isAudioMessage = false, CancellationToken cancellationToken = default)
+    public async Task SendAttachmentsAsync(IEnumerable<string> paths,bool isAudioMessage=false,CancellationToken cancellationToken=default)
     {
-        if (SelectedChat is null) return;
-        var staged = filePaths.Select((filePath, index) =>
-        {
-            var tempId = "local-" + Guid.NewGuid().ToString("N");
-            var fileName = Path.GetFileName(filePath); var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + index;
-            var attachment = new Attachment(tempId, fileName, MimeFor(filePath), new FileInfo(filePath).Length);
-            var route = SelectedChat.PrimaryRouteId;
-            var pending = new Message(tempId, route, string.Empty, DateTime.Now.ToString("HH:mm"), true, MessageDeliveryState.Sending, AttachmentLabel: fileName, DateCreated: now, Attachments: [attachment], IsPending: true, PresentationId: tempId);
-            _pendingAttachmentPaths[tempId] = filePath;
-            return (filePath, tempId, pending);
-        }).ToArray();
-        ApplyMessages(_rawMessages.Concat(staged.Select(item=>item.pending)),staged.ToDictionary(item=>item.pending.TimelineKey,_=>MessageEntranceKind.LocalSend,StringComparer.OrdinalIgnoreCase));
-        foreach (var item in staged)
-        {
-            var upload=new PendingUpload(item.tempId,item.pending.ChatId,item.filePath,item.pending.AttachmentLabel??Path.GetFileName(item.filePath),item.pending.Media[0].MimeType,item.pending.Media[0].Size,item.pending.DateCreated);
-            await _services.Cache.UpsertPendingUploadAsync(upload,cancellationToken);
-            await _services.Media.SeedAsync(item.tempId, item.filePath, cancellationToken);
-            await CompleteUploadAsync(upload,isAudioMessage,cancellationToken);
-        }
+        if(SelectedChat is not{CanSendAttachments:true} chat)return;
+        await _outgoing.SendFilesAsync(chat.PrimaryRouteId,paths,isAudioMessage,cancellationToken);
     }
 
     public async Task EditAsync(Message message, string text, CancellationToken cancellationToken = default) { await _api.EditMessageAsync(message.ChatId, message.Id, text, cancellationToken: cancellationToken); if (_realtime is not null) await _realtime.CatchUpAsync(cancellationToken); }
     public async Task RetractAsync(Message message, CancellationToken cancellationToken = default) { await _api.RetractMessageAsync(message.ChatId, message.Id, cancellationToken: cancellationToken); if (_realtime is not null) await _realtime.CatchUpAsync(cancellationToken); }
-    public async Task DeleteAsync(Message message, CancellationToken cancellationToken = default) { if(!message.IsPending)await _api.DeleteMessageAsync(message.ChatId, message.Id, cancellationToken);ApplyMessages(_rawMessages.Where(item=>item.TimelineKey!=message.TimelineKey));_pendingAttachmentPaths.Remove(message.PresentationKey);await _services.Cache.DeletePendingUploadAsync(message.PresentationKey,cancellationToken);if(!message.IsPending)await _services.Cache.DeleteMessageAsync(message.ChatId,message.Id, cancellationToken); }
-    public async Task RetryAttachmentAsync(Message message, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Message message,CancellationToken cancellationToken=default)
     {
-        if(_realtime is not null)await _realtime.CatchUpAsync(cancellationToken);
-        if (!_pendingAttachmentPaths.TryGetValue(message.PresentationKey, out var path) || !File.Exists(path)) return;
-        var index=_rawMessages.FindIndex(item=>item.IsPending&&item.PresentationKey==message.PresentationKey); if(index<0)return; var sending=_rawMessages[index] with { DeliveryState=MessageDeliveryState.Sending, ErrorText=null, UploadProgress=0 };var raw=_rawMessages.ToList();raw[index]=sending;ApplyMessages(raw);
-        await _services.Cache.UpsertPendingUploadAsync(new PendingUpload(sending.Id,sending.ChatId,path,sending.AttachmentLabel??Path.GetFileName(path),sending.Media[0].MimeType,sending.Media[0].Size,sending.DateCreated),cancellationToken);
-        await CompleteUploadAsync(new PendingUpload(sending.Id,sending.ChatId,path,sending.AttachmentLabel??Path.GetFileName(path),sending.Media[0].MimeType,sending.Media[0].Size,sending.DateCreated),false,cancellationToken);
+        if(message.IsPending)await _outgoing.DeleteAsync(message,cancellationToken);
+        else {await _api.DeleteMessageAsync(message.ChatId,message.Id,cancellationToken);await _services.Cache.DeleteMessageAsync(message.ChatId,message.Id,cancellationToken);}
+        ApplyMessages(_rawMessages.Where(row=>row.TimelineKey!=message.TimelineKey));
     }
-    public void CancelAttachmentUpload(Message message){if(_uploadCancellations.TryGetValue(message.PresentationKey,out var cancellation))cancellation.Cancel();}
+    public async Task RetryMessageAsync(Message message,CancellationToken cancellationToken=default)
+    {
+        if(_realtime is not null) {
+            using var probe=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);probe.CancelAfter(TimeSpan.FromSeconds(3));
+            try{await _realtime.CatchUpAsync(probe.Token);}catch{}
+        }
+        if(_services.Connection.TokenRejected)return;
+        await _outgoing.RetryAsync(message,cancellationToken);
+    }
+    public void CancelAttachmentUpload(Message message)=>_outgoing.Cancel(message);
 
     /// <summary>Queues route-scoped visibility changes and updates the local timeline.</summary>
     public async Task HideMessagesAsync(IEnumerable<Message> messages, CancellationToken cancellationToken = default)
@@ -348,33 +344,25 @@ public sealed class ShellViewModel : IAsyncDisposable
     /// is re-sent as text; attachments are staged from the media cache under
     /// their original file name and re-uploaded.
     /// </summary>
-    public async Task ForwardMessagesAsync(ChatSummary target, IReadOnlyList<Message> messages, CancellationToken cancellationToken = default)
+    public IReadOnlyList<ChatSummary> ForwardTargets(IReadOnlyList<Message> messages)=>_allChats.Where(chat=>ForwardRoute(chat,messages) is not null&&!IsChatHidden(chat)).ToArray();
+    private string? ForwardRoute(ChatSummary target,IReadOnlyList<Message> messages)
     {
-        foreach (var message in messages.Where(row => !row.IsSeparator && !row.IsPresentationSystem).OrderBy(row => row.DateCreated))
-        {
-            var text = MessageSemantics.VisibleText(message.Text);
-            if (text.Length > 0)
-            {
-                try { await _api.SendTextAsync(target.Id, text, "local-" + Guid.NewGuid().ToString("N"), cancellationToken); }
-                catch { }
-            }
-            foreach (var attachment in message.Media.Where(item => !item.Id.StartsWith("local-", StringComparison.Ordinal)))
-            {
-                try
-                {
-                    var cachedPath = _services.Media.TryGetPath(attachment.Id)
-                        ?? await _services.Media.GetAsync(_api, attachment.Id, cancellationToken: cancellationToken);
-                    var staging = Path.Combine(Path.GetTempPath(), "micaGO-forward", Guid.NewGuid().ToString("N"));
-                    Directory.CreateDirectory(staging);
-                    var named = Path.Combine(staging, string.IsNullOrWhiteSpace(attachment.FileName) ? "attachment" : attachment.FileName);
-                    File.Copy(cachedPath, named, true);
-                    try { await _api.SendAttachmentAsync(target.Id, "local-" + Guid.NewGuid().ToString("N"), named, cancellationToken: cancellationToken); }
-                    finally { try { Directory.Delete(staging, true); } catch { } }
-                }
-                catch { }
+        var attachments=messages.Any(row=>row.Media.Count>0);var text=messages.Any(row=>MessageSemantics.VisibleText(row.Text).Length>0);
+        var routes=(target.RouteIds is {Count:>0}?target.RouteIds:[target.Id]).Select(id=>_routeChats.GetValueOrDefault(id)).OfType<ChatSummary>();
+        return ContactConversationSemantics.ForwardRoute(routes,target.PrimaryRouteId,text,attachments)?.Id;
+    }
+    public async Task ForwardMessagesAsync(ChatSummary target,IReadOnlyList<Message> messages,CancellationToken cancellationToken=default)
+    {
+        var route=ForwardRoute(target,messages)??throw new InvalidOperationException("No compatible send route.");
+        foreach(var message in messages.Where(row=>!row.IsSeparator&&!row.IsPresentationSystem&&!row.IsPending).OrderBy(row=>row.DateCreated)) {
+            var text=MessageSemantics.VisibleText(message.Text);
+            if(text.Length>0&&await _outgoing.SendTextAsync(route,text,cancellationToken)!=MessageDeliveryState.Sent)throw new InvalidOperationException(_services.Localization["forwardIncomplete"]);
+            foreach(var attachment in message.Media) {
+                var source=_services.Media.TryGetPath(attachment.Id)??await _services.Media.GetAsync(_api,attachment.Id,cancellationToken:cancellationToken);
+                var result=await _outgoing.SendForwardFileAsync(route,source,attachment.FileName,attachment.IsVoiceMessage,cancellationToken);
+                if(result!=MessageDeliveryState.Sent)throw new InvalidOperationException(_services.Localization["forwardIncomplete"]);
             }
         }
-        if (_realtime is not null) await _realtime.CatchUpAsync(cancellationToken);
     }
 
     /// <summary>Re-fetches the chat list (used after toggling the offline test contact).</summary>
@@ -390,22 +378,9 @@ public sealed class ShellViewModel : IAsyncDisposable
         catch { }
     }
 
-    private async Task UploadAttachmentAsync(Message pending,string path,CancellationToken cancellationToken,bool isAudioMessage=false)
-    {
-        var uploadCancellation=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);_uploadCancellations[pending.PresentationKey]=uploadCancellation;
-        var progress=new Progress<double>(value=>
-        {
-            var row=Messages.FirstOrDefault(item=>item.PresentationKey==pending.PresentationKey);if(row is null)return;
-            var rawIndex=_rawMessages.FindIndex(item=>item.PresentationKey==pending.PresentationKey);
-            if(rawIndex>=0)_rawMessages[rawIndex]=_rawMessages[rawIndex] with{UploadProgress=value};
-            row.Update(row.Value with{UploadProgress=value});
-        });
-        try{await _api.SendAttachmentAsync(pending.ChatId,pending.Id,path,isAudioMessage:isAudioMessage,progress:progress,cancellationToken:uploadCancellation.Token);}
-        finally{_uploadCancellations.Remove(pending.PresentationKey);uploadCancellation.Dispose();}
-    }
-
     private async void OnRealtimeMessagesChanged(object? sender, RealtimeMessageBatch batch)
     {
+        await _outgoing.ReconcileAsync();
         var changed=batch.Messages;
         var selected=SelectedChat;var decorated=selected is null?changed:await DecorateMessageSendersAsync(changed,selected.IsGroup,CancellationToken.None);
         Dispatch(() =>
@@ -439,7 +414,7 @@ public sealed class ShellViewModel : IAsyncDisposable
                         var pending = !string.IsNullOrWhiteSpace(message.PresentationId)
                             ? raw.FirstOrDefault(item=>item.IsPending&&item.ChatId.Equals(message.ChatId,StringComparison.OrdinalIgnoreCase)&&item.PresentationKey==message.PresentationId)
                             : MessageSemantics.MatchingPending(raw, message);
-                        if (pending is not null){var index=raw.IndexOf(pending);raw[index]=MessageSemantics.ReconcilePresentation(pending,message);_pendingAttachmentPaths.Remove(pending.PresentationKey);_=_services.Cache.DeletePendingUploadAsync(pending.PresentationKey);}
+                        if (pending is not null){var index=raw.IndexOf(pending);raw[index]=MessageSemantics.ReconcilePresentation(pending,message);_outgoing.Acknowledge(pending.PresentationKey);_=_services.Cache.DeletePendingSendAsync(pending.PresentationKey);}
                         else
                         {
                             raw.Add(message);
@@ -486,7 +461,7 @@ public sealed class ShellViewModel : IAsyncDisposable
             var advancedRoute = ChatUnreadSemantics.Advance(routeChat, message.DateCreated, message.IsOutgoing, isSelected||alreadyRead, firstObservation);
             if (_services.ReadState.UnreadMarks.GetValueOrDefault(message.ChatId) && !isSelected)
                 advancedRoute = advancedRoute with { HasUnread = true, UnreadCount = 0 };
-            _routeChats[message.ChatId] = advancedRoute;
+            _routeChats[message.ChatId] = advancesChat?advancedRoute with{Preview=MessageSemantics.PreviewText(message),Time=ChatTimestamp(message.DateCreated)}:advancedRoute;
             var routeRows = (chat.RouteIds is { Count: > 0 } chatRoutes ? chatRoutes : [chat.Id])
                 .Select(route => _routeChats.GetValueOrDefault(route)).OfType<ChatSummary>().ToArray();
             var updatesLatest = message.DateCreated >= chat.UpdatedAt;
@@ -495,7 +470,7 @@ public sealed class ShellViewModel : IAsyncDisposable
             updates[canonical.ListKey]=chat with
             {
                 Preview=updatesLatest?preview:chat.Preview,
-                Time=updatesLatest?message.SentAt:chat.Time,
+                Time=updatesLatest?ChatTimestamp(message.DateCreated):chat.Time,
                 UpdatedAt=Math.Max(chat.UpdatedAt,message.DateCreated),
                 UnreadCount=routeRows.Sum(route => route.UnreadCount),
                 HasUnread=routeRows.Any(route => route.HasUnread),
@@ -610,6 +585,8 @@ public sealed class ShellViewModel : IAsyncDisposable
             var chat = snapshot;
             if (_routeChats.TryGetValue(snapshot.Id,out var live) && live.UpdatedAt > snapshot.UpdatedAt)
                 chat = snapshot with { UpdatedAt=live.UpdatedAt,LatestFromMe=live.LatestFromMe,Preview=live.Preview,UnreadCount=live.UnreadCount };
+            var pending=(await _services.Cache.GetPendingSendsAsync(chat.Id,cancellationToken)).LastOrDefault();
+            if(pending is not null&&pending.DateCreated>=chat.UpdatedAt)chat=chat with{UpdatedAt=pending.DateCreated,Preview=MessageSemantics.PreviewText(pending.ToMessage()),LatestFromMe=true,UnreadCount=0};
             var locallyMuted=await _services.Cache.GetSettingAsync("chat.muted."+chat.Id,cancellationToken)=="1";var locallyPinned=await _services.Cache.GetSettingAsync("chat.pinned."+chat.Id,cancellationToken)=="1";
             // C43-style derived unread: the dot survives restarts because it is
             // computed from the read watermark, never from a live counter.
@@ -766,15 +743,17 @@ public sealed class ShellViewModel : IAsyncDisposable
     private static IOrderedEnumerable<Message> OrderTimeline(IEnumerable<Message> rows)=>rows
         .OrderBy(row=>row.DateCreated).ThenBy(row=>row.SourceRowId)
         .ThenBy(row=>row.ChatId,StringComparer.OrdinalIgnoreCase).ThenBy(row=>row.Id,StringComparer.OrdinalIgnoreCase);
-    private async Task RestorePendingUploadsAsync(string chatId,CancellationToken token)
+    private async Task RestorePendingSendsAsync(string chatId,CancellationToken token)
     {
         var raw=_rawMessages.ToList();var changed=false;
-        foreach(var upload in await _services.Cache.GetPendingUploadsAsync(chatId,token))
+        foreach(var upload in await _services.Cache.GetPendingSendsAsync(chatId,token))
         {
-            if(!File.Exists(upload.FilePath)){await _services.Cache.DeletePendingUploadAsync(upload.TempId,token);continue;}
-            if(raw.Any(row=>row.PresentationKey==upload.TempId))continue;_pendingAttachmentPaths[upload.TempId]=upload.FilePath;
-            raw.Add(upload.ToMessage());changed=true;
-            if(upload.State=="sending")await _services.Cache.UpdatePendingUploadAsync(upload with{State="awaiting_confirmation"},token);
+            if(raw.Any(row=>row.PresentationKey==upload.TempId))continue;
+            var restored=upload.State=="queued"?upload with{State="failed"}:upload;
+            if(restored!=upload)await _services.Cache.UpdatePendingSendAsync(restored,token);
+            if(!restored.IsText&&File.Exists(restored.FilePath))try{await _services.Media.SeedAsync(restored.TempId,restored.FilePath,token);}catch(IOException){}catch(UnauthorizedAccessException){}
+            raw.Add(restored.ToMessage());changed=true;
+            if(upload.State=="sending")await _services.Cache.UpdatePendingSendAsync(upload with{State="awaiting_confirmation"},token);
         }
         if(changed) {
             var confirmed=raw.Where(row=>!row.IsPending).ToArray();
@@ -782,20 +761,6 @@ public sealed class ShellViewModel : IAsyncDisposable
             ApplyMessages(MessageSemantics.MergeSnapshot(raw,confirmed,_selectedRouteIds));
         }
     }
-    private async Task CompleteUploadAsync(PendingUpload upload,bool isAudioMessage,CancellationToken ct)
-    {
-        if(!(await _services.Cache.GetPendingUploadsAsync(upload.ChatId,ct)).Any(item=>item.TempId==upload.TempId))return;
-        var delivery=MessageDeliveryState.Sent;string? error=null;
-        try { await UploadAttachmentAsync(upload.ToMessage(),upload.FilePath,ct,isAudioMessage); }
-        catch(Exception exception) { delivery=SendOutcome.FromException(exception,ct);if(delivery==MessageDeliveryState.Failed)error=exception.Message; }
-        var index=_rawMessages.FindIndex(row=>row.IsPending&&row.ChatId==upload.ChatId&&row.PresentationKey==upload.TempId);
-        if(index>=0) {
-            var raw=_rawMessages.ToList();raw[index]=raw[index] with{DeliveryState=delivery,ErrorText=error,UploadProgress=delivery==MessageDeliveryState.Sent?1:raw[index].UploadProgress};ApplyMessages(raw);
-        }
-        var state=delivery==MessageDeliveryState.Sent?"sent_unconfirmed":delivery==MessageDeliveryState.Failed?"failed":"awaiting_confirmation";
-        await _services.Cache.UpdatePendingUploadAsync(upload with{State=state,Error=error},CancellationToken.None);
-    }
-    private static string MimeFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch { ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".gif" => "image/gif", ".webp" => "image/webp", ".heic" or ".heif" => "image/heic", ".mov" => "video/quicktime", ".mp4" or ".m4v" => "video/mp4", ".m4a" => "audio/mp4", ".caf" => "audio/x-caf", ".mp3" => "audio/mpeg", ".wav" => "audio/wav", _ => "application/octet-stream" };
     private void Dispatch(Action action) { if (_services.Connection.TokenRejected) return; if (_dispatcher.HasThreadAccess) action(); else _dispatcher.TryEnqueue(() => { if (!_services.Connection.TokenRejected) action(); }); }
-    public async ValueTask DisposeAsync() { _services.ReadState.Changed-=OnReadStateChanged;_services.ChatPreferences.Changed-=OnChatPreferencesChanged;_services.MessagePreferences.Changed-=OnMessagePreferencesChanged; foreach(var cancellation in _uploadCancellations.Values)cancellation.Cancel();_selectionCts?.Cancel();_selectionCts?.Dispose();if (_realtime is not null) await _realtime.DisposeAsync(); }
+    public async ValueTask DisposeAsync() { _services.ReadState.Changed-=OnReadStateChanged;_services.ChatPreferences.Changed-=OnChatPreferencesChanged;_services.MessagePreferences.Changed-=OnMessagePreferencesChanged; _outgoing.Dispose();_selectionCts?.Cancel();_selectionCts?.Dispose();if (_realtime is not null) await _realtime.DisposeAsync(); }
 }

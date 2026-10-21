@@ -1,0 +1,22 @@
+<Page x:Class="MicaGo.App.Views.ThirdPartyNoticesPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid MaxWidth="1000" Margin="36,12,36,24" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Button x:Name="BackButton" Style="{StaticResource MicaGoIconButtonStyle}" Click="BackButton_Click">
+                <FontIcon Glyph="&#xE72B;" FontSize="16"/>
+            </Button>
+            <TextBlock x:Name="TitleText" Grid.Column="1" Style="{StaticResource SubtitleTextBlockStyle}"
+                       VerticalAlignment="Center" TextWrapping="Wrap"/>
+        </Grid>
+        <ScrollViewer Grid.Row="1" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
+                      HorizontalContentAlignment="Stretch">
+            <StackPanel x:Name="DocumentsPanel" Spacing="16"/>
+        </ScrollViewer>
+    </Grid>
+</Page>

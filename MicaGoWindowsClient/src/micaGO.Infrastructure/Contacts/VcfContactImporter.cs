@@ -27,8 +27,16 @@ public sealed class VcfContactImporter(LocalCacheStore cache)
             if (identities.Length == 0) { skipped++; continue; }
             var displayName = string.IsNullOrWhiteSpace(card.DisplayName) ? identities[0] : card.DisplayName.Trim();
             var avatarPath = await SavePhotoAsync(card.PhotoBytes, card.PhotoMimeType, cancellationToken);
-            var contactId = await ResolveContactIdAsync(card.StableId, identities, cancellationToken);
-            foreach (var identity in identities) contacts[identity] = new ContactMatch(identity, displayName, avatarPath, "vcf", now, contactId);
+            // Cards without UID can overlap inside the same file before any
+            // rows have reached SQLite. Reuse that identity as well as saved rows.
+            var pendingIds = identities.Select(identity => contacts.GetValueOrDefault(IdentityKey(identity))?.ContactId)
+                .OfType<string>().Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.Ordinal);
+            var pendingId = pendingIds.FirstOrDefault();
+            var contactId = string.IsNullOrWhiteSpace(card.StableId) && pendingId is not null
+                ? pendingId : await ResolveContactIdAsync(card.StableId, identities, cancellationToken);
+            foreach (var key in contacts.Where(pair => pendingIds.Contains(pair.Value.ContactId)).Select(pair => pair.Key).ToArray())
+                contacts[key] = contacts[key] with { ContactId = contactId };
+            foreach (var identity in identities) contacts[IdentityKey(identity)] = new ContactMatch(identity, displayName, avatarPath, "vcf", now, contactId);
         }
         if (contacts.Count == 0) throw new InvalidDataException("The vCard file contains no usable phone numbers or email addresses.");
         await cache.UpsertContactsAsync(contacts.Values, cancellationToken);
@@ -99,4 +107,5 @@ public sealed class VcfContactImporter(LocalCacheStore cache)
     private static string Hash(string value) => Hash(Encoding.UTF8.GetBytes(value));
     private static string Hash(byte[] value) => Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
     private static bool IsUsableIdentity(string value) => value.Contains('@') || value.Count(char.IsDigit) >= 5;
+    private static string IdentityKey(string value) => value.Contains('@') ? value.Trim().ToLowerInvariant() : "+" + new string(value.Where(char.IsDigit).ToArray());
 }

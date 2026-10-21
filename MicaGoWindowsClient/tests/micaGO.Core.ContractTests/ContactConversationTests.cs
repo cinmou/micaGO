@@ -22,6 +22,12 @@ internal static class ContactConversationTests
         Require(ContactConversationSemantics.Merge([sendableEmail,phone],null).PrimaryRouteId=="email", "Automatic sends should prefer a sendable iMessage route.");
         var newestPhone=phone with{UpdatedAt=300};
         Require(ContactConversationSemantics.Merge([email,newestPhone],null).ListKey==merged.ListKey, "New activity must not replace merged contact identity.");
+        var mediaEmail=sendableEmail with{CanSendAttachments=true};
+        Require(ContactConversationSemantics.ForwardRoute([phone,mediaEmail],"phone",true,true)?.Id=="email","Mixed forwarding must choose a route supporting both payloads.");
+        Require(ContactConversationSemantics.ForwardRoute([phone,mediaEmail],"phone",true,false)?.Id=="phone","Text forwarding preserves the saved route.");
+        Require(ContactConversationSemantics.ForwardRoute([phone],"phone",true,true) is null,"No attachment permission means no forwarding target.");
+        var roundtrip=System.Text.Json.JsonSerializer.Deserialize<ChatSummary>(System.Text.Json.JsonSerializer.Serialize(mediaEmail));
+        Require(roundtrip?.CanSendAttachments==true,"Attachment capability survives cache serialization.");
     }
     private static void Require(bool condition,string message){if(!condition)throw new Exception(message);}
 }

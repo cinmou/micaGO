@@ -40,7 +40,12 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+#if MICAGO_VISUAL_CHECK
+        VisualCheck.Run();
+        return;
+#else
         _ = LaunchAsync();
+#endif
     }
 
     private static async Task LaunchAsync()

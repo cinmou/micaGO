@@ -50,7 +50,8 @@ public sealed class AppServices : IDisposable
         {
             if (rejected) await Cache.SetSettingAsync("auth.rejected", "true");
             if (await Cache.GetSettingAsync("auth.rejected") != "true") return;
-            await Cache.ClearContentCacheAsync();
+            await Cache.ClearContentCacheAsync(discardPending:true);
+            OutgoingSendService.ClearOwnedFiles();
             await Media.ClearAsync();
             await Cache.SetSettingAsync("auth.rejected", "false");
         }

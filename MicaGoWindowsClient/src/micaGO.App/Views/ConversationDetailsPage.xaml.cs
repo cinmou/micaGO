@@ -100,8 +100,7 @@ public sealed partial class ConversationDetailsPage : Page
     private bool _loadingSendRoute;
 
     /// <summary>
-    /// Merged-view opt-out (Flutter C68 beta): a 1:1 contact whose messages
-    /// arrive over several routes can be split back into separate chats.
+    /// Route grouping and explicit account linking use persistent contact identity.
     /// </summary>
     private async Task LoadRoutesCardAsync(Services.LocalizationService l)
     {
@@ -118,6 +117,8 @@ public sealed partial class ConversationDetailsPage : Page
         RoutesCard.Visibility = Visibility.Visible;
         RoutesHeader.Text = l["routes"];
         MergeRoutesLabel.Text = l["mergeRoutes"];
+        LinkAccountsButton.Content = l["linkAccounts"];
+        LinkAccountsButton.IsEnabled = _chat.ContactId is not null;
         RoutesListText.Text = string.Join('\n',
             candidates.Count>0 ? candidates.Select(route=>$"{route.Participants?.FirstOrDefault() ?? route.Id} · {route.ServiceLabel}") : [_chat.Participants?.FirstOrDefault() ?? _chat.Id]);
         // The merge toggle only matters when this contact actually has (or
@@ -143,6 +144,47 @@ public sealed partial class ConversationDetailsPage : Page
             SendRoutePicker.SelectedIndex=SendRoutePicker.Items.Cast<ComboBoxItem>().ToList().FindIndex(item=>string.Equals(item.Tag as string,activeRoute,StringComparison.OrdinalIgnoreCase));
         }
         _loadingSendRoute=false;
+    }
+
+    private async void LinkAccountsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_chat?.ContactId is not { } targetId || _context is null) return;
+        var l = AppServices.Current.Localization;
+        var candidates = _context.Host.GetLinkableContactAccounts(_chat);
+        var panel = new StackPanel { Spacing = 12, MaxWidth = 440 };
+        panel.Children.Add(new TextBlock { Text = l[candidates.Count == 0 ? "linkAccountsEmpty" : "linkAccountsBody"], TextWrapping = TextWrapping.Wrap });
+        var choices = new List<CheckBox>();
+        foreach (var group in candidates.GroupBy(chat => chat.ContactId, StringComparer.OrdinalIgnoreCase))
+        {
+            var title = group.First().Title;
+            var addresses = group.SelectMany(chat => chat.Participants ?? [chat.Id]).Distinct(StringComparer.OrdinalIgnoreCase);
+            var choice = new CheckBox { Tag = group.Key, Content = new TextBlock { Text = title + "\n" + string.Join(", ", addresses), TextWrapping = TextWrapping.Wrap } };
+            choices.Add(choice); panel.Children.Add(choice);
+        }
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot, RequestedTheme = ActualTheme, Title = l["linkAccountsConfirm"],
+            Content = new ScrollViewer { Content = panel, MaxHeight = 360, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
+            PrimaryButtonText = candidates.Count > 0 ? l["linkAccountsConfirm"] : string.Empty,
+            CloseButtonText = l["cancel"], IsPrimaryButtonEnabled = false,
+        };
+        foreach (var choice in choices)
+        {
+            choice.Checked += (_, _) => dialog.IsPrimaryButtonEnabled = choices.Any(item => item.IsChecked == true);
+            choice.Unchecked += (_, _) => dialog.IsPrimaryButtonEnabled = choices.Any(item => item.IsChecked == true);
+        }
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        try
+        {
+            await AppServices.Current.Cache.LinkContactAccountsAsync(targetId, choices.Where(item => item.IsChecked == true).Select(item => (string)item.Tag));
+            await _context.Host.RefreshContactsAsync();
+            await LoadRoutesCardAsync(l);
+        }
+        catch (Exception)
+        {
+            MergeRoutesHint.Text = l["prefsError"];
+            MergeRoutesHint.Visibility = Visibility.Visible;
+        }
     }
 
     private async void MergeRoutesToggle_Toggled(object sender, RoutedEventArgs e)

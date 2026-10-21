@@ -19,6 +19,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
     private bool _isMuted;
     private string _serviceLabel;
     private bool _canSendText;
+    private bool _canSendAttachments;
     private bool _isPinned;
     private bool _isGroup;
     private long _updatedAt;
@@ -51,7 +52,8 @@ public sealed record ChatSummary : INotifyPropertyChanged
         bool HasUnread = false,
         string? PrimaryRouteId = null,
         string? ContactId = null,
-        bool KeepRoutesSeparate = false)
+        bool KeepRoutesSeparate = false,
+        bool CanSendAttachments = false)
     {
         this.Id = Id;
         _title = Title;
@@ -62,6 +64,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
         _isMuted = IsMuted;
         _serviceLabel = ServiceLabel;
         _canSendText = CanSendText;
+        _canSendAttachments = CanSendAttachments;
         _isPinned = IsPinned;
         _isGroup = IsGroup;
         _updatedAt = UpdatedAt;
@@ -89,6 +92,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
         _isMuted = source.IsMuted;
         _serviceLabel = source.ServiceLabel;
         _canSendText = source.CanSendText;
+        _canSendAttachments = source.CanSendAttachments;
         _isPinned = source.IsPinned;
         _isGroup = source.IsGroup;
         _updatedAt = source.UpdatedAt;
@@ -111,6 +115,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
     public bool IsMuted { get => _isMuted; init => _isMuted = value; }
     public string ServiceLabel { get => _serviceLabel; init => _serviceLabel = value; }
     public bool CanSendText { get => _canSendText; init => _canSendText = value; }
+    public bool CanSendAttachments { get => _canSendAttachments; init => _canSendAttachments=value; }
     public bool IsPinned { get => _isPinned; init => _isPinned = value; }
     public bool IsGroup { get => _isGroup; init => _isGroup = value; }
     public long UpdatedAt { get => _updatedAt; init => _updatedAt = value; }
@@ -155,6 +160,7 @@ public sealed record ChatSummary : INotifyPropertyChanged
         Set(ref _isMuted, source.IsMuted, nameof(IsMuted));
         Set(ref _serviceLabel, source.ServiceLabel, nameof(ServiceLabel));
         Set(ref _canSendText, source.CanSendText, nameof(CanSendText));
+        Set(ref _canSendAttachments, source.CanSendAttachments, nameof(CanSendAttachments));
         Set(ref _isPinned, source.IsPinned, nameof(IsPinned));
         Set(ref _isGroup, source.IsGroup, nameof(IsGroup));
         Set(ref _updatedAt, source.UpdatedAt, nameof(UpdatedAt));

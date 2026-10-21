@@ -56,6 +56,10 @@ public sealed class LocalCacheStore : IDisposable
                     source TEXT NOT NULL,
                     updated_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS contact_links (
+                    source_id TEXT PRIMARY KEY,
+                    target_id TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS hidden_messages (
                     guid TEXT PRIMARY KEY,
                     hidden_at INTEGER NOT NULL
@@ -64,7 +68,7 @@ public sealed class LocalCacheStore : IDisposable
                     guid TEXT PRIMARY KEY,
                     hidden_at INTEGER NOT NULL
                 );
-                CREATE TABLE IF NOT EXISTS pending_uploads (
+                CREATE TABLE IF NOT EXISTS pending_sends (
                     temp_id TEXT PRIMARY KEY,
                     chat_guid TEXT NOT NULL,
                     date_created INTEGER NOT NULL,
@@ -76,6 +80,8 @@ public sealed class LocalCacheStore : IDisposable
                 );
                 """, cancellationToken);
             await MigrateMessageIdentityAsync(db, cancellationToken);
+            if (await HasColumnAsync(db, "pending_uploads", "temp_id", cancellationToken))
+                await ExecuteAsync(db, "BEGIN; INSERT OR IGNORE INTO pending_sends SELECT * FROM pending_uploads; DROP TABLE pending_uploads; COMMIT;", cancellationToken);
             if (!await HasColumnAsync(db, "contacts", "contact_id", cancellationToken))
                 await ExecuteAsync(db, "ALTER TABLE contacts ADD COLUMN contact_id TEXT NOT NULL DEFAULT '';", cancellationToken);
             await ExecuteAsync(db, "UPDATE contacts SET contact_id='legacy:' || lower(hex(randomblob(16))) WHERE contact_id='';", cancellationToken);
@@ -114,7 +120,7 @@ public sealed class LocalCacheStore : IDisposable
             await using var transaction = db.BeginTransaction();
             foreach (var message in messages.Where(item => !item.IsPending))
             {
-                await ReconcileUploadAsync(db,transaction,message,cancellationToken);
+                await ReconcilePendingSendAsync(db,transaction,message,cancellationToken);
                 await using var cmd = db.CreateCommand(); cmd.Transaction = transaction;
                 cmd.CommandText = "INSERT INTO messages(guid,chat_guid,date_created,json) VALUES($id,$chat,$at,$json) ON CONFLICT(chat_guid,guid) DO UPDATE SET date_created=excluded.date_created,json=excluded.json";
                 cmd.Parameters.AddWithValue("$id", message.Id); cmd.Parameters.AddWithValue("$chat", message.ChatId); cmd.Parameters.AddWithValue("$at", message.DateCreated); cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(message with{PresentationId=null}));
@@ -125,7 +131,7 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
-    private static async Task ReconcileUploadAsync(SqliteConnection db,SqliteTransaction tx,Message server,CancellationToken ct)
+    private static async Task ReconcilePendingSendAsync(SqliteConnection db,SqliteTransaction tx,Message server,CancellationToken ct)
     {
         if(!server.IsOutgoing)return;
         await using var claimed=db.CreateCommand();claimed.Transaction=tx;
@@ -134,14 +140,14 @@ public sealed class LocalCacheStore : IDisposable
         if(await claimed.ExecuteScalarAsync(ct) is not null)return;
         var pending=new List<Message>();
         await using(var query=db.CreateCommand()) {
-            query.Transaction=tx;query.CommandText="SELECT json FROM pending_uploads WHERE chat_guid=$chat";query.Parameters.AddWithValue("$chat",server.ChatId);
+            query.Transaction=tx;query.CommandText="SELECT json FROM pending_sends WHERE chat_guid=$chat";query.Parameters.AddWithValue("$chat",server.ChatId);
             await using var reader=await query.ExecuteReaderAsync(ct);
-            while(await reader.ReadAsync(ct)) pending.Add(JsonSerializer.Deserialize<PendingUpload>(reader.GetString(0))!.ToMessage());
+            while(await reader.ReadAsync(ct)) pending.Add(JsonSerializer.Deserialize<PendingSend>(reader.GetString(0))!.ToMessage());
         }
         var match=server.PresentationId is{} exact?pending.FirstOrDefault(row=>row.PresentationKey==exact):MessageSemantics.MatchingPending(pending,server);
         if(match is null)return;
         await using var command=db.CreateCommand();command.Transaction=tx;
-        command.CommandText="INSERT INTO send_confirmations(chat_guid,temp_id,server_guid) VALUES($chat,$temp,$server); DELETE FROM pending_uploads WHERE temp_id=$temp AND chat_guid=$chat;";
+        command.CommandText="INSERT INTO send_confirmations(chat_guid,temp_id,server_guid) VALUES($chat,$temp,$server); DELETE FROM pending_sends WHERE temp_id=$temp AND chat_guid=$chat;";
         command.Parameters.AddWithValue("$chat",server.ChatId);command.Parameters.AddWithValue("$temp",match.Id);command.Parameters.AddWithValue("$server",server.Id);
         await command.ExecuteNonQueryAsync(ct);
     }
@@ -202,29 +208,42 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
-    public async Task UpsertPendingUploadAsync(PendingUpload upload,CancellationToken cancellationToken=default)
+    public async Task UpsertPendingSendAsync(PendingSend upload,CancellationToken cancellationToken=default)
     {
-        await WritePendingUploadAsync(upload,true,cancellationToken);
+        await WritePendingSendAsync(upload,true,cancellationToken);
     }
-    public Task UpdatePendingUploadAsync(PendingUpload upload,CancellationToken cancellationToken=default)=>WritePendingUploadAsync(upload,false,cancellationToken);
-    private async Task WritePendingUploadAsync(PendingUpload upload,bool insert,CancellationToken ct) {
+    public Task UpdatePendingSendAsync(PendingSend upload,CancellationToken cancellationToken=default)=>WritePendingSendAsync(upload,false,cancellationToken);
+    private async Task WritePendingSendAsync(PendingSend upload,bool insert,CancellationToken ct) {
         await EnsureInitializedAsync(ct);await _gate.WaitAsync(ct);
         try {
             await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(ct);await using var cmd=db.CreateCommand();
             cmd.CommandText=insert?
-                "INSERT INTO pending_uploads(temp_id,chat_guid,date_created,json) SELECT $id,$chat,$at,$json WHERE NOT EXISTS(SELECT 1 FROM send_confirmations WHERE chat_guid=$chat AND temp_id=$id) ON CONFLICT(temp_id) DO UPDATE SET json=excluded.json,date_created=excluded.date_created":
-                "UPDATE pending_uploads SET json=$json,date_created=$at WHERE temp_id=$id AND chat_guid=$chat";
+                "INSERT INTO pending_sends(temp_id,chat_guid,date_created,json) SELECT $id,$chat,$at,$json WHERE NOT EXISTS(SELECT 1 FROM send_confirmations WHERE chat_guid=$chat AND temp_id=$id) ON CONFLICT(temp_id) DO UPDATE SET json=excluded.json,date_created=excluded.date_created":
+                "UPDATE pending_sends SET json=$json,date_created=$at WHERE temp_id=$id AND chat_guid=$chat";
             cmd.Parameters.AddWithValue("$id",upload.TempId);cmd.Parameters.AddWithValue("$chat",upload.ChatId);cmd.Parameters.AddWithValue("$at",upload.DateCreated);cmd.Parameters.AddWithValue("$json",JsonSerializer.Serialize(upload));
             await cmd.ExecuteNonQueryAsync(ct);
         }finally{_gate.Release();}
     }
-    public async Task<IReadOnlyList<PendingUpload>> GetPendingUploadsAsync(string chatId,CancellationToken cancellationToken=default)
+    public async Task<IReadOnlyList<PendingSend>> GetPendingSendsAsync(string? chatId=null,CancellationToken cancellationToken=default)
     {
-        await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="SELECT json FROM pending_uploads WHERE chat_guid=$chat ORDER BY date_created";cmd.Parameters.AddWithValue("$chat",chatId);var rows=new List<PendingUpload>();await using var reader=await cmd.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken)){var row=JsonSerializer.Deserialize<PendingUpload>(reader.GetString(0));if(row is not null)rows.Add(row);}return rows;}finally{_gate.Release();}
+        await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="SELECT json FROM pending_sends WHERE ($chat IS NULL OR chat_guid=$chat) ORDER BY date_created";cmd.Parameters.AddWithValue("$chat",(object?)chatId??DBNull.Value);var rows=new List<PendingSend>();await using var reader=await cmd.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken)){var row=JsonSerializer.Deserialize<PendingSend>(reader.GetString(0));if(row is not null)rows.Add(row);}return rows;}finally{_gate.Release();}
     }
-    public async Task DeletePendingUploadAsync(string tempId,CancellationToken cancellationToken=default)
+    public async Task DeletePendingSendAsync(string tempId,CancellationToken cancellationToken=default)
     {
-        await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="DELETE FROM pending_uploads WHERE temp_id=$id";cmd.Parameters.AddWithValue("$id",tempId);await cmd.ExecuteNonQueryAsync(cancellationToken);}finally{_gate.Release();}
+        await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="DELETE FROM pending_sends WHERE temp_id=$id";cmd.Parameters.AddWithValue("$id",tempId);await cmd.ExecuteNonQueryAsync(cancellationToken);}finally{_gate.Release();}
+    }
+
+    public async Task<bool> ReplaceFailedPendingSendAsync(PendingSend previous, PendingSend next, CancellationToken ct=default)
+    {
+        await EnsureInitializedAsync(ct); await _gate.WaitAsync(ct);
+        try {
+            await using var db=new SqliteConnection(_connectionString); await db.OpenAsync(ct);
+            await using var cmd=db.CreateCommand();
+            cmd.CommandText="UPDATE pending_sends SET temp_id=$next,date_created=$at,json=$json WHERE temp_id=$old AND chat_guid=$chat AND json_extract(json,'$.State')='failed'";
+            cmd.Parameters.AddWithValue("$next",next.TempId);cmd.Parameters.AddWithValue("$at",next.DateCreated);cmd.Parameters.AddWithValue("$json",JsonSerializer.Serialize(next));
+            cmd.Parameters.AddWithValue("$old",previous.TempId);cmd.Parameters.AddWithValue("$chat",previous.ChatId);
+            return await cmd.ExecuteNonQueryAsync(ct)==1;
+        } finally { _gate.Release(); }
     }
 
     public async Task HideMessagesAsync(IEnumerable<string> guids, CancellationToken cancellationToken = default)
@@ -349,7 +368,24 @@ public sealed class LocalCacheStore : IDisposable
             foreach (var contact in contacts)
             {
                 await using var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "INSERT INTO contacts(identity,contact_id,display_name,avatar_path,source,updated_at) VALUES($id,$contact,$name,$avatar,$source,$at) ON CONFLICT(identity) DO UPDATE SET contact_id=excluded.contact_id,display_name=excluded.display_name,avatar_path=excluded.avatar_path,source=excluded.source,updated_at=excluded.updated_at";
-                cmd.Parameters.AddWithValue("$id", NormalizeIdentity(contact.Identity)); cmd.Parameters.AddWithValue("$contact", contact.ContactId); cmd.Parameters.AddWithValue("$name", contact.DisplayName); cmd.Parameters.AddWithValue("$avatar", (object?)contact.AvatarPath ?? DBNull.Value); cmd.Parameters.AddWithValue("$source", contact.Source); cmd.Parameters.AddWithValue("$at", contact.UpdatedAt); await cmd.ExecuteNonQueryAsync(cancellationToken);
+                await using var link = db.CreateCommand(); link.Transaction = tx;
+                link.CommandText = "SELECT target_id FROM contact_links WHERE source_id=$id";
+                link.Parameters.AddWithValue("$id", contact.ContactId);
+                var contactId = await link.ExecuteScalarAsync(cancellationToken) as string ?? contact.ContactId;
+                // A legacy address may acquire a vCard UID on a later import.
+                // Preserve its explicit user link and remember the new UID too.
+                await using var prior = db.CreateCommand(); prior.Transaction = tx;
+                prior.CommandText = "SELECT contact_id FROM contacts WHERE identity=$identity AND contact_id IN (SELECT target_id FROM contact_links)";
+                prior.Parameters.AddWithValue("$identity", NormalizeIdentity(contact.Identity));
+                if (await prior.ExecuteScalarAsync(cancellationToken) is string linkedId && contactId != linkedId)
+                {
+                    await using var alias = db.CreateCommand(); alias.Transaction = tx;
+                    alias.CommandText = "UPDATE contacts SET contact_id=$target WHERE contact_id=$source; UPDATE contact_links SET target_id=$target WHERE target_id=$source; INSERT INTO contact_links(source_id,target_id) VALUES($source,$target) ON CONFLICT(source_id) DO UPDATE SET target_id=excluded.target_id";
+                    alias.Parameters.AddWithValue("$source", contact.ContactId); alias.Parameters.AddWithValue("$target", linkedId);
+                    await alias.ExecuteNonQueryAsync(cancellationToken);
+                    contactId = linkedId;
+                }
+                cmd.Parameters.AddWithValue("$id", NormalizeIdentity(contact.Identity)); cmd.Parameters.AddWithValue("$contact", contactId); cmd.Parameters.AddWithValue("$name", contact.DisplayName); cmd.Parameters.AddWithValue("$avatar", (object?)contact.AvatarPath ?? DBNull.Value); cmd.Parameters.AddWithValue("$source", contact.Source); cmd.Parameters.AddWithValue("$at", contact.UpdatedAt); await cmd.ExecuteNonQueryAsync(cancellationToken);
             }
             await tx.CommitAsync(cancellationToken);
         }
@@ -363,6 +399,42 @@ public sealed class LocalCacheStore : IDisposable
         finally { _gate.Release(); }
     }
 
+    /// <summary>Explicitly link imported contact identities. Aliases survive reimport.</summary>
+    public async Task LinkContactAccountsAsync(string targetId, IEnumerable<string> sourceIds, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var db = new SqliteConnection(_connectionString);
+            await db.OpenAsync(cancellationToken);
+            await using var tx = db.BeginTransaction();
+            await using var target = db.CreateCommand(); target.Transaction = tx;
+            target.CommandText = "SELECT COUNT(*) FROM contacts WHERE contact_id=$id";
+            target.Parameters.AddWithValue("$id", targetId);
+            if (Convert.ToInt64(await target.ExecuteScalarAsync(cancellationToken)) == 0)
+                throw new InvalidOperationException("The destination contact is no longer available.");
+            foreach (var sourceId in sourceIds.Distinct(StringComparer.Ordinal).Where(id => id != targetId))
+            {
+                await using var cmd = db.CreateCommand(); cmd.Transaction = tx;
+                cmd.CommandText = """
+                    UPDATE contacts SET contact_id=$target WHERE contact_id=$source;
+                    UPDATE contact_links SET target_id=$target WHERE target_id=$source;
+                    INSERT INTO contact_links(source_id,target_id) VALUES($source,$target)
+                        ON CONFLICT(source_id) DO UPDATE SET target_id=excluded.target_id;
+                    """;
+                cmd.Parameters.AddWithValue("$source", sourceId); cmd.Parameters.AddWithValue("$target", targetId);
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await using var merge = db.CreateCommand(); merge.Transaction = tx;
+            merge.CommandText = "INSERT INTO settings(key,value) VALUES($key,'1') ON CONFLICT(key) DO UPDATE SET value='1'";
+            merge.Parameters.AddWithValue("$key", "chat.mergeRoutes." + targetId);
+            await merge.ExecuteNonQueryAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task ClearContactsBySourceAsync(string source,CancellationToken cancellationToken=default)
     {
         await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);
@@ -373,18 +445,18 @@ public sealed class LocalCacheStore : IDisposable
     public async Task ClearImportedContactsAsync(CancellationToken cancellationToken=default)
     {
         await EnsureInitializedAsync(cancellationToken);await _gate.WaitAsync(cancellationToken);
-        try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="DELETE FROM contacts WHERE source='vcf' OR source='csv' OR source LIKE 'vcf:%'";await cmd.ExecuteNonQueryAsync(cancellationToken);}
+        try{await using var db=new SqliteConnection(_connectionString);await db.OpenAsync(cancellationToken);await using var cmd=db.CreateCommand();cmd.CommandText="DELETE FROM contacts WHERE source='vcf' OR source='csv' OR source LIKE 'vcf:%'; DELETE FROM contact_links;";await cmd.ExecuteNonQueryAsync(cancellationToken);}
         finally{_gate.Release();}
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
-        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await ExecuteAsync(db, "DELETE FROM messages; DELETE FROM chats; DELETE FROM settings; DELETE FROM contacts; DELETE FROM hidden_messages; DELETE FROM hidden_chats; DELETE FROM pending_uploads;", cancellationToken); }
+        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await ExecuteAsync(db, "DELETE FROM messages; DELETE FROM chats; DELETE FROM settings; DELETE FROM contacts; DELETE FROM contact_links; DELETE FROM hidden_messages; DELETE FROM hidden_chats; DELETE FROM pending_sends;", cancellationToken); }
         finally { _gate.Release(); }
     }
 
-    public async Task ClearContentCacheAsync(CancellationToken cancellationToken = default)
+    public async Task ClearContentCacheAsync(CancellationToken cancellationToken = default,bool discardPending=false)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
         try
@@ -393,7 +465,7 @@ public sealed class LocalCacheStore : IDisposable
             // Preferences, imported contacts, and hidden-item tombstones are
             // user data. Clearing the cache only removes reproducible rows and
             // resets the delta cursor so the next sync can rebuild them.
-            await ExecuteAsync(db,"DELETE FROM messages; DELETE FROM chats; DELETE FROM pending_uploads; DELETE FROM settings WHERE key='sync.cursor';",cancellationToken);
+            await ExecuteAsync(db,"DELETE FROM messages; DELETE FROM chats; DELETE FROM settings WHERE key='sync.cursor';"+(discardPending?"DELETE FROM pending_sends;":""),cancellationToken);
         }
         finally { _gate.Release(); }
     }

@@ -21,21 +21,21 @@ internal static class LateSendConfirmationTests
         var path=Path.Combine(Path.GetTempPath(),$"micago-late-send-{Guid.NewGuid():N}.db");
         try {
             using var cache=new LocalCacheStore(path);
-            var upload=new PendingUpload("local-upload","chat","/test/photo.jpg","photo.jpg","image/jpeg",100,100000,"failed","timeout");
-            await cache.UpsertPendingUploadAsync(upload);
+            var upload=new PendingSend("local-upload","chat","/test/photo.jpg","photo.jpg","image/jpeg",100,100000,"failed","timeout");
+            await cache.UpsertPendingSendAsync(upload);
             var photo=server with{Id="photo-server",Text="",Attachments=[new Attachment("photo","photo.jpg","image/jpeg",100)]};
             await cache.UpsertMessagesAsync([photo]);
-            await cache.UpdatePendingUploadAsync(upload with{State="failed"});
-            await cache.UpsertPendingUploadAsync(upload with{State="sent_unconfirmed"});
-            Check((await cache.GetPendingUploadsAsync("chat")).Count==0,"late callback resurrected an upload");
-            var second=upload with{TempId="local-second"};await cache.UpsertPendingUploadAsync(second);
+            await cache.UpdatePendingSendAsync(upload with{State="failed"});
+            await cache.UpsertPendingSendAsync(upload with{State="sent_unconfirmed"});
+            Check((await cache.GetPendingSendsAsync("chat")).Count==0,"late callback resurrected an upload");
+            var second=upload with{TempId="local-second"};await cache.UpsertPendingSendAsync(second);
             await cache.UpsertMessagesAsync([photo]);
-            Check((await cache.GetPendingUploadsAsync("chat")).Count==1,"duplicate server event consumed another upload");
+            Check((await cache.GetPendingSendsAsync("chat")).Count==1,"duplicate server event consumed another upload");
             await cache.UpsertMessagesAsync([photo with{Id="photo-server-2"}]);
-            Check((await cache.GetPendingUploadsAsync("chat")).Count==0,"second upload did not reconcile");
-            var other=upload with{TempId="other-route",ChatId="other"};await cache.UpsertPendingUploadAsync(other);
+            Check((await cache.GetPendingSendsAsync("chat")).Count==0,"second upload did not reconcile");
+            var other=upload with{TempId="other-route",ChatId="other"};await cache.UpsertPendingSendAsync(other);
             await cache.UpsertMessagesAsync([photo with{Id="photo-server-3"}]);
-            Check((await cache.GetPendingUploadsAsync("other")).Count==1,"confirmation crossed routes");
+            Check((await cache.GetPendingSendsAsync("other")).Count==1,"confirmation crossed routes");
             Check((upload with{State="sending"}).ToMessage().DeliveryState==MessageDeliveryState.AwaitingConfirmation,"interrupted upload restored as active transfer");
         } finally {SqliteConnection.ClearAllPools();foreach(var suffix in new[]{"","-wal","-shm"})if(File.Exists(path+suffix))File.Delete(path+suffix);}
     }

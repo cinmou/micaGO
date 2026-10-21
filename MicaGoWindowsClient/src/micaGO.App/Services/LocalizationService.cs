@@ -63,8 +63,8 @@ public sealed class LocalizationService
         values["connRestoreFailed"] = traditional ? "無法還原已儲存的連線：{0}" : chinese ? "无法恢复已保存的连接：{0}" : "The saved connection could not be restored: {0}";
         values["twemojiFlags"] = traditional ? "使用 Twemoji 顯示旗幟" : chinese ? "使用 Twemoji 显示旗帜" : "Use Twemoji for flags";
         values["twemojiFlagsDescription"] = traditional ? "用 Twemoji 圖片顯示旗幟。Windows 缺少 Emoji 17 字形，這部分一律使用內建圖片。" : chinese ? "用 Twemoji 图片显示旗帜。Windows 缺少 Emoji 17 字形，这部分始终使用内置图片。" : "Shows flags as Twemoji images. Emoji 17 always uses built-in images because Windows lacks them.";
-        values["twemojiAttribution"] = traditional ? "Twemoji 圖形 © Twitter, Inc. 與貢獻者 · CC-BY 4.0" : chinese ? "Twemoji 图形 © Twitter, Inc. 与贡献者 · CC-BY 4.0" : "Twemoji graphics © Twitter, Inc. and contributors · CC-BY 4.0";
-        values["twemojiDisclaimer"] = traditional ? "micaGO 與 X Corp.（Twitter）沒有任何關係。" : chinese ? "micaGO 与 X Corp.（Twitter）没有任何关系。" : "micaGO has no affiliation with X Corp. (Twitter).";
+        values["thirdPartyNotices"] = traditional ? "第三方聲明" : chinese ? "第三方声明" : "Third-party notices";
+        values["licenseReadFailed"] = traditional ? "無法讀取隨附的許可文件。請重新安裝 micaGO。" : chinese ? "无法读取随附的许可文件，请重新安装 micaGO。" : "The bundled license document could not be read. Please reinstall micaGO.";
         values["select"] = traditional ? "選取" : chinese ? "选择" : "Select";
         values["forward"] = traditional ? "轉發" : chinese ? "转发" : "Forward";
         values["forwardTo"] = traditional ? "轉發到…" : chinese ? "转发到…" : "Forward to…";
@@ -82,6 +82,8 @@ public sealed class LocalizationService
         values["selectAll"] = traditional ? "全選" : chinese ? "全选" : "Select all";
         values["selectedCount"] = traditional ? "已選取 {0} 則訊息" : chinese ? "已选择 {0} 条消息" : "{0} selected";
         values["voiceMessage"] = traditional ? "語音訊息" : chinese ? "语音消息" : "Voice message";
+        values["attachFiles"] = traditional ? "選擇檔案…" : chinese ? "选择文件…" : "Choose files…";
+        values["recordVoice"] = traditional ? "錄製語音訊息" : chinese ? "录制语音消息" : "Record voice message";
         values["emoji"] = traditional ? "表情符號" : chinese ? "表情符号" : "Emoji";
         values["jumpToBottom"] = traditional ? "跳到最新訊息" : chinese ? "跳到最新消息" : "Jump to latest";
         values["testing"] = traditional ? "測試" : chinese ? "测试" : "Testing";
@@ -96,6 +98,10 @@ public sealed class LocalizationService
         values["backupFailed"] = traditional ? "備份操作失敗：{0}" : chinese ? "备份操作失败：{0}" : "Backup operation failed: {0}";
         values["routes"] = traditional ? "帳號與合併" : chinese ? "账号与合并" : "Accounts & merging";
         values["mergeRoutes"] = traditional ? "合併此聯絡人的對話" : chinese ? "合并此联系人的对话" : "Merge this contact’s conversations";
+        values["linkAccounts"] = traditional ? "關聯其他帳號…" : chinese ? "关联其他账号…" : "Link other accounts…";
+        values["linkAccountsBody"] = traditional ? "選取屬於同一人的帳號。關聯只儲存在這台電腦，重新匯入聯絡人後仍會保留。" : chinese ? "选择属于同一人的账号。关联仅保存在这台电脑，重新导入联系人后仍会保留。" : "Select accounts belonging to this person. Links are saved on this PC and survive contact reimport.";
+        values["linkAccountsEmpty"] = traditional ? "沒有其他已匯入聯絡人的帳號可供關聯。請先匯入 .vcf 聯絡人。" : chinese ? "没有其他已导入联系人的账号可关联，请先导入 .vcf 联系人。" : "No other imported contact accounts are available. Import .vcf contacts first.";
+        values["linkAccountsConfirm"] = traditional ? "關聯帳號" : chinese ? "关联账号" : "Link accounts";
         values["mergeNeedsContact"] = traditional ? "匯入包含此人的電話與電子郵件的 .vcf 聯絡人卡片，才能將不同帳號的對話合併。" : chinese ? "导入包含此人号码和邮箱的 .vcf 联系人卡片，才能将不同账号的对话合并。" : "Import a .vcf contact card containing this person’s phone numbers and emails to merge their conversations.";
         values["mergeSingleRoute"] = traditional ? "目前只找到此聯絡人的一個對話帳號。其他帳號的對話出現後可在這裡合併。" : chinese ? "目前只找到此联系人的一个对话账号。其他账号的对话出现后可在这里合并。" : "Only one conversation account was found for this contact. More accounts can be merged here when their conversations appear.";
         values["sendUsing"] = traditional ? "傳送時使用" : chinese ? "发送时使用" : "Send using";
@@ -148,6 +154,12 @@ public sealed class LocalizationService
         values["back"] = traditional ? "返回" : chinese ? "返回" : "Back";
         values["retry"] = traditional ? "重試" : chinese ? "重试" : "Retry";
         values["cancelUpload"] = traditional ? "取消上傳" : chinese ? "取消上传" : "Cancel upload";
+        values["showConnectionStatus"] = traditional ? "顯示側欄連線狀態" : chinese ? "显示侧栏连接状态" : "Show sidebar connection status";
+        values["showConnectionStatusDescription"] = traditional ? "在聊天清單底部顯示目前連線狀態與伺服器位址。" : chinese ? "在聊天列表底部显示当前连接状态与服务器地址。" : "Show connection status and the server address below the chat list.";
+        values["copy"] = traditional ? "複製文字" : chinese ? "复制文字" : "Copy text";
+        values["sendFailed"] = traditional ? "傳送未完成" : chinese ? "发送未完成" : "Send incomplete";
+        values["sendAttachments"] = traditional ? "傳送附件" : chinese ? "发送附件" : "Send attachments";
+        values["forwardIncomplete"] = traditional ? "已停止轉寄。請在目標聊天查看傳送狀態；傳送失敗的訊息可手動重試。" : chinese ? "已停止转发。请在目标聊天查看发送状态；发送失败的消息可手动重试。" : "Forwarding stopped. Check the destination chat; failed messages can be retried manually.";
         values["close"] = traditional ? "關閉" : chinese ? "关闭" : "Close";
         values["saveAs"] = traditional ? "另存新檔" : chinese ? "另存为" : "Save as";
         values["openWith"] = traditional ? "開啟方式" : chinese ? "打开方式" : "Open with";
@@ -169,7 +181,10 @@ public sealed class LocalizationService
         values["aboutSubtitle"] = traditional ? "透過你的 Mac 在 Windows 上使用 iMessage" : chinese ? "通过你的 Mac 在 Windows 上使用 iMessage" : "iMessage on Windows, through your Mac";
         values["version"] = traditional ? "版本 {0} · Muscovite" : chinese ? "版本 {0} · Muscovite" : "Version {0} · Muscovite";
         values["viewOnGitHub"] = traditional ? "在 GitHub 上檢視專案" : chinese ? "在 GitHub 上查看项目" : "View the project on GitHub";
-        values["openSource"] = traditional ? "開源與致謝" : chinese ? "开源与致谢" : "Open source & attributions";
+        values["bubbleColorDescription"] = traditional ? "選擇你傳送的訊息所使用的顏色。" : chinese ? "选择你发送的消息所使用的颜色。" : "Choose the color of messages you send.";
+        values["customColorMode"] = traditional ? "自訂" : chinese ? "自定义" : "Custom";
+        values["moreColors"] = traditional ? "更多顏色…" : chinese ? "更多颜色…" : "More colors…";
+        values["openSource"] = traditional ? "開源與許可" : chinese ? "开源与许可" : "Open source & licenses";
         // C74: GitHub release update check.
         values["checkUpdates"] = traditional ? "檢查更新" : chinese ? "检查更新" : "Check for updates";
         values["updateCheckNow"] = traditional ? "點按檢查最新版本" : chinese ? "点按检查最新版本" : "Check GitHub for a newer release";
@@ -199,8 +214,8 @@ public sealed class LocalizationService
         var traditional = Language == "zh-Hant";
         root.Language = Language switch { "zh-Hans" => "zh-CN", "zh-Hant" => "zh-TW", _ => "en-US" };
         var font = new FontFamily(traditional
-            ? "Segoe UI, Microsoft JhengHei UI, Microsoft JhengHei, Microsoft YaHei UI"
-            : "Segoe UI, Microsoft YaHei UI, Microsoft YaHei, Microsoft JhengHei UI");
+            ? "Segoe UI Variable Text, Segoe UI, Microsoft JhengHei UI, Microsoft JhengHei, Microsoft YaHei UI, Segoe UI Emoji"
+            : "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, Microsoft JhengHei UI, Segoe UI Emoji");
         Application.Current.Resources["ContentControlThemeFontFamily"] = font;
         if (root is Control control) control.FontFamily = font;
     }
