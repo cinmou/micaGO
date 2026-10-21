@@ -46,12 +46,10 @@ struct APIClient {
         return URLSession(configuration: config)
     }()
 
-    private static func session() -> URLSession { sharedSession }
-
     /// Liveness check against the unauthenticated health endpoint.
     func health() async -> Bool {
         let req = request("api/health")
-        guard let (_, response) = try? await Self.session().data(for: req),
+        guard let (_, response) = try? await Self.sharedSession.data(for: req),
               let http = response as? HTTPURLResponse else {
             return false
         }
@@ -61,7 +59,7 @@ struct APIClient {
     /// Returns true if the configured token is accepted.
     func checkAuth() async -> Bool {
         let req = request("api/auth/check", method: "POST")
-        guard let (_, response) = try? await Self.session().data(for: req),
+        guard let (_, response) = try? await Self.sharedSession.data(for: req),
               let http = response as? HTTPURLResponse else {
             return false
         }
@@ -69,13 +67,13 @@ struct APIClient {
     }
 
     func status() async throws -> ServerStatus {
-        let (data, response) = try await Self.session().data(for: request("api/server/status"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/server/status"))
         try Self.validate(response)
         return try JSONDecoder().decode(ServerStatus.self, from: data)
     }
 
     func chatPreferences() async throws -> ChatPreferencesResponse {
-        let (data, response) = try await Self.session().data(for: request("api/chat-preferences"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/chat-preferences"))
         try Self.validate(response)
         return try JSONDecoder().decode(ChatPreferencesResponse.self, from: data)
     }
@@ -84,19 +82,19 @@ struct APIClient {
         var req = request("api/chat-preferences", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(mutation)
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response)
         return try JSONDecoder().decode(ChatPreferencesResponse.self, from: data)
     }
 
     func devices() async throws -> [DeviceInfo] {
-        let (data, response) = try await Self.session().data(for: request("api/devices"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/devices"))
         try Self.validate(response)
         return try JSONDecoder().decode(DeviceListResponse.self, from: data).data
     }
 
     func activeConnections() async throws -> [ActiveConnectionInfo] {
-        let (data, response) = try await Self.session().data(for: request("api/server/connections"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/server/connections"))
         try Self.validate(response)
         return try JSONDecoder().decode(ActiveConnectionListResponse.self, from: data).data
     }
@@ -105,7 +103,7 @@ struct APIClient {
     /// returning the fresh capability state. Called right after a helper install.
     @discardableResult
     func refreshMessageActions() async throws -> MessageActionsStatus {
-        let (data, response) = try await Self.session().data(for: request("api/messages/actions/refresh", method: "POST"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/messages/actions/refresh", method: "POST"))
         try Self.validate(response)
         return try JSONDecoder().decode(MessageActionsStatus.self, from: data)
     }
@@ -113,7 +111,7 @@ struct APIClient {
     // MARK: - Connection endpoints (v0.11)
 
     func serverURLs() async throws -> ServerURLs {
-        let (data, response) = try await Self.session().data(for: request("api/server/urls"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/server/urls"))
         try Self.validate(response)
         return try JSONDecoder().decode(ServerURLs.self, from: data)
     }
@@ -122,7 +120,7 @@ struct APIClient {
         var req = request("api/server/lan-visibility", method: "PUT")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: ["hiddenBaseUrls": hiddenBaseURLs.sorted()])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response)
         return try JSONDecoder().decode(ServerURLs.self, from: data)
     }
@@ -139,13 +137,13 @@ struct APIClient {
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response)
         return try JSONDecoder().decode(ServerURLs.self, from: data)
     }
 
     func checkPublicURL() async throws -> PublicURLCheckResult {
-        let (data, response) = try await Self.session().data(for: request("api/server/public-url/check", method: "POST"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/server/public-url/check", method: "POST"))
         try Self.validate(response)
         return try JSONDecoder().decode(PublicURLCheckResult.self, from: data)
     }
@@ -155,13 +153,13 @@ struct APIClient {
     /// Triggers an immediate server sync and returns the resulting diagnostics.
     @discardableResult
     func runSyncNow() async throws -> SyncDiagnostics {
-        let (data, response) = try await Self.session().data(for: request("api/sync/now", method: "POST"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/sync/now", method: "POST"))
         try Self.validate(response)
         return try JSONDecoder().decode(SyncNowResponse.self, from: data).diagnostics
     }
 
     func syncSettings() async throws -> SyncSettings {
-        let (data, response) = try await Self.session().data(for: request("api/sync/settings"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/sync/settings"))
         try Self.validate(response, body: data)
         return try JSONDecoder().decode(SyncSettings.self, from: data)
     }
@@ -172,7 +170,7 @@ struct APIClient {
         var req = request("api/sync/settings", method: "PUT")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
-        let (body, response) = try await Self.session().data(for: req)
+        let (body, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response)
         return try JSONDecoder().decode(SyncSettingsResponse.self, from: body)
     }
@@ -180,7 +178,7 @@ struct APIClient {
     // MARK: - Sync control (v0.11.3)
 
     func syncRules() async throws -> SyncRulesResponse {
-        let (data, response) = try await Self.session().data(for: request("api/sync/rules"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/sync/rules"))
         try Self.validate(response, body: data)
         return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
     }
@@ -193,14 +191,14 @@ struct APIClient {
             "syncMode": syncMode,
             "pushMode": pushMode,
         ])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response)
         return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
     }
 
     @discardableResult
     func deleteSyncRule(targetKind: String, targetValue: String) async throws -> SyncRulesResponse {
-        let (data, response) = try await Self.session().data(
+        let (data, response) = try await Self.sharedSession.data(
             for: request("api/sync/rules/\(targetKind)/\(targetValue)", method: "DELETE"))
         try Self.validate(response)
         return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
@@ -212,7 +210,7 @@ struct APIClient {
             "defaultSyncPolicy": defaultSync,
             "defaultPushPolicy": defaultPush,
         ])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response)
         return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
     }
@@ -246,14 +244,14 @@ struct APIClient {
         add("hasAttachments", hasAttachments)
         add("groupBy", groupBy)
 
-        let (data, response) = try await Self.session().data(for: request("api/debug/recent-messages", query: items))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/debug/recent-messages", query: items))
         try Self.validate(response)
         return try JSONDecoder().decode(DebugRecentResponse.self, from: data)
     }
 
     /// Chats (all services, including archived) so users can target rules.
     func chats() async throws -> [ChatSummary] {
-        let (data, response) = try await Self.session().data(for: request(
+        let (data, response) = try await Self.sharedSession.data(for: request(
             "api/chats",
             query: [URLQueryItem(name: "service", value: "all"),
                     URLQueryItem(name: "withArchived", value: "true"),
@@ -280,7 +278,7 @@ struct APIClient {
             "publicUrlSync": publicURLSync,
             "clearFirebaseConfig": clearFirebaseConfig,
         ])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         // Surface the server's validation message on 4xx (e.g. invalid service account).
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             if let env = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
@@ -294,7 +292,7 @@ struct APIClient {
     /// Sends a real test push through the server's current notification setup.
     func testNotifications() async -> String {
         let req = request("api/server/notifications/test", method: "POST")
-        guard let (data, response) = try? await Self.session().data(for: req),
+        guard let (data, response) = try? await Self.sharedSession.data(for: req),
               let http = response as? HTTPURLResponse else {
             return "Test push failed: could not reach server."
         }
@@ -315,7 +313,7 @@ struct APIClient {
     func putContactCache(_ contacts: [ServerContactEntry]) async throws {
         let rows = contacts.map { ["name": $0.name, "addresses": $0.addresses] as [String: Any] }
         let req = try jsonRequest("api/server/contacts/cache", method: "PUT", body: ["contacts": rows])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response, body: data)
     }
 
@@ -327,7 +325,7 @@ struct APIClient {
         let tlsFingerprint: String
     }
     func createPairingCode() async throws -> PairingInvitation {
-        let (data,response)=try await Self.session().data(for:request("api/pairing/create",method:"POST"))
+        let (data,response)=try await Self.sharedSession.data(for:request("api/pairing/create",method:"POST"))
         try Self.validate(response,body:data)
         return try JSONDecoder().decode(PairingInvitation.self,from:data)
     }
@@ -335,14 +333,14 @@ struct APIClient {
     struct PairingStatus: Decodable { let state: String }
     func pairingStatus(code: String) async throws -> String {
         let req = try jsonRequest("api/pairing/status", method: "POST", body: ["pairingCode": code])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response, body: data)
         return try JSONDecoder().decode(PairingStatus.self, from: data).state
     }
 
     func deleteDevice(deviceID: String) async throws {
         let req = request("api/devices/\(deviceID)", method: "DELETE")
-        let (_, response) = try await Self.session().data(for: req)
+        let (_, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response)
     }
 
@@ -376,7 +374,7 @@ struct APIClient {
 
     /// GET /api/test-contact — whether the offline test contact is on.
     func testContactInfo() async throws -> TestContactInfo {
-        let (data, response) = try await Self.session().data(for: request("api/test-contact"))
+        let (data, response) = try await Self.sharedSession.data(for: request("api/test-contact"))
         try Self.validate(response, body: data)
         return try JSONDecoder().decode(TestContactInfo.self, from: data)
     }
@@ -384,7 +382,7 @@ struct APIClient {
     /// PUT /api/test-contact — turn the offline test contact on or off.
     func setTestContact(enabled: Bool) async throws -> TestContactInfo {
         let req = try jsonRequest("api/test-contact", method: "PUT", body: ["enabled": enabled])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response, body: data)
         // PUT returns {enabled}; re-read for the full info shape.
         _ = data
@@ -395,14 +393,14 @@ struct APIClient {
     /// which pushes to the client like a received iMessage.
     func sendTestInbound(_ text: String) async throws {
         let req = try jsonRequest("api/test-contact/inbound", method: "POST", body: ["text": text])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response, body: data)
     }
 
     /// GET /api/chats/{guid}/messages — the conversation, newest first.
     func chatMessages(guid: String, limit: Int = 200) async throws -> [RecentMessage] {
         let req = request("api/chats/\(guid)/messages", query: [URLQueryItem(name: "limit", value: "\(limit)")])
-        let (data, response) = try await Self.session().data(for: req)
+        let (data, response) = try await Self.sharedSession.data(for: req)
         try Self.validate(response, body: data)
         return try JSONDecoder().decode(RecentMessagesResponse.self, from: data).data
     }

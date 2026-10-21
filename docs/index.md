@@ -1,61 +1,46 @@
-# micaGO — User Documentation
+# micaGO documentation
 
-**English** · [简体中文](index.zh-Hans.md) · [繁體中文](index.zh-Hant.md)
+**English** · [简体中文](index.zh-Hans.md) · [繁體中文](index.zh-Hant.md) · [Project README](../README.md)
 
-[← Project README](../README.md) · [Getting started](getting-started.md) · [CHANGELOG](../MicaGoServer/docs/CHANGELOG.md)
+For installation, start with Getting Started. For code changes, read the architecture and only the feature/platform documents relevant to the task. Engineering documents are maintained in Chinese; identifiers and commands keep their original spelling.
 
----
+## Install and use
 
-These guides help you set up the Mac app, connect from your phone, and optionally
-reach your Mac from anywhere. micaGO lets your **own** devices talk to **your own**
-Mac, with messages served between your Mac and the devices you connect.
+| Task | Guide |
+| --- | --- |
+| Install, authorize and pair the first device | [Getting Started](getting-started.md) |
+| Connect Android or Linux | [Client connection](android-client-connection.md) |
+| Connect away from home | [Cloudflare Tunnel](remote-access-cloudflare.md) |
+| Enable optional Android push | [Firebase setup](setup/firebase/README.md), [troubleshooting](setup/firebase/troubleshooting.md) |
+| Verify actual device behavior | [Manual checks](manual-test-flow.md) |
 
----
+## Development
 
-## 📚 Guides
+| Topic | Document |
+| --- | --- |
+| Components, data flow and ownership | [Architecture](ARCHITECTURE.md) |
+| Build, test, package and release | [Development](DEVELOPMENT.md) |
+| Where to find current endpoints and models | [API navigation](reference/api.md) |
+| Reasons behind important choices | [Decisions](decisions/README.md) |
 
-- **[Getting Started](getting-started.md)** — first-time setup: what you need,
-  where to find your server URL and token, and the recommended order to test each
-  connection.
-- **[Android Client Connection](android-client-connection.md)** — pairing the
-  Android app over LAN or a public URL, and what it supports.
-- **[Remote Access with Cloudflare Tunnel](remote-access-cloudflare.md)** — reach
-  your Mac from outside your home with your own domain. The tunnel is **external and
-  optional**, and you manage it.
-- **[Push Notifications](notifications-setup.md)** — optional self-hosted
-  Firebase / FCM setup and troubleshooting for Android notifications.
-- **[Firebase Setup Reference](setup/firebase/README.md)** — the same optional
-  push setup as a focused checklist, with deeper step-by-step pages.
-- **[Manual Test Flow](manual-test-flow.md)** — a copy-paste checklist you can run
-  from zero to confirm local, LAN, public, and client connectivity.
+## Feature behavior
 
----
+- [Connection](features/connection.md): pairing, credentials, TLS, routes and revocation.
+- [Messaging](features/messaging.md): send confirmation, history, identity, contacts and hiding.
+- [Unread](features/unread.md): read positions, manual unread, merged routes and notification actions.
+- [Media](features/media.md): uploads, previews, playback and caches.
+- [Notifications](features/notifications.md): realtime, FCM, avatars, background actions and privacy.
 
-## 🔐 Security notes
+## Platforms
 
-- Your **bearer token** is a password for your server. Anyone with your public URL
-  **and** token can reach your Mac — keep it private.
-- Keep your token out of screenshots, public logs, bug reports, chats, and issue
-  trackers.
-- Prefer **HTTPS** for anything leaving your home network (the Cloudflare guide
-  gives you HTTPS automatically).
-- If you think your token leaked, generate a new one in the Mac app and reconnect.
+- [Flutter](platforms/flutter.md): Android/Linux, lifecycle, shared UI and settings backups.
+- [Mac](platforms/macos.md): windows, processes, tunnels, permissions and updates.
+- [Windows](platforms/windows.md): WinUI, stable rows, contacts, notifications and packaging.
 
----
+## Maintaining these documents
 
-## 🧭 What's where
+Feature pages describe current behavior. Decisions explain why. Unconfirmed proposals do not belong in current behavior. Create a plan only when work needs persistent task context; remove the process notes after extracting useful rules.
 
-- The **Mac Companion** runs the server and shows your LAN + optional public
-  connection details, paired devices, and diagnostics.
-- The **Android app** pairs over LAN (same Wi‑Fi) or an optional public URL, syncs
-  chats, sends text + attachments + voice (and SMS when you enable it), renders
-  reactions/replies/effects/media/stickers/location, and optionally receives push.
-- **Remote access** uses your own domain + Cloudflare Tunnel, or another tunnel
-  you choose and manage.
+Old specifications and session records are available in Git history. Version changes are listed in [Releases](https://github.com/cinmou/micaGO/releases). Neither replaces current behavior or proves current validation.
 
-> Software/design docs and the development history live in
-> [`MicaGoServer/docs/`](../MicaGoServer/docs/README.md) — these `/docs` guides are
-> for **using** micaGO.
-
-See each guide for details, and the [root README](../README.md) for build
-instructions and the full feature list.
+When documentation and implementation disagree, check the code, tests and user requirements before changing either. Update the existing document instead of adding another summary.

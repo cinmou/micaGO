@@ -348,7 +348,7 @@ type SyncRulesResponse struct {
 }
 
 // ServerStatusResponse is the runtime control/status payload consumed by the
-// native macOS companion app (see docs/spec-v0.10.0-mac-companion.md). It is
+// native macOS companion app (see docs/platforms/macos.md). It is
 // intentionally read-only and local-control oriented; it never returns the
 // bearer token or any push token.
 type ServerStatusResponse struct {
@@ -390,7 +390,7 @@ type ServerMessageActionsStatus struct {
 
 // ServerCapabilities reports what the running chat.db schema supports, so
 // clients/companion can know which update signals this Mac can actually produce.
-// See docs/spec-v0.11.x-server-reliability.md.
+// See docs/ARCHITECTURE.md.
 type ServerCapabilities struct {
 	Schema SchemaCapabilities `json:"schema"`
 }

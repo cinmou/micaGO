@@ -9,7 +9,7 @@ import (
 	"micagoserver/internal/store"
 )
 
-// Sync-rule constants (v0.11.3). See docs/spec-v0.11.3-sync-control-and-privacy-rules.md.
+// Sync-rule constants (v0.11.3). See docs/features/messaging.md.
 const (
 	TargetChat   = "chat"
 	TargetHandle = "handle"

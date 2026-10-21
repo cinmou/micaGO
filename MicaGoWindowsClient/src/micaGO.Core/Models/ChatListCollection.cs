@@ -68,7 +68,7 @@ public sealed class ChatListCollection : ObservableCollection<ChatSummary>
 
     private int IndexOfKey(string key, int start)
     {
-        for (var index = Math.Max(0, start); index < Count; index++)
+        for (var index = start; index < Count; index++)
             if (string.Equals(this[index].ListKey, key, StringComparison.OrdinalIgnoreCase)) return index;
         return -1;
     }

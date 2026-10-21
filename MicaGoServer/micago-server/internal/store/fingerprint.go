@@ -8,7 +8,7 @@ import (
 
 // MessageState captures the mutable, update-relevant fields of a message used to
 // detect post-insert changes (edits, unsends, read/delivered, send errors). See
-// docs/spec-v0.11.x-server-reliability.md (§1). Fields are only meaningful when
+// docs/ARCHITECTURE.md. Fields are only meaningful when
 // the corresponding SchemaCapabilities flag is set; absent capabilities leave
 // them at their zero value and are excluded from comparison.
 type MessageState struct {

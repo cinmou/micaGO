@@ -660,9 +660,6 @@ func fileMtimeMillis(path string) *int64 {
 }
 
 func broadcastSyncResult(ctx context.Context, hub *realtime.Hub, result relaydb.SyncResult, diagnostics *syncDiagnostics) {
-	if hub == nil {
-		return
-	}
 	// C12: the realtime timeline is renderable-only. Debug-only/noise rows are
 	// persisted (the Inspector reads them) but are never broadcast as message:new,
 	// so a freshly-synced noise row cannot enter the normal client thread. Reaction
@@ -705,9 +702,6 @@ func broadcastSyncResult(ctx context.Context, hub *realtime.Hub, result relaydb.
 }
 
 func broadcastSendMatch(ctx context.Context, hub *realtime.Hub, tempGUID string, message store.MessageJSON, diagnostics *syncDiagnostics) {
-	if hub == nil {
-		return
-	}
 	if diagnostics != nil {
 		diagnostics.recordEvent("send:match", message.ChatGUID)
 	}
@@ -737,9 +731,6 @@ func logSyncResult(result relaydb.SyncResult, force bool) {
 }
 
 func dispatchNotifications(ctx context.Context, dispatcher *notify.Dispatcher, relay *relaydb.DB, result relaydb.SyncResult) {
-	if dispatcher == nil || relay == nil {
-		return
-	}
 	if len(result.NotificationEvents) == 0 {
 		return
 	}

@@ -15,8 +15,8 @@ public static class EndpointConfiguration
         {
             if (row.ValueKind != JsonValueKind.Object || Flag(row, "hidden", false) || Flag(row, "isHidden", false) || Flag(row, "disabled", false) || !Flag(row, "enabled", true)) continue;
             var endpoint = Parse(row, EndpointKind.Lan);
-            if (endpoint is not null) endpoint = endpoint with { TlsFingerprint = profile.TlsFingerprint ?? previousLan.FirstOrDefault(e => !string.IsNullOrEmpty(e.TlsFingerprint))?.TlsFingerprint };
             if (endpoint is null) continue;
+            endpoint = endpoint with { TlsFingerprint = profile.TlsFingerprint ?? previousLan.FirstOrDefault(e => !string.IsNullOrEmpty(e.TlsFingerprint))?.TlsFingerprint };
             if (!explicitVisibility && previousLan.Length > 0 && !previousLan.Any(old => old.BaseUrl.Equals(endpoint.BaseUrl, StringComparison.OrdinalIgnoreCase))) continue;
             routes.Add(endpoint);
         }

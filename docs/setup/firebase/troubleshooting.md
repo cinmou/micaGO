@@ -1,58 +1,20 @@
-# Firebase / FCM troubleshooting
+# 推送故障排查
 
-## Companion shows "config invalid (fcm)"
+按顺序检查，先确定停在哪一步，不要反复清空配对或应用数据。
 
-The service-account JSON couldn't be loaded as a valid RSA service account.
-- Confirm the path is correct and the file is readable by the user running the
-  server.
-- Confirm it's the **service account** key (has `client_email` + `private_key`),
-  not the Android `google-services.json`.
-- Re-download from Console → Project settings → Service accounts → Generate new
-  private key, and re-select it in the companion.
+| 现象 | 检查 |
+| --- | --- |
+| 客户端配置不可用 | `google-services.json` 是否还在原路径，文件是否可读、内容是否有效 |
+| 服务账号无效 | 是否选错文件、私钥文件是否存在；不要把完整错误中的私密路径公开 |
+| 无 FCM 设备 | 手机是否正常连接、拿到推送令牌并注册；配置文件可用不等于设备已注册 |
+| Google 返回权限错误 | API 是否启用、服务账号的发送权限和项目是否一致 |
+| 令牌请求超时 | 手机的 Google Play 服务、网络和到 Google 的连接；正常聊天连接不能证明 Google 可达 |
+| 已发送但手机没显示 | 系统通知权限、预览模式、应用是否前台、会话是否正在阅读或隐藏；再看客户端日志 |
+| 头像样式变化 | 对照系统版本和通知元数据；系统模板变化与投递失败分开判断 |
+| 公网 URL 同步成功但连接没更新 | 当前客户端没有完整 Firestore 自动发现流程，检查配对候选与公网设置 |
 
-## Send test notification fails with "push not configured"
+Mac 的“已配置”应表示当前文件有效。文件被移动或清理后，重新选择文件并保存。不要为了恢复 FCM 重新生成长期共享令牌。
 
-- The device has `pushEnabled = false`, `pushProvider = "none"`, or no push
-  token. Re-register the device with `pushProvider: "fcm"` and a real FCM token.
-- Notifications must be **enabled** and the provider set to **fcm** (Companion →
-  Notifications → Save).
+ADB 排查只保留步骤、状态和错误码，不输出推送令牌、设备凭据、私人消息或整份账号文件。接口返回成功和手机实际显示通知是两份证据。
 
-## Send test notification fails with a Google error
-
-- **403 / PERMISSION_DENIED** with
-  `cloudmessaging.messages.create`: the service account can authenticate, but it
-  is not allowed to send FCM messages. Open **Google Cloud Console** → **IAM &
-  Admin** → **IAM** → **Grant access**, paste the service account email from
-  `firebase-service-account.json` as the new principal, and grant **Firebase
-  Cloud Messaging API Admin** (`roles/firebasecloudmessaging.admin`). It is
-  normal if the service account did not appear in the IAM list before granting
-  access.
-- **403 / PERMISSION_DENIED** mentioning Cloud Messaging API disabled: enable
-  **Firebase Cloud Messaging API (V1)** in the Google Cloud console for the
-  project.
-- **404 / UNREGISTERED**: the device token is stale. micaGO prunes it
-  automatically (clears the token + disables push); re-register from the client.
-- **401 / invalid_grant** when minting the token: the Mac clock may be skewed
-  (JWT `iat/exp`), or the key was revoked. Fix the clock or re-issue the key.
-
-## No push arrives, but Send test notification reports success
-
-- The Android client isn't handling the FCM `data` message, or is in a state
-  where the OS suppressed it. Verify the client builds with the correct
-  `google-services.json` and handles `data` messages.
-- TTL is 24h; very old messages may have expired.
-
-## Firestore URL sync errors in the log
-
-- `firestore public-url sync: ... HTTP 403`: enable Firestore in the project and
-  ensure the service account can write (admin credentials bypass rules; check the
-  database exists and the API is enabled).
-- Sync is **optional** — disable it (`firebase.public_url_sync: false`) if you
-  don't use a changing public URL.
-
-## Where to look
-
-- Companion → **Logs** shows the server's stdout/stderr (tokens redacted).
-- `GET /api/server/status` → `notifications.implemented` should include `fcm`
-  when configured; `capabilities` shows chat.db support.
-- The service-account contents never appear in logs or API responses by design.
+修复后按[设置页的验证步骤](README.md#验证)检查。原生头像、锁屏回复、冷启动定位与后台省电行为仍需目标设备验证。

@@ -326,9 +326,6 @@ func IsAttachmentPreviewPayload(a AttachmentJSON) bool {
 // IsSticker). The stored MimeType is preserved when present and only filled in
 // when it was empty, so no raw data is lost.
 func DecorateAttachmentJSON(a *AttachmentJSON) {
-	if a == nil {
-		return
-	}
 	if a.OriginalMimeType == nil {
 		a.OriginalMimeType = a.MimeType
 	}

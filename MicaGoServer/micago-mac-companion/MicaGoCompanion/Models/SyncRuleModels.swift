@@ -1,7 +1,7 @@
 import Foundation
 
 // Codable mirrors of the v0.11.3 sync-control API.
-// See docs/spec-v0.11.3-sync-control-and-privacy-rules.md.
+// See docs/features/messaging.md.
 
 struct SyncRule: Codable, Identifiable, Hashable {
     var targetKind: String   // "chat" | "handle"

@@ -184,7 +184,6 @@ public sealed record ChatSummary : INotifyPropertyChanged
     private void SetSequence(ref IReadOnlyList<string>? field, IReadOnlyList<string>? value, string propertyName)
     {
         if (ReferenceEquals(field, value)) return;
-        if (field is null && value is null) return;
         if (field is not null && value is not null && field.SequenceEqual(value, StringComparer.OrdinalIgnoreCase)) return;
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

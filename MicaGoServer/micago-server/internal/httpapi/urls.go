@@ -23,7 +23,7 @@ import (
 // (local) and, when bound appropriately, LAN endpoints. The public endpoint is
 // an OPTIONAL EXTRA, configured by the user — never a replacement for, or a
 // switchable mode against, local/LAN. See
-// docs/spec-v0.11.0-connection-endpoints.md.
+// docs/features/connection.md.
 
 // Reachability is a tri-state that marshals as JSON `true`, `false`, or the
 // string `"unknown"` (matching the documented wire shape).

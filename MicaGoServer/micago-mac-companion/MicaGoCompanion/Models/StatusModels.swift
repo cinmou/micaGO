@@ -1,8 +1,7 @@
 import Foundation
 
 // Codable mirrors of the server's GET /api/server/status payload.
-// See MicaGoServer/docs/spec-v0.9.0-client-api-contract.md and
-// spec-v0.10.0-mac-companion.md.
+// See docs/reference/api.md and docs/platforms/macos.md.
 
 struct ServerStatus: Codable {
     var ok: Bool

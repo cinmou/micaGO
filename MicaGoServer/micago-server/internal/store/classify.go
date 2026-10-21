@@ -231,9 +231,6 @@ func FilterRenderableMessages(in []MessageJSON) []MessageJSON {
 }
 
 func AnnotateMessageJSON(m *MessageJSON) {
-	if m == nil {
-		return
-	}
 	m.SemanticKind, m.RenderRecommendation, m.IsDebugOnly, m.UnsupportedReason = ClassifyMessageJSON(*m)
 }
 

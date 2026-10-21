@@ -1260,39 +1260,7 @@ func (h *Handlers) GetAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := os.Open(resolvedPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			writeNotFound(w, "attachment not found")
-			return
-		}
-		h.logInternal("open attachment", err)
-		writeInternalError(w)
-		return
-	}
-	defer file.Close()
-
-	stat, err := file.Stat()
-	if err != nil {
-		h.logInternal("stat attachment", err)
-		writeInternalError(w)
-		return
-	}
-
-	contentType := "application/octet-stream"
-	if inferred := store.InferMimeType(meta.MimeType, meta.Uti, meta.TransferName, meta.Filename); inferred != nil {
-		if v := strings.TrimSpace(*inferred); v != "" {
-			contentType = v
-		}
-	}
-	w.Header().Set("Content-Type", contentType)
-
-	filename := attachmentFilename(meta)
-	if filename != "" {
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
-	}
-
-	http.ServeContent(w, r, filename, stat.ModTime(), file)
+	h.serveAttachmentPath(w, r, meta, resolvedPath)
 }
 
 func (h *Handlers) GetAttachmentPlayable(w http.ResponseWriter, r *http.Request) {
@@ -1381,9 +1349,6 @@ func (h *Handlers) serveAttachmentPath(w http.ResponseWriter, r *http.Request, m
 }
 
 func attachmentIsVideo(meta *store.AttachmentMeta) bool {
-	if meta == nil {
-		return false
-	}
 	return store.IsVideoAttachment(meta.MimeType, meta.Uti, meta.TransferName, meta.Filename)
 }
 
@@ -1410,9 +1375,6 @@ func (h *Handlers) servePlayableVideo(w http.ResponseWriter, r *http.Request, gu
 }
 
 func attachmentIsCAF(meta *store.AttachmentMeta) bool {
-	if meta == nil {
-		return false
-	}
 	mimeType := strings.ToLower(strings.TrimSpace(ptrString(meta.MimeType)))
 	uti := strings.ToLower(strings.TrimSpace(ptrString(meta.Uti)))
 	name := strings.ToLower(strings.TrimSpace(attachmentFilename(meta)))
@@ -1850,9 +1812,6 @@ func stickerCacheRoot(attachmentsRoot string) string {
 }
 
 func attachmentFilename(meta *store.AttachmentMeta) string {
-	if meta == nil {
-		return ""
-	}
 	for _, candidate := range []*string{meta.TransferName, meta.Filename} {
 		if candidate == nil || strings.TrimSpace(*candidate) == "" {
 			continue
@@ -1866,9 +1825,6 @@ func attachmentFilename(meta *store.AttachmentMeta) string {
 }
 
 func attachmentNeedsPreviewConversion(meta *store.AttachmentMeta) bool {
-	if meta == nil {
-		return false
-	}
 	return store.NeedsPreviewConversion(meta.MimeType, meta.Uti, meta.TransferName, meta.Filename)
 }
 

@@ -1,43 +1,14 @@
-<p align="center">
-  <img src="docs/assets/Server.png" alt="micaGOServer" width="120" />
-</p>
-
-<div align="center">
+<p align="center"><img src="docs/assets/Server.png" alt="micaGO" width="120" /></p>
 
 # micaGO
 
-**English** · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
+[English](README.md) · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
 
 **Your iMessage, your Mac, your devices.**
 
-*A self-hosted iMessage bridge.*
+micaGO connects Android, Linux and Windows clients to Messages on your Mac. A Go backend reads Messages, and a native Mac Companion manages pairing and server settings. Windows uses an independent WinUI app.
 
-*Built with ♥️ for everyone.*
-
-[![Documentation](https://img.shields.io/badge/Documentation-0064E0?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/index.md)
-[![Website](https://img.shields.io/badge/Website-007AFF?style=for-the-badge)](https://micago.cinmou.uk)
-[![Getting started](https://img.shields.io/badge/Getting_started-0A1317?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/getting-started.md)
-[![Security model](https://img.shields.io/badge/Security_model-31A24C?style=for-the-badge)](https://github.com/cinmou/micaGo#-security-model)
-[![Remote access](https://img.shields.io/badge/Remote_access-5D6C7B?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/remote-access-cloudflare.md)
-[![CHANGELOG](https://img.shields.io/badge/CHANGELOG-B89B5E?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/MicaGoServer/docs/CHANGELOG.md)
-
-</div>
-
----
-
-## Overview
-
-micaGO lets your **own** Android phone read and send your iMessages through your
-**own** Mac. A small Go server on the Mac reads its local Messages database and
-exposes a private, token‑protected API; a macOS menu‑bar **Companion** runs and
-manages it; and a **Flutter Android app** pairs with it over your Wi‑Fi (or an
-optional public URL you control). Your data only ever travels between **your** Mac
-and **your** devices.
-
-micaGO is still in testing. It reads macOS Messages internals and needs Full Disk
-Access, so read the [security model](#security-model) and
-[limitations](#limitations) before relying on it. micaGO is an independent
-project.
+[Download](https://github.com/cinmou/micaGO/releases) · [Getting started](docs/getting-started.md) · [Documentation](docs/index.md) · [Website](https://micago.cinmou.uk)
 
 ## Screenshots
 
@@ -73,217 +44,32 @@ project.
 
 ---
 
-## ✅ Requirements
+## Requirements
 
-- **Mac Companion:** macOS 13 or newer, signed in to iMessage, with Full Disk
-  Access granted for Messages data.
-- **Android client:** Android 7.0 or newer (API 24+). The client includes layouts
-  for phones, tablets, and large screens.
-- **Network:** LAN is recommended for first setup. Remote access is optional and
-  requires your own public URL or tunnel.
+Mac Companion requires macOS 13 or newer and Full Disk Access for Messages data. Sending requires Messages to be running and the appropriate Automation permission. Android requires Android 7.0 / API 24 or newer. Linux runs the Flutter client; Windows runs the native client, with Windows 11 as the primary UI validation environment.
 
----
+Use the same Wi-Fi for initial setup. Public HTTPS access is optional and requires your own proxy or tunnel. Platform engineering folders do not establish equal support on every OS.
 
-## ✨ What you get
+## What it does
 
-- **Self-hosted.** The bridge runs on your Mac. Optional push and remote access
-  use services **you** own and configure.
-- **Chats & messages.** Conversation list, threads, reactions/tapbacks, replies,
-  send effects, stickers, **location / handwriting / Digital Touch**, and inline
-  image/video media with a full‑screen viewer.
-- **Send.** Text + attachments over iMessage, **voice messages**, and SMS when
-  you turn it on (off by default, gated by a server setting).
-- **Realtime + catch-up.** WebSocket events for live updates, plus a cursor
-  **delta** sync that fills gaps after the app was closed.
-- **LAN-first connectivity.** Multiple LAN routes are advertised; the client
-  auto‑selects a reachable one and lets you pin it. An optional public URL (your
-  own tunnel) works from anywhere.
-- **Contacts matching.** On-device name resolution is opt-in and stays local to
-  the device.
-- **Notifications (optional).** Keep-alive and FCM both render through the
-  client’s native Android MessagingStyle notification path. Prefer push? Point it
-  at **your own** Firebase.
+Read and send texts, attachments and voice messages; browse history, replies, reactions, stickers and media. Clients maintain local caches and catch up after reconnecting. Hidden conversations/messages and read state have separate synchronization rules.
 
----
+Optional Android FCM push uses your own Firebase project. Keep-alive and IMCore message actions are also optional and off by default; OS permissions and capability checks apply.
 
-## 🧩 How it works
+## Security
 
-```
-            ┌──────────────────────── your Mac ──────────────────────────┐
-            │                                                            │
- Messages   │   chat.db ──► sync loop ──► relay.db ──► REST + WebSocket  │
- (iMessage) │      ▲                                         │           │
-            │      │ AppleScript / optional IMCore helper    │           │
-            │   ┌──┴───────────────┐                         │           │
-            │   │  Mac Companion   │  runs & manages the server          │
-            │   │  (menu‑bar app)  │                         │           │
-            │   └──────────────────┘                         │           │
-            └────────────────────────────────────────────────┼───────────┘
-                                                             │
-                         LAN (same Wi‑Fi)  ──or──  optional public URL (your tunnel)
-                                                             │
-                                                   ┌──────────▼──────────┐
-                                                   │   Android client    │
-                                                   │  (Flutter app)      │
-                                                   └─────────────────────┘
-```
+A five-minute, single-use invitation gives each device an independent credential. Revoke lost devices in Companion. LAN HTTPS/WSS pins the paired certificate; public HTTPS uses system trust. Local HTTP port 3000 is for Companion/proxies, and devices normally use TLS port 3001.
 
-- **Read path** — the server syncs `chat.db` one‑directionally into its own
-  `relay.db`, then serves a small, stable REST + WebSocket API. The client pulls a
-  cursor‑based **delta** for catch‑up and gets realtime events over the socket.
-- **Send path** — text via AppleScript through Messages; attachments via multipart
-  upload. Edit / Unsend / Delete use an optional bundled
-  [IMCore helper](#-optional-features).
-- **Pairing** — the Companion shows a QR code / connection JSON with the LAN/public
-  candidates, a five-minute single-use pairing code, and the server certificate pin. The client scans or pastes it and receives its own device credential.
+FCM previews can contain sender names and message text. A public proxy may terminate TLS. This is not application-level end-to-end encryption. See [connection](docs/features/connection.md) and [notification privacy](docs/features/notifications.md).
 
----
+## Install and develop
 
-## 🔐 Security model
+Download the matching Mac and client packages, launch Companion from Applications, grant access, start the server and create an invitation. Scan or paste the JSON on the client. Detailed steps: [Getting Started](docs/getting-started.md).
 
-micaGO is **local‑first** and built so your data stays yours.
+For code changes, start with [architecture](docs/ARCHITECTURE.md), [build/test/release instructions](docs/DEVELOPMENT.md), then the relevant feature or platform document. Engineering references are maintained in Chinese with code and API identifiers unchanged.
 
-| Concern | How micaGO handles it |
-| --- | --- |
-| **Auth** | Each paired device has an independent bearer credential. Revoke a device in Companion to stop future access and close its sockets. The config token is local administration only. |
-| **Network** | LAN uses HTTPS/WSS with the paired certificate pin (default port 3001); public routes use verified HTTPS. HTTP port 3000 is loopback-only for Companion/local proxies. |
-| **Your data** | Messages are served from your Mac to paired devices. Contacts are matched on-device. |
-| **Push** | If you enable FCM, payloads carry a small wake/preview for notification delivery. |
-| **Private APIs** | The optional IMCore helper (edit/unsend/delete) is gated behind capability checks. |
+## Acknowledgments
 
-In short, micaGO bridges your iMessage to your devices over a connection you
-control. Message history remains anchored to the Messages data on your Mac.
+[BlueBubbles](https://github.com/BlueBubblesApp) and [imsg](https://imsg.sh) informed research into Messages behavior. They are independent projects. Third-party graphics and libraries retain their [notices](MicaGoWindowsClient/THIRD-PARTY-NOTICES.md) and [symbol attribution](MicaGoFlutterClient/tool/compat_symbols/NOTICE.md).
 
----
-
-## 🚀 Quick start
-
-The easiest path is the **Companion**, which builds + launches the bundled server:
-
-1. Open `MicaGoServer/micago-mac-companion/MicaGoCompanion.xcodeproj` in Xcode and
-   run it (or build a release and launch it).
-2. Grant **Full Disk Access** when prompted, then **Start** the server. It binds
-   `0.0.0.0:3000` (LAN‑reachable) by default.
-3. On the Companion's **Create Connection** card, show the QR code (or copy the
-   connection JSON).
-4. In the Android app, **Scan QR** or **Paste connection JSON** to pair — it
-   connects over LAN automatically.
-
-Prefer the command line? See [building each component](#-building-each-component).
-
----
-
-## 🛠 Building each component
-
-**Server** (`MicaGoServer/micago-server`)
-
-```sh
-cd MicaGoServer/micago-server
-go build ./cmd/micago        # produces ./micago
-./micago --version
-go test ./...
-go run ./cmd/micago          # generates ~/.micago/config.yaml + a token on first run
-```
-
-**Companion** (`MicaGoServer/micago-mac-companion`)
-
-```sh
-cd MicaGoServer/micago-mac-companion
-xcodebuild -project MicaGoCompanion.xcodeproj -scheme MicaGoCompanion -configuration Debug build
-```
-
-> The Xcode build phase compiles the bundled `micago` backend **and** the
-> `micago-imcore-helper` into the app's `Resources/`.
-
-**Client** (`MicaGoFlutterClient`)
-
-```sh
-cd MicaGoFlutterClient
-flutter pub get
-flutter analyze
-flutter test
-flutter build apk --debug      # or: flutter run
-```
-
----
-
-## 🧰 Optional features
-
-These features are optional and **off by default**.
-
-- **Keep-alive service (Android).** The simple path, and how most people will run
-  it: a foreground service holds the connection open and raises a local notification
-  when a message lands. Default off, and OEM battery managers can still throttle it.
-- **Firebase / FCM push.** Rather not keep a service running? Wire up **your own**
-  Firebase project for background push. FCM is data-only; the
-  client renders the same local MessagingStyle notification and then syncs the
-  message over WebSocket or delta. See
-  [`docs/setup/firebase/`](docs/setup/firebase/README.md).
-- **Edit / Unsend / Delete (IMCore helper).** A small bundled helper that calls
-  private macOS IMCore APIs.
-  - *What it's for* — edit/unsend/delete a sent iMessage from the phone.
-  - *Capability behavior* — if your Mac cannot grant IMCore access, the app reports
-    *unsupported* and hides those actions.
-- **Remote access.** Put your own reverse proxy / tunnel (e.g. Cloudflare Tunnel)
-  in front of the server and set the **Public URL** in the Companion. See
-  [`docs/remote-access-cloudflare.md`](docs/remote-access-cloudflare.md).
-
----
-
-## 🗂 Repository layout
-
-```
-MicaGo/
-├── MicaGoServer/
-│   ├── micago-server/          # the Go relay server (the `micago` binary)
-│   ├── micago-mac-companion/   # macOS SwiftUI menu‑bar Companion
-│   └── docs/                   # software/design docs + CHANGELOG
-├── MicaGoFlutterClient/        # the Flutter Android client
-├── docs/                       # user guides (getting started, remote access, …)
-└── README.md
-```
-
-> `Ref/` (if present locally) holds third-party reference projects used during
-> development and is git-ignored.
-
-## ⚠️ Limitations
-
-- **macOS‑bound.** The server must run on a Mac signed in to iMessage, with Full
-  Disk Access. It reads the live Messages database.
-- **Edit/Unsend/Delete** depend on your Mac granting private‑API (IMCore) access;
-  where unavailable, those actions are hidden.
-- **Notifications while the app is killed** lean on the keep‑alive service, or on
-  your own `google-services.json` if you prefer Firebase. Without either, alerts are
-  best‑effort, and the socket plus delta sync still catch everything up on reopen.
-- **Android and Linux tested.** The Flutter client has been tested on Android and Linux.
-  Windows has a separate native client. The API is client-agnostic by design.
-- micaGO is an independent project. Use at your own risk.
-
----
-
-## 🤝 Contributing
-
-Issues and pull requests are welcome. Before opening a PR:
-
-- **Server:** `go build ./... && go vet ./... && go test ./...`
-- **Client:** `flutter analyze && flutter test`
-- **Companion:** build the `MicaGoCompanion` scheme in Xcode.
-
-Keep changes lightweight and dependency-free where possible; avoid logging or
-committing bearer tokens or push tokens.
-
----
-
-## 🙏 Acknowledgments
-
-micaGO owes a lot to two open-source projects that already mapped the hard parts of
-iMessage. We are grateful for their work.
-
-- **[BlueBubbles](https://github.com/BlueBubblesApp)** — a mature iMessage bridge.
-  Its handling of stickers, link previews, location, handwriting, and Digital Touch
-  was our reference for classifying and rendering those message types.
-- **[imsg](https://imsg.sh)** by Peter Steinberger — a terminal iMessage tool with a
-  clean read of `chat.db` and the attachment / StickerCache layout, which guided our
-  server's read path.
-
-Both are independent projects.
+made with ♥️ for everyone

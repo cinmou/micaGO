@@ -151,9 +151,7 @@ class WebSocketClient extends ChangeNotifier {
   // --- internals -------------------------------------------------------------
 
   void _onData(dynamic raw) {
-    if (_status != WsStatus.connected) {
-      _setStatus(WsStatus.connected);
-    }
+    _setStatus(WsStatus.connected);
     String label;
     try {
       final decoded = jsonDecode(raw as String);

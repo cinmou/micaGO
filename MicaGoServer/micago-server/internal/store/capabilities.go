@@ -8,7 +8,7 @@ import (
 
 // SchemaCapabilities reports which version-sensitive chat.db columns exist on
 // the running macOS, so query builders can select them only when present and
-// degrade gracefully otherwise. See docs/spec-v0.11.x-server-reliability.md (§3).
+// degrade gracefully otherwise. See docs/ARCHITECTURE.md.
 type SchemaCapabilities struct {
 	EditedMessages     bool `json:"editedMessages"`     // message.date_edited
 	UnsentMessages     bool `json:"unsentMessages"`     // message.date_retracted

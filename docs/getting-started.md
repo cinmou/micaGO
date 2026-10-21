@@ -1,98 +1,33 @@
-# Getting Started with micaGO
+# Getting started
 
 **English** · [简体中文](getting-started.zh-Hans.md) · [繁體中文](getting-started.zh-Hant.md)
 
-This guide walks you through your first micaGO setup and the recommended order
-to test each connection.
+micaGO connects your devices to Messages on your own Mac. Android and Linux use the Flutter client; Windows has a separate native client.
 
-## What micaGO does (at this stage)
+## Install and authorize the Mac
 
-micaGO runs a small server on your Mac that exposes your Messages data to your
-**own** devices over a private, token‑protected connection. A companion app on
-the Mac starts/stops the server and shows you how to connect.
+1. Download the Mac Companion and the client for your device from [Releases](https://github.com/cinmou/micaGO/releases).
+2. Move Companion to Applications and launch it. macOS 13 or newer is required.
+3. Grant Full Disk Access in System Settings so the backend can read Messages. Restart the backend after changing the permission if needed.
+4. Sign in to Messages on the Mac. Sending requires Messages to be running and Automation permission when macOS requests it.
 
-You can reach the Mac in three ways:
+Start the server in Companion and confirm it is reachable. The local control address defaults to `http://127.0.0.1:3000`; devices use HTTPS on port 3001.
 
-1. **This Mac (local)** — from the Mac itself.
-2. **LAN (same Wi‑Fi)** — from another device on the same network.
-3. **Public (remote)** — from anywhere, using your own domain and a tunnel you
-   set up yourself (see
-   [Remote Access with Cloudflare Tunnel](remote-access-cloudflare.md)).
+## Pair a device
 
-There is no micaGO cloud. Your data stays between your Mac and your devices.
+1. Use the same Wi-Fi for the first connection.
+2. In Companion's Create Connection card, generate a pairing code.
+3. On the client, scan the QR or paste its connection JSON. Windows and Linux can use JSON without a camera.
+4. Complete the connection. An expired or used invitation needs a new code on the Mac.
 
-## What you need
+The invitation lasts five minutes and works once. The connected device saves a separate credential and normally reconnects without scanning again. Never paste pairing JSON into a public issue.
 
-- A **Mac signed in to Messages** (iMessage working in the Messages app).
-- The **micaGO Mac app** (companion/server) installed and running.
-- Required **macOS permissions** for the Mac app. If a permission is missing,
-  the Mac app will tell you and link to the right Settings panel. In general the
-  app needs permission to read the Messages database (Full Disk Access) and to
-  control Messages for sending. Grant what the app asks for, then start the
-  server again.
-- An **Android device** for testing the mobile client (optional but recommended).
+Confirm that chats load and realtime connects. Use an existing conversation to check sending; an uncertain send result must not be retried automatically.
 
-## The Mac app, card by card
+## Optional next steps
 
-Open the micaGO Mac app. The **Server** and **Connections** screens are
-organized into a few cards:
+- [Remote access](remote-access-cloudflare.md) adds your own public HTTPS address.
+- [Firebase setup](setup/firebase/README.md) enables optional Android push. Keep-alive is another optional path; neither is needed for initial pairing.
+- [Manual checks](manual-test-flow.md) cover cross-device read state, attachments and background notifications.
 
-- **Server Runtime** — Start / Stop / Restart, the running status, the address
-  the server is **listening on**, and (collapsed) recent log output. The backend
-  binary lives under an **Advanced** disclosure — you normally never touch it.
-- **Server Bind Address** — choose who can reach the server:
-  - **This Mac only** (`127.0.0.1:<PORT>`) — only apps on this Mac.
-  - **Local network** (`0.0.0.0:<PORT>`) — devices on the same Wi‑Fi (adds LAN
-    endpoints).
-  - **Custom** — advanced host/port.
-  Changing this shows **Restart required**; use **Save & Restart**. *(Remote
-  access via Cloudflare Tunnel works even with “This Mac only”, because
-  cloudflared runs on this Mac.)*
-- **Connection Endpoints** — three sections, **Local / loopback**,
-  **LAN / same Wi‑Fi**, and **Public / remote**, each with copy buttons. The
-  Public section is where you paste and validate your remote URL.
-- **Client Setup** — create a new pairing code, then scan the QR or copy its JSON. The invitation expires after five minutes and can be redeemed once. Each device receives its own credential; revoke a device in Companion if it is lost. Upgrading to 0.84 requires pairing again and preserves chat caches and sync queues.
-
-## First connection options
-
-- **This Mac / local** — `http://127.0.0.1:<PORT>`. Fastest way to confirm the
-  server is alive. Note: `127.0.0.1` only works **on the Mac itself**, not from
-  your phone.
-- **LAN / same Wi‑Fi** — `https://<Mac-LAN-IP>:3001`. Use this from a phone or
-  laptop on the same network. Find `<Mac-LAN-IP>` in the Mac app's connection
-  list, or in macOS System Settings → Network.
-- **Public / remote domain** — `https://micago.example.com`. Use this from
-  mobile data or any outside network after you complete the Cloudflare guide.
-
-## Recommended path
-
-Test connections in this order — each step builds on the previous one:
-
-1. **Test the local server.** On the Mac, confirm the server is running and
-   reachable at `http://127.0.0.1:<PORT>`.
-2. **Test LAN.** From another device on the same Wi‑Fi, reach
-   `https://<Mac-LAN-IP>:3001` and confirm the token is accepted.
-3. **Set up a remote URL** (optional). Follow
-   [Remote Access with Cloudflare Tunnel](remote-access-cloudflare.md) to get
-   `https://micago.example.com`, then in **Connection Endpoints → Public /
-   remote** paste the URL, **Save**, and click **Validate Public URL**. When it
-   reads **Reachable**, Public is ready for pairing.
-4. **Pair the Android client.** In **Client Setup**, choose the endpoint
-   (**Auto** picks Public when reachable, else LAN, else Local), then **Show QR
-   code** and scan it from the Android app — or **Copy setup JSON**. See
-   [Android Client Connection](android-client-connection.md).
-5. **Verify the WebSocket.** In the Android app, confirm the realtime connection
-   shows **Connected** and that the debug panel lists incoming events.
-
-For an exact, copy‑paste checklist of all of the above, see the
-[Manual Test Flow](manual-test-flow.md).
-
-## What success looks like
-
-- The server's health check responds without a token.
-- Your token is accepted by the auth check.
-- The Android app shows **Connected** for the WebSocket and logs events in the
-  debug panel.
-
-If something does not work, each guide has a Troubleshooting section, and the
-[Manual Test Flow](manual-test-flow.md) helps you find which step failed.
+Revoke a lost device in Companion. Do not reset the entire relay database just to clear cached messages. See [documentation](index.md) for current behavior and development references.

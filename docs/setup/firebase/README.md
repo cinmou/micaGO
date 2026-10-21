@@ -1,178 +1,42 @@
-# Enable Push Notifications (Firebase / FCM)
+# Android 推送设置：Firebase / FCM
 
-This guide walks you through enabling push notifications in micaGO using **your
-own Firebase project**. Push is fully self-hosted, so notifications go through a
-Firebase project that you create and control.
+FCM 是可选功能，使用你自己的 Firebase 项目。先完成正常配对和聊天收发，再配置推送。Windows 不需要 FCM。
 
-> **Push is optional.** While the Android app is open it receives messages in
-> real time over WebSocket, and it catches up via delta sync whenever you reopen
-> it. Firebase adds a best-effort way to **wake the app and show a notification**
-> when Android allows background delivery. OEM battery policy can still delay or
-> suppress delivery.
+## 准备两个文件
 
-It takes about 10–15 minutes and uses only Firebase's free tier (Cloud
-Messaging is free).
+1. 在 [Firebase Console](https://console.firebase.google.com/) 创建或选择项目。
+2. 添加 Android 应用，包名填写 `com.micago.message.mica_go`，下载 `google-services.json`。
+3. 在项目设置的服务账号页面生成服务账号 JSON 私钥。它只由 Mac 后端使用，不放进手机。
+4. 确认项目启用了 Firebase Cloud Messaging API。服务账号需要发送权限；`roles/firebasecloudmessaging.admin` 包含 `cloudmessaging.messages.create`。不要为了省事授予 Owner。
 
----
+两个文件必须来自你要使用的项目。Android 注册步骤见 [Firebase Android 配置](https://firebase.google.com/docs/android/setup)，服务端权限见 [FCM HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api)。micaGO 在运行时读取客户端配置，普通用户不需要为此重编 APK。
 
-## What you'll do
+## 在 Mac 保存并配置
 
-1. Create your own Firebase project.
-2. Add an Android app to it and download **`google-services.json`**.
-3. Generate a **service-account key** (so your Mac can send pushes).
-4. Point micaGO at both files.
-5. Connect your phone and send a test push.
+把文件放到不会随手清空的位置，例如 `~/.micago/`。建议客户端配置文件名为 `google-services.json`。服务账号文件包含私钥，不上传仓库或 issue。
 
-Prefer a shorter checklist with topic-by-topic pages? See the
-[Firebase setup reference](overview.md).
+Companion → 通知：启用通知和 FCM，分别选择两个文件，选择通知预览，再保存。文件需要持续保留；应用保存路径，不会把文件导入到一个独立的配置仓库。关闭 FCM 会保留路径，显式清除配置才移除引用。
 
-You'll end up giving micaGO two files from *your* Firebase project:
+客户端下一次初始化推送时会从已鉴权 API 获取 Firebase 客户端配置，向 Google 取得推送令牌，再注册到 Mac。Android 13 及以后还需要系统通知权限。
 
-| File | Who uses it | What it's for |
-| --- | --- | --- |
-| `google-services.json` | the Android app (served by your server) | lets the app register for push |
-| service-account `*.json` | your Mac (the micaGO server) | lets your server send pushes |
+## 验证
 
-These files stay part of your local Firebase setup — see [Privacy](#privacy).
+检查 Companion 的客户端配置和服务账号是否有效，再检查设备是否注册为 FCM 已启用。发送测试请求用于检查服务端链路；不要仅凭“发送成功”判断手机已显示通知。
 
----
+让手机退出当前聊天并进入后台，通过自己控制的测试会话产生新消息，检查实际系统通知。若有保活，分别测试启用和停用保活的情况，避免把 WebSocket 通知误当成 FCM 验证。
 
-## Prerequisites
+## 隐私
 
-- A Google account.
-- micaGO Server running on your Mac via the micaGO Companion app.
-- The micaGO Android app installed.
+预览选择“发送者和消息”时，名字与正文经过 Google FCM；“仅发送者”不带正文；“无”用于不显示内容的路径。聊天历史和附件仍通过 micaGO 连接同步。
 
----
+服务账号私钥留在 Mac。手机的推送令牌用于 Google 寻址，并保存在 Mac 的本地设备注册表。不能把 FCM 描述为从不处理消息内容，也不能把普通 HTTPS 传输说成应用层端到端加密。
 
-## Step 1 — Create a Firebase project
+Mac 联系人可用于本机后端解析名字；客户端本地联系人和自定义头像也可参与通知展示。不要笼统承诺所有名字都只留在某一个进程。
 
-1. Go to the [Firebase Console](https://console.firebase.google.com).
-2. Click **Add project**, give it any name (e.g. `my-micago`), and finish the
-   wizard. You can disable Google Analytics — it isn't needed.
+## 可选 Firestore URL 写入
 
-This project is yours. micaGO uses it through the two files below.
+Companion 的公网 URL 同步选项可把 `publicBaseUrl` 写入 Firestore，默认文档为 `server/config`，不写凭据、聊天或附件。它与 FCM 发送是独立用途，默认关闭。
 
-## Step 2 — Add an Android app and download `google-services.json`
+当前客户端没有完整的 Firestore 自动发现流程，打开此开关不能保证地址变化后自动重连。没有明确用途时保持关闭；不要为它设置公开读写规则。
 
-1. In your project, open **Project settings** (the gear icon) → **General**.
-2. Under **Your apps**, click **Add app** → the **Android** icon.
-3. For **Android package name**, enter exactly:
-
-   ```
-   com.micago.message.mica_go
-   ```
-
-4. The SHA-1 and nickname fields are optional — leave them blank and continue.
-5. Click **Download google-services.json** and save it somewhere stable on your
-   Mac, e.g. `~/.micago/google-services.json`.
-
-You can skip the remaining "add the SDK" wizard steps — micaGO already includes
-the Firebase SDK and configures it at runtime from this file.
-
-## Step 3 — Generate a service-account key
-
-This lets your Mac authenticate to Firebase to *send* pushes.
-
-1. In **Project settings** → **Service accounts**.
-2. Click **Generate new private key** → **Generate key**.
-3. A `*.json` file downloads. Save it on your Mac, e.g.
-   `~/.micago/firebase-service-account.json`.
-4. Open the JSON and note its `client_email`.
-5. In **Google Cloud Console** → **IAM & Admin** → **IAM**, click **Grant access**.
-6. Paste that `client_email` into **New principals**.
-7. Grant **Firebase Cloud Messaging API Admin** and save.
-
-It is normal if the service account only appears under **Service accounts** and
-not in the IAM members list yet. Type the email manually when granting access.
-
-> Keep this file private — it's a credential. Store it on your Mac, and avoid
-> sharing it in email, git, chats, logs, or screenshots. micaGO stores the local
-> path to it.
-
-## Step 4 — Configure the micaGO server
-
-There are two files. Both are selected in the Companion app.
-
-### 4a. In the Companion app
-
-1. Open the micaGO Companion and go to **Notifications**.
-2. In **Firebase Self-Host (Android FCM)**:
-   - Turn on **Notifications enabled**.
-   - Turn on **Enable FCM delivery**.
-   - Click **Choose google-services.json…** and select the file from Step 2.
-   - Click **Choose service-account JSON…** and select the file from Step 3.
-   - (Optional) Leave **Firebase project ID** blank — it's inferred from the
-     JSON.
-3. Click **Save**.
-
-`google-services.json` contains public client identifiers. The service-account
-JSON is the private key your Mac uses to send FCM. Keep both files on your Mac.
-
-## Step 5 — Connect your phone
-
-1. On the Mac, open **Dashboard → Create Connection** and either show the QR
-   code or copy the connection JSON.
-2. In the Android app, **scan the QR** or **paste the connection JSON**.
-
-On connecting, the app automatically:
-
-- fetches your Firebase client config from the server,
-- initializes Firebase,
-- registers its push token with your server.
-
-`google-services.json` is loaded at runtime from *your* server, so the same app
-build works with anyone's Firebase project.
-
-## Step 6 — Verify it works
-
-1. In the Companion, open **Advanced → Push Devices** and find your phone in the
-   optional push registry.
-2. The device card should show **push: enabled (fcm)** and **background:
-   enabled**.
-3. Open **Notifications** and tap **Send test notification**. You should get a
-   notification on the phone within a few seconds.
-4. Background the app, send yourself an iMessage, and confirm a notification
-   appears; tapping it opens the right conversation.
-
-## Privacy
-
-- Push uses *your* Firebase project.
-- Firebase is used for Android FCM push and, optionally, public-URL
-  discovery if you enable Firestore URL sync).
-- Contacts, phone numbers, bearer token, attachments, chat history, device
-  registry, and sync rules stay in your micaGO setup.
-- The service-account key never leaves your Mac. `google-services.json` contains
-  only public client identifiers (project id, app id, API key, sender id) and is
-  served to your paired devices over your authenticated connection.
-
-## Troubleshooting
-
-- **Device card shows "push: not configured"** — the app didn't get a Firebase
-  config. Re-open Companion → **Notifications**, choose `google-services.json`,
-  save, and reconnect the phone.
-- **"config invalid (fcm)"** in Provider Status — the service-account JSON is
-  missing or unreadable. Re-choose it in **Notifications → Firebase Self-Host**.
-- **Send test notification fails** — confirm the phone is paired and shows **connected**, the
-  package name in Firebase is exactly `com.micago.message.mica_go`, and the
-  service account and `google-services.json` are from the **same** Firebase
-  project.
-- **No background notifications, but foreground works** — background delivery
-  depends on FCM + Android's battery settings. Make sure the app isn't
-  battery-restricted in Android Settings. Even if a wake is missed, the app
-  catches up via delta sync the next time you open it.
-- **Foreground duplicates** — when the app is open and connected, it uses the
-  WebSocket and ignores the redundant push.
-
-## Turning push off
-
-- In **Notifications → Firebase Self-Host**, click **Clear Firebase config** or
-  turn off **Enable FCM delivery**, then save.
-- The app continues over WebSocket + delta sync.
-
----
-
-### A note on automated setup
-
-The manual steps above are the supported way to enable push. They remain fully
-self-hosted and optional: you bring the Firebase project and keep control of it.
+有问题先看[故障排查](troubleshooting.md)。实现与后台操作规则见[通知](../../features/notifications.md)。

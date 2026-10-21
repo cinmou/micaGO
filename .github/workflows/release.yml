@@ -13,7 +13,7 @@
 #   micaGO-<version>-Linux-release.tar.gz
 #
 # The macOS Companion is NOT built here: it is signed, notarized and given its
-# Sparkle appcast on a local Mac (MicaGoServer/docs/release-packaging.md), so the
+# Sparkle appcast on a local Mac (docs/DEVELOPMENT.md), so the
 # Developer ID certificate and Sparkle key never live in GitHub. Attach
 # micaGO-Companion-<version>-mac.dmg and appcast.xml to the release yourself —
 # the Companion's updater reads releases/latest/download/appcast.xml.

@@ -1,265 +1,56 @@
-# Manual Test Flow
+# 手动检查
 
-A from‑zero checklist to confirm micaGO works at each layer: local, LAN, public,
-and the Android client. Run the sections in order — each builds on the previous.
+这份清单供实际验收，不记录历史某次“通过”。只测试这次改动涉及的部分，并记录设备、系统、构建版本和结果；没有做的项目写未验证。
 
-**Placeholders used throughout:**
+## 连接
 
-- `<TOKEN>` — your bearer token (from the Mac app). Keep it private.
-- `<PORT>` — the server port (default `3000`; use what the Mac app shows).
-- `<Mac-LAN-IP>` — your Mac's address on your Wi‑Fi (e.g. `192.168.1.23`).
-- `micago.example.com` / `https://micago.example.com` — your own public domain.
+1. 核对安装的 Companion、内置后端和客户端版本。源码已变不代表旧安装包已更新。
+2. Mac 启动后端，确认 `http://127.0.0.1:3000/api/health` 可达。
+3. 在同一 Wi-Fi 生成邀请并完成配对；测试过期、已使用邀请不会再兑换。
+4. 若有公网，离开 Wi-Fi 后验证 HTTPS/WSS；再恢复 Wi-Fi 检查线路选择。
+5. 撤销一台专用测试设备，检查旧请求、媒体和 WebSocket 都不能继续使用旧凭据。
 
-> ⚠️ The `curl` commands below include your token. Don't paste real output that
-> contains the token into screenshots, issues, or chats.
+不要为测试关闭鉴权或 TLS 校验，不把令牌写进截图和公开日志。
 
----
+## 消息与附件
 
-## A. Mac server check (local)
+选择自己控制的测试会话，确认不会误发给真实联系人。
 
-1. Start the **micaGO Mac app** (companion/server).
-2. Confirm the status shows **Running**.
-3. Copy the **local URL** and the **bearer token** from the app.
-4. From a Terminal **on the Mac**, test the no‑auth health check:
+- 发送文本和单个、多附件，确认气泡只保留一份，附件内容正确。
+- 翻到历史，再发送、接收、切换聊天，检查位置和路线不串。
+- 制造短时断网，恢复后检查 delta 补齐与去重。
+- 发送超时后等待确认，不自动再发一条；确认为失败后才验证人工重试。
+- 有对应能力时检查回应、自定义 emoji、回复、编辑、撤回和系统事件显示。
 
-   ```bash
-   curl http://127.0.0.1:<PORT>/api/health
-   ```
+图片、视频、语音分别检查首次加载、缓存命中、播放、失败回退与确认前后的框架稳定。
 
-   Expected: `{"ok":true}`.
+## 已读、隐藏与多设备
 
-5. Test that your token is accepted:
+使用两个已配对客户端检查：
 
-   ```bash
-   curl -X POST \
-     -H "Authorization: Bearer <TOKEN>" \
-     http://127.0.0.1:<PORT>/api/auth/check
-   ```
+- 后台收到消息会产生未读，返回列表或旧请求完成不会误清。
+- 在一端阅读或手动标读，另一端更新；手动未读独立于已读水位。
+- 合并联系人的不同路线各自保留状态，自己发一条不会清其他路线。
+- 隐藏聊天后仍同步但不通知；恢复显示可取到新消息。
+- 隐藏单条消息、离线操作、重连与冲突处理均不改变历史游标。
+- 清缓存保留未同步队列，设置备份不导出设备凭据和操作队列。
 
-   Expected: HTTP `200` with `{"ok":true}`. A `401` means the token is wrong.
+## 通知
 
----
+分别测试实时连接路径、可选保活与可选 FCM，避免把它们混成一次成功。
 
-## B. LAN check (same Wi‑Fi)
+关闭聊天后让客户端进入后台，用测试会话收到新消息。检查折叠/展开头像、群聊发送者、锁屏、点击定位、回复和标读。操作期间再收一条，确认新通知保留。
 
-1. Find your **Mac LAN IP** (`<Mac-LAN-IP>`) in the Mac app's connection list, or
-   in macOS System Settings → Network.
-2. From **another device on the same Wi‑Fi**, test health:
+测试旧设备通知、凭据撤销和未知标读截止点；它们不能用旧身份执行操作。FCM 发送请求成功不能代替手机显示验证。
 
-   ```bash
-   curl http://<Mac-LAN-IP>:<PORT>/api/health
-   ```
+## Mac 与 Windows 原生行为
 
-   Expected: `{"ok":true}`.
+Mac 检查隐藏冷启动、菜单栏首次打开、关窗重开、最小化恢复、后端慢退出时重启，以及停止能取消待重启。不要接管外部后端或隧道。
 
-3. Test the token over LAN:
+Windows 检查正常 Release 包启动、配对/已保存连接恢复、通知注册、托盘开关、长会话切换、DPI、浅深色、高对比度、IME 和键盘操作。
 
-   ```bash
-   curl -X POST \
-     -H "Authorization: Bearer <TOKEN>" \
-     http://<Mac-LAN-IP>:<PORT>/api/auth/check
-   ```
+## 发布
 
-   Expected: HTTP `200`.
+Mac 挂载 DMG 检查布局，验证签名、公证和 staple。上传同轮 DMG 与 appcast。用真实旧版做更新，再确认版本、配对、设置和后台进程恢复。
 
-   If health works but you get connection errors from another device, confirm
-   the server is exposed on the LAN (not only loopback) in the Mac app, and that
-   no firewall is blocking the port.
-
----
-
-## C. Public URL check (Cloudflare Tunnel)
-
-Complete the [Remote Access guide](remote-access-cloudflare.md) first.
-
-1. Make sure the tunnel is running on the Mac:
-
-   ```bash
-   cloudflared tunnel run micago-server
-   ```
-
-2. From an **outside** network (or mobile data), confirm the domain reaches your
-   server and the token works:
-
-   ```bash
-   curl -H "Authorization: Bearer <TOKEN>" \
-     https://micago.example.com/api/server/urls
-   ```
-
-   Expected: HTTP `200` and a JSON body listing your endpoints, for example:
-
-   ```json
-   {
-     "local": [ { "kind": "loopback", "label": "This Mac",
-                  "baseUrl": "http://127.0.0.1:<PORT>",
-                  "wsUrl": "ws://127.0.0.1:<PORT>/ws", "reachable": true } ],
-     "lan":   [ { "kind": "lan", "label": "LAN",
-                  "baseUrl": "http://<Mac-LAN-IP>:<PORT>",
-                  "wsUrl": "ws://<Mac-LAN-IP>:<PORT>/ws", "reachable": "unknown" } ],
-     "public": { "enabled": true, "baseUrl": "https://micago.example.com",
-                 "wsUrl": "wss://micago.example.com/ws", "reachable": true,
-                 "providerHint": "cloudflare_tunnel" },
-     "preferredPairingEndpoint": "auto"
-   }
-   ```
-
-3. In the **Mac app**, set the **Public URL** to the bare origin
-   `https://micago.example.com` and run **Validate Public URL**.
-
-   Expected result: the app reports the public URL is **reachable** and **auth
-   passes**. (Behind the scenes this confirms the public URL loops back to this
-   same Mac and that the token is accepted; the response never contains your
-   token.)
-
----
-
-## D. Android client check
-
-See [Android Client Connection](android-client-connection.md) for details.
-
-1. **Install** the Android app (debug APK).
-2. Enter the **Server URL**:
-   - LAN: `http://<Mac-LAN-IP>:<PORT>`
-   - Public: `https://micago.example.com`
-   - (Not `127.0.0.1` — that's the phone itself.)
-3. Enter the **token** (`<TOKEN>`).
-4. Tap **Test connection**.
-5. Confirm **REST success** (health + auth check pass).
-6. Open the home screen and confirm **WebSocket success** — status shows
-   **Connected** and the debug panel lists events as activity happens on the Mac.
-
----
-
-## E. Send‑pipeline remote smoke test (API / manual)
-
-> The current Android client **cannot send messages yet**, so this section is a
-> **manual API test** (curl) and a **future‑client** check. Sending requires the
-> **Messages app to be running** on the Mac and an **iMessage** chat.
-
-1. List your chats to get a chat identifier (GUID):
-
-   ```bash
-   curl -H "Authorization: Bearer <TOKEN>" \
-     "http://127.0.0.1:<PORT>/api/chats"
-   ```
-
-   Pick a `guid` from the response (an iMessage chat).
-
-2. Send a simple text. `tempGuid` is any unique correlation string you choose:
-
-   ```bash
-   curl -X POST \
-     -H "Authorization: Bearer <TOKEN>" \
-     -H "Content-Type: application/json" \
-     -d '{"tempGuid":"test-001","message":"Hello from micaGO"}' \
-     "http://127.0.0.1:<PORT>/api/chats/<CHAT_GUID>/send"
-   ```
-
-   The call is synchronous: the server triggers the send and waits until it can
-   confirm the message in the Messages database (up to ~15 seconds).
-
-3. **Watch the realtime events.** If you keep a WebSocket open (the Android app,
-   or a WebSocket tool pointed at `…/ws?token=<TOKEN>`), you should see, for the
-   same `tempGuid`:
-   - `send:pending` — the request was accepted,
-   - then `send:match` — the message was confirmed in the database (success).
-
-4. **Confirm in Messages.** The sent text appears in the Messages app on the Mac.
-
-5. **Confirm error/timeout behavior.** If the message can't be confirmed in time,
-   the request returns HTTP `504` with code `send_confirmation_timeout` (and a
-   `send:error` event). Other failures return clear codes (for example a `404`
-   for an unknown chat, `409` for a duplicate `tempGuid`, or a `409`/error if the
-   Messages app isn't running).
-
----
-
-## F. Pass / fail table
-
-Record your results:
-
-| # | Check | Command / action | Expected | Pass? |
-| --- | --- | --- | --- | --- |
-| A1 | Server running | Mac app status | "Running" | ☐ |
-| A2 | Local health | `curl …/api/health` | `{"ok":true}` | ☐ |
-| A3 | Local auth | `POST …/api/auth/check` with token | `200` | ☐ |
-| B1 | LAN health | `curl http://<Mac-LAN-IP>:<PORT>/api/health` | `{"ok":true}` | ☐ |
-| B2 | LAN auth | `POST` auth check over LAN | `200` | ☐ |
-| C1 | Tunnel running | `cloudflared tunnel run …` | connects | ☐ |
-| C2 | Public reachable + auth | `curl …https://micago.example.com/api/server/urls` | `200` + JSON | ☐ |
-| C3 | Validate Public URL | Mac app "Validate" | reachable + auth OK | ☐ |
-| D1 | Android REST | App → Test connection | success | ☐ |
-| D2 | Android WebSocket | App home screen | "Connected" + events | ☐ |
-| E1 | Send via API | `POST …/send` | `200` + message | ☐ |
-| E2 | Realtime confirm | WebSocket events | `send:pending` → `send:match` | ☐ |
-| E3 | Appears in Messages | Messages app | message visible | ☐ |
-| E4 | Timeout/error path | force no‑match | `504 send_confirmation_timeout` | ☐ |
-
-If a row fails, jump to the Troubleshooting section of the relevant guide:
-[Getting Started](getting-started.md),
-[Remote Access](remote-access-cloudflare.md), or
-[Android Client Connection](android-client-connection.md).
-
----
-
-## G. Android C2 client acceptance
-
-Run on a real Android device, ideally over the **public** URL (mobile data) so
-you exercise the full remote path. The current client does text + media
-**display** and read-only contacts matching; it does **not** send media or do
-push (by design).
-
-1. **Scan QR.** Mac → Connections → **Client Setup** → choose **Auto** (or
-   **Public**) → **Show QR code**. In the app tap **Scan QR code**, scan,
-   review the preview (token masked), tap **Use this server** → lands on Chats.
-2. **Connect over public URL.** With the phone on **mobile data**, confirm the
-   Connection tab → **Connection diagnostics** shows **REST health OK**, **Auth
-   OK**, **WebSocket Connected**. (Token is masked; tap reveal only if safe.)
-3. **Load chat list.** Chats tab shows rows with a clear title (contact name,
-   else handle, else GUID), a service/identifier subtitle, archived label where
-   applicable. No blank/broken rows. Pull to refresh works; a load failure shows
-   a Retry button.
-4. **Open a chat** → thread opens.
-5. **Load history** → messages appear **oldest→newest**, scrolled to the bottom.
-6. **Send text** → an optimistic "Sending…" bubble appears; on confirm it
-   becomes the real message ("Delivered"/"Read" if known). Empty text can't be
-   sent (send button disabled). A failure shows "Failed — tap to retry".
-7. **Receive text while the thread is open** → the new message appears (the
-   thread reloads on the realtime event; payloads have no chatGuid, so a
-   debounced reload is the documented fallback).
-8. **Receive text while on the chat list** → no crash. (The list does not
-   reorder/preview because the server's chat list exposes no last-message or
-   timestamp — documented gap. Pull to refresh re-fetches.)
-9. **Open an image attachment** → thumbnail in the bubble; tap → full-screen
-   zoomable preview.
-10. **Play an audio/voice attachment** → play/pause row; audio streams with the
-    bearer token in the header (not in the URL).
-11. **View a file attachment** → name, size, and type icon.
-12. **Attachment send is disabled** → the composer "+" button is greyed with the
-    tooltip "Attachments are not supported by this server yet."
-13. **Enable contacts matching.** People tab → **Enable contacts matching** →
-    grant the (read-only) permission → status **On**, count shown. Deny it and
-    confirm the app stays fully usable.
-14. **Same contact, two handles.** For a contact that has **both** a phone
-    number and an iMessage email, confirm both chats show the **same** local
-    display name (chat list + thread sender).
-
-### G. Pass / fail table
-
-| # | Check | Expected | Pass? |
-| --- | --- | --- | --- |
-| G1 | Scan QR → paired | Lands on Chats | ☐ |
-| G2 | Diagnostics over public | REST OK, Auth OK, WS Connected | ☐ |
-| G3 | Chat list | Clean rows, fallbacks, retry/refresh | ☐ |
-| G4 | History order | Oldest→newest, scrolled to bottom | ☐ |
-| G5 | Send text | Optimistic → confirmed | ☐ |
-| G6 | Empty send blocked | Send disabled when empty | ☐ |
-| G7 | Failed send | Shows "Failed — tap to retry" | ☐ |
-| G8 | Incoming (thread open) | Message appears | ☐ |
-| G9 | Incoming (chat list) | No crash | ☐ |
-| G10 | Image attachment | Thumbnail + full screen | ☐ |
-| G11 | Audio/voice attachment | Play/pause works | ☐ |
-| G12 | File attachment | Name/size/icon | ☐ |
-| G13 | Attachment send disabled | Tooltip shown | ☐ |
-| G14 | Contacts enable/deny | Works / app still usable | ☐ |
-| G15 | Same name for phone+email | Single display name | ☐ |
+Windows 从最终 ZIP 和安装器分别启动。Android 安装实际 release APK。CI 产物生成、上传与公开 Release 是不同步骤，分别确认。
