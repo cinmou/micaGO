@@ -40,13 +40,11 @@ micaGO 仍处在测试阶段。它会读取 macOS「信息」的内部数据,并
 ### Windows
 
 <p align="center">
-  <img src="docs/assets/windows-chat.jpg" alt="Windows 客户端聊天界面" width="820" />
+  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows 客户端聊天界面" width="820" /></a>
 </p>
 <p align="center">
-  <img src="docs/assets/windows-chat-dark.jpg" alt="Windows 客户端深色聊天界面" width="820" />
-</p>
-<p align="center">
-  <img src="docs/assets/windows-appearance.jpg" alt="Windows 客户端外观设置" width="820" />
+  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows 客户端深色聊天界面" width="390" /></a>
+  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows 客户端外观设置" width="390" /></a>
 </p>
 
 ### 安卓客户端
@@ -58,25 +56,17 @@ micaGO 仍处在测试阶段。它会读取 macOS「信息」的内部数据,并
 ### 平板客户端
 
 <p align="center">
-  <img src="docs/assets/Pad%201.png" alt="平板分栏界面" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Pad%202.png" alt="平板聊天界面" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Pad%203.png" alt="平板设置界面" width="560" />
+  <a href="docs/assets/Pad%201.png"><img src="docs/assets/Pad%201.png" alt="平板分栏界面" width="260" /></a>
+  <a href="docs/assets/Pad%202.png"><img src="docs/assets/Pad%202.png" alt="平板聊天界面" width="260" /></a>
+  <a href="docs/assets/Pad%203.png"><img src="docs/assets/Pad%203.png" alt="平板设置界面" width="260" /></a>
 </p>
 
 ### Mac 伴侣应用
 
 <p align="center">
-  <img src="docs/assets/Companion1.png" alt="Mac 伴侣应用仪表盘" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Companion2.png" alt="Mac 伴侣应用配对界面" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Companion3.png" alt="Mac 伴侣应用设置界面" width="560" />
+  <a href="docs/assets/Companion1.png"><img src="docs/assets/Companion1.png" alt="Mac 伴侣应用仪表盘" width="260" /></a>
+  <a href="docs/assets/Companion2.png"><img src="docs/assets/Companion2.png" alt="Mac 伴侣应用配对界面" width="260" /></a>
+  <a href="docs/assets/Companion3.png"><img src="docs/assets/Companion3.png" alt="Mac 伴侣应用设置界面" width="260" /></a>
 </p>
 
 ---

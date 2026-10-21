@@ -44,13 +44,11 @@ project.
 ### Windows
 
 <p align="center">
-  <img src="docs/assets/windows-chat.jpg" alt="Windows conversation" width="820" />
+  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows conversation" width="820" /></a>
 </p>
 <p align="center">
-  <img src="docs/assets/windows-chat-dark.jpg" alt="Windows conversation in dark mode" width="820" />
-</p>
-<p align="center">
-  <img src="docs/assets/windows-appearance.jpg" alt="Windows appearance settings" width="820" />
+  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows conversation in dark mode" width="390" /></a>
+  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows appearance settings" width="390" /></a>
 </p>
 
 ### Android
@@ -62,25 +60,17 @@ project.
 ### Android Tablet
 
 <p align="center">
-  <img src="docs/assets/Pad%201.png" alt="Tablet split view" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Pad%202.png" alt="Tablet message thread" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Pad%203.png" alt="Tablet settings" width="560" />
+  <a href="docs/assets/Pad%201.png"><img src="docs/assets/Pad%201.png" alt="Tablet split view" width="260" /></a>
+  <a href="docs/assets/Pad%202.png"><img src="docs/assets/Pad%202.png" alt="Tablet message thread" width="260" /></a>
+  <a href="docs/assets/Pad%203.png"><img src="docs/assets/Pad%203.png" alt="Tablet settings" width="260" /></a>
 </p>
 
 ### Mac Companion App
 
 <p align="center">
-  <img src="docs/assets/Companion1.png" alt="Mac Companion dashboard" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Companion2.png" alt="Mac Companion pairing" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Companion3.png" alt="Mac Companion settings" width="560" />
+  <a href="docs/assets/Companion1.png"><img src="docs/assets/Companion1.png" alt="Mac Companion dashboard" width="260" /></a>
+  <a href="docs/assets/Companion2.png"><img src="docs/assets/Companion2.png" alt="Mac Companion pairing" width="260" /></a>
+  <a href="docs/assets/Companion3.png"><img src="docs/assets/Companion3.png" alt="Mac Companion settings" width="260" /></a>
 </p>
 
 ---

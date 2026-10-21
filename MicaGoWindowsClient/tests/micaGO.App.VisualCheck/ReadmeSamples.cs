@@ -4,6 +4,10 @@ using Microsoft.UI.Xaml.Media;
 using MicaGo.App.Controls;
 using MicaGo.App.Services;
 using MicaGo.Core.Models;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Graphics.Imaging;
+using Windows.Storage;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace MicaGo.App.Views;
 
@@ -52,12 +56,19 @@ internal static class ReadmeCapture
         foreach(var (settings,dark) in new[]{(false,false),(false,true),(true,false)})
         {
             var shell=new ShellPage();shell.LoadReadmeSamples(settings);
-            var root=new Grid{RequestedTheme=dark?ElementTheme.Dark:ElementTheme.Light};
+            var root=new Grid{RequestedTheme=dark?ElementTheme.Dark:ElementTheme.Light,
+                Background=new SolidColorBrush(dark?Microsoft.UI.ColorHelper.FromArgb(255,32,32,32):Microsoft.UI.ColorHelper.FromArgb(255,243,243,243))};
             shell.RequestedTheme=root.RequestedTheme;
             AppServices.Current.Localization.ApplyTypography(root);
             root.RowDefinitions.Add(new(){Height=new GridLength(32)});
             root.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
             var titleBar=new Grid();titleBar.Children.Add(TitleBarBrand.Create());root.Children.Add(titleBar);
+            // The native caption buttons are outside the XAML render tree. Include
+            // the same caption glyphs in the exported, offline sample frame.
+            var captions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right};
+            foreach(var glyph in new[]{"\uE921","\uE922","\uE8BB"})captions.Children.Add(new FontIcon{Glyph=glyph,FontSize=10,Width=46,Height=32,
+                Foreground=new SolidColorBrush(dark?Microsoft.UI.Colors.White:Microsoft.UI.Colors.Black)});
+            titleBar.Children.Add(captions);
             Grid.SetRow(shell,1);root.Children.Add(shell);
             var window=new Window{Title="micaGO",Content=root,SystemBackdrop=new MicaBackdrop()};
             window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory,"Assets","micaGO.ico"));
@@ -69,6 +80,24 @@ internal static class ReadmeCapture
                 window.AppWindow.TitleBar.ButtonInactiveBackgroundColor=Microsoft.UI.Colors.Transparent;
             }
             window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1680,1120));
+            var name=settings?"windows-appearance":dark?"windows-chat-dark":"windows-chat";
+            root.Loaded+=async(_,_)=>{
+                var output=Environment.GetEnvironmentVariable("MICAGO_README_OUTPUT");
+                if(string.IsNullOrWhiteSpace(output))return;
+                try {
+                    await Task.Delay(1200);root.UpdateLayout();
+                    var bitmap=new RenderTargetBitmap();await bitmap.RenderAsync(root,2400,1600);
+                    var pixels=(await bitmap.GetPixelsAsync()).ToArray();
+                    Directory.CreateDirectory(output);
+                    var folder=await StorageFolder.GetFolderFromPathAsync(output);
+                    var file=await folder.CreateFileAsync(name+".png",CreationCollisionOption.ReplaceExisting);
+                    using var stream=await file.OpenAsync(FileAccessMode.ReadWrite);stream.Size=0;
+                    var encoder=await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId,stream);
+                    encoder.SetPixelData(BitmapPixelFormat.Bgra8,BitmapAlphaMode.Premultiplied,(uint)bitmap.PixelWidth,(uint)bitmap.PixelHeight,192,192,pixels);
+                    await encoder.FlushAsync();
+                    File.WriteAllText(Path.Combine(AppContext.BaseDirectory,name+".log"),$"PASS {bitmap.PixelWidth}x{bitmap.PixelHeight}");
+                } catch(Exception error){File.WriteAllText(Path.Combine(AppContext.BaseDirectory,name+".log"),error.ToString());}
+            };
             Windows.Add(window);window.Activate();
         }
     }

@@ -40,13 +40,11 @@ micaGO 仍處在測試階段。它會讀取 macOS「訊息」的內部資料,並
 ### Windows
 
 <p align="center">
-  <img src="docs/assets/windows-chat.jpg" alt="Windows 用戶端聊天介面" width="820" />
+  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows 用戶端聊天介面" width="820" /></a>
 </p>
 <p align="center">
-  <img src="docs/assets/windows-chat-dark.jpg" alt="Windows 用戶端深色聊天介面" width="820" />
-</p>
-<p align="center">
-  <img src="docs/assets/windows-appearance.jpg" alt="Windows 用戶端外觀設定" width="820" />
+  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows 用戶端深色聊天介面" width="390" /></a>
+  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows 用戶端外觀設定" width="390" /></a>
 </p>
 
 ### Android 用戶端
@@ -58,25 +56,17 @@ micaGO 仍處在測試階段。它會讀取 macOS「訊息」的內部資料,並
 ### 平板用戶端
 
 <p align="center">
-  <img src="docs/assets/Pad%201.png" alt="平板分割畫面" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Pad%202.png" alt="平板對話畫面" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Pad%203.png" alt="平板設定畫面" width="560" />
+  <a href="docs/assets/Pad%201.png"><img src="docs/assets/Pad%201.png" alt="平板分割畫面" width="260" /></a>
+  <a href="docs/assets/Pad%202.png"><img src="docs/assets/Pad%202.png" alt="平板對話畫面" width="260" /></a>
+  <a href="docs/assets/Pad%203.png"><img src="docs/assets/Pad%203.png" alt="平板設定畫面" width="260" /></a>
 </p>
 
 ### Mac 伴隨程式
 
 <p align="center">
-  <img src="docs/assets/Companion1.png" alt="Mac 伴隨程式儀表板" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Companion2.png" alt="Mac 伴隨程式配對畫面" width="560" />
-</p>
-<p align="center">
-  <img src="docs/assets/Companion3.png" alt="Mac 伴隨程式設定畫面" width="560" />
+  <a href="docs/assets/Companion1.png"><img src="docs/assets/Companion1.png" alt="Mac 伴隨程式儀表板" width="260" /></a>
+  <a href="docs/assets/Companion2.png"><img src="docs/assets/Companion2.png" alt="Mac 伴隨程式配對畫面" width="260" /></a>
+  <a href="docs/assets/Companion3.png"><img src="docs/assets/Companion3.png" alt="Mac 伴隨程式設定畫面" width="260" /></a>
 </p>
 
 ---

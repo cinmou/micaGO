@@ -18,11 +18,13 @@ Companion. Solution entry point: `micaGO.Windows.sln`.
 
 ## Screenshots
 
-![Windows conversation](../docs/assets/windows-chat.jpg)
-
-![Windows conversation in dark mode](../docs/assets/windows-chat-dark.jpg)
-
-![Windows appearance settings](../docs/assets/windows-appearance.jpg)
+<p align="center">
+  <a href="../docs/assets/windows-chat.png"><img src="../docs/assets/windows-chat.png" alt="Windows conversation" width="820" /></a>
+</p>
+<p align="center">
+  <a href="../docs/assets/windows-chat-dark.png"><img src="../docs/assets/windows-chat-dark.png" alt="Windows conversation in dark mode" width="390" /></a>
+  <a href="../docs/assets/windows-appearance.png"><img src="../docs/assets/windows-appearance.png" alt="Windows appearance settings" width="390" /></a>
+</p>
 
 ## What it does today
 
