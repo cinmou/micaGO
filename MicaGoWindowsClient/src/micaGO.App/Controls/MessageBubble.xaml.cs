@@ -74,9 +74,18 @@ public sealed partial class MessageBubble : UserControl
         set => SetValue(MessageProperty, value);
     }
 
+    public event Windows.Foundation.TypedEventHandler<FrameworkElement, ContextMenuEventArgs>? MessageContextRequested;
+
     public MessageBubble()
     {
         InitializeComponent();
+        // RichTextBlock owns a native text menu; route context gestures to the
+        // same message commands as the rest of the row without disabling selection.
+        BodyText.ContextMenuOpening += (_, args) => {
+            if (MessageContextRequested is null) return;
+            args.Handled = true;
+            MessageContextRequested.Invoke(BodyText, args);
+        };
         DataContextChanged += OnDataContextChanged;
         Loaded += (_, _) => AppearanceChanged += OnAppearanceChanged;
         Unloaded += (_, _) => AppearanceChanged -= OnAppearanceChanged;

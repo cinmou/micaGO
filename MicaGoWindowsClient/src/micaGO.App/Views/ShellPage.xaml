@@ -61,14 +61,19 @@
                 </Button>
             </Grid>
 
+            <Grid x:Name="ChatSelectionRegion" Grid.Row="1">
             <ListView x:Name="ChatList"
-                      Grid.Row="1"
                       Background="Transparent"
                       IsItemClickEnabled="True"
                       ItemClick="ChatList_ItemClick"
                       RightTapped="ChatList_RightTapped"
                       SelectionMode="Single"
                       ItemContainerStyle="{StaticResource MicaGoChatListStyle}">
+                <ListView.Resources>
+                    <x:Boolean x:Key="ListViewItemSelectionIndicatorVisualEnabled">False</x:Boolean>
+                    <x:Boolean x:Key="ListViewItemSelectionCheckMarkVisualEnabled">False</x:Boolean>
+                    <CornerRadius x:Key="ListViewItemCornerRadius">8</CornerRadius>
+                </ListView.Resources>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="models:ChatSummary">
                         <Grid MinHeight="64" Padding="10,8" ColumnSpacing="10">
@@ -147,6 +152,12 @@
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
+                <Canvas IsHitTestVisible="False">
+                    <Border x:Name="ChatSelectionIndicator" Width="3" Height="20"
+                            CornerRadius="1.5" Visibility="Collapsed"
+                            Background="{ThemeResource ListViewItemSelectionIndicatorBrush}" />
+                </Canvas>
+            </Grid>
 
             <Grid x:Name="ConnectionStatusPanel" Grid.Row="2" Padding="16,0,12,4">
                 <Grid.ColumnDefinitions>
@@ -198,12 +209,17 @@
                            FontWeight="SemiBold"
                            Text="Settings" />
             </Grid>
+            <Grid x:Name="SettingsSelectionRegion" Grid.Row="1">
             <ListView x:Name="SettingsNavigationList"
-                      Grid.Row="1"
                       Padding="8,4"
                       ItemContainerStyle="{StaticResource MicaGoSettingsNavigationItemStyle}"
                       SelectionMode="Single"
                       SelectionChanged="SettingsNavigationList_SelectionChanged">
+                <ListView.Resources>
+                    <x:Boolean x:Key="ListViewItemSelectionIndicatorVisualEnabled">False</x:Boolean>
+                    <x:Boolean x:Key="ListViewItemSelectionCheckMarkVisualEnabled">False</x:Boolean>
+                    <CornerRadius x:Key="ListViewItemCornerRadius">4</CornerRadius>
+                </ListView.Resources>
                     <ListViewItem Tag="general">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <FontIcon FontSize="16" Glyph="&#xE713;" />
@@ -235,6 +251,12 @@
                         </StackPanel>
                     </ListViewItem>
             </ListView>
+                <Canvas IsHitTestVisible="False">
+                    <Border x:Name="SettingsSelectionIndicator" Width="3" Height="20"
+                            CornerRadius="1.5" Visibility="Collapsed"
+                            Background="{ThemeResource ListViewItemSelectionIndicatorBrush}" />
+                </Canvas>
+            </Grid>
         </Grid>
 
         <!-- Match WinUI NavigationView's native content surface: one rounded,
@@ -350,7 +372,7 @@
                               SelectionMode="None"
                               Loaded="MessageList_Loaded"
                               ContainerContentChanging="MessageList_ContainerContentChanging"
-                              RightTapped="MessageList_RightTapped">
+                              ContextRequested="MessageList_ContextRequested">
                         <!-- Entrance is collection-reason + viewport gated in code.
                              Generic transitions also run for snapshots and recycling. -->
                         <ListView.ItemContainerTransitions>
@@ -371,7 +393,8 @@
                         </ListView.Header>
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="models:MessageRow">
-                                <controls:MessageBubble Message="{x:Bind Value, Mode=OneWay}" />
+                                <controls:MessageBubble Message="{x:Bind Value, Mode=OneWay}"
+                                                        MessageContextRequested="MessageText_ContextMenuOpening" />
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>

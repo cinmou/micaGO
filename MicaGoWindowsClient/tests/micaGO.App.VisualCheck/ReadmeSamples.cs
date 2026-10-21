@@ -38,6 +38,14 @@ public sealed partial class ShellPage
         var messages=samples.Select((sample,index)=>new Message($"demo-message-{index}",chat.Id,sample.Item1,$"10:{31+index}",sample.Item2,
             MessageDeliveryState.Read,DateCreated:start.AddMinutes(index).ToUnixTimeMilliseconds())).ToArray();
         MessageList.ItemsSource=ThreadPresentation.Build(messages,false,"en").Select(message=>new MessageRow(message)).ToArray();
+        if(Environment.GetEnvironmentVariable("MICAGO_MESSAGE_MENU_CHECK")=="1") {
+            var api=System.Reflection.DispatchProxy.Create<MicaGo.Infrastructure.Contracts.IMicaGoApi, NoNetworkMenuApi>();
+            _viewModel=new ViewModels.ShellViewModel(DispatcherQueue,api,AppServices.Current);
+            foreach(var row in ((IEnumerable<MessageRow>)MessageList.ItemsSource))_viewModel.Messages.Add(row);
+            MessageList.ItemsSource=_viewModel.Messages;
+        }
+        if(Environment.GetEnvironmentVariable("MICAGO_SELECTION_CHECK")=="1")
+            Loaded+=async(_,_)=>await CheckSidebarSelectionAsync(settings);
         if(!settings)return;
         SettingsNavigationList.SelectionChanged-=SettingsNavigationList_SelectionChanged;
         SettingsNavigationList.SelectedIndex=1;
@@ -101,4 +109,11 @@ internal static class ReadmeCapture
             Windows.Add(window);window.Activate();
         }
     }
+}
+
+// This probe must never contact a paired server or read chat history.
+public class NoNetworkMenuApi : System.Reflection.DispatchProxy
+{
+    protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+        => throw new InvalidOperationException("Network actions are disabled in the message menu probe.");
 }

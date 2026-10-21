@@ -48,6 +48,8 @@ public sealed partial class ShellPage : Page
     private DateTimeOffset _voiceStartedAt;
     private bool _selectMode;
     private bool _shutDown;
+    private readonly Controls.SidebarSelectionAnimation _chatSelectionAnimation;
+    private readonly Controls.SidebarSelectionAnimation _settingsSelectionAnimation;
     private readonly DispatcherTimer _hideUndoTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private ChatSummary? _undoHiddenChat;
     private readonly List<(MessageRow Row,MessageEntranceKind Kind)> _pendingMessageEntrances=[];
@@ -56,6 +58,8 @@ public sealed partial class ShellPage : Page
     public ShellPage()
     {
         InitializeComponent();
+        _chatSelectionAnimation = new(ChatList, ChatSelectionRegion, ChatSelectionIndicator);
+        _settingsSelectionAnimation = new(SettingsNavigationList, SettingsSelectionRegion, SettingsSelectionIndicator);
         _hideUndoTimer.Tick += (_, _) => { _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoFlyout.Hide(); };
         HideUndoFlyout.Closed += (_, _) => { _hideUndoTimer.Stop(); _undoHiddenChat = null; };
         NavigationCacheMode=Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
@@ -379,6 +383,12 @@ public sealed partial class ShellPage : Page
 
     private void ChatRows_Mutated(object? sender,ChatListMutationEventArgs e)
     {
+        // WinUI may clear SelectedItem while a Move is projected as removal and
+        // insertion. Restore the existing canonical row without reloading history.
+        if (_viewModel?.SelectedChat is { } selected) {
+            var canonical = _viewModel.Chats.FirstOrDefault(row => row.ListKey == selected.ListKey);
+            if (!ReferenceEquals(ChatList.SelectedItem, canonical)) ChatList.SelectedItem = canonical;
+        }
 #if DEBUG
         System.Diagnostics.Debug.WriteLine($"[ChatList] move={e.Moves.Count} insert={e.Inserted} remove={e.Removed} rows={_viewModel?.Chats.Count??0}");
 #endif
@@ -631,6 +641,8 @@ public sealed partial class ShellPage : Page
     public async Task ShutdownAsync()
     {
         if (_shutDown) return; _shutDown = true;
+        _chatSelectionAnimation.Dispose();
+        _settingsSelectionAnimation.Dispose();
         _hideUndoTimer.Stop(); _undoHiddenChat = null; HideUndoFlyout.Hide();
         _timestampTimer.Stop();
         _voiceTimer.Stop();
@@ -1097,11 +1109,20 @@ public sealed partial class ShellPage : Page
         catch(Exception error){await ShowSendErrorAsync(error.Message);}
     }
 
-    private void MessageList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    private void MessageList_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {
         var row = FindMessageRow(e.OriginalSource as DependencyObject);
         if (row is null) return;
-        ShowMessageMenu(row, MessageList, e.GetPosition(MessageList));
+        if (e.TryGetPosition(MessageList, out var position)) ShowMessageMenu(row, MessageList, position);
+        else if (MessageList.ContainerFromItem(row) is FrameworkElement anchor) ShowMessageMenu(row, anchor);
+        else return;
+        e.Handled = true;
+    }
+
+    private void MessageText_ContextMenuOpening(FrameworkElement sender, ContextMenuEventArgs e)
+    {
+        if (FindMessageRow(sender) is not { } row) return;
+        ShowMessageMenu(row, sender);
         e.Handled = true;
     }
 
@@ -1181,25 +1202,25 @@ public sealed partial class ShellPage : Page
         var menu = new MenuFlyout();
         var visibleText=MessageSemantics.VisibleText(message.Text);
         if(visibleText.Length>0) {
-            var copy=new MenuFlyoutItem{Text=AppServices.Current.Localization["copy"]};
+            var copy=new MenuFlyoutItem{Text=AppServices.Current.Localization["copy"], Icon = new FontIcon { Glyph = "\uE8C8" } };
             copy.Click+=(_,_)=>{var package=new DataPackage();package.SetText(visibleText);Clipboard.SetContent(package);};menu.Items.Add(copy);
         }
         if(message.IsPending && message.DeliveryState==MessageDeliveryState.Failed)
         {
-            var retry=new MenuFlyoutItem{Text=AppServices.Current.Localization["retry"]};retry.Click+=(_,_)=>OnRetryRequested(this,message);menu.Items.Add(retry);
+            var retry=new MenuFlyoutItem{Text=AppServices.Current.Localization["retry"], Icon = new FontIcon { Glyph = "\uE72C" } };retry.Click+=(_,_)=>OnRetryRequested(this,message);menu.Items.Add(retry);
         }
-        if(message.IsPending&&message.DeliveryState==MessageDeliveryState.Sending&&message.Media.Count>0){var cancel=new MenuFlyoutItem{Text=AppServices.Current.Localization["cancelUpload"]};cancel.Click+=(_,_)=>_viewModel.CancelAttachmentUpload(message);menu.Items.Add(cancel);}
+        if(message.IsPending&&message.DeliveryState==MessageDeliveryState.Sending&&message.Media.Count>0){var cancel=new MenuFlyoutItem{Text=AppServices.Current.Localization["cancelUpload"], Icon = new FontIcon { Glyph = "\uE711" } };cancel.Click+=(_,_)=>_viewModel.CancelAttachmentUpload(message);menu.Items.Add(cancel);}
         if (message.IsOutgoing && !message.IsPending)
         {
-            if(_viewModel.ActionCapabilities.CanEdit){var edit = new MenuFlyoutItem { Text = AppServices.Current.Localization["edit"] }; edit.Click += async (_, _) => { var box = new TextBox { Text = message.Text, AcceptsReturn = true }; var dialog = new ContentDialog { Title = AppServices.Current.Localization["edit"], Content = box, PrimaryButtonText = AppServices.Current.Localization["edit"], CloseButtonText = AppServices.Current.Localization["cancel"], XamlRoot = XamlRoot }; if (await dialog.ShowAsync() == ContentDialogResult.Primary) await _viewModel.EditAsync(message, box.Text); }; menu.Items.Add(edit);}
-            if(_viewModel.ActionCapabilities.CanRetract){var retract = new MenuFlyoutItem { Text = AppServices.Current.Localization["unsend"] }; retract.Click += async (_, _) => await _viewModel.RetractAsync(message); menu.Items.Add(retract);}
+            if(_viewModel.ActionCapabilities.CanEdit){var edit = new MenuFlyoutItem { Text = AppServices.Current.Localization["edit"], Icon = new FontIcon { Glyph = "\uE70F" } }; edit.Click += async (_, _) => { var box = new TextBox { Text = message.Text, AcceptsReturn = true }; var dialog = new ContentDialog { Title = AppServices.Current.Localization["edit"], Content = box, PrimaryButtonText = AppServices.Current.Localization["edit"], CloseButtonText = AppServices.Current.Localization["cancel"], XamlRoot = XamlRoot }; if (await dialog.ShowAsync() == ContentDialogResult.Primary) await _viewModel.EditAsync(message, box.Text); }; menu.Items.Add(edit);}
+            if(_viewModel.ActionCapabilities.CanRetract){var retract = new MenuFlyoutItem { Text = AppServices.Current.Localization["unsend"], Icon = new FontIcon { Glyph = "\uE7A7" } }; retract.Click += async (_, _) => await _viewModel.RetractAsync(message); menu.Items.Add(retract);}
         }
-        if(message.IsPending||_viewModel.ActionCapabilities.CanDelete){var delete = new MenuFlyoutItem { Text = AppServices.Current.Localization["delete"] }; delete.Click += async (_, _) => await _viewModel.DeleteAsync(message); menu.Items.Add(delete);}
+        if(message.IsPending||_viewModel.ActionCapabilities.CanDelete){var delete = new MenuFlyoutItem { Text = AppServices.Current.Localization["delete"], Icon = new FontIcon { Glyph = "\uE74D" } }; delete.Click += async (_, _) => await _viewModel.DeleteAsync(message); menu.Items.Add(delete);}
         if(!message.IsSeparator&&!message.IsPresentationSystem)
         {
             if(!message.IsPending)
             {
-                var forward=new MenuFlyoutItem{Text=AppServices.Current.Localization["forward"]};
+                var forward=new MenuFlyoutItem{Text=AppServices.Current.Localization["forward"], Icon = new FontIcon { Glyph = "\uE72A" } };
                 forward.Click+=async(_,_)=>await ForwardWithPickerAsync([message]);menu.Items.Add(forward);
                 var hide=new MenuFlyoutItem{Text=AppServices.Current.Localization["hide"],Icon=new FontIcon{Glyph="\uED1A"}};
                 hide.Click+=async(_,_)=>await _viewModel.HideMessagesAsync([message]);
@@ -1264,6 +1285,7 @@ public sealed partial class ShellPage : Page
     {
         if (_selectMode) return;
         _selectMode = true;
+        MessageList.ItemContainerStyle = (Style)Application.Current.Resources["MicaGoSelectedMessageListStyle"];
         MessageList.SelectionMode = ListViewSelectionMode.Multiple;
         ComposerBorder.Visibility = Visibility.Collapsed;
         VoiceBar.Visibility = Visibility.Collapsed;
@@ -1282,6 +1304,7 @@ public sealed partial class ShellPage : Page
         _selectMode = false;
         MessageList.SelectedItems.Clear();
         MessageList.SelectionMode = ListViewSelectionMode.None;
+        MessageList.ItemContainerStyle = (Style)Application.Current.Resources["MicaGoMessageListStyle"];
         SelectionBar.Visibility = Visibility.Collapsed;
         ComposerBorder.Visibility = Visibility.Visible;
     }

@@ -17,6 +17,7 @@ public sealed class TrayIconService : IDisposable
     private const uint NifMessage = 1;
     private const uint NifIcon = 2;
     private const uint NifTip = 4;
+    private const uint NifShowTip = 0x80;
     private const uint MfString = 0;
     private const uint MfPopup = 0x10;
     private const uint MfSeparator = 0x800;
@@ -58,7 +59,8 @@ public sealed class TrayIconService : IDisposable
         if (_window == IntPtr.Zero) throw new InvalidOperationException("Unable to create the micaGO tray window.");
         _icon = LoadImageW(IntPtr.Zero, iconPath, ImageIcon, 0, 0, LrLoadFromFile);
         if (_icon == IntPtr.Zero) throw new InvalidOperationException("Unable to load the micaGO tray icon.");
-        var data = IconData(NifMessage | NifIcon | NifTip);
+        // Version 4 suppresses the standard tooltip unless NIF_SHOWTIP is set.
+        var data = IconData(NifMessage | NifIcon | NifTip | NifShowTip);
         if (!Shell_NotifyIconW(NimAdd, ref data)) throw new InvalidOperationException("Unable to add the micaGO tray icon.");
         data.TimeoutOrVersion = NotifyIconVersion4;
         Shell_NotifyIconW(NimSetVersion, ref data);

@@ -5,6 +5,8 @@
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="MicaGoMessageSelectedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.12" />
+            <SolidColorBrush x:Key="MicaGoMessageSelectedPointerBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.18" />
             <AcrylicBrush x:Key="MicaGoComposerAcrylicBrush" TintColor="#FFFFFF" TintOpacity="0.40" TintLuminosityOpacity="0.65" FallbackColor="#F5F5F5" />
             <AcrylicBrush x:Key="MicaGoSendAcrylicBrush" TintColor="{ThemeResource SystemAccentColorLight2}" TintOpacity="0.18" TintLuminosityOpacity="0.72" FallbackColor="#F0ECF4" />
             <StaticResource x:Key="MicaGoSendMaterialForegroundBrush" ResourceKey="AccentTextFillColorPrimaryBrush" />
@@ -30,6 +32,8 @@
             <SolidColorBrush x:Key="MicaGoChatBackgroundScrimBrush" Color="#4DFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
+            <SolidColorBrush x:Key="MicaGoMessageSelectedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.18" />
+            <SolidColorBrush x:Key="MicaGoMessageSelectedPointerBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.24" />
             <AcrylicBrush x:Key="MicaGoComposerAcrylicBrush" TintColor="#202020" TintOpacity="0.45" TintLuminosityOpacity="0.60" FallbackColor="#303030" />
             <AcrylicBrush x:Key="MicaGoSendAcrylicBrush" TintColor="{ThemeResource SystemAccentColorDark2}" TintOpacity="0.20" TintLuminosityOpacity="0.60" FallbackColor="#303030" />
             <StaticResource x:Key="MicaGoSendMaterialForegroundBrush" ResourceKey="AccentTextFillColorPrimaryBrush" />
@@ -52,6 +56,8 @@
             <SolidColorBrush x:Key="MicaGoChatBackgroundScrimBrush" Color="#61000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="MicaGoMessageSelectedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="MicaGoMessageSelectedPointerBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="MicaGoComposerAcrylicBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="MicaGoSendAcrylicBrush" Color="{ThemeResource SystemColorButtonFaceColor}" />
             <SolidColorBrush x:Key="MicaGoSendMaterialForegroundBrush" Color="{ThemeResource SystemColorButtonTextColor}" />
@@ -157,8 +163,9 @@
         <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
     </Style>
 
-    <!-- Settings uses the native WinUI row presenter and selection indicator. -->
-    <Style x:Key="MicaGoSettingsNavigationItemStyle" TargetType="ListViewItem">
+    <!-- The row presenter retains native selection/focus surfaces. The sidebar
+         viewport owns the animated selection indicator, independently of recycling. -->
+    <Style x:Key="MicaGoSettingsNavigationItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="MinHeight" Value="44" />
@@ -166,34 +173,11 @@
         <Setter Property="Padding" Value="16,0" />
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="UseSystemFocusVisuals" Value="True" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="ListViewItem">
-                    <ListViewItemPresenter
-                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                        ContentMargin="{TemplateBinding Padding}"
-                        CornerRadius="{TemplateBinding CornerRadius}"
-                        SelectionCheckMarkVisualEnabled="False"
-                        SelectionIndicatorVisualEnabled="True"
-                        SelectionIndicatorCornerRadius="{ThemeResource ListViewItemSelectionIndicatorCornerRadius}"
-                        SelectionIndicatorBrush="{ThemeResource ListViewItemSelectionIndicatorBrush}"
-                        SelectionIndicatorPointerOverBrush="{ThemeResource ListViewItemSelectionIndicatorPointerOverBrush}"
-                        SelectionIndicatorPressedBrush="{ThemeResource ListViewItemSelectionIndicatorPressedBrush}"
-                        SelectionIndicatorDisabledBrush="{ThemeResource ListViewItemSelectionIndicatorDisabledBrush}"
-                        PointerOverBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
-                        PressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
-                        SelectedBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
-                        SelectedPointerOverBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
-                        SelectedPressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}" />
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
     </Style>
 
-    <!-- Chat rows keep the WinUI presenter as the template root. WinUI requires
-         this exact hierarchy and owns its native selection-indicator animation. -->
-    <Style x:Key="MicaGoChatListStyle" TargetType="ListViewItem">
+    <!-- Keep the WinUI presenter as the template root for native virtualization
+         and focus; sidebar indicator animation is shared with settings. -->
+    <Style x:Key="MicaGoChatListStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Padding" Value="0" />
@@ -204,39 +188,12 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="UseSystemFocusVisuals" Value="True" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="ListViewItem">
-                    <ListViewItemPresenter
-                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                        ContentMargin="{TemplateBinding Padding}"
-                        ContentTransitions="{TemplateBinding ContentTransitions}"
-                        CornerRadius="8"
-                        CheckMode="Overlay"
-                        SelectionCheckMarkVisualEnabled="False"
-                        SelectionIndicatorVisualEnabled="True"
-                        SelectionIndicatorCornerRadius="{ThemeResource ListViewItemSelectionIndicatorCornerRadius}"
-                        SelectionIndicatorBrush="{ThemeResource ListViewItemSelectionIndicatorBrush}"
-                        SelectionIndicatorPointerOverBrush="{ThemeResource ListViewItemSelectionIndicatorPointerOverBrush}"
-                        SelectionIndicatorPressedBrush="{ThemeResource ListViewItemSelectionIndicatorPressedBrush}"
-                        SelectionIndicatorDisabledBrush="{ThemeResource ListViewItemSelectionIndicatorDisabledBrush}"
-                        PointerOverBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
-                        PressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
-                        SelectedBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
-                        SelectedPointerOverBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
-                        SelectedPressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
-                        RevealBackgroundShowsAboveContent="False" />
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
     </Style>
 
     <Style x:Key="MicaGoMessageListStyle" TargetType="ListViewItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        <!-- A same-key message confirmation is delivered as a collection Replace.
-             Disable the presenter's default content transition so WinUI does not
-             expose a blank/white row between the old and new immutable records. -->
+        <!-- Stable message wrappers retain their native containers. Keep content
+             transitions empty during confirmation and selection changes. -->
         <Setter Property="ContentTransitions">
             <Setter.Value>
                 <TransitionCollection />
@@ -247,5 +204,48 @@
         <Setter Property="MinHeight" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="IsTabStop" Value="True" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <ListViewItemPresenter
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                        ContentMargin="{TemplateBinding Padding}"
+                        ContentTransitions="{TemplateBinding ContentTransitions}"
+                        CornerRadius="8"
+                        CheckMode="Inline"
+                        SelectionCheckMarkVisualEnabled="True"
+                        CheckBrush="{ThemeResource ListViewItemCheckBrush}"
+                        CheckPressedBrush="{ThemeResource ListViewItemCheckPressedBrush}"
+                        CheckDisabledBrush="{ThemeResource ListViewItemCheckDisabledBrush}"
+                        CheckBoxBrush="{ThemeResource ListViewItemCheckBoxBrush}"
+                        CheckBoxPointerOverBrush="{ThemeResource ListViewItemCheckBoxPointerOverBrush}"
+                        CheckBoxPressedBrush="{ThemeResource ListViewItemCheckBoxPressedBrush}"
+                        CheckBoxDisabledBrush="{ThemeResource ListViewItemCheckBoxDisabledBrush}"
+                        CheckBoxSelectedBrush="{ThemeResource ListViewItemCheckBoxSelectedBrush}"
+                        CheckBoxSelectedPointerOverBrush="{ThemeResource ListViewItemCheckBoxSelectedPointerOverBrush}"
+                        CheckBoxSelectedPressedBrush="{ThemeResource ListViewItemCheckBoxSelectedPressedBrush}"
+                        CheckBoxSelectedDisabledBrush="{ThemeResource ListViewItemCheckBoxSelectedDisabledBrush}"
+                        CheckBoxBorderBrush="{ThemeResource ListViewItemCheckBoxBorderBrush}"
+                        CheckBoxPointerOverBorderBrush="{ThemeResource ListViewItemCheckBoxPointerOverBorderBrush}"
+                        CheckBoxPressedBorderBrush="{ThemeResource ListViewItemCheckBoxPressedBorderBrush}"
+                        CheckBoxDisabledBorderBrush="{ThemeResource ListViewItemCheckBoxDisabledBorderBrush}"
+                        CheckBoxCornerRadius="{ThemeResource ListViewItemCheckBoxCornerRadius}"
+                        SelectionIndicatorVisualEnabled="False"
+                        PointerOverBackground="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        PressedBackground="{ThemeResource SubtleFillColorTertiaryBrush}"
+                        SelectedBackground="{ThemeResource MicaGoMessageSelectedBrush}"
+                        SelectedPointerOverBackground="{ThemeResource MicaGoMessageSelectedPointerBrush}"
+                        SelectedPressedBackground="{ThemeResource MicaGoMessageSelectedPointerBrush}"
+                        SelectedForeground="{ThemeResource TextFillColorPrimaryBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- The native inline checkbox extends into the leading content padding. -->
+    <Style x:Key="MicaGoSelectedMessageListStyle" TargetType="ListViewItem"
+           BasedOn="{StaticResource MicaGoMessageListStyle}">
+        <Setter Property="Padding" Value="16,0,12,0" />
     </Style>
 </ResourceDictionary>
