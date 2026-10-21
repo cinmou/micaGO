@@ -1,14 +1,29 @@
-<p align="center"><img src="docs/assets/Server.png" alt="micaGO" width="120" /></p>
+<p align="center">
+  <img src="docs/assets/Server.png" alt="micaGOServer" width="120" />
+</p>
+
+<div align="center">
 
 # micaGO
 
-[English](README.md) · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
+[English](README.md) · **简体中文** · [繁體中文](README.zh-Hant.md)
 
-**你的 iMessage、你的 Mac、你的设备。**
+*一个自托管的 iMessage 桥接工具。*
+
+[![文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-0064E0?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/index.zh-Hans.md)
+[![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-007AFF?style=for-the-badge)](https://micago.cinmou.uk)
+[![快速上手](https://img.shields.io/badge/%E5%BF%AB%E9%80%9F%E4%B8%8A%E6%89%8B-0A1317?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/getting-started.zh-Hans.md)
+[![安全模型](https://img.shields.io/badge/%E5%AE%89%E5%85%A8%E6%A8%A1%E5%9E%8B-31A24C?style=for-the-badge)](#安全)
+[![远程访问](https://img.shields.io/badge/%E8%BF%9C%E7%A8%8B%E8%AE%BF%E9%97%AE-5D6C7B?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/remote-access-cloudflare.md)
+[![Releases](https://img.shields.io/badge/Releases-B89B5E?style=for-the-badge)](https://github.com/cinmou/micaGO/releases)
+
+</div>
+
+---
+
+## 概览
 
 micaGO 把 Android、Linux 和 Windows 客户端连接到 Mac Messages。Go 后端读取消息，原生 Mac Companion 管理配对与设置，Windows 使用独立 WinUI 应用。
-
-[下载](https://github.com/cinmou/micaGO/releases) · [快速上手](docs/getting-started.zh-Hans.md) · [文档](docs/index.zh-Hans.md) · [官网](https://micago.cinmou.uk)
 
 ## 应用截图
 
