@@ -37,16 +37,6 @@ micaGO 仍处在测试阶段。它会读取 macOS「信息」的内部数据,并
 
 ## 应用截图
 
-### Windows
-
-<p align="center">
-  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows 客户端聊天界面" width="820" /></a>
-</p>
-<p align="center">
-  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows 客户端深色聊天界面" width="390" /></a>
-  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows 客户端外观设置" width="390" /></a>
-</p>
-
 ### 安卓客户端
 
 |  |  |  |
@@ -59,6 +49,14 @@ micaGO 仍处在测试阶段。它会读取 macOS「信息」的内部数据,并
   <a href="docs/assets/Pad%201.png"><img src="docs/assets/Pad%201.png" alt="平板分栏界面" width="260" /></a>
   <a href="docs/assets/Pad%202.png"><img src="docs/assets/Pad%202.png" alt="平板聊天界面" width="260" /></a>
   <a href="docs/assets/Pad%203.png"><img src="docs/assets/Pad%203.png" alt="平板设置界面" width="260" /></a>
+</p>
+
+### Windows
+
+<p align="center">
+  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows 客户端聊天界面" width="260" /></a>
+  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows 客户端深色聊天界面" width="260" /></a>
+  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows 客户端外观设置" width="260" /></a>
 </p>
 
 ### Mac 伴侣应用

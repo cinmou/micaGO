@@ -41,16 +41,6 @@ project.
 
 ## Screenshots
 
-### Windows
-
-<p align="center">
-  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows conversation" width="820" /></a>
-</p>
-<p align="center">
-  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows conversation in dark mode" width="390" /></a>
-  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows appearance settings" width="390" /></a>
-</p>
-
 ### Android
 
 |  |  |  |
@@ -63,6 +53,14 @@ project.
   <a href="docs/assets/Pad%201.png"><img src="docs/assets/Pad%201.png" alt="Tablet split view" width="260" /></a>
   <a href="docs/assets/Pad%202.png"><img src="docs/assets/Pad%202.png" alt="Tablet message thread" width="260" /></a>
   <a href="docs/assets/Pad%203.png"><img src="docs/assets/Pad%203.png" alt="Tablet settings" width="260" /></a>
+</p>
+
+### Windows
+
+<p align="center">
+  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows conversation" width="260" /></a>
+  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows conversation in dark mode" width="260" /></a>
+  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows appearance settings" width="260" /></a>
 </p>
 
 ### Mac Companion App

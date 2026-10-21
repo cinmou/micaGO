@@ -37,16 +37,6 @@ micaGO 仍處在測試階段。它會讀取 macOS「訊息」的內部資料,並
 
 ## 應用程式截圖
 
-### Windows
-
-<p align="center">
-  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows 用戶端聊天介面" width="820" /></a>
-</p>
-<p align="center">
-  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows 用戶端深色聊天介面" width="390" /></a>
-  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows 用戶端外觀設定" width="390" /></a>
-</p>
-
 ### Android 用戶端
 
 |  |  |  |
@@ -59,6 +49,14 @@ micaGO 仍處在測試階段。它會讀取 macOS「訊息」的內部資料,並
   <a href="docs/assets/Pad%201.png"><img src="docs/assets/Pad%201.png" alt="平板分割畫面" width="260" /></a>
   <a href="docs/assets/Pad%202.png"><img src="docs/assets/Pad%202.png" alt="平板對話畫面" width="260" /></a>
   <a href="docs/assets/Pad%203.png"><img src="docs/assets/Pad%203.png" alt="平板設定畫面" width="260" /></a>
+</p>
+
+### Windows
+
+<p align="center">
+  <a href="docs/assets/windows-chat.png"><img src="docs/assets/windows-chat.png" alt="Windows 用戶端聊天介面" width="260" /></a>
+  <a href="docs/assets/windows-chat-dark.png"><img src="docs/assets/windows-chat-dark.png" alt="Windows 用戶端深色聊天介面" width="260" /></a>
+  <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows 用戶端外觀設定" width="260" /></a>
 </p>
 
 ### Mac 伴隨程式
