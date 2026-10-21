@@ -11,7 +11,33 @@
       bubble-less blocks stacked above the (optional) text bubble, and
       reaction chips overlay the bubble's top corner.
     -->
-    <StackPanel x:Name="Root" Margin="16,3,16,3">
+    <StackPanel x:Name="Root" Margin="0,4,0,4">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="BubbleColors">
+                <VisualState x:Name="Received">
+                    <VisualState.Setters>
+                        <Setter Target="Bubble.Background" Value="{ThemeResource MicaGoIncomingMessageBrush}" />
+                        <Setter Target="Bubble.BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                        <Setter Target="BodyText.Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Sent">
+                    <VisualState.Setters>
+                        <Setter Target="Bubble.Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <Setter Target="Bubble.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <Setter Target="BodyText.Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="CustomColor" />
+                <VisualState x:Name="EmojiOnly">
+                    <VisualState.Setters>
+                        <Setter Target="Bubble.Background" Value="Transparent" />
+                        <Setter Target="Bubble.BorderBrush" Value="Transparent" />
+                        <Setter Target="BodyText.Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
         <Border x:Name="SeparatorChip"
                 Margin="0,10,0,8"
@@ -95,6 +121,7 @@
                                 Padding="12,8"
                                 HorizontalAlignment="Left"
                                 Background="{ThemeResource MicaGoIncomingMessageBrush}"
+                                BorderThickness="1"
                                 CornerRadius="18,18,18,4">
                             <!-- RichTextBlock, not TextBlock: only RichTextBlock can
                                  host InlineUIContainer (the Twemoji flag images). -->
@@ -102,8 +129,8 @@
                                            FontSize="14"
                                            IsTextSelectionEnabled="True"
                                            LineHeight="20"
-                                           LineStackingStrategy="BlockLineHeight"
-                                           OpticalMarginAlignment="TrimSideBearings"
+                                           LineStackingStrategy="MaxHeight"
+                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                            TextWrapping="Wrap" />
                         </Border>
                     </StackPanel>
@@ -149,7 +176,7 @@
                                    Text="✨" />
                     </Border>
 
-                    <Border x:Name="FailedBadge"
+                    <Border x:Name="FailedBadge" Tapped="FailedMessage_Tapped"
                             Padding="10,5"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
@@ -181,7 +208,7 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
 
-                <TextBlock x:Name="FooterText"
+                <TextBlock x:Name="FooterText" Tapped="FailedMessage_Tapped"
                            Margin="6,2,6,0"
                            FontSize="11"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"

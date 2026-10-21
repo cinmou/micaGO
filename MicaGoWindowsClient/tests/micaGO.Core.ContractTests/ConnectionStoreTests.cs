@@ -40,8 +40,19 @@ internal static class ConnectionStoreTests
             Directory.CreateDirectory(Path.Combine(blockedRoot,"connection-profile.json"));
             var blockedStore=new ConnectionStore(secrets,blockedRoot);
             try {await blockedStore.SaveAsync(profile,"second-test-credential");throw new InvalidOperationException("Expected failed profile replacement");}
+            // File.Move onto a directory reports UnauthorizedAccessException on
+            // Windows and IOException on Unix. Check the rollback in both cases.
             catch(Exception exception) when(exception is IOException or UnauthorizedAccessException) { }
             if((await store.LoadAsync())?.Token!="first-test-credential")throw new InvalidOperationException("Failed profile replacement changed credential");
+            if(File.Exists(Path.Combine(blockedRoot,"connection-profile.json.tmp")))throw new InvalidOperationException("Failed save left a temporary profile");
+            var emptySecrets=new Secrets();
+            var emptyStore=new ConnectionStore(emptySecrets,blockedRoot);
+            try {await emptyStore.SaveAsync(profile,"first-test-credential");throw new InvalidOperationException("Expected failed first profile save");}
+            catch(Exception exception) when(exception is IOException or UnauthorizedAccessException) { }
+            if(emptySecrets.Read("server-token") is not null)throw new InvalidOperationException("Failed first save retained a credential");
+            await blockedStore.ClearAsync();
+            if(secrets.Read("server-token") is not null)throw new InvalidOperationException("Failed save kept the serialization gate locked");
+            await store.SaveAsync(profile,"first-test-credential");
             var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             secrets.OnWrite=()=>{entered.TrySetResult();if(!release.Wait(TimeSpan.FromSeconds(5)))throw new TimeoutException();};
             var saving=Task.Run(()=>store.SaveAsync(profile,"second-test-credential"));

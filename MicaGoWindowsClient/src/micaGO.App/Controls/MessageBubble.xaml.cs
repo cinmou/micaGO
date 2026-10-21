@@ -38,11 +38,17 @@ public sealed partial class MessageBubble : UserControl
 
     /// <summary>Raised when a reply preview is tapped; payload is the target message guid.</summary>
     public static event EventHandler<string>? ReplyJumpRequested;
+    public static event EventHandler<Message>? RetryRequested;
+    private void FailedMessage_Tapped(object sender,TappedRoutedEventArgs e)
+    {
+        if(_message is{IsPending:true,DeliveryState:MessageDeliveryState.Failed} message){e.Handled=true;RetryRequested?.Invoke(this,message);}
+    }
 
     /// <summary>Raised when a full-screen send effect should play; payload is the effect id.</summary>
     public static event EventHandler<string>? ScreenEffectRequested;
 
     private static event EventHandler? AppearanceChanged;
+    private bool _customColorsApplied;
 
     public static void RefreshAppearance() => AppearanceChanged?.Invoke(null, EventArgs.Empty);
 
@@ -115,7 +121,7 @@ public sealed partial class MessageBubble : UserControl
             SeparatorText.Text = message.SeparatorLabel ?? string.Empty;
             SystemText.Visibility = Visibility.Collapsed;
             MessageRow.Visibility = Visibility.Collapsed;
-            Root.Margin = new Thickness(16, 0, 16, 0);
+            Root.Margin = new Thickness(0);
             return;
         }
 
@@ -127,17 +133,17 @@ public sealed partial class MessageBubble : UserControl
             SystemText.Text = (message.GroupTitle ?? "Conversation updated")
                 + (message.MergedSystemCount > 1 ? $" · {message.MergedSystemCount}" : string.Empty);
             MessageRow.Visibility = Visibility.Collapsed;
-            Root.Margin = new Thickness(16, 2, 16, 2);
+            Root.Margin = new Thickness(0, 4, 0, 4);
             return;
         }
 
         SystemText.Visibility = Visibility.Collapsed;
         MessageRow.Visibility = Visibility.Visible;
         Root.Margin = new Thickness(
-            16,
-            message.CompactWithPrevious ? 1 : 3,
-            16,
-            message.CompactWithNext ? 1 : 3);
+            0,
+            message.CompactWithPrevious ? 1 : 4,
+            0,
+            message.CompactWithNext ? 1 : 4);
 
         var outgoing = message.IsOutgoing;
         var body = MessageSemantics.VisibleText(message.Text);
@@ -222,16 +228,25 @@ public sealed partial class MessageBubble : UserControl
 
     private void ApplyBubble(Message message, string body, bool hasBody, bool hasMedia, bool outgoing)
     {
+        // ThemeResource setters follow the element's actual theme, including
+        // an app theme override. Application-level lookups can return the OS theme.
+        if (_customColorsApplied)
+        {
+            Bubble.ClearValue(Border.BackgroundProperty);
+            BodyText.ClearValue(RichTextBlock.ForegroundProperty);
+            _customColorsApplied = false;
+        }
+        VisualStateManager.GoToState(this, message.IsBigEmoji ? "EmojiOnly"
+            : outgoing ? AppServices.Current.Appearance.BubbleFollowsSystem ? "Sent" : "CustomColor"
+            : "Received", false);
         Bubble.Visibility = hasBody ? Visibility.Visible : Visibility.Collapsed;
         if (message.IsBigEmoji)
         {
-            Bubble.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             Bubble.Padding = new Thickness(2, 6, 2, 6);
             Bubble.CornerRadius = new CornerRadius(0);
             var count = TextElementCount(body);
             BodyText.FontSize = count <= 1 ? 84 : count == 2 ? 64 : 52;
             BodyText.LineHeight = BodyText.FontSize * 1.1;
-            BodyText.Foreground = ThemeBrush("TextFillColorPrimaryBrush");
             FlagEmojiTextRenderer.SetText(BodyText, body, BodyText.FontSize,
                 AppServices.Current.Appearance.TwemojiFlagsEnabled);
             return;
@@ -246,26 +261,20 @@ public sealed partial class MessageBubble : UserControl
         if (outgoing)
         {
             var appearance = AppServices.Current.Appearance;
-            if (appearance.BubbleFollowsSystem)
+            if (!appearance.BubbleFollowsSystem)
             {
-                Bubble.Background = ThemeBrush("AccentFillColorDefaultBrush");
-                BodyText.Foreground = ThemeBrush("TextOnAccentFillColorPrimaryBrush");
-            }
-            else
-            {
+                _customColorsApplied = true;
                 Bubble.Background = new SolidColorBrush(appearance.BubbleColor);
                 BodyText.Foreground = new SolidColorBrush(
                     AppearanceService.ShouldUseDarkText(appearance.BubbleColor)
                         ? Windows.UI.Color.FromArgb(0xFF, 0x00, 0x00, 0x00)
                         : Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
             }
-            Bubble.CornerRadius = tail ? new CornerRadius(18, 18, 4, 18) : new CornerRadius(18);
+            Bubble.CornerRadius = tail ? new CornerRadius(16, 16, 4, 16) : new CornerRadius(16);
         }
         else
         {
-            Bubble.Background = ThemeBrush("MicaGoIncomingMessageBrush");
-            BodyText.Foreground = ThemeBrush("TextFillColorPrimaryBrush");
-            Bubble.CornerRadius = tail ? new CornerRadius(18, 18, 18, 4) : new CornerRadius(18);
+            Bubble.CornerRadius = tail ? new CornerRadius(16, 16, 16, 4) : new CornerRadius(16);
         }
         FlagEmojiTextRenderer.SetText(BodyText, body, 17,
             AppServices.Current.Appearance.TwemojiFlagsEnabled);
@@ -794,6 +803,7 @@ public sealed partial class MessageBubble : UserControl
 
         FailedBadge.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
         FailedText.Text = NotDeliveredLabel();
+        ToolTipService.SetToolTip(FailedBadge,message.ErrorText);
         BubbleBlocks.Opacity = failed ? 0.55 : 1;
     }
 
@@ -902,7 +912,7 @@ public sealed partial class MessageBubble : UserControl
             MessageDeliveryState.Sent => labels[1],
             MessageDeliveryState.Delivered => labels[2],
             MessageDeliveryState.Read => $"{labels[3]} · {message.SentAt}",
-            MessageDeliveryState.Failed => labels[4],
+            MessageDeliveryState.Failed => labels[4]+" · "+AppServices.Current.Localization["retry"],
             MessageDeliveryState.AwaitingConfirmation => language switch {"zh-Hans"=>"等待发送确认","zh-Hant"=>"等待傳送確認",_=>"Waiting for confirmation"},
             _ => message.SentAt,
         };

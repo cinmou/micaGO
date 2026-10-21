@@ -5,16 +5,19 @@
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
+            <AcrylicBrush x:Key="MicaGoComposerAcrylicBrush" TintColor="#FFFFFF" TintOpacity="0.40" TintLuminosityOpacity="0.65" FallbackColor="#F5F5F5" />
+            <AcrylicBrush x:Key="MicaGoSendAcrylicBrush" TintColor="{ThemeResource SystemAccentColorLight2}" TintOpacity="0.18" TintLuminosityOpacity="0.72" FallbackColor="#F0ECF4" />
+            <StaticResource x:Key="MicaGoSendMaterialForegroundBrush" ResourceKey="AccentTextFillColorPrimaryBrush" />
             <SolidColorBrush x:Key="MicaGoUnreadBadgeBrush" Color="#FFFF3B30" />
             <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="White" />
             <StaticResource x:Key="MicaGoChatSurfaceBrush"
                             ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
             <StaticResource x:Key="MicaGoContactBarBrush" ResourceKey="LayerFillColorDefaultBrush" />
-            <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FFF3F3F3" />
-            <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FFFFFFFF" />
+            <StaticResource x:Key="MicaGoSecondaryPageBrush" ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
+            <StaticResource x:Key="MicaGoPageHeaderBackgroundBrush" ResourceKey="LayerFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99000000" />
-            <StaticResource x:Key="MicaGoIncomingMessageBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
+            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#E6FFFFFF" />
             <StaticResource x:Key="MicaGoComposerBrush"
                             ResourceKey="CardBackgroundFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#12000000" />
@@ -27,16 +30,19 @@
             <SolidColorBrush x:Key="MicaGoChatBackgroundScrimBrush" Color="#4DFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
+            <AcrylicBrush x:Key="MicaGoComposerAcrylicBrush" TintColor="#202020" TintOpacity="0.45" TintLuminosityOpacity="0.60" FallbackColor="#303030" />
+            <AcrylicBrush x:Key="MicaGoSendAcrylicBrush" TintColor="{ThemeResource SystemAccentColorDark2}" TintOpacity="0.20" TintLuminosityOpacity="0.60" FallbackColor="#303030" />
+            <StaticResource x:Key="MicaGoSendMaterialForegroundBrush" ResourceKey="AccentTextFillColorPrimaryBrush" />
             <SolidColorBrush x:Key="MicaGoUnreadBadgeBrush" Color="#FFFF3B30" />
             <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="White" />
             <StaticResource x:Key="MicaGoChatSurfaceBrush"
                             ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
             <StaticResource x:Key="MicaGoContactBarBrush" ResourceKey="LayerFillColorDefaultBrush" />
-            <SolidColorBrush x:Key="MicaGoSecondaryPageBrush" Color="#FF202020" />
-            <SolidColorBrush x:Key="MicaGoPageHeaderBackgroundBrush" Color="#FF171717" />
+            <StaticResource x:Key="MicaGoSecondaryPageBrush" ResourceKey="LayerOnMicaBaseAltFillColorDefaultBrush" />
+            <StaticResource x:Key="MicaGoPageHeaderBackgroundBrush" ResourceKey="LayerFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoPageHeaderForegroundBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="MicaGoPageHeaderSecondaryBrush" Color="#99FFFFFF" />
-            <StaticResource x:Key="MicaGoIncomingMessageBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
+            <SolidColorBrush x:Key="MicaGoIncomingMessageBrush" Color="#E6333333" />
             <StaticResource x:Key="MicaGoComposerBrush"
                             ResourceKey="CardBackgroundFillColorDefaultBrush" />
             <SolidColorBrush x:Key="MicaGoSubtleStrokeBrush" Color="#16FFFFFF" />
@@ -46,6 +52,9 @@
             <SolidColorBrush x:Key="MicaGoChatBackgroundScrimBrush" Color="#61000000" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="MicaGoComposerAcrylicBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="MicaGoSendAcrylicBrush" Color="{ThemeResource SystemColorButtonFaceColor}" />
+            <SolidColorBrush x:Key="MicaGoSendMaterialForegroundBrush" Color="{ThemeResource SystemColorButtonTextColor}" />
             <SolidColorBrush x:Key="MicaGoUnreadBadgeBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="MicaGoUnreadBadgeTextBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
             <SolidColorBrush x:Key="MicaGoChatSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
@@ -80,14 +89,14 @@
         <Setter Property="BorderThickness" Value="0" />
     </Style>
 
-    <!-- Standard rounded-rectangle command buttons, using native focus states. -->
+    <!-- Flutter-compatible circular composer commands retain native focus states. -->
     <Style x:Key="MicaGoComposerGlyphButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource MicaGoIconButtonStyle}">
         <Setter Property="Width" Value="40" />
         <Setter Property="Height" Value="40" />
         <Setter Property="Margin" Value="4" />
-        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+        <Setter Property="CornerRadius" Value="20" />
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
     </Style>
 

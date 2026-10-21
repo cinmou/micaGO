@@ -22,7 +22,7 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- The sidebar and thread header intentionally reveal one continuous Mica surface. -->
+        <!-- The transparent sidebar exposes the window Mica; content uses semantic layers. -->
         <Grid x:Name="ChatSidebar" Grid.Column="0" Background="Transparent">
             <Grid.Transitions>
                 <TransitionCollection>
@@ -32,7 +32,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="56" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="38" />
+                <RowDefinition x:Name="ConnectionStatusRow" Height="38" />
             </Grid.RowDefinitions>
 
             <Grid Padding="12,8,8,8" ColumnSpacing="4">
@@ -148,7 +148,7 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <Grid Grid.Row="2" Padding="16,0,12,4">
+            <Grid x:Name="ConnectionStatusPanel" Grid.Row="2" Padding="16,0,12,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -247,18 +247,17 @@
                 BorderThickness="{ThemeResource NavigationViewContentGridBorderThickness}"
                 CornerRadius="{ThemeResource NavigationViewContentGridCornerRadius}">
             <Grid>
-                <Grid x:Name="ConversationPane">
+                <Grid x:Name="ConversationPane" AllowDrop="True" DragOver="Thread_DragOver" Drop="Thread_Drop">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid.Transitions>
                         <TransitionCollection>
                             <EntranceThemeTransition FromHorizontalOffset="-32" IsStaggeringEnabled="False" />
                         </TransitionCollection>
                     </Grid.Transitions>
-                    <!-- Commanding, message content and editor occupy distinct layout rows. -->
+                    <!-- The header is separate; the floating editor overlays the canvas. -->
                     <Border Grid.Row="0" MinHeight="64"
                             Background="{ThemeResource MicaGoContactBarBrush}"
                             BackgroundSizing="InnerBorderEdge"
@@ -270,6 +269,15 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
+                        <Button x:Name="ThreadIdentityButton" Grid.ColumnSpan="2"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                Background="Transparent" BorderThickness="0" Padding="0"
+                                CornerRadius="4" Click="ConversationMoreButton_Click">
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
                         <PersonPicture x:Name="ThreadAvatar"
                                        Width="38"
                                        Height="38"
@@ -288,6 +296,8 @@
                                        Text=""
                                        TextTrimming="CharacterEllipsis" />
                         </StackPanel>
+                        </Grid>
+                        </Button>
                         <Button x:Name="ThreadDetailsButton"
                                 Grid.Column="2"
                                 VerticalAlignment="Center"
@@ -328,8 +338,8 @@
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    Text="Choose a conversation to start" />
                     </StackPanel>
-                    <ListView x:Name="MessageList"
-                              Padding="16,12,16,12"
+                    <ListView x:Name="MessageList" AllowDrop="True" DragOver="Thread_DragOver" Drop="Thread_Drop"
+                              Padding="20,12,20,16"
                               Background="Transparent"
                               IsTabStop="True"
                               KeyDown="MessageList_KeyDown"
@@ -388,92 +398,120 @@
                     <Canvas x:Name="EffectCanvas"
                             IsHitTestVisible="False" />
                     </Grid>
-                    <Border x:Name="ComposerRegion" Grid.Row="2" Background="{ThemeResource LayerFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
-                    <Grid Padding="16,12,16,16">
-                        <Border x:Name="ComposerBorder"
-                                MinHeight="56"
-                                MaxWidth="920"
-                                HorizontalAlignment="Stretch"
-                                Background="{ThemeResource MicaGoComposerBrush}"
-                                BorderBrush="{ThemeResource MicaGoSubtleStrokeBrush}"
-                                BorderThickness="1"
-                                CornerRadius="8">
-                            <Grid Padding="4" ColumnSpacing="0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Button x:Name="AttachButton"
-                                        VerticalAlignment="Bottom"
-                                        Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
-                                        ToolTipService.ToolTip="Attach"
-                                        Click="AttachButton_Click">
-                                    <FontIcon FontSize="20" Glyph="&#xE723;" />
-                                </Button>
-                                <TextBox x:Name="Composer"
-                                        Grid.Column="1"
-                                        MinHeight="40"
-                                        MaxHeight="128"
-                                        Padding="8,9,8,8"
-                                        VerticalAlignment="Center"
-                                        VerticalContentAlignment="Center"
-                                        AcceptsReturn="True"
-                                        CornerRadius="4"
-                                        IsEnabled="False"
-                                        PlaceholderText="Message"
-                                        TextWrapping="Wrap"
-                                        TextChanged="Composer_TextChanged"
-                                        Paste="Composer_Paste"
-                                        PreviewKeyDown="Composer_KeyDown" />
-                                <Button x:Name="EmojiButton"
-                                        Grid.Column="2"
-                                        VerticalAlignment="Bottom"
-                                        Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
-                                        ToolTipService.ToolTip="Emoji"
-                                        IsEnabled="False"
-                                        Click="EmojiButton_Click">
-                                    <FontIcon FontSize="20" Glyph="&#xE899;" />
-                                </Button>
-                                <Button x:Name="VoiceButton"
-                                        Grid.Column="3"
-                                        Width="40"
-                                        Height="40"
-                                        Padding="0"
-                                        Margin="4"
-                                        VerticalAlignment="Bottom"
-                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                        BorderThickness="0"
-                                        CornerRadius="4"
-                                        ToolTipService.ToolTip="Voice message"
-                                        IsEnabled="False"
-                                        Click="VoiceButton_Click">
-                                    <FontIcon FontSize="18"
-                                              Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                              Glyph="&#xE720;" />
-                                </Button>
-                                <Button x:Name="SendButton"
-                                        Grid.Column="3"
-                                        Width="40"
-                                        Height="40"
-                                        Padding="0"
-                                        Margin="4"
-                                        VerticalAlignment="Bottom"
-                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                        BorderThickness="0"
-                                        CornerRadius="4"
-                                        IsEnabled="False"
-                                        Visibility="Collapsed"
-                                        ToolTipService.ToolTip="Send"
-                                        Click="SendButton_Click">
-                                    <FontIcon FontSize="17"
-                                              Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                              Glyph="&#xE724;" />
-                                </Button>
+                    <Border x:Name="ComposerRegion" Grid.Row="1" VerticalAlignment="Bottom"
+                            Margin="12,0,12,12" SizeChanged="ComposerRegion_SizeChanged">
+                    <Grid>
+                        <!-- Flutter's attachment + inset editor + separate send action,
+                             floating over the canvas with native TextBox focus/IME. -->
+                        <Grid x:Name="ComposerBorder" MaxWidth="920" ColumnSpacing="8">
+                            <Grid.Transitions>
+                                <TransitionCollection>
+                                    <EntranceThemeTransition FromHorizontalOffset="0" FromVerticalOffset="8" IsStaggeringEnabled="False" />
+                                </TransitionCollection>
+                            </Grid.Transitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Background="{ThemeResource MicaGoComposerAcrylicBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1" CornerRadius="28" Padding="4">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="AttachButton"
+                                            VerticalAlignment="Bottom"
+                                            Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
+                                            ToolTipService.ToolTip="Attach">
+                                        <FontIcon FontSize="20" Glyph="&#xE710;" />
+                                        <Button.Flyout>
+                                            <MenuFlyout Placement="TopEdgeAlignedLeft">
+                                                <MenuFlyoutItem x:Name="AttachFilesItem" Text="Choose files…" Click="AttachFilesItem_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE723;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutItem x:Name="RecordVoiceItem" Text="Record voice message" IsEnabled="False" Click="RecordVoiceItem_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE720;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                    <TextBox x:Name="Composer" Grid.Column="1"
+                                             MinHeight="48" MaxHeight="144" FontSize="16"
+                                             Padding="14,10" Margin="0,0,4,0"
+                                             Background="Transparent"
+                                             Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                             VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                             AcceptsReturn="True" CornerRadius="24" IsEnabled="False"
+                                             PlaceholderText="Message" TextWrapping="Wrap"
+                                             TextChanged="Composer_TextChanged" Paste="Composer_Paste"
+                                             PreviewKeyDown="Composer_KeyDown">
+                                        <TextBox.Resources>
+                                            <ResourceDictionary>
+                                                <ResourceDictionary.ThemeDictionaries>
+                                                    <ResourceDictionary x:Key="Default">
+                                                        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#10FFFFFF" />
+                                                        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#10FFFFFF" />
+                                                    </ResourceDictionary>
+                                                    <ResourceDictionary x:Key="Light">
+                                                        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#18FFFFFF" />
+                                                        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#18FFFFFF" />
+                                                    </ResourceDictionary>
+                                                    <ResourceDictionary x:Key="HighContrast">
+                                                        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{ThemeResource SystemColorWindowColor}" />
+                                                        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{ThemeResource SystemColorWindowColor}" />
+                                                    </ResourceDictionary>
+                                                </ResourceDictionary.ThemeDictionaries>
+                                            </ResourceDictionary>
+                                        </TextBox.Resources>
+                                    </TextBox>
+                                    <Button x:Name="EmojiButton" Grid.Column="2"
+                                            VerticalAlignment="Bottom"
+                                            Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
+                                            ToolTipService.ToolTip="Emoji" IsEnabled="False"
+                                            Click="EmojiButton_Click">
+                                        <FontIcon FontSize="22" Glyph="&#xE899;" />
+                                    </Button>
+                                </Grid>
+                            </Border>
+                            <Grid Grid.Column="1" Width="52" Height="52" VerticalAlignment="Bottom" Margin="0,0,0,2"
+                                  CornerRadius="26" Background="{ThemeResource MicaGoSendAcrylicBrush}">
+                            <Button x:Name="SendButton"
+                                    Width="52" Height="52" Padding="0" CornerRadius="26"
+                                    Background="Transparent"
+                                    Foreground="{ThemeResource MicaGoSendMaterialForegroundBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    IsEnabled="False" ToolTipService.ToolTip="Send" Click="SendButton_Click">
+                                <Button.Resources>
+                                    <ResourceDictionary>
+                                        <ResourceDictionary.ThemeDictionaries>
+                                            <ResourceDictionary x:Key="Light">
+                                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{ThemeResource SystemAccentColor}" Opacity="0.20" />
+                                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{ThemeResource SystemAccentColor}" Opacity="0.28" />
+                                                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#08000000" />
+                                            </ResourceDictionary>
+                                            <ResourceDictionary x:Key="Default">
+                                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{ThemeResource SystemAccentColor}" Opacity="0.24" />
+                                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{ThemeResource SystemAccentColor}" Opacity="0.32" />
+                                                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#08FFFFFF" />
+                                            </ResourceDictionary>
+                                            <ResourceDictionary x:Key="HighContrast">
+                                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{ThemeResource SystemColorHighlightColor}" />
+                                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{ThemeResource SystemColorHighlightColor}" />
+                                                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="{ThemeResource SystemColorButtonFaceColor}" />
+                                                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="{ThemeResource SystemColorHighlightTextColor}" />
+                                                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="{ThemeResource SystemColorHighlightTextColor}" />
+                                            </ResourceDictionary>
+                                        </ResourceDictionary.ThemeDictionaries>
+                                    </ResourceDictionary>
+                                </Button.Resources>
+                                <FontIcon FontSize="20" Glyph="&#xE724;" />
+                            </Button>
                             </Grid>
-                        </Border>
+                        </Grid>
 
                         <!-- Voice recording bar (swaps in for the composer). -->
                         <Border x:Name="VoiceBar"
@@ -485,6 +523,11 @@
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 Visibility="Collapsed">
+                            <Border.Transitions>
+                                <TransitionCollection>
+                                    <EntranceThemeTransition FromHorizontalOffset="0" FromVerticalOffset="8" IsStaggeringEnabled="False" />
+                                </TransitionCollection>
+                            </Border.Transitions>
                             <Grid Padding="14,5,5,5" ColumnSpacing="10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -533,6 +576,11 @@
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 Visibility="Collapsed">
+                            <Border.Transitions>
+                                <TransitionCollection>
+                                    <EntranceThemeTransition FromHorizontalOffset="0" FromVerticalOffset="8" IsStaggeringEnabled="False" />
+                                </TransitionCollection>
+                            </Border.Transitions>
                             <Grid Padding="14,5,5,5" ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />

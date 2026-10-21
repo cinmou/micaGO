@@ -12,6 +12,13 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(MicaGoVisualCheck)' == 'true'">
+    <DefineConstants>$(DefineConstants);MICAGO_VISUAL_CHECK</DefineConstants>
+    <AssemblyName>micaGO.VisualCheck</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MicaGoVisualCheck)' == 'true'">
+    <Compile Include="..\..\tests\micaGO.App.VisualCheck\*.cs" Link="VisualCheck\%(Filename)%(Extension)" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.2.1" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.2.0" GeneratePathProperty="true" />

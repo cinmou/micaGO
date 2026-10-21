@@ -20,11 +20,21 @@ if (-not (Test-Path (Join-Path $source "micaGO.App.exe"))) {
 
 New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
 if (Test-Path $stage) {
-    try { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop }
-    catch {
-        # A user may be running the previous archive directly from this folder.
-        # Preserve that live instance and stage this package independently.
+    $stageExecutable = [IO.Path]::GetFullPath((Join-Path $stage "micaGO.App.exe"))
+    $stageInUse = @(Get-Process -Name "micaGO.App" -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and [string]::Equals($_.Path, $stageExecutable, [StringComparison]::OrdinalIgnoreCase)
+    }).Count -gt 0
+    if ($stageInUse) {
+        # Check before removing any files: a failed recursive removal can
+        # otherwise delete unlocked assets from a running client's directory.
         $stage = Join-Path $artifacts ("micaGO-release-x64-stage-" + [Guid]::NewGuid().ToString("N"))
+    }
+    else {
+        try { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop }
+        catch {
+            # A locked previous archive can still be preserved independently.
+            $stage = Join-Path $artifacts ("micaGO-release-x64-stage-" + [Guid]::NewGuid().ToString("N"))
+        }
     }
 }
 New-Item -ItemType Directory -Path $stage | Out-Null

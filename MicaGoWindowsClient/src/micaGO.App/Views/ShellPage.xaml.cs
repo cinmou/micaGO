@@ -72,6 +72,7 @@ public sealed partial class ShellPage : Page
         AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(Shell_KeyDown), true);
         _timestampTimer.Tick+=(_,_)=>_viewModel?.RefreshChatTimestamps();
         Controls.MessageBubble.ReplyJumpRequested += OnReplyJumpRequested;
+        Controls.MessageBubble.RetryRequested += OnRetryRequested;
         Controls.MessageBubble.ScreenEffectRequested += OnScreenEffectRequested;
         MessageList.SelectionChanged += MessageList_SelectionChanged;
         _voiceTimer.Tick += (_, _) =>
@@ -81,8 +82,20 @@ public sealed partial class ShellPage : Page
         };
     }
 
+    public async Task RefreshConnectionStatusVisibilityAsync()
+    {
+        var visible=await AppServices.Current.Cache.GetSettingAsync("settings.showConnectionStatus")!="false";
+        ApplyConnectionStatusVisibility(visible);
+    }
+    private void ApplyConnectionStatusVisibility(bool visible)
+    {
+        ConnectionStatusPanel.Visibility=visible?Visibility.Visible:Visibility.Collapsed;
+        ConnectionStatusRow.Height=new GridLength(visible?38:0);
+    }
+
     private async void ShellPage_Loaded(object sender, RoutedEventArgs e)
     {
+        await RefreshConnectionStatusVisibilityAsync();
         if(_viewModel is not null)return;
         await AppServices.Current.Cache.InitializeAsync();
         await AppServices.Current.RemoveLegacyGoogleContactsAsync();
@@ -132,8 +145,8 @@ public sealed partial class ShellPage : Page
         foreach (var (element, key) in new (DependencyObject, string)[] {
             (SearchBox, "search"), (Composer, "message"), (MessageList, "conversation"),
             (AttachButton, "attach"), (EmojiButton, "emoji"), (SendButton, "send"),
-            (VoiceSendButton, "send"), (VoiceButton, "voiceMessage"),
-            (ThreadDetailsButton, "details"), (JumpToBottomButton, "jumpToBottom"),
+            (VoiceSendButton, "send"), (RecordVoiceItem, "recordVoice"),
+            (ThreadDetailsButton, "details"), (ThreadIdentityButton, "details"), (JumpToBottomButton, "jumpToBottom"),
             (SelectionCancelButton, "cancel"), (SidebarSettingsButton, "settings") })
         {
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(element, l[key]);
@@ -147,7 +160,9 @@ public sealed partial class ShellPage : Page
         ToolTipService.SetToolTip(EmojiButton,l["emoji"]);
         ToolTipService.SetToolTip(SidebarSettingsButton,l["settings"]);
         ToolTipService.SetToolTip(ThreadDetailsButton,l["details"]);
-        ToolTipService.SetToolTip(VoiceButton,l["voiceMessage"]);
+        ToolTipService.SetToolTip(ThreadIdentityButton,l["details"]);
+        AttachFilesItem.Text=l["attachFiles"];
+        RecordVoiceItem.Text=l["recordVoice"];
         ToolTipService.SetToolTip(JumpToBottomButton,l["jumpToBottom"]);
         VoiceCancelButton.Content=l["cancel"];
         ToolTipService.SetToolTip(SettingsBackButton,l["back"]);
@@ -194,6 +209,28 @@ public sealed partial class ShellPage : Page
     {
         if (_messageScroller is null) return;
         _messageScroller.ChangeView(null, _messageScroller.ScrollableHeight, null, false);
+    }
+
+    private void ComposerRegion_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Reserve the measured editor height for multiline text, font scaling,
+        // recording and selection bars. The background remains continuous.
+        var bottom = Math.Ceiling(e.NewSize.Height) + 28;
+        if (Math.Abs(MessageList.Padding.Bottom - bottom) < 0.5) return;
+        var pinned = _messageScroller is not null && _messageScroller.ScrollableHeight - _messageScroller.VerticalOffset < 24;
+        var keepingBottom = _keepingMessageBottom;
+        _keepingMessageBottom = true;
+        try
+        {
+            MessageList.Padding = new Thickness(20, 12, 20, bottom);
+            JumpToBottomButton.Margin = new Thickness(0, 0, 16, bottom + 8);
+            if (pinned)
+            {
+                MessageList.UpdateLayout();
+                _messageScroller?.ChangeView(null, _messageScroller.ScrollableHeight, null, true);
+            }
+        }
+        finally { _keepingMessageBottom = keepingBottom; }
     }
 
     private async Task LoadOlderAutomaticallyAsync()
@@ -416,12 +453,30 @@ public sealed partial class ShellPage : Page
 
     private void MessageList_ContainerContentChanging(ListViewBase sender,ContainerContentChangingEventArgs args)
     {
+        // A container must stay visible even when an entrance is skipped or
+        // superseded by a snapshot. Animation owns only a temporary visual offset.
+        args.ItemContainer.Opacity=1;
         if(args.InRecycleQueue)
         {
-            args.ItemContainer.Opacity=1;
+            ResetMessageVisual(args.ItemContainer);
+            if(args.ItemContainer.ContentTemplateRoot is UIElement content)ResetMessageVisual(content);
             return;
         }
-        args.ItemContainer.Opacity=args.Item is MessageRow row&&_pendingMessageEntrances.Any(item=>ReferenceEquals(item.Row,row))?0:1;
+    }
+
+    private static void ResetMessageVisual(UIElement element)
+    {
+        // Recycled history rows may never have had an entrance animation.
+        // Translation is an opt-in facade; stopping it before registration
+        // throws E_INVALIDARG from the native Composition layer.
+        ElementCompositionPreview.SetIsTranslationEnabled(element,true);
+        var visual=ElementCompositionPreview.GetElementVisual(element);
+        visual.StopAnimation("Opacity");
+        visual.StopAnimation("Scale");
+        visual.StopAnimation("Translation.Y");
+        visual.Opacity=1;
+        visual.Scale=Vector3.One;
+        visual.Properties.InsertVector3("Translation",Vector3.Zero);
     }
 
     private async Task AnimatePendingMessageEntrancesAsync()
@@ -442,6 +497,7 @@ public sealed partial class ShellPage : Page
         try{animationsEnabled=new UISettings().AnimationsEnabled;}
         catch{animationsEnabled=true;}
         var now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        foreach(var item in containers)item.Container!.Opacity=1;
         var actual=containers.Where(item=>!item.Row.Value.IsSeparator
             && Math.Abs(now-item.Row.Value.DateCreated)<=TimeSpan.FromSeconds(15).TotalMilliseconds)
             .ToArray();
@@ -488,6 +544,8 @@ public sealed partial class ShellPage : Page
             container.Opacity=1;
             ElementCompositionPreview.SetIsTranslationEnabled(container,true);
             var visual=ElementCompositionPreview.GetElementVisual(container);
+            visual.Opacity=1;
+            visual.Scale=Vector3.One;
             visual.CenterPoint=new Vector3(item.Row.Value.IsOutgoing?(float)container.ActualWidth:0,(float)container.ActualHeight,0);
 
             var rise=compositor.CreateScalarKeyFrameAnimation();
@@ -522,6 +580,8 @@ public sealed partial class ShellPage : Page
     {
         DetailFrame.Navigate(typeof(HiddenContactsPage),new ShellNavigationContext(this,null,"contacts"),ForwardTransition());
     }
+
+    public void OpenThirdPartyNotices()=>DetailFrame.Navigate(typeof(ThirdPartyNoticesPage),new ShellNavigationContext(this,null,"about"),ForwardTransition());
 
     public void OpenHiddenMessages()=>DetailFrame.Navigate(typeof(HiddenMessagesPage),new ShellNavigationContext(this,null,"data"),ForwardTransition());
 
@@ -577,6 +637,7 @@ public sealed partial class ShellPage : Page
         _voiceRecorder.Dispose();
         AppServices.Current.Appearance.AppearanceChanged -= Appearance_AppearanceChanged;
         Controls.MessageBubble.ReplyJumpRequested -= OnReplyJumpRequested;
+        Controls.MessageBubble.RetryRequested -= OnRetryRequested;
         Controls.MessageBubble.ScreenEffectRequested -= OnScreenEffectRequested;
         if(_messageScroller is not null){_messageScroller.ViewChanged-=MessageScroller_ViewChanged;_messageScroller=null;}
         if (_viewModel is { } viewModel)
@@ -681,6 +742,7 @@ public sealed partial class ShellPage : Page
     }
 
     public IReadOnlyList<ChatSummary> GetContactRoutes(ChatSummary chat)=>_viewModel?.GetContactRoutes(chat)??[];
+    public IReadOnlyList<ChatSummary> GetLinkableContactAccounts(ChatSummary chat)=>_viewModel?.GetLinkableContactAccounts(chat)??[];
 
     public async Task RefreshContactsAsync()
     {
@@ -838,48 +900,57 @@ public sealed partial class ShellPage : Page
     }
     private void Composer_TextChanged(object sender, TextChangedEventArgs e) => UpdateComposerActions();
 
+    private async Task ShowSendErrorAsync(string message)
+    {
+        var l=AppServices.Current.Localization;
+        await new ContentDialog{Title=l["sendFailed"],Content=message,CloseButtonText=l["close"],XamlRoot=XamlRoot}.ShowAsync();
+    }
+    private void Thread_DragOver(object sender,DragEventArgs e)
+    {
+        if(e.Handled)return;
+        if(_viewModel?.SelectedChat is not{CanSendAttachments:true}||!(e.DataView.Contains(StandardDataFormats.StorageItems)||e.DataView.Contains(StandardDataFormats.Bitmap)))return;
+        e.AcceptedOperation=DataPackageOperation.Copy;e.Handled=true;
+        e.DragUIOverride.Caption=AppServices.Current.Localization["sendAttachments"];
+    }
+    private async void Thread_Drop(object sender,DragEventArgs e)
+    {
+        if(e.Handled)return;
+        var target=_viewModel?.SelectedChat?.ListKey;if(target is null)return;
+        var deferral=e.GetDeferral();e.Handled=true;
+        try {await SendDataPackageAsync(e.DataView,target);}
+        catch(Exception error){await ShowSendErrorAsync(error.Message);}
+        finally{deferral.Complete();}
+    }
+
     private async void Composer_Paste(object sender,TextControlPasteEventArgs e)
     {
-        DataPackageView package;
-        try{package=Clipboard.GetContent();}
-        catch{return;}
-        var hasFiles=package.Contains(StandardDataFormats.StorageItems);
-        var hasBitmap=package.Contains(StandardDataFormats.Bitmap);
-        if(!hasFiles&&!hasBitmap)return;
-
-        // Match Unigram's paste boundary: attachment-shaped clipboard data is
-        // consumed here; ordinary text remains owned by the native TextBox.
-        e.Handled=true;
-        try
-        {
-            var paths=new List<string>();
-            if(hasFiles)
-            {
-                foreach(var file in (await package.GetStorageItemsAsync()).OfType<StorageFile>())
-                {
-                    if(!string.IsNullOrWhiteSpace(file.Path)){paths.Add(file.Path);continue;}
-                    var copied=await file.CopyAsync(ApplicationData.Current.TemporaryFolder,file.Name,NameCollisionOption.GenerateUniqueName);
-                    paths.Add(copied.Path);
-                }
+        DataPackageView package;try{package=Clipboard.GetContent();}catch{return;}
+        if(!package.Contains(StandardDataFormats.StorageItems)&&!package.Contains(StandardDataFormats.Bitmap))return;
+        var target=_viewModel?.SelectedChat?.ListKey;if(target is null)return;e.Handled=true;
+        try{await SendDataPackageAsync(package,target);}catch(Exception error){await ShowSendErrorAsync(error.Message);}
+    }
+    private async Task SendDataPackageAsync(DataPackageView package,string target)
+    {
+        var paths=new List<string>();var temporary=new List<string>();
+        try {
+            if(package.Contains(StandardDataFormats.StorageItems))foreach(var file in (await package.GetStorageItemsAsync()).OfType<StorageFile>()) {
+                if(!string.IsNullOrWhiteSpace(file.Path)){paths.Add(file.Path);continue;}
+                var copied=await file.CopyAsync(ApplicationData.Current.TemporaryFolder,file.Name,NameCollisionOption.GenerateUniqueName);
+                paths.Add(copied.Path);temporary.Add(copied.Path);
             }
-            if(paths.Count==0&&hasBitmap)
-            {
-                var bitmap=await package.GetBitmapAsync();
-                using var source=await bitmap.OpenReadAsync();
+            if(paths.Count==0&&package.Contains(StandardDataFormats.Bitmap)) {
+                var bitmap=await package.GetBitmapAsync();using var source=await bitmap.OpenReadAsync();
                 var decoder=await BitmapDecoder.CreateAsync(source);
                 var file=await ApplicationData.Current.TemporaryFolder.CreateFileAsync($"micaGO-paste-{Guid.NewGuid():N}.png",CreationCollisionOption.GenerateUniqueName);
-                using var destination=await file.OpenAsync(FileAccessMode.ReadWrite);
-                var encoder=await BitmapEncoder.CreateForTranscodingAsync(destination,decoder);
-                await encoder.FlushAsync();
-                paths.Add(file.Path);
+                using(var destination=await file.OpenAsync(FileAccessMode.ReadWrite)) {
+                    var encoder=await BitmapEncoder.CreateForTranscodingAsync(destination,decoder);await encoder.FlushAsync();
+                }
+                paths.Add(file.Path);temporary.Add(file.Path);
             }
-            if(paths.Count==0)return;
-            await SendComposerAttachmentsAsync(paths);
+            if(_viewModel?.SelectedChat?.ListKey!=target)return;
+            if(paths.Count>0)await SendComposerAttachmentsAsync(paths);
         }
-        catch(Exception exception)
-        {
-            ConnectionStatusText.Text=string.Format(AppServices.Current.Localization["pasteFailed"], exception.Message);
-        }
+        finally{foreach(var path in temporary)try{File.Delete(path);}catch(IOException){}catch(UnauthorizedAccessException){}}
     }
 
     private async Task SendComposerAttachmentsAsync(IReadOnlyList<string> paths)
@@ -898,10 +969,11 @@ public sealed partial class ShellPage : Page
     {
         var canSend = _viewModel?.SelectedChat?.CanSendText == true;
         var hasText = !string.IsNullOrWhiteSpace(Composer.Text);
-        SendButton.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
-        VoiceButton.Visibility = hasText ? Visibility.Collapsed : Visibility.Visible;
         SendButton.IsEnabled = canSend && hasText;
-        VoiceButton.IsEnabled = canSend;
+        var canAttach=_viewModel?.SelectedChat?.CanSendAttachments==true;
+        RecordVoiceItem.IsEnabled = canAttach;
+        AttachFilesItem.IsEnabled = canAttach;
+        AttachButton.IsEnabled = canAttach;
         EmojiButton.IsEnabled = canSend;
     }
 
@@ -1007,19 +1079,22 @@ public sealed partial class ShellPage : Page
             await _viewModel.SendTextAsync(text);
             UpdateThreadSubtitle();
         }
+        catch(Exception error){if(string.IsNullOrEmpty(Composer.Text))Composer.Text=text;await ShowSendErrorAsync(error.Message);}
         finally { _keepingMessageBottom = false; }
     }
 
-    private async void AttachButton_Click(object sender, RoutedEventArgs e)
+    private async void AttachFilesItem_Click(object sender, RoutedEventArgs e)
     {
         if (_viewModel?.SelectedChat is null) return;
         var picker = new Windows.Storage.Pickers.FileOpenPicker();
         picker.FileTypeFilter.Add("*");
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        var target=_viewModel.SelectedChat.ListKey;
         var files = await picker.PickMultipleFilesAsync();
-        if (files.Count == 0) return;
-        await SendComposerAttachmentsAsync(files.Select(file=>file.Path).ToArray());
+        if (files.Count == 0||_viewModel?.SelectedChat?.ListKey!=target) return;
+        try{await SendComposerAttachmentsAsync(files.Select(file=>file.Path).ToArray());}
+        catch(Exception error){await ShowSendErrorAsync(error.Message);}
     }
 
     private void MessageList_RightTapped(object sender, RightTappedRoutedEventArgs e)
@@ -1094,14 +1169,24 @@ public sealed partial class ShellPage : Page
         return false;
     }
 
+    private async void OnRetryRequested(object? sender,Message message)
+    {
+        if(_viewModel is null)return;
+        try{await _viewModel.RetryMessageAsync(message);}catch(Exception error){await ShowSendErrorAsync(error.Message);}
+    }
     private void ShowMessageMenu(MessageRow row, FrameworkElement anchor, Windows.Foundation.Point? position = null)
     {
         if (_viewModel is null) return;
         var message=row.Value;
         var menu = new MenuFlyout();
-        if(message.IsPending && message.DeliveryState==MessageDeliveryState.Failed && message.Media.Count>0)
+        var visibleText=MessageSemantics.VisibleText(message.Text);
+        if(visibleText.Length>0) {
+            var copy=new MenuFlyoutItem{Text=AppServices.Current.Localization["copy"]};
+            copy.Click+=(_,_)=>{var package=new DataPackage();package.SetText(visibleText);Clipboard.SetContent(package);};menu.Items.Add(copy);
+        }
+        if(message.IsPending && message.DeliveryState==MessageDeliveryState.Failed)
         {
-            var retry=new MenuFlyoutItem{Text=AppServices.Current.Localization["retry"]};retry.Click+=async(_,_)=>await _viewModel.RetryAttachmentAsync(message);menu.Items.Add(retry);
+            var retry=new MenuFlyoutItem{Text=AppServices.Current.Localization["retry"]};retry.Click+=(_,_)=>OnRetryRequested(this,message);menu.Items.Add(retry);
         }
         if(message.IsPending&&message.DeliveryState==MessageDeliveryState.Sending&&message.Media.Count>0){var cancel=new MenuFlyoutItem{Text=AppServices.Current.Localization["cancelUpload"]};cancel.Click+=(_,_)=>_viewModel.CancelAttachmentUpload(message);menu.Items.Add(cancel);}
         if (message.IsOutgoing && !message.IsPending)
@@ -1114,6 +1199,8 @@ public sealed partial class ShellPage : Page
         {
             if(!message.IsPending)
             {
+                var forward=new MenuFlyoutItem{Text=AppServices.Current.Localization["forward"]};
+                forward.Click+=async(_,_)=>await ForwardWithPickerAsync([message]);menu.Items.Add(forward);
                 var hide=new MenuFlyoutItem{Text=AppServices.Current.Localization["hide"],Icon=new FontIcon{Glyph="\uED1A"}};
                 hide.Click+=async(_,_)=>await _viewModel.HideMessagesAsync([message]);
                 menu.Items.Add(hide);
@@ -1128,7 +1215,7 @@ public sealed partial class ShellPage : Page
 
     // ----- voice messages -----
 
-    private async void VoiceButton_Click(object sender, RoutedEventArgs e)
+    private async void RecordVoiceItem_Click(object sender, RoutedEventArgs e)
     {
         if (_viewModel?.SelectedChat is null || _voiceRecorder.IsRecording) return;
         try
@@ -1167,6 +1254,7 @@ public sealed partial class ShellPage : Page
         {
             await _viewModel.SendAttachmentsAsync([path], isAudioMessage: true);
         }
+        catch(Exception error){await ShowSendErrorAsync(error.Message);}
         finally { _keepingMessageBottom = false; }
     }
 
@@ -1211,13 +1299,14 @@ public sealed partial class ShellPage : Page
 
     private void UpdateSelectionBar()
     {
-        var count = SelectedMessages().Count;
+        var selected=SelectedMessages();
+        var count = selected.Count;var forwardCount=selected.Count(row=>!row.IsPending);
         var l = AppServices.Current.Localization;
         SelectionCountText.Text = string.Format(l["selectedCount"], count);
-        SelectionForwardButton.Content = $"{l["forward"]} ({count})";
+        SelectionForwardButton.Content = $"{l["forward"]} ({forwardCount})";
         SelectionHideButton.Content = $"{l["hide"]} ({count})";
-        SelectionForwardButton.IsEnabled = count > 0;
-        SelectionHideButton.IsEnabled = count > 0;
+        SelectionForwardButton.IsEnabled = forwardCount > 0;
+        SelectionHideButton.IsEnabled = forwardCount > 0;
     }
 
     private void SelectionCancelButton_Click(object sender, RoutedEventArgs e) => ExitSelectMode();
@@ -1227,10 +1316,18 @@ public sealed partial class ShellPage : Page
         if (_viewModel is null) return;
         var selected = SelectedMessages();
         if (selected.Count == 0) return;
+        await ForwardWithPickerAsync(selected);
+    }
+    private async Task ForwardWithPickerAsync(IReadOnlyList<Message> selected)
+    {
+        if(_viewModel is null)return;
+        selected=selected.Where(row=>!row.IsPending&&!row.IsPresentationSystem&&!row.IsSeparator).ToArray();
+        if(selected.Count==0)return;
         var l = AppServices.Current.Localization;
+        var targets=_viewModel.ForwardTargets(selected);
         var picker = new ListView
         {
-            ItemsSource = _viewModel.Chats,
+            ItemsSource = targets,
             DisplayMemberPath = "Title",
             SelectionMode = ListViewSelectionMode.Single,
             MaxHeight = 380,
@@ -1244,9 +1341,15 @@ public sealed partial class ShellPage : Page
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
         };
+        var search=new TextBox{PlaceholderText=l["search"]};
+        search.TextChanged+=(_,_)=>picker.ItemsSource=targets.Where(chat=>chat.Title.Contains(search.Text,StringComparison.CurrentCultureIgnoreCase)).ToArray();
+        var panel=new StackPanel{Spacing=12,MinWidth=280};panel.Children.Add(search);panel.Children.Add(picker);dialog.Content=panel;
+        dialog.IsPrimaryButtonEnabled=false;
+        picker.SelectionChanged+=(_,_)=>dialog.IsPrimaryButtonEnabled=picker.SelectedItem is ChatSummary;
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || picker.SelectedItem is not ChatSummary target) return;
         ExitSelectMode();
-        await _viewModel.ForwardMessagesAsync(target, selected);
+        try{await _viewModel.ForwardMessagesAsync(target, selected);}
+        catch(Exception error){await ShowSendErrorAsync(error.Message);}
     }
 
     private async void SelectionHideButton_Click(object sender, RoutedEventArgs e)

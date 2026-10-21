@@ -112,6 +112,8 @@
                                        TextWrapping="Wrap" />
                             <TextBlock x:Name="MergeRoutesHint" TextWrapping="Wrap"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <Button x:Name="LinkAccountsButton" Margin="0,8,0,0"
+                                    HorizontalAlignment="Left" Click="LinkAccountsButton_Click" />
                             <TextBlock x:Name="SendRouteLabel"
                                        Margin="0,7,0,0"
                                        Text="Send using"

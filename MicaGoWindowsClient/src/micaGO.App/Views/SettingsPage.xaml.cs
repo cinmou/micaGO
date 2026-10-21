@@ -32,12 +32,13 @@ public sealed partial class SettingsPage : Page
         NotificationToggle.IsOn=(await services.Cache.GetSettingAsync("settings.notifications"))!="false";
         NotificationPreviewToggle.IsOn=(await services.Cache.GetSettingAsync("settings.notificationPreview"))!="false";
         TrayToggle.IsOn=(await services.Cache.GetSettingAsync("settings.tray"))=="true";
+        ConnectionStatusToggle.IsOn=await services.Cache.GetSettingAsync("settings.showConnectionStatus")!="false";
         var theme=await services.Cache.GetSettingAsync("settings.theme")??"system"; ThemePicker.SelectedIndex=theme=="light"?1:theme=="dark"?2:0;
         var language=await services.Cache.GetSettingAsync("settings.language")??"system"; LanguagePicker.SelectedIndex=language=="en"?1:language=="zh-Hans"?2:language=="zh-Hant"?3:0;
         await services.Appearance.InitializeAsync();
-        BubbleFollowSystemToggle.IsOn=services.Appearance.BubbleFollowsSystem;
+        BubbleColorModePicker.SelectedIndex=services.Appearance.BubbleFollowsSystem?0:1;
         BubbleColorPicker.Color=services.Appearance.BubbleColor;
-        BubbleColorCard.Visibility=services.Appearance.BubbleFollowsSystem?Visibility.Collapsed:Visibility.Visible;
+        CustomBubbleColorPanel.Visibility=services.Appearance.BubbleFollowsSystem?Visibility.Collapsed:Visibility.Visible;
         TwemojiFlagsToggle.IsOn=services.Appearance.TwemojiFlagsEnabled;
         UpdateBackgroundStatus();
         DeveloperPanel.Visibility=(await services.Cache.GetSettingAsync("settings.developerMode"))=="true"?Visibility.Visible:Visibility.Collapsed;
@@ -177,19 +178,31 @@ public sealed partial class SettingsPage : Page
             VcfImportStatus.Text = string.Format(AppServices.Current.Localization["vcfImported"], parts[0], parts[1], parts[2]);
     }
     private void ApplySettings(){var s=AppServices.Current;s.Notifications.Enabled=NotificationToggle.IsOn;s.Notifications.ShowMessageText=NotificationPreviewToggle.IsOn;NotificationPreviewToggle.IsEnabled=NotificationToggle.IsOn;var lang=LanguagePicker.SelectedIndex switch{1=>"en",2=>"zh-Hans",3=>"zh-Hant",_=>"system"};s.Localization.SetLanguage(lang);s.Notifications.HiddenBodyText=s.Localization["newMessage"];var root=App.MainWindow.Content as FrameworkElement;if(root is not null)root.RequestedTheme=ThemePicker.SelectedIndex switch{1=>ElementTheme.Light,2=>ElementTheme.Dark,_=>ElementTheme.Default};ApplyText();}
+    private void AboutOpenSourceLink_Click(object sender,RoutedEventArgs e)
+    {
+        if(_context?.Host is{} host)host.OpenThirdPartyNotices();else Frame?.Navigate(typeof(ThirdPartyNoticesPage));
+    }
+
     private void ApplyText()
     {
         var l=AppServices.Current.Localization;
+        ConnectionStatusLabel.Text=l["showConnectionStatus"];ConnectionStatusDescription.Text=l["showConnectionStatusDescription"];
         ConnectionHeader.Text=l["connection"];ConnectionSubtitle.Text=l["route"];UnpairLabel.Text=l["unpair"];UnpairDescription.Text=l["unpairDescription"];DisconnectButton.Content=l["unpairConfirm"];BuildRouteRows();BehaviorHeader.Text=l["general"];TrayLabel.Text=l["tray"];TrayDescription.Text=l["trayDescription"];LanguageLabel.Text=l["language"];SmsLabel.Text=l["allowSms"];SmsDescription.Text=l["allowSmsDescription"];
-        AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LocalizePickers(l);EmojiHeader.Text=l["emoji"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleFollowSystemLabel.Text=l["followSystemAccent"];BubbleColorPickLabel.Text=l["presetColors"];BubbleColorButtonText.Text=l["customColor"];BuildBubbleSwatches();
+        AppearanceHeader.Text=l["appearance"];ThemeLabel.Text=l["theme"];LocalizePickers(l);EmojiHeader.Text=l["emoji"];TwemojiFlagsLabel.Text=l["twemojiFlags"];TwemojiFlagsDescription.Text=l["twemojiFlagsDescription"];ChatBackgroundLabel.Text=l["chatBackground"];ChooseBackgroundButton.Content=l["choose"];ClearBackgroundButton.Content=l["removeBackground"];BubbleColorLabel.Text=l["bubbleColor"];BubbleColorDescription.Text=l["bubbleColorDescription"];BubbleColorPickLabel.Text=l["presetColors"];BubbleColorButtonText.Text=l["moreColors"];BuildBubbleSwatches();
         NotificationsHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];NotificationDescription.Text=l["notificationDescription"];NotificationPreviewLabel.Text=l["notificationPreview"];NotificationPreviewDescription.Text=l["notificationPreviewDescription"];
         ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];HiddenMessagesLabel.Text=l["hiddenMessages"];HiddenContactsLabel.Text=l["hiddenContacts"];StorageHeader.Text=l["cache"];CacheLabel.Text=l["cacheLabel"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];
         TestingHeader.Text=l["developer"];TestContactLabel.Text=l["testContact"];TestContactHint.Text=l["testContactHint"];BackupHeader.Text=l["backupRestore"];BackupLabel.Text=l["backupLabel"];ExportBackupButton.Content=l["exportBackup"];ImportBackupButton.Content=l["importBackup"];
-        AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutUpdateLabel.Text=l["checkUpdates"];if(!_checkingUpdate&&_updateUrl is null)AboutUpdateStatus.Text=l["updateCheckNow"];if(_updateUrl is null&&!_checkingUpdate)AboutUpdateButton.Content=l["updateCheckButton"];AboutOpenSourceLabel.Text=l["openSource"];AboutAttributionText.Text=l["twemojiAttribution"];AboutDisclaimerText.Text=l["twemojiDisclaimer"];
+        AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutUpdateLabel.Text=l["checkUpdates"];if(!_checkingUpdate&&_updateUrl is null)AboutUpdateStatus.Text=l["updateCheckNow"];if(_updateUrl is null&&!_checkingUpdate)AboutUpdateButton.Content=l["updateCheckButton"];AboutOpenSourceLabel.Text=l["openSource"];
         UpdateBackgroundStatus();UpdateHiddenContactsStatus();UpdateHiddenMessagesStatus();
     }
     private async void NotificationToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.notifications",NotificationToggle.IsOn?"true":"false");ApplySettings();}
     private async void NotificationPreviewToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.notificationPreview",NotificationPreviewToggle.IsOn?"true":"false");ApplySettings();}
+    private async void ConnectionStatusToggle_Toggled(object sender,RoutedEventArgs e)
+    {
+        if(_loading)return;
+        await AppServices.Current.Cache.SetSettingAsync("settings.showConnectionStatus",ConnectionStatusToggle.IsOn?"true":"false");
+        if(_context is not null)await _context.Host.RefreshConnectionStatusVisibilityAsync();
+    }
     private async void TrayToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await App.SetTrayEnabledAsync(TrayToggle.IsOn);}
     private async void ThemePicker_SelectionChanged(object sender,SelectionChangedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.theme",ThemePicker.SelectedIndex switch{1=>"light",2=>"dark",_=>"system"});ApplySettings();}
     private async void LanguagePicker_SelectionChanged(object sender,SelectionChangedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.language",LanguagePicker.SelectedIndex switch{1=>"en",2=>"zh-Hans",3=>"zh-Hant",_=>"system"});ApplySettings();}
@@ -203,12 +216,28 @@ public sealed partial class SettingsPage : Page
         if(_context is not null)await _context.Host.RefreshAppearanceAsync();
     }
     private async void ClearBackgroundButton_Click(object sender,RoutedEventArgs e){await AppServices.Current.Appearance.ClearChatBackgroundAsync();UpdateBackgroundStatus();if(_context is not null)await _context.Host.RefreshAppearanceAsync();}
-    private async void BubbleFollowSystemToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;BubbleColorCard.Visibility=BubbleFollowSystemToggle.IsOn?Visibility.Collapsed:Visibility.Visible;await AppServices.Current.Appearance.SetBubbleFollowsSystemAsync(BubbleFollowSystemToggle.IsOn);if(_context is not null)await _context.Host.RefreshAppearanceAsync();}
+    private void BubbleColorHeader_SizeChanged(object sender,SizeChangedEventArgs e)
+    {
+        var compact=e.NewSize.Width<480;
+        Grid.SetColumn(BubbleColorModePicker,compact?1:2);Grid.SetRow(BubbleColorModePicker,compact?1:0);
+        Grid.SetColumnSpan(BubbleColorModePicker,compact?2:1);
+        BubbleColorModePicker.HorizontalAlignment=compact?HorizontalAlignment.Left:HorizontalAlignment.Stretch;
+        BubbleColorModePicker.Margin=compact?new Thickness(0,8,0,0):new Thickness(0);
+    }
+    private async void BubbleColorModePicker_SelectionChanged(object sender,SelectionChangedEventArgs e)
+    {
+        if(BubbleColorModePicker.SelectedIndex<0||CustomBubbleColorPanel is null)return;
+        var followsSystem=BubbleColorModePicker.SelectedIndex==0;
+        CustomBubbleColorPanel.Visibility=followsSystem?Visibility.Collapsed:Visibility.Visible;
+        if(_loading)return;
+        await AppServices.Current.Appearance.SetBubbleFollowsSystemAsync(followsSystem);
+        if(_context is not null)await _context.Host.RefreshAppearanceAsync();
+    }
     // W-UI8: the ring picker fires on every drag step, so it only previews; the
     // colour is saved once when the flyout closes (it used to rewrite the setting
     // and refresh every bubble per step).
     private void BubbleColorPicker_ColorChanged(ColorPicker sender,ColorChangedEventArgs args){if(_loading)return;BubbleColorPreview.Background=new Microsoft.UI.Xaml.Media.SolidColorBrush(args.NewColor);}
-    private async void BubbleColorFlyout_Closed(object sender,object e){if(_loading||BubbleFollowSystemToggle.IsOn)return;var color=BubbleColorPicker.Color;if(SameRgb(color,AppServices.Current.Appearance.BubbleColor)){UpdateBubbleColorSelection();return;}await ApplyBubbleColorAsync(color);}
+    private async void BubbleColorFlyout_Closed(object sender,object e){if(_loading||BubbleColorModePicker.SelectedIndex!=1)return;var color=BubbleColorPicker.Color;if(SameRgb(color,AppServices.Current.Appearance.BubbleColor)){UpdateBubbleColorSelection();return;}await ApplyBubbleColorAsync(color);}
     private async Task ApplyBubbleColorAsync(Windows.UI.Color color){await AppServices.Current.Appearance.SetBubbleColorAsync(color);UpdateBubbleColorSelection();if(_context is not null)await _context.Host.RefreshAppearanceAsync();}
     private static bool SameRgb(Windows.UI.Color a,Windows.UI.Color b)=>a.R==b.R&&a.G==b.G&&a.B==b.B;
     private void BuildBubbleSwatches()
@@ -217,13 +246,12 @@ public sealed partial class SettingsPage : Page
         BubbleColorSwatches.Children.Clear();
         foreach(var (key,color) in MicaGo.App.Services.AppearanceService.BubbleColorPresets)
         {
-            // Ellipse inside a transparent button: a coloured Button background
-            // would be replaced by the template's grey on hover.
-            var dot=new Grid{Width=28,Height=28};
-            dot.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse{Fill=new Microsoft.UI.Xaml.Media.SolidColorBrush(color)});
+            // The color tile keeps its fill while the native button owns focus and hover.
+            var dot=new Grid{Width=30,Height=30};
+            dot.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle{RadiusX=4,RadiusY=4,Fill=new Microsoft.UI.Xaml.Media.SolidColorBrush(color)});
             dot.Children.Add(new FontIcon{Glyph="\uE73E",FontSize=14,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Visibility=Visibility.Collapsed,
                 Foreground=new Microsoft.UI.Xaml.Media.SolidColorBrush(MicaGo.App.Services.AppearanceService.ShouldUseDarkText(color)?Microsoft.UI.Colors.Black:Microsoft.UI.Colors.White)});
-            var swatch=new Button{Width=36,Height=36,Padding=new Thickness(0),CornerRadius=new CornerRadius(18),BorderThickness=new Thickness(0),
+            var swatch=new Button{Width=36,Height=36,Padding=new Thickness(0),CornerRadius=new CornerRadius(6),BorderThickness=new Thickness(0),
                 Background=new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),Tag=color,Content=dot};
             ToolTipService.SetToolTip(swatch,l["color."+key]);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(swatch,l["color."+key]);
@@ -249,6 +277,10 @@ public sealed partial class SettingsPage : Page
     {
         var wasLoading=_loading;_loading=true;
         var theme=ThemePicker.SelectedIndex;var language=LanguagePicker.SelectedIndex;
+        var bubbleMode=BubbleColorModePicker.SelectedIndex;
+        ((ComboBoxItem)BubbleColorModePicker.Items[0]).Content=l["followSystemAccent"];((ComboBoxItem)BubbleColorModePicker.Items[1]).Content=l["customColorMode"];
+        BubbleColorModePicker.SelectedIndex=-1;BubbleColorModePicker.SelectedIndex=bubbleMode;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(BubbleColorModePicker,l["bubbleColor"]);
         ((ComboBoxItem)ThemePicker.Items[0]).Content=l["themeSystem"];((ComboBoxItem)ThemePicker.Items[1]).Content=l["themeLight"];((ComboBoxItem)ThemePicker.Items[2]).Content=l["themeDark"];
         ((ComboBoxItem)LanguagePicker.Items[0]).Content=l["themeSystem"];
         ThemePicker.SelectedIndex=-1;ThemePicker.SelectedIndex=theme;LanguagePicker.SelectedIndex=-1;LanguagePicker.SelectedIndex=language;
@@ -397,7 +429,7 @@ public sealed partial class SettingsPage : Page
         var dialog=new ContentDialog{XamlRoot=XamlRoot,Title=l["unpairTitle"],Content=new TextBlock{Text=l["unpairBody"],TextWrapping=TextWrapping.Wrap},PrimaryButtonText=l["unpairConfirm"],CloseButtonText=l["cancel"],DefaultButton=ContentDialogButton.Close};
         if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
         await services.Connection.DisconnectAsync();
-        try{await services.Cache.ClearContentCacheAsync();await services.Media.ClearAsync();}catch{}
+        try{await services.Cache.ClearContentCacheAsync(discardPending:true);MicaGo.Infrastructure.Connection.OutgoingSendService.ClearOwnedFiles();await services.Media.ClearAsync();}catch{}
         _context?.Host.NavigateToConnection();
     }
 }

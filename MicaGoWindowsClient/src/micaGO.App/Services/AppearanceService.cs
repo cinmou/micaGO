@@ -106,10 +106,7 @@ public sealed class AppearanceService(LocalCacheStore cache)
     }
 
     public static bool ShouldUseDarkText(Color color)
-    {
-        var luminance = (0.2126 * color.R + 0.7152 * color.G + 0.0722 * color.B) / 255;
-        return luminance > 0.62;
-    }
+        => MicaGo.Core.Models.TextContrast.UseDarkText(color.R, color.G, color.B);
 
     private static bool TryParseColor(string? value, out Color color)
     {
