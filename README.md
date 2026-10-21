@@ -1,14 +1,29 @@
-<p align="center"><img src="docs/assets/Server.png" alt="micaGO" width="120" /></p>
+<p align="center">
+  <img src="docs/assets/Server.png" alt="micaGOServer" width="120" />
+</p>
+
+<div align="center">
 
 # micaGO
 
-[English](README.md) · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
+**English** · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
 
-**Your iMessage, your Mac, your devices.**
+*A self-hosted iMessage bridge.*
+
+[![Documentation](https://img.shields.io/badge/Documentation-0064E0?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/index.md)
+[![Website](https://img.shields.io/badge/Website-007AFF?style=for-the-badge)](https://micago.cinmou.uk)
+[![Getting started](https://img.shields.io/badge/Getting_started-0A1317?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/getting-started.md)
+[![Security model](https://img.shields.io/badge/Security_model-31A24C?style=for-the-badge)](#security)
+[![Remote access](https://img.shields.io/badge/Remote_access-5D6C7B?style=for-the-badge)](https://github.com/cinmou/micaGo/blob/main/docs/remote-access-cloudflare.md)
+[![Releases](https://img.shields.io/badge/Releases-B89B5E?style=for-the-badge)](https://github.com/cinmou/micaGO/releases)
+
+</div>
+
+---
+
+## Overview
 
 micaGO connects Android, Linux and Windows clients to Messages on your Mac. A Go backend reads Messages, and a native Mac Companion manages pairing and server settings. Windows uses an independent WinUI app.
-
-[Download](https://github.com/cinmou/micaGO/releases) · [Getting started](docs/getting-started.md) · [Documentation](docs/index.md) · [Website](https://micago.cinmou.uk)
 
 ## Screenshots
 
