@@ -391,22 +391,16 @@ h3 {
   border-radius: 28px;
 }
 
-/* Landscape rows (Tablet / macOS): three side-by-side shots were too small to
-   read — show them as a horizontally scrollable strip of large images with
-   snap points instead. */
+/* Keep every desktop/tablet frame fully visible at its natural aspect ratio. */
 .screenshot-grid-landscape {
-  grid-template-columns: none;
-  grid-auto-flow: column;
-  grid-auto-columns: min(720px, 86%);
-  justify-content: start;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  padding: 4px 4px 18px;
-  scrollbar-width: thin;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
 }
 
 .screenshot-grid-landscape img {
-  scroll-snap-align: center;
+  display: block;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .steps-section {
@@ -689,30 +683,15 @@ h3 {
   }
 
   .screenshot-grid {
-    grid-template-columns: repeat(3, minmax(250px, 78vw));
-    justify-content: start;
-    width: calc(100vw - 32px);
-    margin-left: calc((100vw - 32px - 100%) / -2);
-    padding: 4px 16px 22px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-
-  .screenshot-grid::-webkit-scrollbar {
-    display: none;
-  }
-
-  .screenshot-grid img {
-    scroll-snap-align: center;
-  }
-
-  .screenshot-grid-portrait {
-    grid-template-columns: repeat(3, minmax(220px, 68vw));
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    width: 100%;
+    margin: 0;
+    padding: 4px 0 18px;
   }
 
   .screenshot-grid-portrait img {
-    max-width: none;
+    max-width: 320px;
   }
 
   .site-footer {
