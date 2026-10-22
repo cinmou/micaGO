@@ -96,56 +96,58 @@ class _LauncherIconPickerState extends State<LauncherIconPicker>
           style: Theme.of(context).textTheme.labelLarge,
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final choice in LauncherIconChoice.values)
-              Semantics(
-                selected: _selected == choice,
-                child: OutlinedButton(
-                  onPressed: _busy || _selected == null || _loadFailed
-                      ? null
-                      : () => _select(choice),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.all(12),
-                    backgroundColor: _selected == choice
-                        ? scheme.secondaryContainer
-                        : null,
-                    side: BorderSide(
-                      color: _selected == choice
-                          ? scheme.primary
-                          : scheme.outlineVariant,
-                      width: _selected == choice ? 2 : 1,
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            spacing: 12,
+            children: [
+              for (final choice in LauncherIconChoice.values)
+                Semantics(
+                  selected: _selected == choice,
+                  child: OutlinedButton(
+                    onPressed: _busy || _selected == null || _loadFailed
+                        ? null
+                        : () => _select(choice),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.all(12),
+                      backgroundColor: _selected == choice
+                          ? scheme.secondaryContainer
+                          : null,
+                      side: BorderSide(
+                        color: _selected == choice
+                            ? scheme.primary
+                            : scheme.outlineVariant,
+                        width: _selected == choice ? 2 : 1,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ClipOval(
-                        child: Image.asset(
-                          choice.preview,
-                          width: 64,
-                          height: 64,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ClipOval(
+                          child: Image.asset(
+                            choice.preview,
+                            width: 64,
+                            height: 64,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(strings.t('settings.icon.${choice.id}')),
-                      const SizedBox(height: 4),
-                      Icon(
-                        _selected == choice
-                            ? Icons.check_circle
-                            : Icons.circle_outlined,
-                        size: 18,
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Text(strings.t('settings.icon.${choice.id}')),
+                        const SizedBox(height: 4),
+                        Icon(
+                          _selected == choice
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
+                          size: 18,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 8),
         if (_selected == null && !_loadFailed) const LinearProgressIndicator(),
