@@ -73,7 +73,7 @@ async function main() {
   await fs.mkdir(previews, { recursive: true });
   await fs.mkdir(path.join(res, 'mipmap-anydpi-v26'), { recursive: true });
   const colors = [];
-  for (const [id, background] of [['default', '#FFF7EB'], ['minimal', '#104753']]) {
+  for (const [id, background] of [['default', '#FFFFFF'], ['minimal', '#104753']]) {
     const name = `ic_launcher_${id}`;
     // New icons share an extra 4% breathing room; classic resources remain untouched.
     const foreground = await normalizedForeground(

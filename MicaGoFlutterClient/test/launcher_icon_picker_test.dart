@@ -67,6 +67,49 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('shows horizontal icons inside the scrolling appearance card', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: const [MicaLocalizations.delegate],
+        home: Scaffold(
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: const [
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [LauncherIconPicker()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final images = find.byType(Image);
+    expect(images, findsNWidgets(3));
+    final first = tester.getRect(images.at(0));
+    final last = tester.getRect(images.at(2));
+    expect(first.height, 64);
+    expect(last.top, first.top);
+    expect(first.left, greaterThanOrEqualTo(0));
+    expect(last.right, lessThanOrEqualTo(360));
+    await tester.tap(find.text('Minimal'));
+    await tester.pumpAndSettle();
+    expect(current, 'minimal');
+  });
+
   testWidgets('switches among every icon, including back to the new default', (
     tester,
   ) async {

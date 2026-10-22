@@ -96,20 +96,22 @@ class _LauncherIconPickerState extends State<LauncherIconPicker>
           style: Theme.of(context).textTheme.labelLarge,
         ),
         const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            spacing: 12,
-            children: [
-              for (final choice in LauncherIconChoice.values)
-                Semantics(
+        Row(
+          spacing: 8,
+          children: [
+            for (final choice in LauncherIconChoice.values)
+              Expanded(
+                child: Semantics(
                   selected: _selected == choice,
                   child: OutlinedButton(
                     onPressed: _busy || _selected == null || _loadFailed
                         ? null
                         : () => _select(choice),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 12,
+                      ),
                       backgroundColor: _selected == choice
                           ? scheme.secondaryContainer
                           : null,
@@ -146,8 +148,8 @@ class _LauncherIconPickerState extends State<LauncherIconPicker>
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
         if (_selected == null && !_loadFailed) const LinearProgressIndicator(),
