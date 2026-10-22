@@ -778,6 +778,17 @@ class _GeneralSettingsCard extends StatelessWidget {
       child: Column(
         children: [
           ListTile(
+            leading: _leadingIcon(Icons.palette_outlined),
+            title: Text(strings.t('settings.appearance')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => push(
+              context,
+              strings.t('settings.appearance'),
+              const _AppearanceSettingsBody(),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
             leading: _leadingIcon(Icons.chat_bubble_outline),
             title: Text(strings.t('settings.messageDisplay')),
             trailing: const Icon(Icons.chevron_right),
@@ -792,17 +803,6 @@ class _GeneralSettingsCard extends StatelessWidget {
             const ContactsMatchingTile(),
             const Divider(height: 1),
           ],
-          ListTile(
-            leading: _leadingIcon(Icons.palette_outlined),
-            title: Text(strings.t('settings.appearance')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => push(
-              context,
-              strings.t('settings.appearance'),
-              const _AppearanceSettingsBody(),
-            ),
-          ),
-          const Divider(height: 1),
           _SmsSendingTile(app: app),
         ],
       ),
