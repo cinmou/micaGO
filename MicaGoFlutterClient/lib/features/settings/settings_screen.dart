@@ -2111,7 +2111,7 @@ class _FloatingMicaGoLogoState extends State<_FloatingMicaGoLogo>
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
                     child: Image.asset(
-                      'lib/Assets/MicaGo.png',
+                      'lib/Assets/launcher_icons/default.png',
                       width: _logoSize,
                       height: _logoSize,
                       fit: BoxFit.cover,

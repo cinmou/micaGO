@@ -86,6 +86,9 @@ async function main() {
     const flattened = await base.composite([{ input: foreground }]).png().toBuffer();
     const viewport = await sharp(flattened).extract({ left: 180, top: 180, width: 720, height: 720 }).png().toBuffer();
     await sharp(viewport).resize(256).png().toFile(path.join(previews, `${id}.png`));
+    if (id === 'default') {
+      await sharp(viewport).resize(512).png().toFile(path.join(root, '../docs/assets/Client-default.png'));
+    }
     await sharp(mono).extract({ left: 180, top: 180, width: 720, height: 720 }).resize(256)
       .png().toFile(path.join(__dirname, `launcher_icons/${id}-monochrome-preview.png`));
     for (const [density, scale] of Object.entries(densities)) {
