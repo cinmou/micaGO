@@ -32,32 +32,16 @@ import '../features/chats/models/chat_summary.dart';
 import '../features/chats/models/message_model.dart';
 import '../features/chats/realtime_event_helpers.dart';
 
-/// Counts from a per-chat initial backfill (C10 Part F diagnostics).
-class BackfillDiagnostics {
-  int chatsFetched = 0;
-  int chatsWritten = 0;
-  int messagesFetched = 0;
-  int messagesWritten = 0;
-  int attachmentsMetadataWritten = 0;
-  int hiddenDebugRowsIgnored = 0;
-  int failedChats = 0;
-  String? lastError;
-
-  @override
-  String toString() =>
-      'chats=$chatsFetched/$chatsWritten messages=$messagesFetched/$messagesWritten '
-      'attachments=$attachmentsMetadataWritten hidden=$hiddenDebugRowsIgnored '
-      'failed=$failedChats error=${lastError ?? ""}';
-}
-
 class _CandidateProbeResult {
   final ConnectionCandidate candidate;
   final bool ok;
+  final bool credentialRejected;
   final Duration elapsed;
 
   const _CandidateProbeResult({
     required this.candidate,
     required this.ok,
+    this.credentialRejected = false,
     required this.elapsed,
   });
 
@@ -68,8 +52,14 @@ class _CandidateProbeResult {
 
   factory _CandidateProbeResult.failed(
     ConnectionCandidate candidate,
-    Duration elapsed,
-  ) => _CandidateProbeResult(candidate: candidate, ok: false, elapsed: elapsed);
+    Duration elapsed, {
+    bool credentialRejected = false,
+  }) => _CandidateProbeResult(
+    candidate: candidate,
+    ok: false,
+    elapsed: elapsed,
+    credentialRejected: credentialRejected,
+  );
 }
 
 class RealtimeRefreshDiagnostics {
@@ -352,16 +342,6 @@ class AppController extends ChangeNotifier {
     return guids.isNotEmpty && guids.every(_mutedChats.contains);
   }
 
-  Future<void> setChatMuted(String chatGuid, bool muted) async {
-    if (muted) {
-      _mutedChats.add(chatGuid);
-    } else {
-      _mutedChats.remove(chatGuid);
-    }
-    unawaited(_syncChatMuteRule(chatGuid, muted));
-    notifyListeners();
-  }
-
   bool _inAppNotificationsEnabled = false;
   bool get inAppNotificationsEnabled => _inAppNotificationsEnabled;
 
@@ -614,6 +594,7 @@ class AppController extends ChangeNotifier {
     await _loadCustomAvatars();
     await _loadKeepAlive();
     _profile = await store.loadProfile();
+    _serverReachable = false;
     if (_profile != null && _profile!.deviceId.isEmpty) {
       _profile = null;
       await store.clearProfile();
@@ -671,17 +652,6 @@ class AppController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Builds a throwaway [ApiClient] for the connection-test screen without
-  /// persisting anything.
-  ApiClient buildProbeClient(ConnectionProfile profile) {
-    return ApiClient(
-      baseUrl: profile.effectiveBaseUrl,
-      token: profile.token,
-      tlsFingerprint: profile.pinFor(profile.effectiveBaseUrl),
-      onUnauthorized: () => rejectCredential(profile),
-    );
-  }
-
   /// Persists [profile] and activates it as the live connection.
   String? _redeemedInvitationCode;
   ConnectionProfile? _redeemedProfile;
@@ -725,6 +695,7 @@ class AppController extends ChangeNotifier {
     _redeemedInvitationCode = null;
     _redeemedProfile = null;
     _profile = profile;
+    _serverReachable = false;
     _serverUrls = null;
     _activeCandidate = null;
     _logConnectionSelection('save profile mode=${profile.mode.name}');
@@ -1004,8 +975,10 @@ class AppController extends ChangeNotifier {
     );
     _logConnectionSelection('all candidates: ${allCandidates.join(' | ')}');
 
+    final failures = <_CandidateProbeResult>[];
     if (chosen != null) {
       final result = await _probeCandidate(profile, chosen);
+      failures.add(result);
       if (epoch != _selectionEpoch) return false;
       if (result.ok) {
         _activateReachableCandidate(chosen, reason);
@@ -1045,11 +1018,18 @@ class AppController extends ChangeNotifier {
         i++;
       }
       if (epoch != _selectionEpoch) return false;
+      failures.add(result);
       if (result.ok) {
         _dropChosenRoute(chosen);
         _activateReachableCandidate(result.candidate, reason);
         return true;
       }
+    }
+    if (skipKind == null &&
+        failures.isNotEmpty &&
+        failures.every((result) => result.credentialRejected)) {
+      rejectCredential(profile);
+      return false;
     }
     _logConnectionSelection('no reachable candidate');
     _serverReachable = false;
@@ -1136,9 +1116,11 @@ class AppController extends ChangeNotifier {
       );
       return fastest;
     }
-    return results.isEmpty
-        ? _CandidateProbeResult.failed(candidates.first, Duration.zero)
-        : results.first;
+    return _CandidateProbeResult.failed(
+      candidates.first,
+      Duration.zero,
+      credentialRejected: results.every((result) => result.credentialRejected),
+    );
   }
 
   Future<_CandidateProbeResult> _probeCandidate(
@@ -1155,7 +1137,6 @@ class AppController extends ChangeNotifier {
       baseUrl: candidate.baseUrl,
       token: profile.token,
       tlsFingerprint: profile.pinFor(candidate.baseUrl),
-      onUnauthorized: () => rejectCredential(profile),
       timeout: const Duration(seconds: 4),
     );
     try {
@@ -1178,7 +1159,12 @@ class AppController extends ChangeNotifier {
       elapsed.stop();
       _logConnectionSelection('${candidate.label} failed: $error');
       _recordRouteProbe(candidate, reachable: false);
-      return _CandidateProbeResult.failed(candidate, elapsed.elapsed);
+      return _CandidateProbeResult.failed(
+        candidate,
+        elapsed.elapsed,
+        credentialRejected:
+            error is ApiException && error.code == 'unauthorized',
+      );
     } finally {
       client.close();
       _probingRoutes.remove(candidate.baseUrl);
@@ -1551,11 +1537,7 @@ class AppController extends ChangeNotifier {
     return keys.length;
   }
 
-  /// C19/C21u: register this client so the Companion shows a connected device.
-  /// Best-effort and idempotent — sends a **stable, client-generated** device id
-  /// (memoized below) on every reconnect so the server upserts the same row
-  /// rather than creating duplicates. Also reports the app version, the active
-  /// connection mode (LAN vs LAN+Public), and the push capability.
+  /// Register the server-issued device identity on the verified active route.
   bool _registerInFlight = false;
   bool _registerRerunQueued = false;
   String? _lastRegisterResult;
@@ -1571,164 +1553,97 @@ class AppController extends ChangeNotifier {
     return _lastRegisterResult!;
   }
 
-  /// Registers this device (C29c: fully instrumented + hardened). Returns a
-  /// result summary; never throws and never swallows a failure silently.
-  /// [force] is kept for call-site intent; an in-flight attempt is still
-  /// serialized and followed by exactly one fresh registration pass.
-  // The real device name, resolved once (C53) and reused for every register.
   String? _deviceName;
+
   Future<String> _resolveDeviceName() async =>
       _deviceName ??= await resolveDeviceName();
 
-  Future<String> _registerDeviceIfPossible({bool force = false}) async {
+  Future<String> _registerDeviceIfPossible() async {
     if (_registerInFlight) {
-      // C57-fix: never DROP a registration request. The startup race was:
-      // connect kicks off a register with pushProvider='none'; while it is in
-      // flight PushService obtains the FCM token and asks to re-register as
-      // pushProvider='fcm' — which used to bail out here, leaving the server
-      // with provider=none and no token, so FCM pushes silently never fired
-      // (UI still said "registered"). Queue exactly one re-run; it executes
-      // after the in-flight attempt and reads the then-current push state.
       _registerRerunQueued = true;
-      final queued = force ? 'force-queued' : 'queued';
-      return _lastRegisterResult ?? '$queued behind in-flight registration';
+      return _lastRegisterResult ?? 'queued behind registration';
     }
     final profile = _profile;
-    if (profile == null || profile.token.trim().isEmpty) {
-      return _recordRegister('skipped: no profile or empty token');
+    final candidate = _activeCandidate;
+    if (profile == null || candidate == null || !_serverReachable) {
+      return _recordRegister('waiting for a verified connection');
     }
-    final candidates = _registrationCandidates(profile);
-    if (candidates.isEmpty) {
-      return _recordRegister('skipped: no candidate base URL');
-    }
-
     _registerInFlight = true;
+    ApiClient? client;
     try {
-      final String id;
-      try {
-        id = await _ensureDeviceId();
-      } catch (e) {
-        return _recordRegister('FAILED: could not load device id: $e');
+      final name = await _resolveDeviceName();
+      if (_profile?.token != profile.token ||
+          _activeCandidate?.baseUrl != candidate.baseUrl) {
+        return _recordRegister('registration superseded');
       }
-      if (id.isEmpty) {
-        return _recordRegister('FAILED: empty device id');
-      }
-      final hasPublic = candidates.any(
-        (c) => c.kind == ConnectionCandidateKind.public,
-      );
-      final mode = hasPublic ? 'lan_public' : 'lan';
-      final background = _pushEnabled || _keepAliveEnabled;
       final body = buildDeviceRegistration(
-        name: await _resolveDeviceName(),
+        name: name,
         platform: serverPlatformFor(defaultTargetPlatform, isWeb: kIsWeb),
-        id: id,
-        mode: mode,
+        id: profile.deviceId,
+        mode: profile.publicBaseUrl == null ? 'lan' : 'lan_public',
         pushProvider: _pushProvider,
         pushToken: _pushToken,
         pushEnabled: _pushEnabled,
-        background: background,
+        background: _pushEnabled || _keepAliveEnabled,
       );
-      _logConnectionSelection(
-        'device register → ${candidates.length} candidate(s) '
-        'id=$id mode=$mode tokenLen=${profile.token.trim().length} '
-        'provider=$_pushProvider bg=$background',
-      );
-      final failures = <String>[];
-      final successes = <String>[];
-      for (final candidate in candidates) {
-        // DEDICATED short-lived client: the shared _api can be closed by a
-        // concurrent _rebuildApi() (endpoint refresh), aborting the POST. Try
-        // every advertised endpoint instead of stopping on the first OK: with
-        // multiple LAN/Public routes the first reachable server can be stale,
-        // while the Companion UI is reading the current backend's device table.
-        final client = ApiClient(
-          baseUrl: candidate.baseUrl,
-          token: profile.token,
-          tlsFingerprint: profile.pinFor(candidate.baseUrl),
-          onUnauthorized: () => rejectCredential(profile),
-          timeout: const Duration(seconds: 5),
-        );
-        try {
-          ({String? id, int status, String? error}) result = (
-            id: null,
-            status: 0,
-            error: 'not attempted',
-          );
-          for (var attempt = 1; attempt <= 2; attempt++) {
-            _recordRegister(
-              'attempt $attempt/2 ${candidate.label} '
-              '${candidate.baseUrl}',
-            );
-            result = await client.registerDevice(body);
-            if (result.status == 200) {
-              successes.add('${candidate.label} ${candidate.baseUrl}');
-              break;
-            }
-            final failure =
-                '${candidate.label} ${candidate.baseUrl} '
-                        'status=${result.status} ${result.error ?? ''}'
-                    .trim();
-            failures.add(failure);
-            _recordRegister('FAILED $failure');
-            if (attempt < 2 && result.status == 0) {
-              await Future<void>.delayed(const Duration(seconds: 1));
-            } else {
-              break;
-            }
+      client = ApiClient(
+        baseUrl: candidate.baseUrl,
+        token: profile.token,
+        tlsFingerprint: profile.pinFor(candidate.baseUrl),
+        onUnauthorized: () {
+          if (_serverReachable && _api?.baseUrl == candidate.baseUrl) {
+            rejectCredential(profile);
           }
-        } finally {
-          client.close();
+        },
+        timeout: const Duration(seconds: 5),
+      );
+      for (var attempt = 1; ; attempt++) {
+        final result = await client.registerDevice(body);
+        if (_profile?.token != profile.token ||
+            _activeCandidate?.baseUrl != candidate.baseUrl) {
+          return _recordRegister('registration superseded');
+        }
+        if (result.status == 200) {
+          _startDeviceHeartbeat(profile.deviceId);
+          return _recordRegister('OK ${candidate.label} ${candidate.baseUrl}');
+        }
+        if (result.status != 0 || attempt == 2) {
+          return _recordRegister(
+            'FAILED ${candidate.label} status=${result.status} ${result.error ?? ""}',
+          );
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+        if (_profile?.token != profile.token ||
+            _activeCandidate?.baseUrl != candidate.baseUrl) {
+          return _recordRegister('registration superseded');
         }
       }
-      if (successes.isNotEmpty) {
-        _startDeviceHeartbeat(id);
-        final failed = failures.isEmpty
-            ? ''
-            : ' ; failed: ${failures.join(' | ')}';
-        return _recordRegister(
-          'OK id=$id on ${successes.length}/${candidates.length} endpoint(s): '
-          '${successes.join(' | ')}$failed',
-        );
-      }
-      return _recordRegister('FAILED all endpoints: ${failures.join(' | ')}');
     } finally {
+      client?.close();
       _registerInFlight = false;
       if (_registerRerunQueued) {
         _registerRerunQueued = false;
-        // Re-register with the latest state (e.g. the FCM token that arrived
-        // while the previous attempt was still in flight).
         unawaited(_registerDeviceIfPossible());
       }
     }
   }
 
-  List<ConnectionCandidate> _registrationCandidates(ConnectionProfile profile) {
-    final out = <ConnectionCandidate>[];
-    final active = _activeCandidate;
-    if (active != null && active.baseUrl.trim().isNotEmpty) out.add(active);
-    out.addAll(connectionCandidates);
-    out.addAll(connectionCandidatesForProfile(profile));
-    final seen = <String>{};
-    return [
-      for (final c in out)
-        if (c.baseUrl.trim().isNotEmpty && seen.add(c.baseUrl)) c,
-    ];
-  }
+  Future<String> registerDeviceNow() => _registerDeviceIfPossible();
 
-  /// Debug: force a registration attempt now and return its result summary.
-  Future<String> registerDeviceNow() => _registerDeviceIfPossible(force: true);
-
-  /// Debug: a redacted connection/registration diagnostics snapshot.
+  /// Read-only connection and cache diagnostics. Never includes credentials.
   Future<String> connectionDiagnostics() async {
     final profile = _profile;
-    String deviceId = '(unavailable)';
+    String cacheSummary;
     try {
-      deviceId = await _ensureDeviceId();
-    } catch (_) {}
+      final counts = await cache.diagnostics();
+      cacheSummary =
+          'cache: ${counts["chatCount"]} chats, ${counts["messageCount"]} messages, ${counts["pendingSendCount"]} pending sends';
+    } catch (_) {
+      cacheSummary = 'cache: unavailable';
+    }
     return [
       'profile: ${profile == null ? "none" : "set"}',
-      'token: ${(profile?.token.trim().isNotEmpty ?? false) ? "present (${profile!.token.trim().length} chars)" : "MISSING"}',
-      'deviceId: $deviceId',
+      'deviceId: ${profile?.deviceId ?? "(none)"}',
       'activeBaseUrl: ${_activeCandidate?.baseUrl ?? "(none)"}',
       'apiBaseUrl: ${_api?.baseUrl ?? "(none)"}',
       'ws: ${ws.status.name}',
@@ -1736,6 +1651,7 @@ class AppController extends ChangeNotifier {
       'candidates: ${connectionCandidates.map((c) => c.baseUrl).join(", ")}',
       'pushProvider: $_pushProvider  pushEnabled: $_pushEnabled  keepAlive: $_keepAliveEnabled',
       'lastRegister: ${_lastRegisterResult ?? "(never attempted)"}',
+      cacheSummary,
     ].join('\n');
   }
 
@@ -2306,8 +2222,6 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<String> _ensureDeviceId() => Future.value(profile?.deviceId ?? '');
-
   Future<bool> markRealtimeEventApplied(
     WsEvent event, {
     int localDbWrites = 1,
@@ -2441,83 +2355,6 @@ class AppController extends ChangeNotifier {
     return int.tryParse(cursor.substring(2));
   }
 
-  /// Local cache warm-up after pairing. Fetches the visible chat list, then the
-  /// latest renderable messages for each chat, using the server's authoritative
-  /// `recentMessagesPerChat` setting when available. This does not control the
-  /// server backfill strategy; Sync Control is the source of truth for that.
-  Future<BackfillDiagnostics> backfill(
-    ConnectionProfile profile, {
-    void Function(String message)? onProgress,
-  }) async {
-    final client = buildProbeClient(profile);
-    final diag = BackfillDiagnostics();
-    try {
-      await cache.open();
-      // Ensure realtime catch-up first so the relay has fresh rows to serve.
-      try {
-        await client.syncNow();
-      } catch (_) {
-        /* opportunistic */
-      }
-
-      var perChat = 100;
-      final settings = await client.getSyncSettings();
-      final configuredDepth = settings?['recentMessagesPerChat'];
-      if (configuredDepth is int && configuredDepth > 0) {
-        perChat = configuredDepth;
-      }
-
-      onProgress?.call('Fetching chats…');
-      final chats = await client.getChats();
-      await cache.upsertChats(chats);
-      diag.chatsFetched = chats.length;
-      diag.chatsWritten = chats.length;
-
-      var i = 0;
-      for (final chat in chats) {
-        i++;
-        onProgress?.call('Syncing chat $i of ${chats.length}…');
-        try {
-          final msgs = await client.getMessages(chat.guid, limit: perChat);
-          await cache.mergeServerPage(chat.guid, msgs);
-          diag.messagesFetched += msgs.length;
-          diag.messagesWritten += msgs.where((m) => !m.isDebugOnly).length;
-          diag.hiddenDebugRowsIgnored += msgs
-              .where((m) => m.isDebugOnly)
-              .length;
-          diag.attachmentsMetadataWritten += msgs.fold<int>(
-            0,
-            (sum, m) => sum + m.attachments.length,
-          );
-        } catch (error) {
-          diag.failedChats++;
-          diag.lastError = error.toString();
-        }
-      }
-      await cache.writeMetadata(
-        'last_bootstrap_time',
-        DateTime.now().millisecondsSinceEpoch.toString(),
-      );
-      await cache.writeMetadata(
-        'last_write_count',
-        (diag.chatsWritten + diag.messagesWritten).toString(),
-      );
-      await cache.writeMetadata(
-        'last_attachment_metadata_count',
-        diag.attachmentsMetadataWritten.toString(),
-      );
-      await cache.writeMetadata('last_error', diag.lastError ?? '');
-      onProgress?.call('Sync complete (${diag.messagesFetched} messages).');
-    } catch (error) {
-      diag.lastError = error.toString();
-      await cache.writeMetadata('last_error', diag.lastError!);
-      rethrow;
-    } finally {
-      client.close();
-    }
-    return diag;
-  }
-
   /// Clears the saved profile and tears down clients.
   Future<void> signOut() async {
     ws.disconnect();
@@ -2532,28 +2369,6 @@ class AppController extends ChangeNotifier {
     _serverUrls = null;
     _activeCandidate = null;
     _customAvatarPaths.clear();
-    notifyListeners();
-  }
-
-  Future<void> setCustomAvatarFromFile(String key, String sourcePath) async {
-    final normalizedKey = key.trim();
-    if (normalizedKey.isEmpty) return;
-    final source = File(sourcePath);
-    if (!await source.exists()) return;
-    final dir = await getApplicationSupportDirectory();
-    final avatarDir = Directory(p.join(dir.path, 'custom-avatars'));
-    await avatarDir.create(recursive: true);
-    final ext = p.extension(sourcePath).toLowerCase();
-    final safeExt = ext.isEmpty ? '.jpg' : ext;
-    final safeKey = normalizedKey.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    final dest = File(p.join(avatarDir.path, '$safeKey$safeExt'));
-    await source.copy(dest.path);
-    final previous = _customAvatarPaths[normalizedKey];
-    _customAvatarPaths[normalizedKey] = dest.path;
-    await cache.writeMetadata('$_customAvatarPrefix$normalizedKey', dest.path);
-    if (previous != null && previous != dest.path) {
-      _deleteFileQuietly(previous);
-    }
     notifyListeners();
   }
 
@@ -2623,7 +2438,11 @@ class AppController extends ChangeNotifier {
             baseUrl: candidate.baseUrl,
             token: profile.token,
             tlsFingerprint: profile.pinFor(candidate.baseUrl),
-            onUnauthorized: () => rejectCredential(profile),
+            onUnauthorized: () {
+              if (_serverReachable && _api?.baseUrl == candidate.baseUrl) {
+                rejectCredential(profile);
+              }
+            },
           )
         : null;
   }

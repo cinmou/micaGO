@@ -29,11 +29,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     _app = context.read<AppController>();
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
   Future<void> _pasteConnectionJson() async {
     setState(() => _pasteError = null);
     final raw = await requestPairingJson(context);

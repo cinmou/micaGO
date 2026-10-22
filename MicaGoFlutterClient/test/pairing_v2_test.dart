@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mica_go/core/models/connection_profile.dart';
 import 'package:mica_go/core/network/connection_candidate.dart';
-import 'package:mica_go/features/pairing/endpoint_selection.dart';
 import 'package:mica_go/features/pairing/pairing_payload.dart';
 
 String _v2({String mode = 'lanFirst', bool lan = true, bool public = true}) {
@@ -118,48 +117,6 @@ void main() {
         () => parsePairingPayload('{"version":2,"endpoints":[]}'),
         throwsA(isA<PairingParseException>()),
       );
-    });
-  });
-
-  group('endpoint try order', () {
-    final lan = const PairingEndpoint(
-      kind: EndpointKind.lan,
-      baseUrl: 'http://lan',
-      priority: 1,
-    );
-    final pub = const PairingEndpoint(
-      kind: EndpointKind.public,
-      baseUrl: 'https://pub',
-      priority: 2,
-    );
-
-    test('lanOnly returns LAN only, never public', () {
-      final order = endpointTryOrder(ConnectionMode.lanOnly, [lan, pub]);
-      expect(order.map((e) => e.kind), [EndpointKind.lan]);
-    });
-
-    test('lanFirst tries LAN then public', () {
-      final order = endpointTryOrder(ConnectionMode.lanFirst, [pub, lan]);
-      expect(order.map((e) => e.kind), [EndpointKind.lan, EndpointKind.public]);
-    });
-
-    test('publicOnly returns public only', () {
-      final order = endpointTryOrder(ConnectionMode.publicOnly, [lan, pub]);
-      expect(order.map((e) => e.kind), [EndpointKind.public]);
-    });
-  });
-
-  group('offered modes', () {
-    test('lan + public offers LAN-only and LAN+Public', () {
-      final p = parsePairingPayload(_v2());
-      expect(offeredModes(p), [
-        ConnectionMode.lanOnly,
-        ConnectionMode.lanFirst,
-      ]);
-    });
-    test('lan only offers LAN-only', () {
-      final p = parsePairingPayload(_v2(public: false));
-      expect(offeredModes(p), [ConnectionMode.lanOnly]);
     });
   });
 }

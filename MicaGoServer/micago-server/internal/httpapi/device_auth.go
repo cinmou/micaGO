@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -58,26 +60,32 @@ func deviceIdentity(r *http.Request) string {
 	id, _ := r.Context().Value(deviceAuthKey{}).(string)
 	return id
 }
-func (a *DeviceAuth) authorize(r *http.Request) (*http.Request, bool) {
+func (a *DeviceAuth) authorize(r *http.Request) (*http.Request, int) {
 	token := requestToken(r)
 	if localControl(r) && constantTimeEqual(token, a.adminToken) {
-		return r, true
+		return r, http.StatusOK
 	}
 	if r.URL.Path == "/api/auth/check" && r.Method == http.MethodPost && constantTimeEqual(token, a.probeToken) {
-		return r, true
+		return r, http.StatusOK
 	}
 	// Old global pairing tokens never grant remote access.
 	if len(token) != 64 {
-		return r, false
+		return r, http.StatusUnauthorized
 	}
 	id, err := a.store.DeviceForToken(r.Context(), token)
-	if err != nil || id == "" {
-		return r, false
+	if errors.Is(err, sql.ErrNoRows) {
+		return r, http.StatusUnauthorized
+	}
+	if err != nil {
+		return r, http.StatusServiceUnavailable
+	}
+	if id == "" {
+		return r, http.StatusUnauthorized
 	}
 	if !clientRouteAllowed(r, id) {
-		return r, false
+		return r, http.StatusForbidden
 	}
-	return r.WithContext(context.WithValue(r.Context(), deviceAuthKey{}, id)), true
+	return r.WithContext(context.WithValue(r.Context(), deviceAuthKey{}, id)), http.StatusOK
 }
 func clientRouteAllowed(r *http.Request, id string) bool {
 	p := r.URL.Path
@@ -99,10 +107,10 @@ func clientRouteAllowed(r *http.Request, id string) bool {
 func (a *DeviceAuth) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
-		authed, ok := a.authorize(r)
+		authed, status := a.authorize(r)
 		a.mu.Unlock()
-		if !ok {
-			writeUnauthorized(w)
+		if status != http.StatusOK {
+			writeAuthorizationFailure(w, status)
 			return
 		}
 		if limitRequestBody(w, authed) {
@@ -114,10 +122,10 @@ func (a *DeviceAuth) Socket(w http.ResponseWriter, r *http.Request) {
 	// Admission runs under the same lock as revoke; the hub registers the
 	// connection before unlocking, so a concurrent revoke cannot miss it.
 	a.mu.Lock()
-	authed, ok := a.authorize(r)
-	if !ok {
+	authed, status := a.authorize(r)
+	if status != http.StatusOK {
 		a.mu.Unlock()
-		writeUnauthorized(w)
+		writeAuthorizationFailure(w, status)
 		return
 	}
 	id := deviceIdentity(authed)

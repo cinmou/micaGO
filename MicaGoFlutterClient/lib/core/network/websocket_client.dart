@@ -4,8 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-import 'ws_channel_factory_io.dart'
-    if (dart.library.html) 'ws_channel_factory_web.dart';
+import 'ws_channel_factory_io.dart';
 
 /// Lifecycle of the realtime WebSocket connection.
 enum WsStatus { idle, connecting, connected, failed, disconnected }
@@ -29,8 +28,7 @@ class WsEvent {
 ///
 /// Application events flow from server to client. Native connections use
 /// protocol ping/pong to detect dead connections and send authentication in
-/// the Authorization header; web uses the query parameter. Credentials are
-/// never written to the log.
+/// the Authorization header. Credentials are never written to the log.
 class WebSocketClient extends ChangeNotifier {
   static const int _maxLog = 200;
 
@@ -59,10 +57,7 @@ class WebSocketClient extends ChangeNotifier {
 
   /// Opens a connection to [wsUrl].
   ///
-  /// Security (C55): on native platforms the token is sent in the
-  /// `Authorization: Bearer` header (via `connectAuthedWebSocket`), so it never
-  /// appears in the URL/logs. Web can't set WS headers, so it falls back to
-  /// `?token=`. MicaGo's server accepts both.
+  /// Authentication uses the Authorization header, never a URL parameter.
   void connect(
     String wsUrl,
     String token, {

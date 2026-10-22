@@ -7,10 +7,7 @@ import '../../core/l10n/app_localizations.dart';
 
 enum PairingStage { scanning, preview, testing, success, failure }
 
-/// Drives the QR pairing + onboarding flow: parse a scanned code, preview it,
-/// test endpoints in policy order (LAN first, Public fallback), activate
-/// the connection, and run the initial per-chat backfill. The token lives only
-/// inside the parsed payload and is never logged.
+/// Parse a scanned invitation and activate the shared connection flow.
 class PairingController extends ChangeNotifier {
   final AppController app;
 
@@ -62,19 +59,7 @@ class PairingController extends ChangeNotifier {
           p.toProfile(),
           confirmCompatibility: confirmCompatibility,
         );
-        final paired = app.profile!;
-        try {
-          await app.backfill(
-            paired,
-            onProgress: (progress) {
-              message = progress;
-              notifyListeners();
-            },
-          );
-          message = MicaLocalizations.current.t('pair.syncComplete');
-        } catch (_) {
-          message = MicaLocalizations.current.t('pair.connectedSyncLater');
-        }
+        message = MicaLocalizations.current.t('pair.connected');
         stage = PairingStage.success;
         notifyListeners();
         return true;

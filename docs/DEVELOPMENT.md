@@ -1,6 +1,6 @@
 # 开发、测试与发布
 
-下面命令从仓库根目录开始。版本以各组件版本文件为准；目前为 0.88.0（Muscovite），Flutter build number 为 88。改版本时保留历史版本比较测试中的旧样本。
+下面命令从仓库根目录开始。版本以各组件版本文件为准；目前为 0.90.0（Muscovite），Flutter build number 为 90。改版本时保留历史版本比较测试中的旧样本。
 
 ## 本地开发
 
@@ -33,6 +33,8 @@ flutter build apk --debug
 
 Windows 使用 Windows、.NET 10 与 Windows App SDK 2.2 对应的桌面构建环境。
 
+Android 图标入口使用 `activity-alias`。本机 Flutter 3.44.3 的源码和 APK Manifest 解析器均只查找 `activity`，`flutter run` 可能报找不到启动入口，`--use-application-binary` 也不能绕过。调试时先 `flutter build apk --debug`，再 `adb install -r build/app/outputs/flutter-apk/app-debug.apk`，用 `adb shell am start -n com.micago.message.mica_go/.MainActivity` 启动，然后 `flutter attach`。不要为绕过工具限制增加第二个桌面图标。此处启动与 attach 步骤仍需连接安卓设备执行验证。
+
 ```powershell
 dotnet run --project MicaGoWindowsClient/tests/micaGO.Core.ContractTests -c Release
 dotnet build MicaGoWindowsClient/micaGO.Windows.sln -c Debug -p:Platform=x64
@@ -64,7 +66,7 @@ cd MicaGoServer/micago-mac-companion
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPLE_TEAM_ID="TEAMID" \
 NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE="micaGO-notary" \
-VERSION=0.88.0 scripts/package-dmg.sh
+VERSION=0.90.0 scripts/package-dmg.sh
 ```
 
 公证凭据预先由 `notarytool store-credentials` 放入钥匙串；不要把密码和私钥写进文档或 shell 历史。Sparkle EdDSA 私钥也由发布环境安全提供。

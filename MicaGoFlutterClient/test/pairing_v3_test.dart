@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mica_go/core/models/connection_profile.dart';
 import 'package:mica_go/core/network/connection_candidate.dart';
-import 'package:mica_go/features/pairing/endpoint_selection.dart';
 import 'package:mica_go/features/pairing/pairing_payload.dart';
 
 const _lanCandidate = {
@@ -45,7 +44,6 @@ void main() {
       expect(p.public, isNotNull);
       expect(p.configRevision, 'abc123def456');
       // No LAN-only vs LAN+Public choice is ever offered for v3.
-      expect(offeredModes(p), isEmpty);
       expect(p.mode, ConnectionMode.lanFirst);
     });
 
@@ -53,7 +51,6 @@ void main() {
       final p = parsePairingPayload(_v3(withPublic: false));
       expect(p.lan, isNotNull);
       expect(p.public, isNull);
-      expect(offeredModes(p), isEmpty);
     });
 
     test('a pasted connection JSON imports exactly like a scan', () {

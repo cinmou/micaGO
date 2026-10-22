@@ -34,16 +34,15 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="micaGO"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@mipmap/ic_launcher_default"
+        android:roundIcon="@mipmap/ic_launcher_default_round"
         android:usesCleartextTraffic="true">
         <!-- usesCleartextTraffic enables plain http:// to local/LAN servers
              (e.g. http://192.168.x.x). Public endpoints use https via the tunnel. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity=""
+            android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -59,9 +58,12 @@
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
+            <!-- PackageManager resolves MAIN/INFO before MAIN/LAUNCHER.
+                 Notifications and conversation shortcuts therefore target the stable
+                 activity, including after their original icon alias is disabled. -->
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.INFO" />
             </intent-filter>
             <intent-filter>
                 <action android:name="FLUTTER_NOTIFICATION_CLICK"/>
@@ -85,6 +87,35 @@
                 <data android:mimeType="application/*"/>
             </intent-filter>
         </activity>
+        <!-- Only aliases own launcher entries. MainActivity remains enabled for
+             notifications, sharing and existing home-screen shortcuts. -->
+        <activity-alias android:name=".DefaultIcon" android:targetActivity=".MainActivity"
+            android:enabled="true" android:exported="true"
+            android:icon="@mipmap/ic_launcher_default" android:roundIcon="@mipmap/ic_launcher_default_round">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".ClassicIcon" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".MinimalIcon" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@mipmap/ic_launcher_minimal" android:roundIcon="@mipmap/ic_launcher_minimal_round">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <receiver android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" android:exported="false" />
         <!-- C29: optional keep-alive foreground service (off by default). -->
         <service

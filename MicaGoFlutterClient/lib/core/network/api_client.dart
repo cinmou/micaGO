@@ -203,12 +203,7 @@ class _ProgressMultipartRequest extends http.MultipartRequest {
   }
 }
 
-/// Minimal REST client for the MicaGo server.
-///
-/// Only the endpoints needed for the C0 foundation are implemented:
-/// `GET /api/health`, `POST /api/auth/check`, `GET /api/server/urls`.
-/// The bearer token is attached to every authenticated call; it is never
-/// logged.
+/// Authenticated REST and media access. Credentials travel in headers.
 class ApiClient {
   final String baseUrl;
   final String token;
@@ -362,10 +357,6 @@ class ApiClient {
     ..._authHeaders,
     'Content-Type': 'application/json',
   };
-
-  /// The exact URLs the diagnostics view probes (no token in the URL).
-  String get healthUrl => _uri('/api/health').toString();
-  String get authCheckUrl => _uri('/api/auth/check').toString();
 
   /// `GET /api/health` — no auth. Returns true when the server reports `ok`.
   Future<bool> health() async {
@@ -618,42 +609,6 @@ class ApiClient {
     }
   }
 
-  /// `GET /api/chats/{guid}/messages` — message history for one chat. The
-  /// server returns newest-first; callers reverse to chronological order.
-  Future<List<MessageModel>> getMessages(
-    String chatGuid, {
-    int limit = 50,
-    int offset = 0,
-    bool includeEmpty = false,
-  }) async {
-    final res = await _send(
-      () => _http
-          .get(
-            _uri('/api/chats/${Uri.encodeComponent(chatGuid)}/messages', {
-              'limit': '$limit',
-              'offset': '$offset',
-              'includeEmpty': '$includeEmpty',
-            }),
-            headers: _authHeaders,
-          )
-          .timeout(timeout),
-    );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
-    final data = _decodeObject(res)['data'];
-    if (data is! List) {
-      throw const ApiException(
-        code: 'bad_response',
-        message: 'Message list response was not in the expected format.',
-      );
-    }
-    return data
-        .whereType<Map<String, dynamic>>()
-        .map(MessageModel.fromJson)
-        .toList(growable: false);
-  }
-
   Future<MessageHistoryPage> getMessageHistory(
     Iterable<String> routes, {
     int limit = 50,
@@ -850,9 +805,6 @@ class ApiClient {
     }
   }
 
-  Future<bool?> getTestContactEnabled() async =>
-      (await getTestContactConfig())?.enabled;
-
   /// `PUT /api/test-contact` — update the offline test contact. Returns the
   /// new config, or null on failure.
   Future<TestContactConfig?> setTestContact({bool? enabled}) async {
@@ -874,11 +826,6 @@ class ApiClient {
       return null;
     }
   }
-
-  /// `PUT /api/test-contact` — turn the offline test contact on or off. Returns
-  /// the new state, or null on failure.
-  Future<bool?> setTestContactEnabled(bool enabled) async =>
-      (await setTestContact(enabled: enabled))?.enabled;
 
   /// `POST /api/devices/register` — register this client so the server/Companion
   /// can show a connected device (C19). [body] is a small identity built by
@@ -1079,23 +1026,6 @@ class ApiClient {
     return res.bodyBytes;
   }
 
-  /// Absolute URL for an attachment, for media players that stream by URL.
-  /// Pair it with [mediaAuthHeaders] so the token travels in the header, not
-  /// the URL.
-  String attachmentUrl(String attachmentGuid) => _uri(
-    '/api/attachments/${Uri.encodeComponent(attachmentGuid)}',
-  ).toString();
-
-  String attachmentPlayableUrl(String attachmentGuid) => _uri(
-    '/api/attachments/${Uri.encodeComponent(attachmentGuid)}/playable',
-  ).toString();
-
-  /// Authorization headers for streaming media (e.g. just_audio). Kept out of
-  /// the URL so the token isn't logged by proxies.
-  Map<String, String> get mediaAuthHeaders => {
-    'Authorization': 'Bearer $token',
-  };
-
   void close() => _http.close();
 
   // --- internals -------------------------------------------------------------
@@ -1166,10 +1096,29 @@ class _AuthObservingClient extends http.BaseClient {
     final response = await inner.send(request);
     if (response.statusCode == 401 &&
         request.headers['Authorization']?.isNotEmpty == true) {
-      onUnauthorized?.call();
-      throw const ApiException(
-        code: 'unauthorized',
-        message: 'Device token rejected.',
+      // A proxy's login page is not evidence that micaGO revoked a device.
+      // Bound the error body; this response will not be handed to a caller.
+      final body = <int>[];
+      await for (final chunk in response.stream) {
+        if (body.length + chunk.length > 4096) break;
+        body.addAll(chunk);
+      }
+      var rejected = false;
+      try {
+        final decoded = jsonDecode(utf8.decode(body));
+        rejected =
+            decoded is Map<String, dynamic> &&
+            decoded['error'] is Map &&
+            decoded['error']['code'] == 'unauthorized';
+      } on FormatException {
+        // Non-micaGO 401: preserve the pairing and report a route failure.
+      }
+      if (rejected) onUnauthorized?.call();
+      throw ApiException(
+        code: rejected ? 'unauthorized' : 'http_401',
+        message: rejected
+            ? 'Device token rejected.'
+            : 'The connection endpoint refused access.',
         statusCode: 401,
       );
     }

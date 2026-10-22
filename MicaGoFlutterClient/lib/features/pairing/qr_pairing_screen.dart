@@ -25,29 +25,8 @@ class _QrPairingScreenState extends State<QrPairingScreen>
     with WidgetsBindingObserver {
   late final PairingController _pairing;
 
-  // C62 scanner rewrite. Root cause of every earlier "authorized but the
-  // camera never opens": *we* drove start() from this State (initState /
-  // post-frame / retry loops), racing the MobileScanner widget's attach and
-  // permission flow, and a swallowed start() exception left a permanent black
-  // preview with no error UI.
-  //
-  // New model — the widget owns the camera session, we own recovery:
-  //  * `autoStart: true` (the plugin default): MobileScanner itself calls
-  //    start() right after it attaches in its own initState, and stop() in
-  //    its dispose. We never call start() at screen-open, so there is no
-  //    attach race. Leaving the scanning stage unmounts the widget (stops
-  //    the camera); re-entering mounts it again (starts it).
-  //  * Platform start failures are caught inside the controller and land in
-  //    `value.error` → the errorBuilder card, which now also shows the real
-  //    error code, so a failure is diagnosable instead of a black box.
-  //  * Retry is a **cold restart**: a brand-new controller under a new
-  //    ValueKey. The old widget must unmount before its controller is
-  //    disposed (rebinding a live widget blanks the preview — C59), and the
-  //    platform channel is a singleton whose dispose() stops the active
-  //    camera, so the two sessions are strictly sequenced: unmount old →
-  //    dispose old → mount new. The fresh start() re-runs the permission
-  //    check, which also recovers "granted in system Settings while the app
-  //    stayed alive".
+  // MobileScanner owns camera start/stop. Retry unmounts the old widget,
+  // disposes its controller, then mounts a fresh session.
   MobileScannerController? _scanner;
   int _scannerGeneration = 0;
 

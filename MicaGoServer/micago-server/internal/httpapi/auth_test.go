@@ -87,7 +87,7 @@ func TestEmptyConfiguredTokenNeverAuthenticates(t *testing.T) {
 	for _, target := range []string{"/ws", "/ws?token="} {
 		r := newLocalRequest(http.MethodGet, target, nil)
 		r.Header.Set("Authorization", "Bearer ")
-		if _, ok := auth.authorize(r); ok {
+		if _, status := auth.authorize(r); status == http.StatusOK {
 			t.Fatal("empty configured token authenticated")
 		}
 	}

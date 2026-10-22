@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -67,7 +69,7 @@ func TestDeviceCredentialsPairRevokeAndSocket(t *testing.T) {
 	if request("/api/chats", "old-shared-token") != 401 {
 		t.Fatal("legacy/admin token accepted over TLS")
 	}
-	if request("/api/server/notifications", token) != 401 || request("/api/devices/another/heartbeat", token) != 401 {
+	if request("/api/server/notifications", token) != 403 || request("/api/devices/another/heartbeat", token) != 403 {
 		t.Fatal("device exceeded permission")
 	}
 	headers := http.Header{}
@@ -100,7 +102,7 @@ func TestDeviceCredentialsPairRevokeAndSocket(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.TLS = &tls.ConnectionState{}
 	req.Header.Set("Authorization", "Bearer old-shared-token")
-	if _, ok := auth.authorize(req); ok {
+	if _, status := auth.authorize(req); status == http.StatusOK {
 		t.Fatal("TLS administrator bypass")
 	}
 }
@@ -216,5 +218,57 @@ func TestPairingStatusIsLocalAdminOnly(t *testing.T) {
 		if tc.want == 200 && !strings.Contains(rec.Body.String(), `"active"`) {
 			t.Fatal("missing active status")
 		}
+	}
+}
+
+// Lookup failure must not tell a client to permanently delete its credential.
+type failingCredentialLookup struct {
+	credentialStore
+	err error
+}
+
+func (s failingCredentialLookup) DeviceForToken(context.Context, string) (string, error) {
+	return "", s.err
+}
+func TestAuthorizationFailuresKeepTheirMeaning(t *testing.T) {
+	ctx := context.Background()
+	db, err := relaydb.Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	code, _, err := db.CreatePairingCode(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, token, err := db.RedeemPairingCode(ctx, code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := realtime.NewHub()
+	defer hub.Close()
+	for _, tc := range []struct {
+		name, path string
+		store      credentialStore
+		status     int
+	}{
+		{"lookup locked", "/api/chats", failingCredentialLookup{db, errors.New("database is locked")}, http.StatusServiceUnavailable},
+		{"lookup canceled", "/api/chats", failingCredentialLookup{db, context.Canceled}, http.StatusServiceUnavailable},
+		{"unknown credential", "/api/chats", failingCredentialLookup{db, sql.ErrNoRows}, http.StatusUnauthorized},
+		{"forbidden endpoint", "/api/server/notifications", db, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			auth := NewDeviceAuth(tc.store, hub, "test-admin", "pin")
+			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			r.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			auth.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Fatal("unauthorized handler invoked") })).ServeHTTP(w, r)
+			if w.Code != tc.status {
+				t.Fatalf("got %d, want %d", w.Code, tc.status)
+			}
+			if got, err := db.DeviceForToken(ctx, token); err != nil || got != id {
+				t.Fatal("valid credential changed")
+			}
+		})
 	}
 }

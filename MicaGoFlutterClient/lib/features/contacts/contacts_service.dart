@@ -18,15 +18,22 @@ class ContactsService extends ChangeNotifier {
 
   ContactsStatus status = ContactsStatus.disabled;
   ContactIndex index = const ContactIndex.empty();
-  List<ContactIdentity> contacts = const [];
   String? error;
 
   bool get isReady => status == ContactsStatus.ready;
+  bool get isSupported =>
+      !kIsWeb &&
+      switch (defaultTargetPlatform) {
+        TargetPlatform.android ||
+        TargetPlatform.iOS ||
+        TargetPlatform.macOS => true,
+        _ => false,
+      };
 
   /// On launch: if the user previously enabled matching and permission is still
   /// granted, silently load. Never prompts here.
   Future<void> bootstrap() async {
-    if (!await store.contactsMatchingEnabled()) {
+    if (!isSupported || !await store.contactsMatchingEnabled()) {
       status = ContactsStatus.disabled;
       notifyListeners();
       return;
@@ -79,7 +86,6 @@ class ContactsService extends ChangeNotifier {
   /// Turns matching off and clears the in-memory cache.
   Future<void> disable() async {
     await store.setContactsMatchingEnabled(false);
-    contacts = const [];
     index = const ContactIndex.empty();
     _thumbCache.clear();
     _thumbMisses.clear();
@@ -151,7 +157,6 @@ class ContactsService extends ChangeNotifier {
           )
           .where((c) => c.displayName.trim().isNotEmpty)
           .toList(growable: false);
-      contacts = identities;
       index = ContactIndex.fromContacts(identities);
       status = ContactsStatus.ready;
       error = null;

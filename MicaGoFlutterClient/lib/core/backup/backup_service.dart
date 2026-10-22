@@ -18,8 +18,8 @@ import '../storage/secure_store.dart';
 ///   assets/custom-avatars/*
 ///
 /// Backs up **settings only** — never chat history, media, notification buffers,
-/// realtime diagnostics, the FCM token, or the device id (which is dropped so the
-/// restored install registers as a new device in the server's Paired Devices).
+/// realtime diagnostics, the FCM token, or the device id. Restoring preserves
+/// the current installation's paired credential and device identity.
 /// User-owned Firebase client options are included because the killed-app
 /// background isolate needs them to re-initialize FCM after a restore.
 class BackupService {

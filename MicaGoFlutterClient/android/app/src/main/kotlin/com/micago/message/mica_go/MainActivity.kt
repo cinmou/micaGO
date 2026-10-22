@@ -34,6 +34,19 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val launcherIcons = LauncherIcons(this)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "micago/launcher_icons")
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "current" -> result.success(launcherIcons.current())
+                        "select" -> result.success(launcherIcons.select(call.argument<String>("icon") ?: ""))
+                        else -> result.notImplemented()
+                    }
+                } catch (error: Exception) {
+                    result.error("launcher_icon_failed", "Unable to change launcher icon", null)
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -167,7 +180,7 @@ class MainActivity : FlutterActivity() {
             val shortcutIcon = avatarPath
                 ?.let { BitmapFactory.decodeFile(it) }
                 ?.let { Icon.createWithBitmap(circularShortcutBitmap(it)) }
-                ?: Icon.createWithResource(this, R.mipmap.ic_launcher)
+                ?: Icon.createWithResource(this, R.mipmap.ic_launcher_default)
             val intent = Intent(this, MainActivity::class.java).apply {
                 action = Intent.ACTION_SEND
                 type = "text/plain"

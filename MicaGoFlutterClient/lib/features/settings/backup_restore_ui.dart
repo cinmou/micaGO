@@ -1,3 +1,4 @@
+import 'dart:io';
 import '../../core/ui/top_banner.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -18,30 +19,19 @@ import '../../core/ui/app_dialog.dart';
 Future<void> exportSettingsBackup(BuildContext context) async {
   final strings = MicaLocalizations.of(context);
   final app = context.read<AppController>();
-  // Explain which settings the backup includes.
-  final proceed = await showAppDialog<bool>(
-    context: context,
-    builder: (ctx) => AppDialog(
-      title: Text(MicaLocalizations.of(ctx).t('backup.exportTitle')),
-      content: Text(MicaLocalizations.of(ctx).t('backup.tokenWarning')),
-
-      cancelLabel: MicaLocalizations.of(ctx).t('settings.cancel'),
-      onCancel: () => Navigator.pop(ctx, false),
-      confirmLabel: MicaLocalizations.of(ctx).t('backup.export'),
-      onConfirm: () => Navigator.pop(ctx, true),
-    ),
-  );
-  if (proceed != true || !context.mounted) return;
-
   final service = BackupService(store: app.store, cache: app.cache);
   try {
     final bytes = await service.exportBackup();
     if (!context.mounted) return;
+    final mobile = Platform.isAndroid || Platform.isIOS;
     final path = await FilePicker.platform.saveFile(
       dialogTitle: strings.t('backup.export'),
       fileName: service.suggestedFileName(),
-      bytes: bytes,
+      bytes: mobile ? bytes : null,
     );
+    if (path != null && !mobile) {
+      await File(path).writeAsBytes(bytes, flush: true);
+    }
     if (!context.mounted) return;
     _toast(
       context,

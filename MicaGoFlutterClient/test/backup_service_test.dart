@@ -1,5 +1,8 @@
+import 'dart:io';
+import 'package:flutter/services.dart';
+import 'package:mica_go/core/storage/secure_store.dart';
+import 'package:mica_go/core/storage/local_cache_store.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +16,81 @@ Uint8List _zip(Map<String, dynamic> manifest, Map<String, dynamic> settings) {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'export and restore settings with assets preserve credentials and queues',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('micago-backup-check-');
+      addTearDown(() => dir.delete(recursive: true));
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (_) async => dir.path);
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final background = File('${dir.path}/original-bg.png');
+      final avatar = File('${dir.path}/original-avatar.png');
+      await background.writeAsBytes([1, 2, 3]);
+      await avatar.writeAsBytes([4, 5, 6]);
+      final source = _Store()
+        ..values.addAll({
+          'micago.theme.mode': 'dark',
+          'micago.theme.chatBackgroundPath': background.path,
+          'micago.message_display_prefs.v1': '{"mergeTapbacks":"1"}',
+          'micago.connection_profile.v1': 'source-credential',
+        });
+      final sourceCache = _Cache()
+        ..metadata['custom_avatar:contact-1'] = avatar.path
+        ..metadata['tablet_sidebar_width'] = '0.4'
+        ..flags['chat-1'] = {'pinned': 1, 'always_visible': 0}
+        ..hidden.add('chat-1\u001fmessage-1');
+      final bytes = await BackupService(
+        store: source,
+        cache: sourceCache,
+      ).exportBackup();
+      final zip = ZipDecoder().decodeBytes(bytes);
+      final settings =
+          jsonDecode(utf8.decode(zip.findFile('settings.json')!.content))
+              as Map;
+      expect(
+        (settings['secure'] as Map).containsKey('micago.connection_profile.v1'),
+        isFalse,
+      );
+      final summary = BackupService.inspect(bytes);
+      expect(summary.hasAppearance, isTrue);
+      expect(summary.hasChatBackground, isTrue);
+      expect(summary.customAvatarCount, 1);
+      final target = _Store()
+        ..values['micago.connection_profile.v1'] = 'existing-credential';
+      final targetCache = _Cache()
+        ..metadata['preference-outbox'] = 'pending-change';
+      await BackupService(store: target, cache: targetCache).applyBackup(bytes);
+      expect(target.values['micago.theme.mode'], 'dark');
+      expect(
+        target.values['micago.message_display_prefs.v1'],
+        '{"mergeTapbacks":"1"}',
+      );
+      expect(
+        await File(
+          target.values['micago.theme.chatBackgroundPath']!,
+        ).readAsBytes(),
+        [1, 2, 3],
+      );
+      expect(
+        await File(
+          targetCache.metadata['custom_avatar:contact-1']!,
+        ).readAsBytes(),
+        [4, 5, 6],
+      );
+      expect(targetCache.flags['chat-1']!['pinned'], 1);
+      expect(targetCache.hidden, contains('chat-1\u001fmessage-1'));
+      expect(
+        target.values['micago.connection_profile.v1'],
+        'existing-credential',
+      );
+      expect(targetCache.metadata['preference-outbox'], 'pending-change');
+    },
+  );
+
   group('BackupService.inspect', () {
     test('summarises a valid backup', () {
       final bytes = _zip(
@@ -77,4 +155,60 @@ void main() {
       );
     });
   });
+}
+
+class _Store implements SecureStore {
+  final values = <String, String>{};
+  @override
+  Future<String?> readValue(String key) async => values[key];
+  @override
+  Future<void> writeValue(String key, String value) async {
+    values[key] = value;
+  }
+
+  @override
+  Future<void> deleteValue(String key) async {
+    values.remove(key);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Cache extends LocalCacheStore {
+  final metadata = <String, String>{};
+  final flags = <String, Map<String, int>>{};
+  final hidden = <String>{};
+  @override
+  Future<String?> readMetadata(String key) async => metadata[key];
+  @override
+  Future<void> writeMetadata(String key, String value) async {
+    metadata[key] = value;
+  }
+
+  @override
+  Future<void> deleteMetadata(String key) async {
+    metadata.remove(key);
+  }
+
+  @override
+  Future<Map<String, String>> readMetadataWithPrefix(String prefix) async =>
+      Map.fromEntries(metadata.entries.where((e) => e.key.startsWith(prefix)));
+  @override
+  Future<Map<String, Map<String, int>>> exportChatFlags() async => flags;
+  @override
+  Future<Set<String>> hiddenMessageGuids() async => hidden;
+  @override
+  Future<void> setMessageHidden(String guid, bool value) async {
+    if (value) {
+      hidden.add(guid);
+    } else {
+      hidden.remove(guid);
+    }
+  }
+
+  @override
+  Future<void> setPendingChatFlags(Map<String, Map<String, int>> value) async {
+    flags.addAll(value);
+  }
 }

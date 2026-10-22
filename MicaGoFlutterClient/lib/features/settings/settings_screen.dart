@@ -27,14 +27,16 @@ import '../chats/chat_service.dart';
 import '../chats/message_render.dart';
 import '../chats/models/chat_summary.dart';
 import '../chats/models/message_model.dart';
-import '../contacts/people_screen.dart';
+import '../contacts/contacts_service.dart';
+import 'contacts_matching_tile.dart';
 import '../debug/debug_log_panel.dart';
 import 'backup_restore_ui.dart';
 import 'message_display_page.dart';
+import 'launcher_icon_picker.dart';
 import '../../core/ui/app_dialog.dart';
 
-/// Settings tab: shows the current connection (token masked), and lets the user
-/// edit the connection or disconnect. Kept minimal for C1.
+/// App settings. Simple preferences stay inline; groups of related options
+/// open a settings subpage.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -439,7 +441,6 @@ class _RouteSwitcherState extends State<_RouteSwitcher> {
                 ListTile(
                   leading: _leadingIcon(Icons.edit_outlined),
                   title: Text(strings.t('settings.editConnection')),
-                  subtitle: Text(strings.t('settings.editConnectionBody')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: widget.onEdit,
                 ),
@@ -452,12 +453,7 @@ class _RouteSwitcherState extends State<_RouteSwitcher> {
   }
 }
 
-/// C27: push notification status + a "Send test notification" action. Push is
-/// optional (BlueBubbles user-owned Firebase): when it isn't configured the card
-/// explains that the app stays on its live socket + catch-up sync, which still
-/// delivers messages while open.
-/// C29c: device-registration diagnostics + a "Register device now" button so a
-/// failing registration can be debugged on-device instead of guessed.
+/// Device registration and connection diagnostics.
 class _DeviceRegisterDebug extends StatefulWidget {
   const _DeviceRegisterDebug();
 
@@ -482,11 +478,13 @@ class _DeviceRegisterDebugState extends State<_DeviceRegisterDebug> {
 
   Future<void> _registerNow() async {
     setState(() => _busy = true);
-    final result = await context.read<AppController>().registerDeviceNow();
-    await _refresh();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    TopBanner.show(context, result);
+    try {
+      final result = await context.read<AppController>().registerDeviceNow();
+      await _refresh();
+      if (mounted) TopBanner.show(context, result);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -528,13 +526,6 @@ class _DeviceRegisterDebugState extends State<_DeviceRegisterDebug> {
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Tap "Register device now", then check the Mac server log and '
-          'curl <baseUrl>/api/devices. The result line above shows the exact '
-          'HTTP status / error (401 = token, 0 = unreachable, 400 = rejected).',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
       ],
     );
   }
@@ -566,12 +557,7 @@ class _DeveloperModeBody extends StatelessWidget {
                       appBar: AppBar(
                         title: Text(strings.t('settings.realtimeEvents')),
                       ),
-                      body: SafeArea(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: DebugLogPanel(ws: app.ws, app: app),
-                        ),
-                      ),
+                      body: SafeArea(child: DebugLogPanel(app: app)),
                     ),
                   ),
                 ),
@@ -711,10 +697,14 @@ class _NotificationDiagnosticsTile extends StatelessWidget {
       _ => 'unknown',
     };
     return [
-      MapEntry('Firebase push', app.pushConfigured ? 'configured' : 'off'),
+      MapEntry('FCM', app.pushConfigured ? 'enabled' : 'off'),
       MapEntry(
-        'Token registered',
+        'FCM token available',
         app.pushConfigured ? 'yes (${app.pushProvider})' : 'no',
+      ),
+      MapEntry(
+        'Device registration',
+        app.lastRegisterResult ?? 'not attempted',
       ),
       MapEntry('Keep-alive', app.keepAliveEnabled ? 'enabled' : 'off'),
       MapEntry('Notification permission', perm),
@@ -788,28 +778,6 @@ class _GeneralSettingsCard extends StatelessWidget {
       child: Column(
         children: [
           ListTile(
-            leading: _leadingIcon(Icons.palette_outlined),
-            title: Text(strings.t('settings.appearance')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => push(
-              context,
-              strings.t('settings.appearance'),
-              const _AppearanceSettingsBody(),
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: _leadingIcon(Icons.contacts_outlined),
-            title: Text(strings.t('settings.contacts')),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => push(
-              context,
-              strings.t('settings.contacts'),
-              const PeopleScreen(),
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
             leading: _leadingIcon(Icons.chat_bubble_outline),
             title: Text(strings.t('settings.messageDisplay')),
             trailing: const Icon(Icons.chevron_right),
@@ -817,6 +785,21 @@ class _GeneralSettingsCard extends StatelessWidget {
               context,
               strings.t('settings.messageDisplay'),
               const MessageDisplayPage(),
+            ),
+          ),
+          const Divider(height: 1),
+          if (context.watch<ContactsService>().isSupported) ...[
+            const ContactsMatchingTile(),
+            const Divider(height: 1),
+          ],
+          ListTile(
+            leading: _leadingIcon(Icons.palette_outlined),
+            title: Text(strings.t('settings.appearance')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => push(
+              context,
+              strings.t('settings.appearance'),
+              const _AppearanceSettingsBody(),
             ),
           ),
           const Divider(height: 1),
@@ -872,11 +855,7 @@ class _SmsSendingTileState extends State<_SmsSendingTile> {
     return SwitchListTile(
       secondary: _leadingIcon(Icons.sms_outlined),
       title: Text(strings.t('settings.allowSms')),
-      subtitle: Text(
-        unreachable
-            ? strings.t('settings.smsUnavailable')
-            : strings.t('settings.smsBody'),
-      ),
+      subtitle: unreachable ? Text(strings.t('settings.smsUnavailable')) : null,
       value: app.allowSmsSend,
       onChanged: (_busy || unreachable) ? null : _toggle,
     );
@@ -923,7 +902,7 @@ class _TestContactCardState extends State<_TestContactCard> {
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
     final strings = MicaLocalizations.of(context);
-    final unreachable = app.api == null;
+    final unreachable = app.api == null || app.testContactEnabled == null;
     final enabled = app.testContactEnabled ?? false;
     return Card(
       child: SwitchListTile(
@@ -1008,7 +987,7 @@ class _HiddenItemsCard extends StatefulWidget {
 
 class _HiddenItemsCardState extends State<_HiddenItemsCard> {
   int _hiddenMessages = 0;
-  int _hiddenContacts = 0;
+  int _hiddenChats = 0;
 
   @override
   void initState() {
@@ -1034,7 +1013,7 @@ class _HiddenItemsCardState extends State<_HiddenItemsCard> {
     if (!mounted) return;
     setState(() {
       _hiddenMessages = m;
-      _hiddenContacts = c;
+      _hiddenChats = c;
     });
   }
 
@@ -1047,11 +1026,9 @@ class _HiddenItemsCardState extends State<_HiddenItemsCard> {
     if (mounted) await _refresh();
   }
 
-  Future<void> _openContacts() async {
+  Future<void> _openChats() async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => HiddenContactsPage(app: widget.app),
-      ),
+      MaterialPageRoute<void>(builder: (_) => HiddenChatsPage(app: widget.app)),
     );
     if (mounted) await _refresh();
   }
@@ -1075,20 +1052,17 @@ class _HiddenItemsCardState extends State<_HiddenItemsCard> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: _leadingIcon(Icons.contacts_outlined),
-            title: Text(strings.t('settings.hiddenContacts')),
+            leading: _leadingIcon(Icons.forum_outlined),
+            title: Text(strings.t('settings.hiddenChats')),
             subtitle: Text(
               strings
-                  .t('settings.hiddenContactsCount')
-                  .replaceAll('{n}', '$_hiddenContacts'),
+                  .t('settings.hiddenChatsCount')
+                  .replaceAll('{n}', '$_hiddenChats'),
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: _openContacts,
+            onTap: _openChats,
           ),
-          ChatPreferenceStatus(
-            preferences: widget.app.chatPreferences,
-            showDescription: false,
-          ),
+          ChatPreferenceStatus(preferences: widget.app.chatPreferences),
         ],
       ),
     );
@@ -1144,19 +1118,19 @@ class HiddenMessagesPage extends StatelessWidget {
   }
 }
 
-class HiddenContactsPage extends StatelessWidget {
+class HiddenChatsPage extends StatelessWidget {
   final AppController app;
-  const HiddenContactsPage({super.key, required this.app});
+  const HiddenChatsPage({super.key, required this.app});
 
   @override
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
     return _HiddenItemsPage<ChatSummary>(
-      title: strings.t('settings.hiddenContacts'),
-      countKey: 'settings.hiddenContactsCount',
-      emptyIcon: Icons.contacts_outlined,
-      emptyKey: 'settings.noHiddenContacts',
-      restoredKey: 'settings.releasedContacts',
+      title: strings.t('settings.hiddenChats'),
+      countKey: 'settings.hiddenChatsCount',
+      emptyIcon: Icons.forum_outlined,
+      emptyKey: 'settings.noHiddenChats',
+      restoredKey: 'settings.releasedChats',
       changes: app.chatPreferences,
       footer: ChatPreferenceStatus(
         preferences: app.chatPreferences,
@@ -1491,7 +1465,6 @@ class _BackupRestoreCard extends StatelessWidget {
           ListTile(
             leading: _leadingIcon(Icons.ios_share),
             title: Text(strings.t('settings.exportBackup')),
-            subtitle: Text(strings.t('settings.exportBackupBody')),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => exportSettingsBackup(context),
           ),
@@ -1499,7 +1472,6 @@ class _BackupRestoreCard extends StatelessWidget {
           ListTile(
             leading: _leadingIcon(Icons.restore),
             title: Text(strings.t('settings.importBackup')),
-            subtitle: Text(strings.t('settings.importBackupBody')),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => importSettingsBackup(context),
           ),
@@ -1657,6 +1629,10 @@ class _AppearanceCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // --- Theme mode ---
+            if (!kIsWeb && Platform.isAndroid) ...[
+              const LauncherIconPicker(),
+              const Divider(height: 28),
+            ],
             Text(
               strings.t('settings.theme'),
               style: Theme.of(context).textTheme.labelLarge,

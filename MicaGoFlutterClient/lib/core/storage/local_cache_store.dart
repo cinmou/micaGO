@@ -882,11 +882,6 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
       'schemaVersion': _schemaVersion,
       'chatCount': await count('chats'),
       'messageCount': await count('messages'),
-      'attachmentMetadataCount':
-          int.tryParse(
-            await readMetadata('last_attachment_metadata_count') ?? '',
-          ) ??
-          0,
       'pendingSendCount':
           Sqflite.firstIntValue(
             await db.rawQuery(
@@ -894,10 +889,7 @@ ORDER BY COALESCE(m.date_created, 0) DESC, hm.guid ASC
             ),
           ) ??
           0,
-      'lastBootstrapTime': await readMetadata('last_bootstrap_time'),
       'lastCatchUpTime': await readMetadata('last_catch_up_time'),
-      'lastWriteCount': await readMetadata('last_write_count'),
-      'lastError': await readMetadata('last_error'),
       'lastAppliedEventCursor': await readMetadata('last_applied_event_cursor'),
       'lastEventAt': await readMetadata('last_event_at'),
       'lastReconnectAt': await readMetadata('last_reconnect_at'),

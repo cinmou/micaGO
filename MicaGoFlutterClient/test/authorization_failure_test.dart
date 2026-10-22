@@ -41,7 +41,8 @@ void main() {
         token: 'test-credential',
         onUnauthorized: () => rejected++,
         httpClient: MockClient(
-          (request) async => http.Response('not authorized', 401),
+          (request) async =>
+              http.Response('{"error":{"code":"unauthorized"}}', 401),
         ),
       );
       addTearDown(api.close);
@@ -74,4 +75,20 @@ void main() {
       expect(rejected, 0);
     },
   );
+  for (final status in [401, 403, 503]) {
+    test('proxy or temporary HTTP $status never revokes a pairing', () async {
+      var rejected = 0;
+      final api = ApiClient(
+        baseUrl: 'https://relay.example',
+        token: 'test-credential',
+        onUnauthorized: () => rejected++,
+        httpClient: MockClient(
+          (_) async => http.Response('<html>Sign in</html>', status),
+        ),
+      );
+      addTearDown(api.close);
+      await expectLater(api.authCheck(), throwsA(isA<ApiException>()));
+      expect(rejected, 0);
+    });
+  }
 }

@@ -55,6 +55,32 @@ class _ReadApp extends _App {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('a proxy 401 cannot revoke notification action credentials', () async {
+    final api = ApiClient(
+      baseUrl: 'https://relay.example',
+      token: 'test-only',
+      httpClient: MockClient(
+        (_) async => http.Response('<html>Login required</html>', 401),
+      ),
+    );
+    final app = _ReadApp(api);
+    addTearDown(() {
+      app.dispose();
+      api.close();
+    });
+    final payload = notificationPayload(
+      'a',
+      'current-device',
+      readThrough: 100,
+    );
+    expect(await markNotificationRead(payload, app: app), 'read failed');
+    expect(
+      await sendNotificationReply(payload, 'hello', app: app),
+      'reply failed',
+    );
+    expect(app.rejected, isNull);
+    expect(app.cache.seen, isEmpty);
+  });
   test(
     'mark read is route-scoped, monotonic, and refuses legacy or stale actions',
     () async {
@@ -148,15 +174,20 @@ void main() {
     () async {
       var status = 503;
       var count = 0;
+      late final _ReadApp app;
       final api = ApiClient(
         baseUrl: 'https://relay.example',
         token: 'test-only',
+        onUnauthorized: () => app.rejectCredential(app.profile),
         httpClient: MockClient((request) async {
           count++;
-          return http.Response('{}', status);
+          return http.Response(
+            status == 401 ? '{"error":{"code":"unauthorized"}}' : '{}',
+            status,
+          );
         }),
       );
-      final app = _ReadApp(api);
+      app = _ReadApp(api);
       addTearDown(() {
         app.dispose();
         api.close();
@@ -180,9 +211,11 @@ void main() {
     () async {
       final requests = <http.Request>[];
       var status = 200;
+      late final _App app;
       final api = ApiClient(
         baseUrl: 'https://relay.example',
         token: 'test-only',
+        onUnauthorized: () => app.rejectCredential(app.profile),
         httpClient: MockClient((request) async {
           if (!request.url.path.endsWith('/send')) {
             return http.Response('{"data":[],"hasMore":false}', 200);
@@ -191,12 +224,14 @@ void main() {
           return http.Response(
             status == 200
                 ? '{"guid":"confirmed","chatGuid":"route-a","text":"hello"}'
+                : status == 401
+                ? '{"error":{"code":"unauthorized"}}'
                 : '{}',
             status,
           );
         }),
       );
-      final app = _App(api);
+      app = _App(api);
       addTearDown(() {
         app.dispose();
         api.close();

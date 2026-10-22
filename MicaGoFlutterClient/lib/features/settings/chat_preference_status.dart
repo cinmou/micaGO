@@ -6,16 +6,11 @@ import '../../core/ui/top_banner.dart';
 class ChatPreferenceStatus extends StatelessWidget {
   final ChatPreferenceSync preferences;
 
-  /// Without the description the widget renders nothing unless there is
-  /// something to act on: a sync error, conflicts, legacy records, or pending
-  /// changes.
-  final bool showDescription;
   final EdgeInsetsGeometry padding;
 
   const ChatPreferenceStatus({
     super.key,
     required this.preferences,
-    this.showDescription = true,
     this.padding = const EdgeInsets.all(16),
   });
 
@@ -24,13 +19,12 @@ class ChatPreferenceStatus extends StatelessWidget {
     listenable: preferences,
     builder: (context, _) {
       final strings = MicaLocalizations.of(context);
-      final theme = Theme.of(context);
       final needsAttention =
           preferences.errorKey != null ||
           preferences.legacyCount > 0 ||
           preferences.hasConflicts ||
           preferences.pending;
-      if (!showDescription && !needsAttention) {
+      if (!needsAttention) {
         return const SizedBox.shrink();
       }
 
@@ -53,17 +47,10 @@ class ChatPreferenceStatus extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (showDescription)
-              Text(
-                strings.t('prefs.description'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
             if (preferences.errorKey != null)
               Text(
                 strings.t(preferences.errorKey!),
-                style: TextStyle(color: theme.colorScheme.error),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             if (preferences.legacyCount > 0)
               TextButton(

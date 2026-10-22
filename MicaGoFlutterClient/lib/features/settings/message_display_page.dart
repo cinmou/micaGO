@@ -5,12 +5,7 @@ import '../../core/l10n/app_localizations.dart';
 import '../chats/message_display.dart';
 import 'message_display_controller.dart';
 
-/// Settings → "Message display" (Part I). Local display preferences only — they
-/// never delete or change server data, and never hide failed outgoing messages.
-///
-/// C75: the "Debug details for unsupported messages" section was removed — the
-/// `unsupportedDetails` preference it wrote had no consumer anywhere in the app,
-/// so all three choices did nothing. Everything left is localized.
+/// Local message display preferences.
 class MessageDisplayPage extends StatelessWidget {
   const MessageDisplayPage({super.key});
 
@@ -24,11 +19,6 @@ class MessageDisplayPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(
-          strings.t('display.note'),
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 12),
         Card(
           child: Column(
             children: [
@@ -85,6 +75,11 @@ class MessageDisplayPage extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          strings.t('display.note'),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
     );

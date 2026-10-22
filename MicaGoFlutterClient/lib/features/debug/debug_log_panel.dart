@@ -1,74 +1,61 @@
 import 'package:flutter/material.dart';
 
 import '../../core/app_controller.dart';
-import '../../core/network/websocket_client.dart';
+import '../../core/l10n/app_localizations.dart';
 
-/// A collapsible debug panel showing the WebSocket connection state and a
-/// rolling log of received event names. Read-only; for C0 diagnostics.
+/// Live connection diagnostics and the bounded realtime event log.
 class DebugLogPanel extends StatelessWidget {
-  final WebSocketClient ws;
-  final AppController? app;
-
-  const DebugLogPanel({super.key, required this.ws, this.app});
+  final AppController app;
+  const DebugLogPanel({super.key, required this.app});
 
   @override
   Widget build(BuildContext context) {
+    final ws = app.ws;
+    final strings = MicaLocalizations.of(context);
     return ListenableBuilder(
-      listenable: ws,
-      builder: (context, _) {
-        final entries = ws.log.reversed.toList(growable: false);
-        return Card(
-          child: ExpansionTile(
-            shape: const Border(),
-            collapsedShape: const Border(),
-            leading: const Icon(Icons.terminal),
-            title: const Text('Debug — WebSocket events'),
-            subtitle: Text('${ws.status.name} · ${ws.log.length} logged'),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            children: [
-              if (app != null) _RealtimeDiagnostics(app: app!),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: ws.log.isEmpty ? null : ws.clearLog,
-                  icon: const Icon(Icons.clear_all, size: 18),
-                  label: const Text('Clear'),
-                ),
-              ),
-              if (entries.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('No events yet.'),
-                )
-              else
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: entries.length,
-                    itemBuilder: (context, i) {
-                      final e = entries[i];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          '${_ts(e.at)}  ${e.text}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(fontFamily: 'monospace'),
-                        ),
-                      );
-                    },
+      listenable: Listenable.merge([ws, app]),
+      builder: (context, _) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('WebSocket: ${ws.status.name}'),
+                  const SizedBox(height: 8),
+                  _RealtimeDiagnostics(app: app),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: ws.log.isEmpty ? null : ws.clearLog,
+                      icon: const Icon(Icons.clear_all, size: 18),
+                      label: Text(strings.t('settings.clearSelection')),
+                    ),
                   ),
-                ),
-            ],
+                ],
+              ),
+            ),
           ),
-        );
-      },
+          if (ws.log.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(strings.t('debug.noEvents')),
+            ),
+          for (final entry in ws.log.reversed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+              child: SelectableText(
+                '${_timestamp(entry.at)}  ${entry.text}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+              ),
+            ),
+        ],
+      ),
     );
-  }
-
-  String _ts(DateTime t) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
   }
 }
 
@@ -91,8 +78,8 @@ class _RealtimeDiagnostics extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('cursor: ${d.lastAppliedEventCursor ?? '—'}'),
-            Text('last event: ${_fmt(d.lastEventAt)}'),
-            Text('last reconnect: ${_fmt(d.lastReconnectAt)}'),
+            Text('last event: ${_timestamp(d.lastEventAt)}'),
+            Text('last reconnect: ${_timestamp(d.lastReconnectAt)}'),
             Text('catch-up cursor: ${d.lastCatchUpCursor ?? '—'}'),
             Text('catch-up count: ${d.lastCatchUpResultCount}'),
             Text(
@@ -113,10 +100,10 @@ class _RealtimeDiagnostics extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _fmt(DateTime? dt) {
-    if (dt == null) return '—';
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
-  }
+String _timestamp(DateTime? time) {
+  if (time == null) return '—';
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(time.hour)}:${two(time.minute)}:${two(time.second)}';
 }

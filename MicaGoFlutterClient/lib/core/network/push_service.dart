@@ -10,7 +10,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../app_controller.dart';
-import '../models/connection_profile.dart';
 import '../l10n/app_localizations.dart';
 import '../../features/chats/models/message_model.dart';
 import '../storage/secure_store.dart';
@@ -291,14 +290,6 @@ class PushService {
   /// POST_NOTIFICATIONS) and records it on [AppController] for diagnostics.
   Future<void> refreshNotificationPermission() async {
     app.noteNotificationPermission(await systemNotificationsEnabled());
-  }
-
-  /// Asks for the Android 13+ POST_NOTIFICATIONS permission (no-op below 13 or
-  /// when already granted). Returns the resulting grant state.
-  Future<bool?> requestNotificationPermission() async {
-    final granted = await requestSystemNotificationPermission();
-    app.noteNotificationPermission(granted);
-    return granted;
   }
 
   Future<void> _initLocalNotifications() async {
@@ -668,7 +659,6 @@ Future<String> _withNotificationSession(
   }
   final store = app?.store ?? SecureStore();
   ApiClient? backgroundApi;
-  ConnectionProfile? issuedProfile;
   try {
     if (await store.readValue(AppController.rejectedCredentialKey) == '1') {
       return '$kind rejected';
@@ -676,7 +666,6 @@ Future<String> _withNotificationSession(
     final profile = app == null ? await store.loadProfile() : app.profile;
     if (profile == null || !profile.isComplete) return '$kind rejected';
     if (profile.deviceId != deviceId) return '$kind failed';
-    issuedProfile = profile;
     final api =
         app?.api ??
         (backgroundApi = ApiClient(
@@ -687,21 +676,9 @@ Future<String> _withNotificationSession(
     await action(api, chatGuid);
     return kind == 'reply' ? 'reply sent' : 'read saved';
   } on ApiException catch (e) {
-    if (e.statusCode == 401) {
-      if (app != null && issuedProfile != null) {
-        app.rejectCredential(issuedProfile);
-      } else {
-        try {
-          final current = await store.loadProfile();
-          if (current?.token == issuedProfile?.token && current != null) {
-            await store.writeValue(AppController.rejectedCredentialKey, '1');
-            await store.clearProfile();
-            await clearAndroidNotificationState();
-          }
-        } catch (_) {
-          /* Terminal cleanup retries when the app resumes. */
-        }
-      }
+    if (e.code == 'unauthorized') {
+      // Foreground credential rejection belongs to the verified API session.
+      // A background action may use an old saved route; it cannot revoke pairing.
       return '$kind rejected';
     }
     return kind == 'reply' &&

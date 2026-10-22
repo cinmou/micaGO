@@ -20,6 +20,17 @@ func writeUnauthorized(w http.ResponseWriter) {
 	writeAPIError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 }
 
+func writeAuthorizationFailure(w http.ResponseWriter, status int) {
+	switch status {
+	case http.StatusForbidden:
+		writeAPIError(w, status, "forbidden", "This device cannot access this endpoint.")
+	case http.StatusServiceUnavailable:
+		writeAPIError(w, status, "auth_unavailable", "Device authorization is temporarily unavailable. Try again.")
+	default:
+		writeUnauthorized(w)
+	}
+}
+
 func writeNotFound(w http.ResponseWriter, message string) {
 	writeAPIError(w, http.StatusNotFound, "not_found", message)
 }

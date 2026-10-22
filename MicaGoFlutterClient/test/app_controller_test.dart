@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:mica_go/core/network/api_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
@@ -68,6 +71,140 @@ class _MemoryStore implements SecureStore {
 }
 
 void main() {
+  test(
+    'route rejection is isolated, registration follows the healthy route, and complete revocation still works',
+    () async {
+      final previousHttpOverrides = HttpOverrides.current;
+      HttpOverrides.global = _RealHttpOverrides();
+      addTearDown(() => HttpOverrides.global = previousHttpOverrides);
+      final dir = await Directory.systemTemp.createTemp('micago-route-auth-');
+      final cert = '${dir.path}/test.crt';
+      final key = '${dir.path}/test.key';
+      final generated = await Process.run('openssl', [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-nodes',
+        '-keyout',
+        key,
+        '-out',
+        cert,
+        '-days',
+        '2',
+        '-subj',
+        '/CN=micago-test',
+      ]);
+      expect(generated.exitCode, 0);
+      final pem = await File(cert).readAsString();
+      final pin = sha256
+          .convert(
+            base64Decode(
+              pem
+                  .split('\n')
+                  .where((line) => line.isNotEmpty && !line.startsWith('-----'))
+                  .join(),
+            ),
+          )
+          .toString();
+      final tls = SecurityContext()
+        ..useCertificateChain(cert)
+        ..usePrivateKey(key);
+      final servers = <HttpServer>[];
+      final statuses = <int, int>{};
+      final registered = <int, int>{};
+      addTearDown(() async {
+        for (final server in servers) {
+          await server.close(force: true);
+        }
+        await dir.delete(recursive: true);
+        MediaCache.instance.accessAllowed = true;
+        TopBanner.blocked = false;
+      });
+      Future<EndpointRef> endpoint(int status) async {
+        final server = await HttpServer.bindSecure(
+          InternetAddress.loopbackIPv4,
+          0,
+          tls,
+        );
+        servers.add(server);
+        statuses[server.port] = status;
+        server.listen((request) async {
+          request.response.headers.contentType = ContentType.json;
+          switch (request.uri.path) {
+            case '/api/health':
+              request.response.write('{"ok":true}');
+            case '/api/auth/check':
+              request.response.statusCode = statuses[server.port]!;
+              request.response.write(
+                statuses[server.port] == 200
+                    ? '{"ok":true}'
+                    : '{"error":{"code":"${statuses[server.port] == 401 ? 'unauthorized' : 'auth_unavailable'}"}}',
+              );
+            case '/api/devices/register':
+              registered[server.port] = (registered[server.port] ?? 0) + 1;
+              request.response.write('{"data":{"id":"device"}}');
+            case '/api/server/urls':
+              request.response.statusCode = statuses[server.port] == 401
+                  ? 401
+                  : 404;
+              request.response.write('{"error":{"code":"unauthorized"}}');
+            default:
+              request.response.statusCode = 404;
+              request.response.write('{}');
+          }
+          await request.response.close();
+        });
+        return EndpointRef(
+          baseUrl: 'https://127.0.0.1:${server.port}',
+          wsUrl: 'wss://127.0.0.1:${server.port}/ws',
+        );
+      }
+
+      final stale = await endpoint(401);
+      final healthy = await endpoint(200);
+      Future<_RouteTestApp> makeApp() async {
+        final app = _RouteTestApp(store: _MemoryStore());
+        addTearDown(app.dispose);
+        await app.saveAndActivate(
+          ConnectionProfile(
+            baseUrl: stale.baseUrl,
+            token: 'test-credential',
+            deviceId: 'device',
+            tlsFingerprint: pin,
+            lanRoutes: [stale, healthy],
+          ),
+        );
+        return app;
+      }
+
+      final app = await makeApp();
+      // Startup metadata may run before route selection. Its first restored
+      // route is not yet authoritative about this credential.
+      await expectLater(app.api!.getServerUrls(), throwsA(isA<ApiException>()));
+      expect(app.hasProfile, isTrue);
+      await app.probeAllRoutes();
+      expect(app.tokenRejected.value, isFalse);
+      expect(await app.runSelection(), isTrue);
+      expect(app.api?.baseUrl, healthy.baseUrl);
+      await app.registerDeviceNow();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(app.hasProfile, isTrue);
+      expect(registered[Uri.parse(stale.baseUrl).port] ?? 0, 0);
+      expect(registered[Uri.parse(healthy.baseUrl).port], greaterThan(0));
+      statuses[Uri.parse(healthy.baseUrl).port] = 503;
+      final offline = await makeApp();
+      expect(await offline.runSelection(), isFalse);
+      expect(offline.hasProfile, isTrue);
+      expect(offline.tokenRejected.value, isFalse);
+      statuses[Uri.parse(healthy.baseUrl).port] = 401;
+      final revoked = await makeApp();
+      expect(await revoked.runSelection(), isFalse);
+      expect(revoked.tokenRejected.value, isTrue);
+      expect(revoked.profile, isNull);
+    },
+  );
+
   test(
     'sleep and resume suppress transient read errors, never authentication',
     () {
@@ -683,3 +820,23 @@ class _SlowReadCache extends _ChatFixtureCache {
     await super.markChatsSeen(guids, upTo: upTo);
   }
 }
+
+class _RouteTestApp extends AppController {
+  _RouteTestApp({required super.store});
+  @override
+  Future<bool> selectReachableCandidate({
+    required String reason,
+    ConnectionCandidateKind? skipKind,
+  }) async => true;
+  Future<bool> runSelection() =>
+      super.selectReachableCandidate(reason: 'route-test');
+  @override
+  void connectWebSocket() {}
+  @override
+  Future<void> catchUp({
+    required String reason,
+    Duration minInterval = const Duration(seconds: 4),
+  }) async {}
+}
+
+class _RealHttpOverrides extends HttpOverrides {}

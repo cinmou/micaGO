@@ -258,8 +258,6 @@ void main() {
         'dateCreated': 20,
       }),
     ]);
-    await store.writeMetadata('last_bootstrap_time', '123');
-    await store.writeMetadata('last_write_count', '2');
 
     final diag = await store.diagnostics();
     expect(diag['path'], contains('micago_client_cache.db'));
@@ -267,8 +265,6 @@ void main() {
     expect(diag['chatCount'], 1);
     expect(diag['messageCount'], 1);
     expect(diag['pendingSendCount'], 0);
-    expect(diag['lastBootstrapTime'], '123');
-    expect(diag['lastWriteCount'], '2');
   });
 
   test('realtime cursor metadata persists across reopen', () async {
