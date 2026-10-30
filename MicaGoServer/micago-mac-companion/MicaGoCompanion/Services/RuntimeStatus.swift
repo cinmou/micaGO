@@ -18,24 +18,9 @@ enum MessagesApp {
     }
 }
 
-/// Holds macOS power assertions for the duration of Keep Awake.
-///
-/// Replaces the old `caffeinate` child process (C74). Spawning a helper was
-/// unreliable in a hardened-runtime app and left the toggle stuck "on" when the
-/// child died, and `caffeinate -s` only prevents system sleep on AC power — so
-/// on battery the Mac slept anyway and the relay dropped. This is the
-/// KeepingYouAwake (MIT) approach: in-process `IOPMAssertionCreateWithName`
-/// assertions, released deterministically.
-///
-/// Two assertions are held together:
-///   * PreventUserIdleSystemSleep — the Mac does not idle-sleep, so the relay
-///     keeps serving. The display may still sleep (wanted for a bridge).
-///   * NetworkClientActive — keeps the network stack serving remote clients
-///     while the display is off.
+/// In-process Keep Awake assertions; accepted assertions are released on stop or quit.
 private final class PowerAssertions {
     private var ids: [IOPMAssertionID] = []
-
-    var isActive: Bool { !ids.isEmpty }
 
     /// Takes the assertions. Returns false (and holds none) when macOS refuses.
     func acquire(reason: String) -> Bool {
@@ -57,7 +42,7 @@ private final class PowerAssertions {
                 acquired.append(id)
             }
         }
-        // All-or-nothing: a partial hold would report "on" while still sleeping.
+        // Retain the assertions accepted by macOS.
         guard !acquired.isEmpty else { return false }
         ids = acquired
         return true
@@ -68,9 +53,7 @@ private final class PowerAssertions {
         ids.removeAll()
     }
 
-    deinit {
-        for id in ids { IOPMAssertionRelease(id) }
-    }
+    deinit { release() }
 }
 
 /// RuntimeMonitor is a single shared source of macOS-local runtime state
@@ -95,15 +78,6 @@ final class RuntimeMonitor: ObservableObject {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
-    }
-
-    func stopMonitoring() {
-        pollTask?.cancel()
-        pollTask = nil
-    }
-
-    func refreshMessages() {
-        messagesRunning = MessagesApp.isRunning()
     }
 
     func openMessages() {

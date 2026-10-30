@@ -85,23 +85,13 @@ enum IMCoreHelperInstaller {
         return FileManager.default.isExecutableFile(atPath: dest.path)
     }
 
-    /// Finds a helper binary shipped inside the app bundle (Resources or the
-    /// bundle root), if any.
+    /// Resolve either supported helper name through the bundle resource lookup.
     private static func bundledHelperURL() -> URL? {
         let fm = FileManager.default
         for name in candidateNames {
             if let url = Bundle.main.url(forResource: name, withExtension: nil),
                fm.isReadableFile(atPath: url.path) {
                 return url
-            }
-        }
-        // Also check the bundle's Resources directory directly.
-        if let resources = Bundle.main.resourceURL {
-            for name in candidateNames {
-                let url = resources.appendingPathComponent(name)
-                if fm.isReadableFile(atPath: url.path) {
-                    return url
-                }
             }
         }
         return nil

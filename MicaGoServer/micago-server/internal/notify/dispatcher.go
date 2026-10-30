@@ -20,7 +20,6 @@ type Dispatcher struct {
 	previewMode     string
 	defaultProvider string
 	providers       map[string]Provider
-	fcmActive       bool
 	firestore       *FirestoreURLSync
 	pruneFunc       func(deviceID string)
 	contacts        *contactCache
@@ -49,45 +48,37 @@ func (d *Dispatcher) SetPruneFunc(fn func(deviceID string)) {
 // SetContactCache replaces the local-only contact display-name cache used for
 // push notification titles. The cache is in-memory and contains no message data.
 func (d *Dispatcher) SetContactCache(entries []ContactEntry) {
-	if d.contacts == nil {
-		d.contacts = newContactCache()
-	}
 	d.contacts.Set(entries)
 }
 
 func (d *Dispatcher) apply(cfg config.Config) {
 	providers := map[string]Provider{
-		"none":         NoneProvider{},
-		"webhook":      WebhookProvider{URL: cfg.WebhookURL},
-		"hms":          NewHMSStubProvider("hms"),
-		"harmony_push": NewHMSStubProvider("harmony_push"),
-		"ntfy":         NtfyStubProvider{},
+		"webhook": WebhookProvider{URL: cfg.WebhookURL},
 	}
 
-	fcmActive := false
 	var firestore *FirestoreURLSync
 	if cfg.FCM.Enabled && strings.TrimSpace(cfg.FCM.ServiceAccountPath) != "" {
 		sa, err := LoadServiceAccount(cfg.FCM.ServiceAccountPath)
 		if err != nil {
 			log.Printf("fcm: service account not loaded (%v); fcm push disabled", err)
-			providers["fcm"] = FCMStubProvider{}
 		} else {
 			projectID := cfg.FCM.ProjectID
 			if projectID == "" {
 				projectID = sa.ProjectID
 			}
 			httpClient := &http.Client{Timeout: 15 * time.Second}
-			tokens := NewTokenSource(sa, httpClient, scopeFCM, scopeFirestore)
-			providers["fcm"] = NewFCMProvider(projectID, tokens, httpClient, 24*time.Hour, func(id string) {
-				d.invokePrune(id)
-			})
-			fcmActive = true
-			if cfg.Firebase.PublicURLSync {
-				firestore = NewFirestoreURLSync(projectID, cfg.Firebase.URLCollection, cfg.Firebase.URLDocument, tokens, httpClient)
+			tokens, err := NewTokenSource(sa, httpClient, scopeFCM, scopeFirestore)
+			if err != nil {
+				log.Printf("fcm: authorization setup failed (%v); fcm push disabled", err)
+			} else {
+				providers["fcm"] = NewFCMProvider(projectID, tokens, httpClient, 24*time.Hour, func(id string) {
+					d.invokePrune(id)
+				})
+				if cfg.Firebase.PublicURLSync {
+					firestore = NewFirestoreURLSync(projectID, cfg.Firebase.URLCollection, cfg.Firebase.URLDocument, tokens, httpClient)
+				}
 			}
 		}
-	} else {
-		providers["fcm"] = FCMStubProvider{}
 	}
 
 	d.mu.Lock()
@@ -95,7 +86,6 @@ func (d *Dispatcher) apply(cfg config.Config) {
 	d.previewMode = cfg.NotificationPreview
 	d.defaultProvider = cfg.NotificationProvider
 	d.providers = providers
-	d.fcmActive = fcmActive
 	d.firestore = firestore
 	d.mu.Unlock()
 }
@@ -130,18 +120,13 @@ func (d *Dispatcher) invokePrune(id string) {
 	}
 }
 
-// ProviderNames is the set of provider names accepted at device registration.
-func (d *Dispatcher) ProviderNames() []string {
-	return []string{"none", "webhook", "fcm", "hms", "harmony_push", "ntfy"}
-}
-
 // ImplementedProviders lists providers that actually deliver right now. `fcm` is
 // included only when a valid service account is configured.
 func (d *Dispatcher) ImplementedProviders() []string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	out := []string{"none", "webhook"}
-	if d.fcmActive {
+	if _, ok := d.providers["fcm"]; ok {
 		out = append(out, "fcm")
 	}
 	return out
@@ -222,7 +207,7 @@ func (d *Dispatcher) DispatchNewMessages(ctx context.Context, devices []store.De
 func (d *Dispatcher) buildNotification(event relaydb.NotificationEvent, previewMode string) Notification {
 	notification := buildNotification(event, previewMode)
 	handle := strings.TrimSpace(notification.Handle)
-	if handle == "" || d.contacts == nil {
+	if handle == "" {
 		return notification
 	}
 	if name := d.contacts.Resolve(handle); name != "" {
@@ -253,7 +238,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, device store.DeviceRecord) er
 		return ErrPushNotConfigured
 	}
 	if !ok {
-		return ErrNotImplemented
+		return ErrPushNotConfigured
 	}
 	return provider.Send(ctx, device, Notification{
 		Type:        "test",

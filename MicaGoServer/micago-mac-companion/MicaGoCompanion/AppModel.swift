@@ -1,59 +1,44 @@
 import Foundation
 import Combine
 
-/// Central observable state for the companion UI. Owns the server controller,
-/// reads the config/token, and polls while the app runs, including menu-bar mode.
+/// Companion 的控制状态与后台轮询。
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
 
     @Published var config: MicaConfig?
     @Published var reachable = false
+    /// False also covers checks that could not complete; it does not imply 401.
     @Published var authValid = false
     @Published var status: ServerStatus?
     @Published var devices: [DeviceInfo] = []
     @Published var activeConnections: [ActiveConnectionInfo] = []
     @Published var lastError: String?
-    /// C36: a failure from the 3s background poll's best-effort diagnostic fetches
-    /// (status / connections / devices / urls). Recorded for Debug only — it must
-    /// NOT become a user-facing error banner, because the server is already
-    /// reachable + authed. (It used to leak into `lastError` and show up in the
-    /// Sync Control header as a spurious "Server returned HTTP 500".)
+    /// 后台诊断请求的错误仅供调试，不作为操作失败横幅。
     @Published var lastPollError: String?
     @Published var developerModeEnabled: Bool {
         didSet { UserDefaults.standard.set(developerModeEnabled, forKey: "developerModeEnabled") }
     }
 
-    // Connection endpoints (v0.11)
+    // Connection endpoints
     @Published var urls: ServerURLs?
     @Published var publicURLInput: String = ""
     @Published var publicCheckResult: PublicURLCheckResult?
     @Published var publicBusy = false
 
-    // C26: IMCore helper install flow. `helperInstalling` drives the button
-    // spinner; `helperInstallMessage` shows the result/error. The helper status
-    // itself is read from `status?.messageActions` (server capability probe).
     @Published var helperInstalling = false
     @Published var helperInstallMessage: String?
 
-    // C23 cleanup: the per-pairing LAN selection (`selectedPairingBaseURL`),
-    // the `pairingMode` (lanOnly/lanFirst), `selectedPairingTarget`, and
-    // `tokenRevealed` were removed. The unified v4 payload includes every LAN
-    // candidate plus Public when configured — there is no manual mode or
-    // single-LAN selection anymore.
 
-    /// LAN base URLs the user has hidden from pairing/QR selection. This is a
-    /// Pairing visibility is mirrored to the backend for connected clients.
-    /// It does not change the server listening interfaces.
+    /// 配对地址的隐藏偏好同步给后端，不改变监听接口。
     @Published var hiddenLANBaseURLs: Set<String> =
         Set(UserDefaults.standard.stringArray(forKey: "hiddenLANEndpoints") ?? [])
 
     private var pollTask: Task<Void, Never>?
     private var startupRefreshTask: Task<Void, Never>?
+    private var refreshing = false
     private let pollInterval: UInt64 = 3 * 1_000_000_000 // 3s
-    // The server's saved Public URL we last mirrored into `publicURLInput`. Used
-    // to detect unsaved user edits so a poll doesn't clobber them, while still
-    // re-syncing the field when the saved value changes (e.g. after restart).
+    // 上次回填值用于识别未保存的编辑。
     private var lastSeededPublicURL = ""
 
     init() {
@@ -61,7 +46,7 @@ final class AppModel: ObservableObject {
         reloadConfig()
     }
 
-    // Notifications / FCM config (v0.12)
+    // Notifications / FCM config
     @Published var notifEnabled = false
     @Published var notifPreview = "sender_and_text"
     @Published var fcmEnabled = false
@@ -74,7 +59,7 @@ final class AppModel: ObservableObject {
     @Published var firestoreSyncActive = false
     private var lastSeededNotifications: NotificationFormValues?
 
-    // Sync control (v0.11.3)
+    // Sync control
     @Published var syncRules: SyncRulesResponse?
     let chatPreferences = ChatPreferenceStore()
     @Published var chatsList: [ChatSummary] = []
@@ -84,7 +69,7 @@ final class AppModel: ObservableObject {
     /// (Retry + Copy diagnostics) instead of a bare inline HTTP-status line.
     @Published var syncControlError: String?
 
-    // C11 live sync monitor
+    // Live sync monitor
     @Published var syncNowBusy = false
     @Published var lastSyncDiagnostics: SyncDiagnostics?
     private var lastSyncedContactCacheSignature: Int?
@@ -132,33 +117,12 @@ final class AppModel: ObservableObject {
 
     var baseURL: URL? {
         guard let config else { return nil }
-        return ConfigReader.baseURL(for: config)
+        return ConfigReader.baseURL(for: config, launchedAddress: BackendController.shared.launchedBindAddress)
     }
 
     var token: String { config?.token ?? "" }
 
-    /// All endpoints the user can pick for pairing: local, LAN, and public (if
-    /// configured). Local/LAN always remain present.
-    var pairingTargets: [PairingTarget] {
-        guard let urls else { return [] }
-        // C25: loopback is never a pairing target — Android can't reach it.
-        var targets: [PairingTarget] = []
-        for e in urls.lan where !hiddenLANBaseURLs.contains(e.baseUrl) {
-            targets.append(PairingTarget(scope: .lan, label: "LAN · \(e.baseUrl)", baseUrl: e.baseUrl, wsUrl: e.wsUrl))
-        }
-        if urls.public.enabled {
-            targets.append(PairingTarget(scope: .public, label: "Public · \(urls.public.baseUrl)",
-                                         baseUrl: urls.public.baseUrl, wsUrl: urls.public.wsUrl))
-        }
-        return targets
-    }
-
-    /// C23 v3 unified connection payload for the QR code / copy-JSON. It always
-    /// includes ALL available candidates (every LAN endpoint + the Public
-    /// endpoint when configured) so the client can auto-select — there is no
-    /// LAN-only vs LAN+Public mode anymore. Carries the server's connection
-    /// config revision so paired clients can detect later URL changes without
-    /// rescanning. Loopback/local is never included. Token redacted when asked.
+    /// v4 配对邀请包含可见 LAN 地址、可选公网地址和连接配置版本。
     @Published var pairingCode = ""
     @Published var pairingExpiresAt: Int64 = 0
     @Published var pairingFingerprint = ""
@@ -186,35 +150,31 @@ final class AppModel: ObservableObject {
             pairingState = state
         }
     }
- func pairingPayloadV4(redacted: Bool) -> String {
-  guard pairingState == "active", !pairingCode.isEmpty, pairingExpiresAt > Int64(Date().timeIntervalSince1970*1000) else {return "{}"}
-        // LAN and Public are independent: LAN candidates always go in (when the
-        // server is bound to a LAN address); Public is an optional extra.
-        let lan = pairingTargets
-            .filter { $0.scope == .lan }
-            .map { ConnectionCandidate(kind: "lan", baseUrl: $0.baseUrl, wsUrl: $0.wsUrl) }
-        let pub = pairingTargets.first { $0.scope == .public }
-            .map { ConnectionCandidate(kind: "public", baseUrl: $0.baseUrl, wsUrl: $0.wsUrl) }
+    /// Single-use secure invitation encoded into the QR code.
+    var pairingPayload: String {
+        guard pairingState == "active", !pairingCode.isEmpty,
+              pairingExpiresAt > Int64(Date().timeIntervalSince1970 * 1000) else { return "{}" }
+        let lan = visibleLANEndpoints.map {
+            ConnectionCandidate(kind: "lan", baseUrl: $0.baseUrl, wsUrl: $0.wsUrl)
+        }
+        let publicCandidate = urls.flatMap { urls in
+            urls.public.enabled
+                ? ConnectionCandidate(kind: "public", baseUrl: urls.public.baseUrl, wsUrl: urls.public.wsUrl)
+                : nil
+        }
         return unifiedConnectionPayload(
             lan: lan,
-            publicCandidate: pub,
-            token: pairingCode,
+            publicCandidate: publicCandidate,
+            pairingCode: pairingCode,
             serverName: Host.current().localizedName ?? "micaGO Server",
             configRevision: urls?.connectionRevision ?? "",
-            redacted: redacted,
- tlsFingerprint:pairingFingerprint,expiresAt:pairingExpiresAt
+            tlsFingerprint: pairingFingerprint,
+            expiresAt: pairingExpiresAt
         )
     }
 
-    /// Single-use secure invitation encoded into the QR code (v4).
-    var pairingPayload: String { pairingPayloadV4(redacted: false) }
-
-    /// Same payload with the token redacted — safe to show/copy.
-    var pairingPayloadRedacted: String { pairingPayloadV4(redacted: true) }
-
-    /// Quick capability flags for the Create Connection status line.
-    var hasLanCandidate: Bool { pairingTargets.contains { $0.scope == .lan } }
-    var hasPublicCandidate: Bool { pairingTargets.contains { $0.scope == .public } }
+    var hasLanCandidate: Bool { !visibleLANEndpoints.isEmpty }
+    var hasPublicCandidate: Bool { urls?.public.enabled == true }
 
     /// LAN endpoints that should appear in user-facing summaries (Dashboard) and
     /// be offered for pairing — the user's hidden VPN/virtual endpoints are
@@ -261,22 +221,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func stopPolling() {
-        pollTask?.cancel()
-        pollTask = nil
-        startupRefreshTask?.cancel()
-        startupRefreshTask = nil
-    }
-
-    /// The backend can create or migrate config during start(), after the app's
-    /// initial reload already ran. Immediately reload config and poll briefly so
-    /// Dashboard/Connections get LAN URLs as soon as the server answers.
+    /// 等待后端完成配置创建或迁移，并刷新连接地址。
     func refreshAfterBackendStart() {
         startupRefreshTask?.cancel()
         startupRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for _ in 0..<16 {
-                self.reloadConfig()
+                guard !Task.isCancelled else { return }
                 await self.refresh()
                 if self.reachable, self.authValid, self.urls != nil {
                     return
@@ -287,40 +238,41 @@ final class AppModel: ObservableObject {
     }
 
     func refresh() async {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
         reloadConfig()
         guard let baseURL else {
             reachable = false
             authValid = false
-            status = nil
-            devices = []
-            activeConnections = []
-            urls = nil
-            lastSyncDiagnostics = nil
+            clearServerSnapshot()
             return
         }
-        let client = APIClient(baseURL: baseURL, token: token)
-
-        let isUp = await client.health()
-        reachable = isUp
-
-        guard isUp else {
-            status = nil
-            devices = []
-            activeConnections = []
+        var client = APIClient(baseURL: baseURL, token: token)
+        do {
+            do {
+                try await client.checkAuth()
+            } catch let error as APIError {
+                // A backend upgrade may rotate credentials while this request
+                // is in flight. Retry once only if the file actually changed.
+                guard case .status(401, _) = error,
+                      let latest = ConfigReader.read(),
+                      let latestURL = ConfigReader.baseURL(for: latest, launchedAddress: BackendController.shared.launchedBindAddress),
+                      latest.token != client.token || latestURL != client.baseURL else { throw error }
+                config = latest
+                client = APIClient(baseURL: latestURL, token: latest.token)
+                try await client.checkAuth()
+            }
+            reachable = true
+            authValid = true
+        } catch {
+            // An HTTP error proves an endpoint answered. A transport/decoding
+            // failure cannot establish that its credentials were rejected.
+            guard !Task.isCancelled else { return }
+            reachable = error is APIError
             authValid = false
-            urls = nil
-            lastSyncDiagnostics = nil
-            return
-        }
-
-        authValid = await client.checkAuth()
-        guard authValid else {
-            status = nil
-            devices = []
-            activeConnections = []
-            urls = nil
-            lastSyncDiagnostics = nil
-            lastError = L10n.localized( "The server is up but rejected the token. Check \(ConfigReader.configPath).")
+            clearServerSnapshot()
+            lastError = error.localizedDescription
             return
         }
         if pairingCode.isEmpty && pairingState == "idle" {
@@ -330,12 +282,7 @@ final class AppModel: ObservableObject {
         }
         await chatPreferences.sync(client: client)
 
-        // Each fetch has INDEPENDENT error handling so one failing call never
-        // blocks the others. Previously status/devices/urls shared one do/catch,
-        // so a status or devices error silently stopped LAN/Public endpoint
-        // discovery — and only the explicit Save path (which calls urls directly)
-        // refreshed it. Endpoint discovery now always runs when the server is
-        // up + authed, exactly like a Save does.
+        // 各接口独立处理错误，避免单次失败阻断地址发现。
         var pollError: String?
         do { status = try await client.status() } catch { pollError = error.localizedDescription }
         do { activeConnections = try await client.activeConnections() } catch { pollError = error.localizedDescription }
@@ -367,12 +314,17 @@ final class AppModel: ObservableObject {
             pollError = error.localizedDescription
         }
         seedNotificationsForm()
-        // C36: the server is reachable + authed here (we passed those guards), so
-        // a failed best-effort diagnostic fetch is NOT a user-facing error — record
-        // it for Debug and clear any stale actionable banner. This stops a transient
-        // poll 500 from showing up as "Server returned HTTP 500" in Sync Control.
+        // 后台诊断错误只写入调试字段。
         lastPollError = pollError
         lastError = nil
+    }
+
+    private func clearServerSnapshot() {
+        status = nil
+        devices = []
+        activeConnections = []
+        urls = nil
+        lastSyncDiagnostics = nil
     }
 
     // Mirror server changes without overwriting unsaved edits. File paths are
@@ -399,12 +351,7 @@ final class AppModel: ObservableObject {
     private func applyURLs(_ fetched: ServerURLs) {
         urls = fetched
 
-        // Keep the Public URL editor MIRRORING the server's saved value, unless
-        // the user is actively editing it. The old "seed once" logic captured an
-        // empty value during the brief window before the backend finished
-        // loading config, then never re-synced — so a saved Public URL looked
-        // cleared/"unknown" after a restart. We only avoid overwriting the field
-        // while the user has unsaved edits (input != the value we last seeded).
+        // 仅在没有未保存编辑时回填公网地址。
         let serverPublic = fetched.public.baseUrl
         if publicURLInput == lastSeededPublicURL {
             publicURLInput = serverPublic
@@ -466,13 +413,6 @@ final class AppModel: ObservableObject {
     }
 
     // MARK: - IMCore helper install (C26 / C28)
-
-    /// True when the server reports the advanced message-action helper as usable.
-    var helperAvailable: Bool { status?.messageActions?.available ?? false }
-
-    /// The current helper lifecycle state (missing | not_runnable |
-    /// unsupported_selectors | ready), or nil before the first status read.
-    var helperState: String? { status?.messageActions?.state }
 
     /// Installs the bundled IMCore helper into `~/.micago/bin` (the location the
     /// backend also scans), forces the running backend to re-scan immediately,
@@ -699,19 +639,23 @@ final class AppModel: ObservableObject {
         guard let baseURL else { return false }
         notifBusy = true
         defer { notifBusy = false }
+        let submittedServiceAccount = serviceAccountPath
+        let submittedGoogleServices = googleServicesPath
         let client = APIClient(baseURL: baseURL, token: token)
         do {
             let resp = try await client.setNotificationsConfig(
                 enabled: notifEnabled,
                 provider: fcmEnabled ? "fcm" : "none",
-                // C60: honour the user's preview choice — this used to be
-                // hardcoded to "sender", which stripped message text from pushes.
                 preview: notifPreview,
                 fcmEnabled: fcmEnabled, fcmProjectID: fcmProjectID,
-                serviceAccountPath: serviceAccountPath,
-                googleServicesPath: googleServicesPath,
+                serviceAccountPath: submittedServiceAccount,
+                googleServicesPath: submittedGoogleServices,
                 publicURLSync: firestoreURLSync,
                 clearFirebaseConfig: clearFirebaseConfig)
+            // Empty editors preserve saved backend references. Keep newer,
+            // unsaved selections made while the request was in flight.
+            if serviceAccountPath == submittedServiceAccount { serviceAccountPath = "" }
+            if googleServicesPath == submittedGoogleServices { googleServicesPath = "" }
             firestoreSyncActive = resp.firestoreSyncEnabled
             let fcmReady = resp.implemented.contains("fcm")
             notifResult = "Saved. FCM \(fcmReady ? "configured" : (fcmEnabled ? "config invalid" : "off"))."

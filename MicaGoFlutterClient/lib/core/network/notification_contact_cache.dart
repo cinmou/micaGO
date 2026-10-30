@@ -3,15 +3,8 @@ import 'dart:io';
 
 import '../storage/secure_store.dart';
 
-/// C60: a small persisted handle → {contact name, avatar file} cache so the
-/// **FCM background isolate** can title a push with the on-device contact name
-/// and show the contact's photo. The isolate has no ContactsService (and may
-/// run in a fresh process), so the main isolate writes this cache whenever the
-/// chat list + contacts are available, and the isolate only reads it.
-///
-/// Storage is SecureStore (already proven to work from the background isolate —
-/// the muted-chats check uses it there). Avatar bytes live as small PNG files;
-/// only their paths are stored here.
+/// Main-isolate contact names and avatar paths used by background FCM.
+/// SecureStore holds the index; avatar bytes remain in separate local files.
 const String notificationContactCacheKey = 'micago.notif_contact_cache.v1';
 
 /// Hard cap so the cache can't grow unbounded on huge chat lists.
@@ -26,10 +19,13 @@ class NotificationContact {
 /// Handles must compare the same on both sides: trim + lowercase (emails);
 /// phone numbers keep their exact server format, which both the chat list and
 /// the push payload take verbatim from chat.db's handle id.
-String normalizeNotificationHandle(String handle) => handle.trim().toLowerCase();
+String normalizeNotificationHandle(String handle) =>
+    handle.trim().toLowerCase();
 
 /// Pure: serializes the cache to its stored JSON form (testable).
-String encodeNotificationContactCache(Map<String, NotificationContact> entries) {
+String encodeNotificationContactCache(
+  Map<String, NotificationContact> entries,
+) {
   final out = <String, dynamic>{};
   for (final e in entries.entries) {
     if (out.length >= notificationContactCacheMax) break;

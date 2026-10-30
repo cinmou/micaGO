@@ -1,6 +1,6 @@
 # 开发、测试与发布
 
-下面命令从仓库根目录开始。版本以各组件版本文件为准；目前为 0.90.0（Muscovite），Flutter build number 为 90。改版本时保留历史版本比较测试中的旧样本。
+下面命令从仓库根目录开始。版本以各组件版本文件为准；目前为 0.91.0（Muscovite），Flutter build number 为 91。改版本时保留历史版本比较测试中的旧样本。
 
 ## 本地开发
 
@@ -52,7 +52,7 @@ macOS 上的 Core 测试不等于 WinUI 构建通过。XAML、Composition、通�
 | Windows | Core 契约测试、Windows 构建；原生界面改动做实机检查 |
 | 文档 | 本地链接、锚点、代码路径、命令和三语言入口；纯文档修改不重打应用 |
 
-Companion 的针对性检查在 [scripts](../MicaGoServer/micago-mac-companion/scripts)：`test-dashboard-window.sh`、`test-backend-restart.sh`、`test-startup-ownership.sh`、`test-tunnel-recovery.sh`、`test-update-validation.sh` 等。脚本通过只证明它覆盖的行为。
+Companion 的针对性检查在 [scripts](../MicaGoServer/micago-mac-companion/scripts)：`test-api-client.sh`、`test-connection-payload.sh`、`test-dashboard-window.sh`、`test-dashboard-lifecycle.sh`、`test-backend-restart.sh`、`test-startup-ownership.sh`、`test-tunnel-recovery.sh`、`test-update-validation.sh` 等。脚本通过只证明它覆盖的行为。`test-dashboard-lifecycle.sh` 需要 macOS 15+ 的桌面会话，使用隔离的 SwiftUI 测试应用验证无窗口启动、隐藏窗口恢复、最小化和关闭后重开，不启动后端或读取联系人。
 
 旧 smoke 脚本有些早于独立设备凭据和 TLS。运行前先读脚本，不把旧脚本的协议假设当成当前要求。跨设备验收使用[手动检查](manual-test-flow.md)。
 
@@ -66,7 +66,7 @@ cd MicaGoServer/micago-mac-companion
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPLE_TEAM_ID="TEAMID" \
 NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE="micaGO-notary" \
-VERSION=0.90.0 scripts/package-dmg.sh
+VERSION=0.91.0 scripts/package-dmg.sh
 ```
 
 公证凭据预先由 `notarytool store-credentials` 放入钥匙串；不要把密码和私钥写进文档或 shell 历史。Sparkle EdDSA 私钥也由发布环境安全提供。

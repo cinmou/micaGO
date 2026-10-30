@@ -2,21 +2,20 @@ package notify
 
 import (
 	"context"
-	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
+
+	"cloud.google.com/go/auth"
 )
 
 // FCM + Firestore OAuth2 scopes (one token serves both).
@@ -52,128 +51,115 @@ func ParseServiceAccount(data []byte) (*ServiceAccount, error) {
 	if err := json.Unmarshal(data, &sa); err != nil {
 		return nil, fmt.Errorf("parse service account JSON: %w", err)
 	}
+	if sa.Type != "service_account" {
+		return nil, fmt.Errorf("expected a Google service_account credential")
+	}
 	if strings.TrimSpace(sa.ClientEmail) == "" || strings.TrimSpace(sa.PrivateKey) == "" {
 		return nil, fmt.Errorf("service account missing client_email or private_key")
 	}
 	if sa.TokenURI == "" {
 		sa.TokenURI = "https://oauth2.googleapis.com/token"
 	}
-	if _, err := sa.parsedKey(); err != nil {
+	if err := sa.validatePrivateKey(); err != nil {
 		return nil, err
 	}
 	return &sa, nil
 }
 
-func (sa *ServiceAccount) parsedKey() (*rsa.PrivateKey, error) {
+func (sa *ServiceAccount) validatePrivateKey() error {
 	block, _ := pem.Decode([]byte(sa.PrivateKey))
 	if block == nil {
-		return nil, fmt.Errorf("service account private_key is not valid PEM")
+		return errors.New("service account private_key is not valid PEM")
 	}
 	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
-		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
-			return rsaKey, nil
+		if _, ok := key.(*rsa.PrivateKey); ok {
+			return nil
 		}
-		return nil, fmt.Errorf("service account key is not RSA")
+		return errors.New("service account key is not RSA")
 	}
-	if rsaKey, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
-		return rsaKey, nil
+	if _, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return nil
 	}
-	return nil, fmt.Errorf("could not parse service account private key")
+	return errors.New("could not parse service account private key")
 }
 
-// TokenSource mints and caches OAuth2 access tokens from a service account via
-// the JWT-bearer grant. Safe for concurrent use.
+// TokenSource 将 Google 的签名、换令牌和缓存接入通知接口。
 type TokenSource struct {
-	sa     *ServiceAccount
-	scopes []string
-	client *http.Client
-
-	mu      sync.Mutex
-	token   string
-	expires time.Time
+	provider auth.TokenProvider
 }
 
-func NewTokenSource(sa *ServiceAccount, client *http.Client, scopes ...string) *TokenSource {
+func NewTokenSource(sa *ServiceAccount, client *http.Client, scopes ...string) (*TokenSource, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
-	return &TokenSource{sa: sa, scopes: scopes, client: client}
+	provider, err := auth.New2LOTokenProvider(&auth.Options2LO{
+		Email:        sa.ClientEmail,
+		PrivateKey:   []byte(sa.PrivateKey),
+		PrivateKeyID: sa.PrivateKeyID,
+		TokenURL:     sa.TokenURI,
+		Scopes:       scopes,
+		Client:       client,
+		// SDK debug logging can include JWT assertions and token response bodies.
+		// Keep it disabled even if GOOGLE_SDK_GO_LOGGING_LEVEL is set globally.
+		Logger: slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize Google authorization: %w", err)
+	}
+	fetch := googleTokenFetch(func(ctx context.Context) (*auth.Token, error) {
+		token, err := provider.Token(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Google access tokens expire. Do not let a malformed response become
+		// an indefinitely cached token (the library permits zero expiry).
+		if token.Value == "" || token.Expiry.IsZero() {
+			return nil, errors.New("Google OAuth response missing access_token or expires_in")
+		}
+		return token, nil
+	})
+	return &TokenSource{provider: auth.NewCachedTokenProvider(fetch, &auth.CachedTokenProviderOptions{
+		ExpireEarly: time.Minute,
+		// Refresh inside the caller's context, never in an unowned background task.
+		DisableAsyncRefresh: true,
+	})}, nil
 }
 
-// Token returns a cached access token, refreshing when fewer than 60s remain.
 func (ts *TokenSource) Token(ctx context.Context) (string, error) {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-	if ts.token != "" && time.Until(ts.expires) > 60*time.Second {
-		return ts.token, nil
-	}
-
-	assertion, err := ts.signedAssertion(time.Now())
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	form.Set("assertion", assertion)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ts.sa.TokenURI, strings.NewReader(form.Encode()))
+	token, err := ts.provider.Token(ctx)
 	if err != nil {
-		return "", err
+		return "", googleTokenError{cause: err}
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := ts.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("oauth token request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("oauth token request failed: HTTP %d", resp.StatusCode)
-	}
-	var out struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("decode oauth token: %w", err)
-	}
-	if out.AccessToken == "" {
-		return "", fmt.Errorf("oauth token response had no access_token")
-	}
-	ts.token = out.AccessToken
-	ts.expires = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second)
-	return ts.token, nil
+	return token.Value, nil
 }
 
-// signedAssertion builds and RS256-signs the JWT used for the token exchange.
-func (ts *TokenSource) signedAssertion(now time.Time) (string, error) {
-	key, err := ts.sa.parsedKey()
-	if err != nil {
-		return "", err
-	}
-	header := map[string]string{"alg": "RS256", "typ": "JWT"}
-	if ts.sa.PrivateKeyID != "" {
-		header["kid"] = ts.sa.PrivateKeyID
-	}
-	claims := map[string]any{
-		"iss":   ts.sa.ClientEmail,
-		"scope": strings.Join(ts.scopes, " "),
-		"aud":   ts.sa.TokenURI,
-		"iat":   now.Unix(),
-		"exp":   now.Add(time.Hour).Unix(),
-	}
-	headerJSON, _ := json.Marshal(header)
-	claimsJSON, _ := json.Marshal(claims)
-	signingInput := b64url(headerJSON) + "." + b64url(claimsJSON)
+type googleTokenFetch func(context.Context) (*auth.Token, error)
 
-	digest := sha256.Sum256([]byte(signingInput))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])
-	if err != nil {
-		return "", fmt.Errorf("sign JWT: %w", err)
-	}
-	return signingInput + "." + b64url(sig), nil
-}
+func (f googleTokenFetch) Token(ctx context.Context) (*auth.Token, error) { return f(ctx) }
 
-func b64url(b []byte) string {
-	return base64.RawURLEncoding.EncodeToString(b)
+// The SDK error can include Google's raw response body. Expose only status or
+// transport failure here; preserve the cause for errors.Is/As without logging it.
+type googleTokenError struct{ cause error }
+
+func (e googleTokenError) Unwrap() error { return e.cause }
+
+func (e googleTokenError) Error() string {
+	if errors.Is(e.cause, context.Canceled) {
+		return "Google OAuth token request canceled"
+	}
+	if errors.Is(e.cause, context.DeadlineExceeded) {
+		return "Google OAuth token request deadline exceeded"
+	}
+	var responseError *auth.Error
+	if errors.As(e.cause, &responseError) && responseError.Response != nil {
+		return fmt.Sprintf("Google OAuth token request failed: HTTP %d", responseError.Response.StatusCode)
+	}
+	var networkError net.Error
+	if errors.As(e.cause, &networkError) && networkError.Timeout() {
+		return "Google OAuth token request timed out"
+	}
+	return "Google OAuth token request failed"
 }

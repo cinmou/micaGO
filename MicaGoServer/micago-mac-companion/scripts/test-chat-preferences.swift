@@ -1,6 +1,11 @@
 import Foundation
 
-enum APIError: Error { case status(Int) }
+enum APIError: LocalizedError {
+    case status(Int, message: String? = nil)
+    var errorDescription: String? {
+        switch self { case .status(let code, let message): return "HTTP \(code): \(message ?? "Request failed")" }
+    }
+}
 
 @MainActor
 final class APIClient {
@@ -10,12 +15,15 @@ final class APIClient {
     var replies: [String: ChatPreferencesResponse] = [:]
     var offline = false
     var loseReply = false
+    var failure: Error?
     func chatPreferences() async throws -> ChatPreferencesResponse {
-        if offline { throw APIError.status(503) }
+        if let failure { throw failure }
+        if offline { throw URLError(.notConnectedToInternet) }
         return ChatPreferencesResponse(serverId: serverId, revision: revision, data: Array(rows.values))
     }
     func patchChatPreferences(_ request: ChatPreferenceMutation) async throws -> ChatPreferencesResponse {
-        if offline { throw APIError.status(503) }
+        if let failure { throw failure }
+        if offline { throw URLError(.notConnectedToInternet) }
         if let reply = replies[request.mutationId] { return reply }
         guard request.serverId == serverId,
               request.changes.allSatisfy({ $0.baseRevision == (rows[$0.chatGuid]?.revision ?? 0) }) else {
@@ -86,6 +94,23 @@ struct PreferenceTests {
         api.serverId = String(repeating: "a", count: 32)
         await a.sync(client: api)
         precondition(api.rows["private-route"]?.hidden == true)
+        for code in [401, 403, 503] {
+            api.failure = APIError.status(code, message: "Service failure")
+            await a.sync(client: api)
+            precondition(a.errorKey == nil && a.errorMessage?.contains("HTTP \(code)") == true,
+                         "HTTP errors must keep their actual status instead of claiming offline")
+        }
+        api.failure = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid response"))
+        await a.sync(client: api)
+        precondition(a.errorKey == nil && a.errorMessage != nil, "invalid JSON is not a network outage")
+        for code in [URLError.notConnectedToInternet, .timedOut] {
+            api.failure = URLError(code)
+            await a.sync(client: api)
+            precondition(a.errorKey == "prefs.offline" && a.errorMessage == nil)
+        }
+        api.failure = nil
+        await a.sync(client: api)
+        precondition(a.errorKey == nil && a.errorMessage == nil, "successful retry clears the error")
         print("PASS Companion preferences: devices, offline restart, replay, conflicts, server scope")
     }
 }

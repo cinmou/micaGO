@@ -51,23 +51,12 @@ func TestParseServiceAccount(t *testing.T) {
 	if _, err := ParseServiceAccount([]byte(`{"type":"service_account"}`)); err == nil {
 		t.Fatalf("SA without key/email should fail")
 	}
-	if _, err := ParseServiceAccount([]byte(`{"client_email":"x","private_key":"not-pem"}`)); err == nil {
+	if _, err := ParseServiceAccount([]byte(`{"type":"service_account","client_email":"x","private_key":"not-pem"}`)); err == nil {
 		t.Fatalf("SA with bad key should fail")
 	}
-}
-
-func TestSignedAssertionHasThreeSegments(t *testing.T) {
-	sa, err := ParseServiceAccount(testServiceAccountJSON(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := NewTokenSource(sa, nil, scopeFCM, scopeFirestore)
-	jwt, err := ts.signedAssertion(time.Now())
-	if err != nil {
-		t.Fatalf("sign: %v", err)
-	}
-	if parts := strings.Split(jwt, "."); len(parts) != 3 {
-		t.Fatalf("expected 3 JWT segments, got %d", len(parts))
+	wrongType := strings.Replace(string(testServiceAccountJSON(t)), `"service_account"`, `"authorized_user"`, 1)
+	if _, err := ParseServiceAccount([]byte(wrongType)); err == nil {
+		t.Fatal("non-service-account credential should fail")
 	}
 }
 

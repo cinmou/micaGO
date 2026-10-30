@@ -63,7 +63,6 @@ struct PublicEndpoint: Codable {
     var reachable: Reachability
     var providerHint: String?
     var verifyTls: Bool
-    var lastCheckedAt: Int64?
 }
 
 struct ServerURLs: Codable {
@@ -80,20 +79,7 @@ struct ServerURLs: Codable {
 struct PublicURLCheckResult: Codable {
     var ok: Bool
     var reachable: Bool
-    var authOk: Bool
     var status: Int
     var baseUrl: String
     var message: String
-}
-
-/// A pairing target the user can pick for the QR code. This is a per-pairing
-/// choice, not a global server mode — local/LAN/public all remain active.
-struct PairingTarget: Identifiable, Hashable {
-    enum Scope: String { case local, lan, `public` }
-    var scope: Scope
-    var label: String
-    var baseUrl: String
-    var wsUrl: String
-
-    var id: String { baseUrl }
 }

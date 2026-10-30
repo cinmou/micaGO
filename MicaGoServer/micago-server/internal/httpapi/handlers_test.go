@@ -153,9 +153,6 @@ func (s stubNotifier) SendTest(context.Context, store.DeviceRecord) error {
 func (s stubNotifier) DispatchNewMessages(context.Context, []store.DeviceRecord, []relaydb.NotificationEvent) error {
 	return s.err
 }
-func (s stubNotifier) ProviderNames() []string {
-	return []string{"none", "webhook", "fcm", "hms", "harmony_push", "ntfy"}
-}
 func (s stubNotifier) ImplementedProviders() []string { return []string{"none", "webhook"} }
 func (s stubNotifier) Enabled() bool                  { return true }
 func (s stubNotifier) PreviewMode() string            { return "sender" }

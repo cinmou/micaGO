@@ -20,17 +20,9 @@ struct NotificationFormValues: Equatable {
     }
 }
 
-// POST /api/server/notifications response (v0.12). Mirrors the server's
-// notification status plus two flags. Never contains secrets.
-struct NotificationsConfigResponse: Codable {
-    var enabled: Bool
-    var provider: String
-    var preview: String
-    var providers: [String]
+/// Fields consumed after saving notification configuration.
+struct NotificationsConfigResponse: Decodable {
     var implemented: [String]
-    var stub: [String]
-    var serviceAccountPathSet: Bool
-    var googleServicesPathSet: Bool
     var firestoreSyncEnabled: Bool
 }
 

@@ -61,7 +61,7 @@ private struct ChatVisibilityCard: View {
     }
     var body: some View {
         SectionCard(title: L10n.tr("prefs.title")) {
-            Text(L10n.tr(preferences.errorKey ?? "prefs.description"))
+            Text(preferences.errorMessage ?? L10n.tr(preferences.errorKey ?? "prefs.description"))
                 .font(.callout).foregroundStyle(.secondary)
             HStack {
                 Picker(L10n.tr("prefs.select"), selection: $selected) {
@@ -91,7 +91,7 @@ private struct ChatVisibilityCard: View {
                     Button(L10n.tr("prefs.server")) { Task { await preferences.resolve(useMine: false, client: client) } }
                     Button(L10n.tr("prefs.mine")) { Task { await preferences.resolve(useMine: true, client: client) } }
                 }
-                if preferences.pending || preferences.errorKey != nil {
+                if preferences.pending || preferences.errorKey != nil || preferences.errorMessage != nil {
                     Button(L10n.tr("sync.retry")) { Task { if let client { await preferences.sync(client: client) } } }
                 }
             }.disabled(preferences.busy)

@@ -9,11 +9,31 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"micagoserver/internal/config"
 )
+
+func TestPublicURLFailuresReportHTTPStatusWithoutGuessingCause(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer endpoint.Close()
+			controller := NewNetworkController(config.Config{PublicBaseURL: endpoint.URL})
+			result := controller.Check(context.Background())
+			if result.Status != status || !result.Reachable || result.OK || result.AuthOK {
+				t.Fatalf("incorrect public endpoint status: %+v", result)
+			}
+			if !strings.Contains(result.Message, "HTTP "+strconv.Itoa(status)) || strings.Contains(result.Message, "rejected") {
+				t.Fatalf("public diagnostic guessed a credential failure: %s", result.Message)
+			}
+		})
+	}
+}
 
 func newURLHandlers(httpAddr string, network *NetworkController) *Handlers {
 	return NewHandlers(

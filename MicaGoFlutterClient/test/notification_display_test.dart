@@ -68,7 +68,12 @@ void main() {
         notificationReplyActionId,
         notificationReadActionId,
       ]);
-      expect(notificationReadThrough(notification['payload'] as String), 200);
+      expect(
+        NotificationTarget.parse(
+          notification['payload'] as String,
+        )?.readThrough,
+        200,
+      );
     },
   );
   test(
@@ -84,7 +89,10 @@ void main() {
       );
       final android = shown.last['platformSpecifics'] as Map;
       expect((android['actions'] as List).length, 1);
-      expect(notificationReadThrough(shown.last['payload'] as String), isNull);
+      expect(
+        NotificationTarget.parse(shown.last['payload'] as String)?.readThrough,
+        isNull,
+      );
       expect(notificationTimestampMs({'createdAt': 999999}), isNull);
     },
   );

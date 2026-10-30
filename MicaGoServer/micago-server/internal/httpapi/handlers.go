@@ -102,7 +102,6 @@ type eventBroadcaster interface {
 type notificationDispatcher interface {
 	SendTest(ctx context.Context, device store.DeviceRecord) error
 	DispatchNewMessages(ctx context.Context, devices []store.DeviceRecord, events []relaydb.NotificationEvent) error
-	ProviderNames() []string
 	ImplementedProviders() []string
 	Enabled() bool
 	PreviewMode() string
@@ -247,10 +246,6 @@ func NewHandlers(
 	serverCfg config.Config,
 	status StatusDeps,
 ) *Handlers {
-	notificationProviders := []string{"none", "webhook", "fcm", "hms", "harmony_push", "ntfy"}
-	if notifier != nil {
-		notificationProviders = notifier.ProviderNames()
-	}
 	return &Handlers{
 		queries:         queries,
 		logger:          logger,
@@ -276,7 +271,7 @@ func NewHandlers(
 				Devices:       true,
 				Notifications: true,
 			},
-			NotificationProviders: notificationProviders,
+			NotificationProviders: config.NotificationProviders(),
 		},
 	}
 }
@@ -1915,10 +1910,10 @@ func validateDeviceRecord(device store.DeviceRecord, supportedProviders []string
 	if device.Mode != "" && !slices.Contains([]string{"lan", "lan_public"}, device.Mode) {
 		return errors.New("mode must be one of: lan, lan_public")
 	}
-	if !slices.Contains([]string{"none", "webhook", "fcm", "hms", "harmony_push", "ntfy"}, device.PushProvider) {
-		return errors.New("pushProvider must be one of: none, webhook, fcm, hms, harmony_push, ntfy")
+	if !slices.Contains(config.NotificationProviders(), device.PushProvider) {
+		return errors.New("pushProvider must be one of: " + strings.Join(config.NotificationProviders(), ", "))
 	}
-	if len(supportedProviders) > 0 && !slices.Contains(supportedProviders, device.PushProvider) && device.PushProvider != "harmony_push" {
+	if len(supportedProviders) > 0 && !slices.Contains(supportedProviders, device.PushProvider) {
 		return errors.New("pushProvider is not supported by this server")
 	}
 	if device.PushEnabled && device.PushProvider != "none" {

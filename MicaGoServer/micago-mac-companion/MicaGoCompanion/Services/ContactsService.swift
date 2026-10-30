@@ -22,9 +22,8 @@ struct ContactAddressRow: Identifiable, Hashable {
     var id: String { "\(name)|\(address)" }
 }
 
-/// Companion-only, local-only Contacts integration (v0.11.4). Resolves iMessage
-/// handle addresses to display names for the UI. Read-only; in-memory cache;
-/// never written to relay.db, sent to the server, or uploaded to any cloud.
+/// Read-only Contacts cache for Companion name matching and the local backend's
+/// contact-resolution API. Only names and phone/email addresses are fetched.
 @MainActor
 final class ContactsStore: ObservableObject {
     @Published private(set) var status: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)

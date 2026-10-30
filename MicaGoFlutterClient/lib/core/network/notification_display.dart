@@ -272,13 +272,14 @@ Future<void> cancelChatNotification(
 
 /// Native check-and-cancel stays on Android's main thread alongside posting.
 Future<void> cancelNotificationThrough(String payload) async {
-  final chat = notificationChatFromPayload(payload);
-  final through = notificationReadThrough(payload);
+  final target = NotificationTarget.parse(payload);
+  final chat = target?.chatGuid;
+  final through = target?.readThrough;
   if (chat == null || through == null) return;
   await clearChatNotificationBuffer(
     chat,
     through: through,
-    deviceId: notificationDeviceFromPayload(payload),
+    deviceId: target?.deviceId,
   );
   if (!Platform.isAndroid) return;
   await AndroidConversations.cancelThrough(

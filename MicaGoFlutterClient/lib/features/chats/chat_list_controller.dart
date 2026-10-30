@@ -63,8 +63,6 @@ class ChatListController extends ChangeNotifier {
   /// When true, also request debug-only/noise-only chats from the server.
   bool includeDebug = false;
 
-  bool get isLoading => state == ChatListState.loading;
-
   void startRealtime() {
     _wsSub ??= app.ws.events.listen(_onWsEvent);
     // Delta catch-up is already applied to the cache by AppController. The chat

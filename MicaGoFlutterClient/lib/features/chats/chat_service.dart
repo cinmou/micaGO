@@ -72,8 +72,4 @@ extension ChatServiceDisplay on ChatService {
         return false;
     }
   }
-
-  /// iMessage-only sendability (the SMS setting defaults off). Kept for the
-  /// chat-list label; the composer uses [canSendWith] with the live setting.
-  bool get canSend => canSendWith(allowSmsSend: false);
 }

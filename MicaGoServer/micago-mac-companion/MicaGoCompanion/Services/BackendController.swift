@@ -1,7 +1,6 @@
 import Foundation
 import AppKit
 import Combine
-import Security
 
 /// Lifecycle state of the *companion-launched* backend process. This is purely
 /// about the child process; reachability/auth come from the API poll and are
@@ -39,6 +38,7 @@ final class BackendController: ObservableObject {
     @Published private(set) var failureKind: BackendFailureKind?
     @Published private(set) var nextRestartInfo: String?
     @Published private(set) var binarySource: String = "none"  // bundled | override | default | none
+    @Published private(set) var launchedBindAddress: String?
 
     // Persisted settings
     @Published var userBinaryPath: String { didSet { defaults.set(userBinaryPath, forKey: K.binaryPath) } }
@@ -67,7 +67,6 @@ final class BackendController: ObservableObject {
     private static let maxLogLines = 300
     static let defaultLANBindAddress = "0.0.0.0:3000"
     private let defaults: UserDefaults
-    private let prepareConfiguration: () throws -> Void
 
     private enum K {
         static let binaryPath = "serverBinaryPath"
@@ -78,9 +77,8 @@ final class BackendController: ObservableObject {
         static let bindAddress = "serverBindAddress"
     }
 
-    init(defaults: UserDefaults = .standard, prepareConfiguration: (() throws -> Void)? = nil) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.prepareConfiguration = prepareConfiguration ?? Self.ensureConfigFile
         userBinaryPath = defaults.string(forKey: K.binaryPath) ?? ""
         manageLifecycleWithApp = defaults.object(forKey: K.autoStart) as? Bool ?? true
         autoRestart = defaults.bool(forKey: K.autoRestart)
@@ -90,23 +88,13 @@ final class BackendController: ObservableObject {
         refreshInstalledState()
     }
 
-    // MARK: - Binary resolution (override → NEWEST of cached/bundled)
+    // MARK: - Binary resolution
 
     struct ResolvedBinary { let path: String; let source: String }
 
-    /// C17 freshness policy. The old order (override → cached ~/.micago/bin →
-    /// bundled) let a stale cached binary silently shadow newer builds — fixes
-    /// like the chat.db immutable removal then never actually ran. Now:
-    ///   1. An explicit user override always wins (deliberate choice).
-    ///   2. Otherwise the NEWEST (by modification time) of the cached dev build
-    ///      and the bundled binary wins. A fresh `scripts/build-backend.sh`
-    ///      output beats an older bundle; a newer app bundle beats a stale cache.
-    /// A skipped-stale candidate raises `staleBinaryWarning` — never silent.
+    /// 显式路径优先，其次使用内嵌后端，最后查找本机开发构建。
     func resolveBinary() -> ResolvedBinary? {
         let fm = FileManager.default
-        // Debug override (highest priority): launch the binary named in
-        // MICAGO_BACKEND_BIN. Lets you point the Companion at a freshly-built
-        // backend without touching cache-selection logic.
         let envOverride = (ProcessInfo.processInfo.environment["MICAGO_BACKEND_BIN"] ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !envOverride.isEmpty {
@@ -120,14 +108,7 @@ final class BackendController: ObservableObject {
             return ResolvedBinary(path: override, source: "override")
         }
 
-        // C27: the bundled backend ships with the app and is the exact version
-        // the Companion is built against, so it is ALWAYS preferred over the
-        // cached `~/.micago/bin/micago` dev build. The previous "newest mtime
-        // wins" could silently launch a stale cached binary (an old build with a
-        // recent mtime), producing inconsistent versions across status /
-        // --version / the Companion. For local backend development, point at a
-        // fresh build explicitly with MICAGO_BACKEND_BIN or the binary-path
-        // override above — neither of which is affected by this.
+        // 优先使用与 Companion 一起构建的后端，避免旧缓存覆盖内嵌版本。
         if let bundled = Bundle.main.resourceURL?.appendingPathComponent("micago").path,
            fm.isExecutableFile(atPath: bundled) {
             return ResolvedBinary(path: bundled, source: "bundled")
@@ -144,11 +125,9 @@ final class BackendController: ObservableObject {
             .flatMap { $0 } ?? .distantPast
     }
 
-    // MARK: - Version probing + stale detection (C17)
+    // MARK: - Version probing and binary freshness
 
-    /// One probed `--version` line, e.g.
-    /// "MicaGoServer v0.15.0 commit=abc1234 buildTime=2026-06-12T11:00:00Z go=go1.26 darwin/arm64".
-    /// nil line = the binary predates --version (pre-v0.15) and is stale by definition.
+    /// 后端 --version 的输出；探测失败或不支持该参数时为 nil。
     @Published private(set) var launchedVersionLine: String?
     @Published private(set) var staleBinaryWarning: String?
 
@@ -188,7 +167,7 @@ final class BackendController: ObservableObject {
         let line = Self.probeVersionLine(at: resolved.path)
         launchedVersionLine = line
         if line == nil {
-            staleBinaryWarning = L10n.localized( "The selected backend (\(resolved.source)) doesn't report a version, so it predates v0.15 and lacks recent sync fixes. Rebuild it with MicaGoServer/micago-server/scripts/build-backend.sh")
+            staleBinaryWarning = L10n.localized( "The selected backend (\(resolved.source)) did not return a usable version. Check that the binary can run and supports --version.")
         } else if resolved.source == "override" {
             // An override pins an exact binary; warn if a newer build exists elsewhere.
             let overrideDate = Self.modificationDate(resolved.path)
@@ -203,12 +182,10 @@ final class BackendController: ObservableObject {
             staleBinaryWarning = nil
         }
         if let line { appendLog("backend freshness: \(line) [\(resolved.source)] \(resolved.path)") }
-        else { appendLog("backend freshness: --version probe failed for \(resolved.path) (stale pre-v0.15 binary)") }
+        else { appendLog("backend freshness: --version probe failed for \(resolved.path)") }
     }
 
-    /// C17 Part D: stop, re-resolve (newest build wins), start, and let the
-    /// status poll re-confirm the running version. Resolution happens per
-    /// start(), so this simply forces the cycle and re-probes.
+    /// 重新解析后端路径并重启。
     func restartWithLatestBackend() {
         appendLog("restart with latest backend requested")
         refreshBinaryFreshness()
@@ -261,25 +238,16 @@ final class BackendController: ObservableObject {
         failureKind = nil
         nextRestartInfo = nil
         processState = .starting
-        // C17: record exactly which build we are about to launch, and warn if
-        // it is a stale pre-version binary — never silently.
+        // Record the binary version when the probe succeeds.
         refreshBinaryFreshness()
 
         // Debug diagnostics: which binary, why, when it was built, and what its
         // own --version reports. Makes a stale-binary mismatch obvious in the Log.
         let mtime = Self.modificationDate(resolved.path)
         appendLog("backend launch: source=\(resolved.source) path=\(resolved.path)")
-        appendLog("backend launch: modified=\(mtime) version=\(launchedVersionLine ?? "<no --version (pre-v0.15 / stale)>")")
+        appendLog("backend launch: modified=\(mtime) version=\(launchedVersionLine ?? "<version unavailable>")")
         if resolved.source == "env-override" {
             appendLog("backend launch: using MICAGO_BACKEND_BIN override")
-        }
-
-        do {
-            try prepareConfiguration()
-        } catch {
-            processState = .failed("could not create config: \(error.localizedDescription)")
-            appendLog("error: failed to prepare ~/.micago/config.yaml: \(error.localizedDescription)")
-            return
         }
 
         let proc = Process()
@@ -311,6 +279,7 @@ final class BackendController: ObservableObject {
         do {
             try proc.run()
             process = proc
+            launchedBindAddress = addr
             processState = .running
             appendLog("started backend (\(resolved.source)): \(resolved.path) --addr \(addr)")
             scheduleHealthyReset()
@@ -319,73 +288,6 @@ final class BackendController: ObservableObject {
             processState = .failed("could not launch: \(error.localizedDescription)")
             appendLog("error: failed to start backend: \(error.localizedDescription)")
         }
-    }
-
-    private static func ensureConfigFile() throws {
-        let fm = FileManager.default
-        let home = NSHomeDirectory()
-        let dir = (home as NSString).appendingPathComponent(".micago")
-        let path = (dir as NSString).appendingPathComponent("config.yaml")
-        try fm.createDirectory(atPath: dir, withIntermediateDirectories: true,
-                               attributes: [.posixPermissions: 0o700])
-        if fm.fileExists(atPath: path) {
-            if ConfigReader.read() == nil {
-                throw NSError(domain: "MicaGoConfig", code: 1, userInfo: [
-                    NSLocalizedDescriptionKey: "existing ~/.micago/config.yaml could not be read or has an empty auth.token"
-                ])
-            }
-            try migrateLegacyLoopbackConfig(path: path)
-            return
-        }
-        let token = try randomHex(byteCount: 32)
-        // C17: default to all interfaces so a phone on the same LAN can pair
-        // out of the box. Safe because the generated bearer token is required
-        // for every API/WS call, and the server logs a loud warning for
-        // non-local binds. Users can restrict to "This Mac only" in Settings.
-        let body = """
-        server:
-          addr: "0.0.0.0:3000"
-          public_url: ""
-
-        network:
-          public_base_url: ""
-          verify_tls: true
-          preferred_pairing_endpoint: "auto"
-
-        auth:
-          token: "\(token)"
-
-        sync:
-          interval: "5s"
-          update_lookback: "168h0m0s"
-
-        notifications:
-          enabled: false
-          provider: "none"
-          preview: "sender"
-
-        webhook:
-          url: ""
-
-        fcm:
-          enabled: false
-          project_id: ""
-          service_account_path: ""
-
-        hms:
-          enabled: false
-          app_id: ""
-          app_secret: ""
-          token_cache_path: "~/.micago/hms-token.json"
-
-        firebase:
-          public_url_sync: false
-          url_collection: "server"
-          url_document: "config"
-
-        """
-        try body.write(toFile: path, atomically: true, encoding: .utf8)
-        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
     }
 
     var effectiveBindAddress: String {
@@ -400,44 +302,6 @@ final class BackendController: ObservableObject {
         default:
             return value
         }
-    }
-
-    private static func migrateLegacyLoopbackConfig(path: String) throws {
-        let text = try String(contentsOfFile: path, encoding: .utf8)
-        var section = ""
-        var changed = false
-        let lines = text.components(separatedBy: "\n").map { raw -> String in
-            let trimmed = raw.trimmingCharacters(in: .whitespaces)
-            if !raw.hasPrefix(" "), trimmed.hasSuffix(":") {
-                section = String(trimmed.dropLast())
-                return raw
-            }
-            guard section == "server" else { return raw }
-            let normalized = trimmed.replacingOccurrences(of: "\"", with: "")
-            guard normalized.hasPrefix("addr:") else { return raw }
-            let value = normalized.dropFirst("addr:".count).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            switch value {
-            case "127.0.0.1:3000", "localhost:3000", "[::1]:3000", "::1:3000":
-                changed = true
-                let indent = raw.prefix { $0 == " " || $0 == "\t" }
-                return "\(indent)addr: \"\(defaultLANBindAddress)\""
-            default:
-                return raw
-            }
-        }
-        if changed {
-            try lines.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
-        }
-    }
-
-    private static func randomHex(byteCount: Int) throws -> String {
-        var bytes = [UInt8](repeating: 0, count: byteCount)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        if status != errSecSuccess {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
-        }
-        return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
     func stop() {
@@ -519,6 +383,7 @@ final class BackendController: ObservableObject {
 
     private func handleTermination(code: Int32) {
         process = nil
+        launchedBindAddress = nil
         lastExitCode = code
         healthyResetWork?.cancel(); healthyResetWork = nil
 
@@ -592,6 +457,8 @@ final class BackendController: ObservableObject {
             recent.contains("read config file") ||
             recent.contains("write config file") ||
             recent.contains("stat config file") ||
+            recent.contains("parse config file") ||
+            recent.contains("create config directory") ||
             recent.contains("parse sync.") ||
             recent.contains("parse --sync-interval") ||
             recent.contains("invalid notifications.") ||
@@ -631,9 +498,7 @@ final class BackendController: ObservableObject {
         }
     }
 
-    /// Defensively mask anything that looks like a bearer/auth token so captured
-    /// stdout/stderr never shows a secret (the server prints the token on first
-    /// run). Replaces long hex runs and `Bearer <x>`.
+    /// Mask long hex values and bearer credentials in captured process output.
     static func redact(_ line: String) -> String {
         var out = line
         if let re = try? NSRegularExpression(pattern: "[0-9a-fA-F]{24,}") {

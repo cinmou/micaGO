@@ -8,30 +8,25 @@ import 'package:path_provider/path_provider.dart';
 import '../../features/chats/models/message_model.dart';
 import '../network/api_client.dart';
 
-/// C63: persistent media cache.
-///
-/// Attachment bytes used to live only in a 48 MB in-memory LRU — every app
-/// restart refetched every photo/preview from the server. This adds a
-/// **permanent disk layer** under the same keys (app-support/media_cache, so
-/// Android doesn't purge it like a temp dir; it is only removed with the app's
-/// data): reads go memory → disk → network, and every network fetch is written
-/// through to disk.
-///
-/// Thumbnail, display-preview, and original bytes use distinct versioned keys,
-/// encoded to safe filenames with URL-safe base64. This prevents an old inline
-/// cache entry containing a full-resolution photo from returning to the feed.
+/// Memory → disk → network, with separate thumbnail/display/original keys.
+/// Pending local sends remain pinned outside the evictable caches.
 class MediaCache {
-  MediaCache._();
-  static final MediaCache instance = MediaCache._();
+  MediaCache({
+    this.maxDiskBytes = 256 * 1024 * 1024,
+    this.maxDiskAge = const Duration(days: 30),
+    int maxMemoryBytes = 48 * 1024 * 1024,
+  }) : _memoryCache = LruByteCache(maxBytes: maxMemoryBytes);
+  static final MediaCache instance = MediaCache();
+  final int maxDiskBytes;
+  final Duration maxDiskAge;
+  final LruByteCache _memoryCache;
+  Future<void> _diskSerial = Future.value();
 
   bool accessAllowed = true;
   Directory? _dir;
   final Map<String, Future<Uint8List>> _inflight = {};
 
-  /// C77: a bounded fetch gate. Every tile used to fire its own request the
-  /// moment it scrolled into view, so one 9-photo message opened nine parallel
-  /// downloads and a fast scroll queued dozens — starving the ones actually on
-  /// screen. Loads past the limit wait instead of piling onto the socket.
+  /// Visible media can jump ahead of queued background downloads.
   static const int _maxConcurrentFetches = 4;
   int _activeFetches = 0;
   final List<Completer<void>> _fetchQueue = [];
@@ -58,10 +53,7 @@ class MediaCache {
     if (_activeFetches > 0) _activeFetches--;
   }
 
-  /// C77: remembers each attachment's decoded aspect ratio (width / height).
-  /// The first view of an image cannot know its shape before the bytes arrive,
-  /// but every later view — scrolling back, reopening the thread — can reserve
-  /// exactly the right box, so the placeholder no longer resizes into place.
+  /// Reserve the last decoded image ratio while its bytes load.
   final Map<String, double> _aspectRatios = {};
 
   double? aspectRatioFor(String key) => _aspectRatios[key];
@@ -71,10 +63,7 @@ class MediaCache {
     _aspectRatios[key] = ratio;
   }
 
-  /// C66: bytes for *pending local sends* (`local-<tempId>` attachment guids),
-  /// pinned outside the evictable LRU. A pending bubble must always hit
-  /// synchronously — falling through to the FutureBuilder meant a spinner (and
-  /// a doomed network fetch for a guid the server has never heard of).
+  /// Pending sends must remain available before server attachment IDs exist.
   final Map<String, Uint8List> _pinned = {};
   final Map<String, Future<Uint8List> Function()> _localPreviews = {};
   final Map<String, Future<Uint8List> Function()> _localOriginals = {};
@@ -101,24 +90,21 @@ class MediaCache {
     _localOriginals.remove(key);
   }
 
-  /// Resolves the cache directory once (called from AppController.bootstrap).
-  /// Until this completes the cache transparently degrades to memory+network —
-  /// no per-load platform-channel hop, and unit/widget tests (no path_provider)
-  /// keep the old behavior.
-  Future<void> init() async {
+  /// [directory] overrides the platform cache directory for isolated storage.
+  Future<void> init({Directory? directory}) async {
     if (_dir != null) return;
     try {
-      final support = await getApplicationSupportDirectory();
-      final root = Directory('${support.path}/media_cache');
-      // C70: v2 — earlier builds could seed a *wrong* local image under a
-      // server key (multi-image sends), permanently caching swapped photos.
-      // Cached media is server-authoritative now; discard the v1 store once.
-      final dir = Directory('${root.path}/v2');
-      await dir.create(recursive: true);
-      _dir = dir;
-      unawaited(_purgeLegacyV1(root));
+      if (directory == null) {
+        final support = await getApplicationSupportDirectory();
+        final root = Directory('${support.path}/media_cache');
+        directory = Directory('${root.path}/v2');
+        unawaited(_purgeLegacyV1(root));
+      }
+      await directory.create(recursive: true);
+      _dir = directory;
+      await prune();
     } catch (_) {
-      // No disk layer this session; everything still works from memory+network.
+      // Disk caching is optional; network and memory remain usable.
     }
   }
 
@@ -198,19 +184,24 @@ class MediaCache {
     Future<Uint8List> Function() fetch, {
     required bool urgent,
   }) async {
-    final file = _fileFor(key);
-    if (file != null) {
-      try {
-        if (await file.exists()) {
-          final bytes = await file.readAsBytes();
-          if (bytes.isNotEmpty) {
-            _memoryCache[key] = bytes;
+    final cached = _dir == null
+        ? null
+        : await _disk(() async {
+            final file = _fileFor(key);
+            if (file == null || !await file.exists()) return null;
+            final stat = await file.stat();
+            if (DateTime.now().difference(stat.modified) > maxDiskAge) {
+              await file.delete();
+              return null;
+            }
+            final bytes = await file.readAsBytes();
+            if (bytes.isEmpty) return null;
+            await file.setLastModified(DateTime.now());
             return bytes;
-          }
-        }
-      } catch (_) {
-        // Disk problems fall through to the network.
-      }
+          }, null);
+    if (cached != null) {
+      _memoryCache[key] = cached;
+      return cached;
     }
     await _acquireFetchSlot(urgent: urgent);
     final Uint8List bytes;
@@ -223,8 +214,6 @@ class MediaCache {
     unawaited(_writeDisk(key, bytes));
     return bytes;
   }
-
-  // --- attachment-shaped helpers (the two fetch paths the app uses) ---------
 
   /// Bounded bytes used by message rows and media grids.
   Future<Uint8List> attachmentPreview(ApiClient api, AttachmentModel a) =>
@@ -287,17 +276,59 @@ class MediaCache {
       ? previewMediaKey(attachment)
       : 'display:v1:${attachment.previewUrl ?? attachment.guid}';
 
-  Future<void> _writeDisk(String key, Uint8List bytes) async {
+  Future<T> _disk<T>(Future<T> Function() action, T fallback) {
+    final result = _diskSerial.then((_) async {
+      try {
+        return await action();
+      } on FileSystemException {
+        return fallback;
+      }
+    });
+    _diskSerial = result.then(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+    return result;
+  }
+
+  Future<void> _writeDisk(String key, Uint8List bytes) => _disk(() async {
     final file = _fileFor(key);
-    if (file == null) return;
-    try {
-      // Write via a temp name so a crash mid-write never leaves a truncated
-      // file that would be served as a "cached" image.
-      final tmp = File('${file.path}.part');
-      await tmp.writeAsBytes(bytes, flush: true);
-      await tmp.rename(file.path);
-    } catch (_) {
-      // Cache write failures are non-fatal.
+    if (file == null || bytes.isEmpty || bytes.length > maxDiskBytes) return;
+    final tmp = File('${file.path}.part');
+    await tmp.writeAsBytes(bytes, flush: true);
+    await tmp.rename(file.path);
+    await _pruneDisk();
+  }, null);
+
+  /// Waits for queued disk writes, then removes expired and least-used entries.
+  Future<void> prune() => _disk(_pruneDisk, null);
+
+  Future<void> _pruneDisk() async {
+    final dir = _dir;
+    if (dir == null) return;
+    final now = DateTime.now();
+    final entries = <({File file, FileStat stat})>[];
+    var total = 0;
+    await for (final entry in dir.list(followLinks: false)) {
+      if (entry is! File) continue;
+      final stat = await entry.stat();
+      final age = now.difference(stat.modified);
+      if (entry.path.endsWith('.part')) {
+        if (age > const Duration(hours: 1)) await entry.delete();
+        continue;
+      }
+      if (stat.size == 0 || age > maxDiskAge) {
+        await entry.delete();
+      } else {
+        entries.add((file: entry, stat: stat));
+        total += stat.size;
+      }
+    }
+    entries.sort((a, b) => a.stat.modified.compareTo(b.stat.modified));
+    for (final entry in entries) {
+      if (total <= maxDiskBytes) break;
+      await entry.file.delete();
+      total -= entry.stat.size;
     }
   }
 }
@@ -307,17 +338,7 @@ class MediaCache {
 String fileNameForMediaKey(String key) =>
     base64UrlEncode(utf8.encode(key)).replaceAll('=', '');
 
-/// The in-memory hot layer over the disk cache (thread bubbles + viewer).
-///
-/// Bounded LRU by total bytes (C51): an unbounded map kept the raw encoded bytes
-/// of every image ever scrolled past — on top of Flutter's own decoded-image
-/// cache — so a thread with many photos grew memory without limit and the
-/// resulting GC pressure showed up as scroll jank. Capped + least-recently-used
-/// eviction keeps the working set hot while bounding total memory. Callers go
-/// through [MediaCache] (`memoryHit`/`load`/`seed`) — this is an implementation
-/// detail (was the public `imageByteCache` in media_viewer.dart before C63).
-final _memoryCache = LruByteCache();
-
+/// Insertion-ordered LRU, bounded by encoded byte size.
 class LruByteCache {
   LruByteCache({this.maxBytes = 48 * 1024 * 1024});
 

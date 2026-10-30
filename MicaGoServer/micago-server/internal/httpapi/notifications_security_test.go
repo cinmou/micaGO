@@ -28,3 +28,24 @@ func TestNotificationConfigFailureHidesCredentialPath(t *testing.T) {
 		t.Fatal("credential path leaked in response")
 	}
 }
+
+func TestRemovedPushProvidersAreRejected(t *testing.T) {
+	for _, provider := range []string{"hms", "harmony_push", "ntfy"} {
+		t.Run(provider, func(t *testing.T) {
+			h, _ := newActionHandlers(nil)
+			h.SetNotificationConfigurator(notify.NewDispatcher(config.Config{}))
+			body, _ := json.Marshal(notificationsConfigRequest{Provider: provider, Preview: "sender"})
+			w := httptest.NewRecorder()
+			h.PutNotificationsConfig(w, httptest.NewRequest(http.MethodPost, "/api/server/notifications", bytes.NewReader(body)))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("notification configuration accepted removed provider: HTTP %d", w.Code)
+			}
+			body, _ = json.Marshal(deviceRegisterRequest{Name: "Device", Platform: "android", ClientType: "flutter", PushProvider: provider})
+			w = httptest.NewRecorder()
+			h.RegisterDevice(w, httptest.NewRequest(http.MethodPost, "/api/devices/register", bytes.NewReader(body)))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("device registration accepted removed provider: HTTP %d", w.Code)
+			}
+		})
+	}
+}

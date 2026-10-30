@@ -60,7 +60,6 @@ class ContactIndex {
       _idByEmail = const {},
       _idByPhone = const {};
 
-  int get contactCount => _byEmail.length + _byPhone.length;
   bool get isEmpty => _byEmail.isEmpty && _byPhone.isEmpty;
 
   factory ContactIndex.fromContacts(Iterable<ContactIdentity> contacts) {

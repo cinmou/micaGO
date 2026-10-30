@@ -4,13 +4,9 @@ import Foundation
 struct MicaConfig {
     var addr: String
     var token: String
-    var publicURL: String?
-    var configPath: String
 }
 
-/// Reads ~/.micago/config.yaml using the same lightweight line parsing the
-/// smoke scripts use. The server writes a flat, predictable YAML, so a full
-/// YAML parser is unnecessary (and avoids a dependency).
+/// 只读取后端生成的地址和凭据，不改写配置。
 enum ConfigReader {
     static var configPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".micago/config.yaml")
@@ -24,8 +20,6 @@ enum ConfigReader {
 
         var addr = "0.0.0.0:3000"
         var token = ""
-        var publicURL: String?
-        var publicBaseURL: String?
         var section = ""
 
         for rawLine in text.components(separatedBy: "\n") {
@@ -43,23 +37,18 @@ enum ConfigReader {
 
             switch (section, key) {
             case ("server", "addr"): addr = value
-            case ("server", "public_url"): if !value.isEmpty { publicURL = value }
-            case ("network", "public_base_url"): if !value.isEmpty { publicBaseURL = value }
             case ("auth", "token"): token = value
             default: break
             }
         }
 
         guard !token.isEmpty else { return nil }
-        return MicaConfig(addr: addr, token: token, publicURL: publicBaseURL ?? publicURL, configPath: path)
+        return MicaConfig(addr: addr, token: token)
     }
 
-    /// Safe local control URL. Built with URLComponents from a validated
-    /// host/port — never by string concatenation — so a host-less Go listen
-    /// address like ":3000" can never produce a malformed "http://:3000"
-    /// request (the C18 ":3000/api/health" bug).
-    static func baseURL(for config: MicaConfig) -> URL? {
-        let (host, port) = controlHostPort(config.addr)
+    /// 自有进程使用实际启动端口，其余情况使用配置中的端口。
+    static func baseURL(for config: MicaConfig, launchedAddress: String? = nil) -> URL? {
+        let (host, port) = controlHostPort(launchedAddress ?? config.addr)
         var comps = URLComponents()
         comps.scheme = "http"
         comps.host = host
@@ -67,17 +56,7 @@ enum ConfigReader {
         return comps.url
     }
 
-    /// Back-compat string form of the control endpoint ("host:port").
-    static func controlAddress(_ addr: String) -> String {
-        let (host, port) = controlHostPort(addr)
-        return "\(host):\(port)"
-    }
-
-    /// The Companion's control API must always talk to the local backend, never
-    /// to the optional public/tunnel URL. Any-address binds (0.0.0.0, ::, [::],
-    /// and Go's host-less ":3000") mean "listen everywhere"; the companion
-    /// connects via IPv4 loopback for every bind. The result has a non-empty host and a
-    /// valid port (default 3000), so URL construction cannot fail.
+    /// 控制接口固定连接 IPv4 loopback；缺失或无效端口回退到 3000。
     static func controlHostPort(_ addr: String) -> (host: String, port: Int) {
         let trimmed = addr.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -96,8 +75,6 @@ enum ConfigReader {
             }
         }
 
-        // The backend keeps the control listener on IPv4 loopback even when
-        // its encrypted client listener binds to a specific LAN address.
         let port = Int(portText).flatMap { (1...65535).contains($0) ? $0 : nil } ?? 3000
         return ("127.0.0.1", port)
     }

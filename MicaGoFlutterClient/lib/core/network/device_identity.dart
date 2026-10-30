@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 
 /// App version embedded in the device label so the Companion can show which
 /// client build is connected (C19). Bump alongside pubspec `version`.
-const String kAppVersion = '0.90.0';
+const String kAppVersion = '0.91.0';
 
 /// The device's real name for the Companion's Paired Devices list (C53).
 ///   • iOS → the user-set device name ("Alex's iPhone").

@@ -237,8 +237,6 @@ class _QrPairingScreenState extends State<QrPairingScreen>
                 style: const TextStyle(color: Colors.white),
               ),
               const SizedBox(height: 12),
-              // C23: the one alternative to scanning — paste the connection JSON
-              // copied from the Mac app. No LAN-only vs LAN+Public choice.
               FilledButton.tonalIcon(
                 onPressed: _pasteConnectionJson,
                 icon: const Icon(Icons.content_paste),
@@ -372,9 +370,6 @@ class _PreviewPane extends StatelessWidget {
               ),
             ),
           ),
-          // C23 cleanup: no LAN-only vs LAN+Public mode picker. The unified
-          // connection always tries LAN first, then Public as an optional
-          // fallback — the client decides automatically.
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onUse,

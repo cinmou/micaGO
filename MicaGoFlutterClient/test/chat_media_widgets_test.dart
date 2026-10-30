@@ -60,13 +60,11 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      double? initialHeight;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: Builder(
               builder: (context) {
-                initialHeight = EmojiPanel.initialHeightFor(context);
                 return Align(
                   alignment: Alignment.bottomCenter,
                   child: EmojiPanel(onPick: (_) {}),
@@ -76,7 +74,10 @@ void main() {
           ),
         ),
       );
-      expect(initialHeight, lessThanOrEqualTo(320 * 0.58));
+      expect(
+        tester.getSize(find.byType(EmojiPanel)).height,
+        lessThanOrEqualTo(320 * 0.58),
+      );
       expect(tester.takeException(), isNull);
       final handle = find.byWidgetPredicate(
         (widget) =>

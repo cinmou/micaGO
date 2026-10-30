@@ -20,8 +20,8 @@ func TestPendingManagerAddStampsDefaults(t *testing.T) {
 	if p.CreatedAt.IsZero() {
 		t.Fatal("expected CreatedAt stamped")
 	}
-	if p.Deadline.IsZero() || !p.Deadline.After(p.CreatedAt) {
-		t.Fatal("expected Deadline = CreatedAt + Timeout")
+	if !p.RecoverUntil.After(p.CreatedAt) {
+		t.Fatal("expected late-match recovery window after CreatedAt")
 	}
 }
 
@@ -134,34 +134,7 @@ func TestPendingManagerReconcileMessagesDoesNotMatchDifferentOutgoing(t *testing
 	}
 }
 
-func TestPendingManagerExpireTimedOut(t *testing.T) {
-	m := NewPendingSendManager()
-	past := time.Now().Add(-time.Minute)
-	_ = m.Add(PendingSend{TempGUID: "old", CreatedAt: past, Deadline: past.Add(time.Second), Status: StatusPending})
-	_ = m.Add(PendingSend{TempGUID: "fresh", Timeout: time.Hour})
-
-	expired := m.ExpireTimedOut(time.Now())
-	if len(expired) != 1 || expired[0].TempGUID != "old" {
-		t.Fatalf("expected only 'old' to expire, got %+v", expired)
-	}
-	if p, _ := m.Get("old"); p.Status != StatusFailed {
-		t.Fatal("expected expired send marked failed")
-	}
-	if p, _ := m.Get("fresh"); p.Status != StatusPending {
-		t.Fatal("expected fresh send still pending")
-	}
-}
-
 func ptrInt64(v int64) *int64 { return &v }
-
-func TestPendingManagerList(t *testing.T) {
-	m := NewPendingSendManager()
-	_ = m.Add(PendingSend{TempGUID: "a"})
-	_ = m.Add(PendingSend{TempGUID: "b"})
-	if got := len(m.List()); got != 2 {
-		t.Fatalf("expected 2 pending, got %d", got)
-	}
-}
 
 func TestPendingManagerRejectsDuplicateTempGUID(t *testing.T) {
 	manager := NewPendingSendManager()
@@ -184,4 +157,12 @@ func TestPendingManagerRemoveCleansUp(t *testing.T) {
 	if manager.Has("one") {
 		t.Fatal("expected pending send to be removed")
 	}
+}
+
+// Get returns a copy of the pending send and whether it exists.
+func (m *PendingSendManager) Get(tempGUID string) (PendingSend, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.pending[tempGUID]
+	return p, ok
 }

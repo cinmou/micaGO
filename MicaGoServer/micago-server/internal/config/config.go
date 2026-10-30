@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +37,12 @@ const (
 // network.preferred_pairing_endpoint. "auto" lets the client/companion choose;
 // the others express a default preference, not a server-wide mode.
 var ValidPairingPreferences = []string{"auto", "local", "lan", "public"}
+
+// NotificationProviders lists supported configuration and device-registration
+// values. FCM delivery additionally requires a configured service account.
+func NotificationProviders() []string {
+	return []string{"none", "webhook", "fcm"}
+}
 
 type Options struct {
 	Addr            string
@@ -70,7 +77,6 @@ type Config struct {
 	NotificationPreview      string
 	WebhookURL               string
 	FCM                      FCMConfig
-	HMS                      HMSConfig
 	Firebase                 FirebaseConfig
 	FirstRun                 bool
 }
@@ -93,13 +99,6 @@ type FirebaseConfig struct {
 	PublicURLSync bool
 	URLCollection string
 	URLDocument   string
-}
-
-type HMSConfig struct {
-	Enabled        bool
-	AppID          string
-	AppSecret      string
-	TokenCachePath string
 }
 
 type fileConfig struct {
@@ -134,12 +133,6 @@ type fileConfig struct {
 		ServiceAccountPath string `yaml:"service_account_path"`
 		GoogleServicesPath string `yaml:"google_services_path"`
 	} `yaml:"fcm"`
-	HMS struct {
-		Enabled        bool   `yaml:"enabled"`
-		AppID          string `yaml:"app_id"`
-		AppSecret      string `yaml:"app_secret"`
-		TokenCachePath string `yaml:"token_cache_path"`
-	} `yaml:"hms"`
 	Firebase struct {
 		PublicURLSync bool   `yaml:"public_url_sync"`
 		URLCollection string `yaml:"url_collection"`
@@ -227,12 +220,6 @@ func Load(opts Options) (Config, error) {
 			ProjectID:          fileCfg.FCM.ProjectID,
 			ServiceAccountPath: expandPath(home, fileCfg.FCM.ServiceAccountPath),
 			GoogleServicesPath: expandPath(home, fileCfg.FCM.GoogleServicesPath),
-		},
-		HMS: HMSConfig{
-			Enabled:        fileCfg.HMS.Enabled,
-			AppID:          fileCfg.HMS.AppID,
-			AppSecret:      fileCfg.HMS.AppSecret,
-			TokenCachePath: expandPath(home, valueOrDefault("", fileCfg.HMS.TokenCachePath, "~/.micago/hms-token.json")),
 		},
 		Firebase: FirebaseConfig{
 			PublicURLSync: fileCfg.Firebase.PublicURLSync,
@@ -347,9 +334,7 @@ func UpdateNotificationsConfig(cfgPath string, u NotificationsUpdate) error {
 	if u.Preview != "none" && u.Preview != "sender" && u.Preview != "sender_and_text" {
 		return fmt.Errorf("invalid notifications.preview %q", u.Preview)
 	}
-	switch u.Provider {
-	case "none", "webhook", "fcm", "hms", "harmony_push", "ntfy":
-	default:
+	if !slices.Contains(NotificationProviders(), u.Provider) {
 		return fmt.Errorf("invalid notifications.provider %q", u.Provider)
 	}
 
@@ -480,10 +465,6 @@ func defaultFileConfig(token string) fileConfig {
 	cfg.FCM.Enabled = false
 	cfg.FCM.ProjectID = ""
 	cfg.FCM.ServiceAccountPath = ""
-	cfg.HMS.Enabled = false
-	cfg.HMS.AppID = ""
-	cfg.HMS.AppSecret = ""
-	cfg.HMS.TokenCachePath = "~/.micago/hms-token.json"
 	cfg.Firebase.PublicURLSync = false
 	cfg.Firebase.URLCollection = "server"
 	cfg.Firebase.URLDocument = "config"
@@ -572,14 +553,11 @@ func parseConfig(body string) (fileConfig, error) {
 	if cfg.Sync.Interval == "" {
 		cfg.Sync.Interval = defaultSyncInterval.String()
 	}
-	if cfg.Notifications.Provider == "" {
+	if !slices.Contains(NotificationProviders(), cfg.Notifications.Provider) {
 		cfg.Notifications.Provider = defaultNotificationProv
 	}
 	if cfg.Notifications.Preview == "" {
 		cfg.Notifications.Preview = defaultNotificationPrev
-	}
-	if cfg.HMS.TokenCachePath == "" {
-		cfg.HMS.TokenCachePath = "~/.micago/hms-token.json"
 	}
 	if cfg.Network.PreferredPairingEndpoint == "" {
 		cfg.Network.PreferredPairingEndpoint = defaultPreferredPairing

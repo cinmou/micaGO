@@ -24,7 +24,7 @@ void main() {
       );
       expect(s, ChatService.imessage);
       expect(s.label, 'iMessage');
-      expect(s.canSend, isTrue);
+      expect(s.canSendWith(allowSmsSend: false), isTrue);
     });
 
     test('chat must classify as iMessage', () {
@@ -59,7 +59,7 @@ void main() {
 
       expect(c.service, ChatService.imessage);
       expect(c.service.label, 'iMessage');
-      expect(c.service.canSend, isTrue);
+      expect(c.service.canSendWith(allowSmsSend: false), isTrue);
     });
 
     test('any phone-number iMessage chat is send-enabled', () {
@@ -71,7 +71,7 @@ void main() {
       });
 
       expect(c.service, ChatService.imessage);
-      expect(c.service.canSend, isTrue);
+      expect(c.service.canSendWith(allowSmsSend: false), isTrue);
     });
   });
 
@@ -80,7 +80,7 @@ void main() {
       final s = chatServiceFromServer(category: 'sms', rawService: 'SMS');
       expect(s, ChatService.sms);
       expect(s.label, 'SMS');
-      expect(s.canSend, isFalse);
+      expect(s.canSendWith(allowSmsSend: false), isFalse);
     });
 
     test('phone-number SMS chat stays read-only', () {
@@ -93,7 +93,7 @@ void main() {
 
       expect(c.service, ChatService.sms);
       expect(c.service.label, 'SMS');
-      expect(c.service.canSend, isFalse);
+      expect(c.service.canSendWith(allowSmsSend: false), isFalse);
     });
 
     test('raw service fallback normalizes like the server', () {
@@ -109,7 +109,7 @@ void main() {
       final s = chatServiceFromServer(category: null, rawService: null);
       expect(s, ChatService.unknown);
       expect(s.label, 'Unknown');
-      expect(s.canSend, isFalse);
+      expect(s.canSendWith(allowSmsSend: false), isFalse);
     });
 
     test('unknown chat remains read-only even with phone-shaped handle', () {
@@ -119,7 +119,7 @@ void main() {
       });
 
       expect(c.service, ChatService.unknown);
-      expect(c.service.canSend, isFalse);
+      expect(c.service.canSendWith(allowSmsSend: false), isFalse);
     });
 
     test('phone-shaped chat with no service is Unknown, not SMS', () {

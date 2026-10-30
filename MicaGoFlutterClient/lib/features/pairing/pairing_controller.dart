@@ -21,11 +21,6 @@ class PairingController extends ChangeNotifier {
     if (stage != PairingStage.scanning) return;
     try {
       payload = parsePairingPayload(raw);
-      if (payload!.version < 4) {
-        throw PairingParseException(
-          MicaLocalizations.current.t('pair.secureUpgrade'),
-        );
-      }
       message = null;
       stage = PairingStage.preview;
     } on PairingParseException catch (e) {
@@ -42,7 +37,7 @@ class PairingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Tests endpoints, activates the connection, and warms the local cache.
+  /// Redeems the invitation and activates the shared connection flow.
   Future<bool> useScanned({
     Future<bool> Function()? confirmCompatibility,
   }) async {
@@ -53,31 +48,24 @@ class PairingController extends ChangeNotifier {
     message = MicaLocalizations.current.t('pair.testing');
     notifyListeners();
 
-    if (p.version >= 4) {
-      try {
-        await app.saveAndActivate(
-          p.toProfile(),
-          confirmCompatibility: confirmCompatibility,
-        );
-        message = MicaLocalizations.current.t('pair.connected');
-        stage = PairingStage.success;
-        notifyListeners();
-        return true;
-      } catch (error) {
-        stage = PairingStage.failure;
-        message = error is CompatibilityStorageRequired
-            ? MicaLocalizations.current.t('pair.compatibilityRequired')
-            : error is CredentialStorageException
-            ? MicaLocalizations.current.t('pair.secureStorageFailed')
-            : error.toString();
-        notifyListeners();
-        return false;
-      }
+    try {
+      await app.saveAndActivate(
+        p.toProfile(),
+        confirmCompatibility: confirmCompatibility,
+      );
+      message = MicaLocalizations.current.t('pair.connected');
+      stage = PairingStage.success;
+      notifyListeners();
+      return true;
+    } catch (error) {
+      stage = PairingStage.failure;
+      message = error is CompatibilityStorageRequired
+          ? MicaLocalizations.current.t('pair.compatibilityRequired')
+          : error is CredentialStorageException
+          ? MicaLocalizations.current.t('pair.secureStorageFailed')
+          : error.toString();
+      notifyListeners();
+      return false;
     }
-
-    stage = PairingStage.failure;
-    message = MicaLocalizations.current.t('pair.secureUpgrade');
-    notifyListeners();
-    return false;
   }
 }

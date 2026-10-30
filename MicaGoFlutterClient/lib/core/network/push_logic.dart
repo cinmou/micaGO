@@ -30,13 +30,6 @@ bool pushShouldNotify(Map<String, dynamic> data) {
   return title.isNotEmpty || body.isNotEmpty;
 }
 
-/// C30: the title to show — the sender/chat name when present, else a generic
-/// fallback so a preview-disabled push still reads sensibly.
-String notificationTitle(Map<String, dynamic> data) {
-  final title = (data['title'] as String?)?.trim() ?? '';
-  return title.isNotEmpty ? title : 'New message';
-}
-
 /// C30: the body to show — the message preview, or null when preview is off
 /// (the title alone, e.g. just the sender, is enough).
 String? notificationBody(Map<String, dynamic> data) {
@@ -139,38 +132,37 @@ String? localNotificationBody(String? text, String previewMode) {
   return t.isEmpty ? null : t;
 }
 
-String? notificationChatFromPayload(String? payload) {
-  if (payload == null || payload.isEmpty) return null;
-  if (!payload.startsWith('{')) return payload;
-  try {
-    final value = jsonDecode(payload);
-    return value is Map && value['chatGuid'] is String
-        ? value['chatGuid'] as String
-        : null;
-  } catch (_) {
-    return null;
-  }
-}
+/// Routing and read cutoff shared by taps, replies and mark-read actions.
+class NotificationTarget {
+  final String chatGuid;
+  final String? deviceId;
+  final int? readThrough;
+  const NotificationTarget(this.chatGuid, {this.deviceId, this.readThrough});
 
-String? notificationDeviceFromPayload(String? payload) {
-  if (payload == null) return null;
-  try {
-    final value = jsonDecode(payload);
-    return value is Map && value['deviceId'] is String
-        ? value['deviceId'] as String
-        : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-int? notificationReadThrough(String? payload) {
-  try {
-    final value = jsonDecode(payload ?? '');
-    final at = value is Map ? value['readThrough'] : null;
-    return at is int && at > 0 ? at : null;
-  } catch (_) {
-    return null;
+  static NotificationTarget? parse(String? payload) {
+    if (payload == null || payload.isEmpty) return null;
+    // Previously posted notifications may still carry only the chat route.
+    // They can open the chat; action handlers require a matching device ID.
+    if (!payload.startsWith('{')) return NotificationTarget(payload);
+    try {
+      final value = jsonDecode(payload);
+      if (value is! Map<String, dynamic>) return null;
+      final chat = value['chatGuid'];
+      final device = value['deviceId'];
+      final through = value['readThrough'];
+      if (chat is! String ||
+          chat.isEmpty ||
+          (device != null && device is! String)) {
+        return null;
+      }
+      return NotificationTarget(
+        chat,
+        deviceId: device as String?,
+        readThrough: through is int && through > 0 ? through : null,
+      );
+    } on FormatException {
+      return null;
+    }
   }
 }
 

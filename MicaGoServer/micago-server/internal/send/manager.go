@@ -35,7 +35,7 @@ func NewPendingSendManager() *PendingSendManager {
 	}
 }
 
-// Add registers a new pending send. It stamps CreatedAt/Deadline/Status when
+// Add registers a new pending send. It stamps CreatedAt/RecoverUntil/Status when
 // they are unset so callers can pass a sparse record.
 func (m *PendingSendManager) Add(p PendingSend) error {
 	m.mu.Lock()
@@ -46,9 +46,6 @@ func (m *PendingSendManager) Add(p PendingSend) error {
 	}
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = time.Now()
-	}
-	if p.Deadline.IsZero() && p.Timeout > 0 {
-		p.Deadline = p.CreatedAt.Add(p.Timeout)
 	}
 	if p.RecoverUntil.IsZero() {
 		p.RecoverUntil = p.CreatedAt.Add(defaultLateMatchWindow)
@@ -77,25 +74,6 @@ func (m *PendingSendManager) Has(tempGUID string) bool {
 	defer m.mu.Unlock()
 	_, exists := m.pending[tempGUID]
 	return exists
-}
-
-// Get returns a copy of the pending send and whether it exists.
-func (m *PendingSendManager) Get(tempGUID string) (PendingSend, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	p, ok := m.pending[tempGUID]
-	return p, ok
-}
-
-// List returns a snapshot of all tracked pending sends.
-func (m *PendingSendManager) List() []PendingSend {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]PendingSend, 0, len(m.pending))
-	for _, p := range m.pending {
-		out = append(out, p)
-	}
-	return out
 }
 
 // Resolve atomically claims a chat.db row for a pending send and marks it
@@ -157,28 +135,6 @@ func (m *PendingSendManager) ClaimedSnapshot() map[string]struct{} {
 		out[guid] = struct{}{}
 	}
 	return out
-}
-
-// ExpireTimedOut marks every still-pending send whose deadline is before `now`
-// as failed and returns them. Cleanup/removal is left to the caller; in the
-// synchronous send path each request removes its own entry on completion.
-func (m *PendingSendManager) ExpireTimedOut(now time.Time) []PendingSend {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var expired []PendingSend
-	for guid, p := range m.pending {
-		if p.Status != StatusPending {
-			continue
-		}
-		if p.Deadline.IsZero() || !p.Deadline.Before(now) {
-			continue
-		}
-		p.Status = StatusFailed
-		p.FailReason = "send_confirmation_timeout"
-		m.pending[guid] = p
-		expired = append(expired, p)
-	}
-	return expired
 }
 
 // ReconcileMessages attempts to late-match pending/unconfirmed sends against

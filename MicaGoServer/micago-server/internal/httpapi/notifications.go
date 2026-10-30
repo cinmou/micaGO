@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"micagoserver/internal/config"
@@ -64,10 +65,8 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 		writeBadRequest(w, "preview must be one of: none, sender, sender_and_text")
 		return
 	}
-	switch req.Provider {
-	case "none", "webhook", "fcm", "hms", "harmony_push", "ntfy":
-	default:
-		writeBadRequest(w, "provider must be one of: none, webhook, fcm, hms, harmony_push, ntfy")
+	if !slices.Contains(config.NotificationProviders(), req.Provider) {
+		writeBadRequest(w, "provider must be one of: "+strings.Join(config.NotificationProviders(), ", "))
 		return
 	}
 
@@ -236,9 +235,6 @@ func (h *Handlers) TestNotifications(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, notify.ErrPushNotConfigured):
 			resp.Failed++
 			resp.Failures = append(resp.Failures, device.Name+": push is not configured")
-		case errors.Is(err, notify.ErrNotImplemented):
-			resp.Failed++
-			resp.Failures = append(resp.Failures, device.Name+": notification provider is not implemented")
 		default:
 			resp.Failed++
 			resp.Failures = append(resp.Failures, device.Name+": "+err.Error())

@@ -51,9 +51,8 @@ void main() {
       expect(tapbackFromCode(null), isNull);
     });
 
-    test('emoji + verb lookups', () {
+    test('emoji lookup', () {
       expect(tapbackEmoji(TapbackKind.like), '\u{1F44D}');
-      expect(tapbackVerb(TapbackKind.laugh), 'laughed at');
     });
 
     test('isReaction requires a reaction code + target', () {

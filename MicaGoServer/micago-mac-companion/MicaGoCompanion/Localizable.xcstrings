@@ -5420,38 +5420,6 @@
         }
       }
     },
-    "The running server doesn't report its build, so it predates v0.15 and lacks recent sync fixes. Restart it with the latest backend.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "运行中的服务器不报告版本，说明早于 v0.15，缺少近期的同步修复。请用最新后端重启。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "執行中的伺服器不回報版本，表示早於 v0.15，缺少近期的同步修正。請用最新後端重新啟動。"
-          }
-        }
-      }
-    },
-    "The selected backend (%@) doesn't report a version, so it predates v0.15 and lacks recent sync fixes. Rebuild it with MicaGoServer/micago-server/scripts/build-backend.sh": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "所选后端（%@）不报告版本，说明早于 v0.15，缺少近期的同步修复。请用 MicaGoServer/micago-server/scripts/build-backend.sh 重新构建。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "所選後端（%@）不回報版本，表示早於 v0.15，缺少近期的同步修正。請用 MicaGoServer/micago-server/scripts/build-backend.sh 重新建置。"
-          }
-        }
-      }
-    },
     "The server configuration is missing or invalid (~/.micago/config.yaml).": {
       "localizations": {
         "zh-Hans": {
@@ -7026,6 +6994,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "目前選擇了自訂後端路徑。更新 Companion 不會更新該外部後端。"
+          }
+        }
+      }
+    },
+    "The selected backend (%@) did not return a usable version. Check that the binary can run and supports --version.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选后端（%@）未返回可用的版本信息。请检查该程序能否运行，以及是否支持 --version。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所選後端（%@）未傳回可用的版本資訊。請檢查該程式能否執行，以及是否支援 --version。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected backend (%@) did not return a usable version. Check that the binary can run and supports --version."
+          }
+        }
+      }
+    },
+    "The running server does not report build details. Check which backend binary is running.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在运行的服务未报告构建详情。请核对实际运行的后端程序。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在執行的服務未回報建置詳情。請核對實際執行的後端程式。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The running server does not report build details. Check which backend binary is running."
           }
         }
       }

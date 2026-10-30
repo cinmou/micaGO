@@ -109,8 +109,16 @@ class PushService {
     if (api == null) return;
 
     // 1) Pull the user-owned Firebase client config from the server.
-    final cfg = await api.fetchFcmClientConfig();
-    if (cfg == null || cfg['configured'] != true) {
+    final Map<String, dynamic> cfg;
+    try {
+      cfg = await api.fetchFcmClientConfig();
+    } on ApiException catch (error) {
+      debugPrint(
+        'PushService: FCM config request failed: ${error.code} (${error.statusCode})',
+      );
+      return;
+    }
+    if (cfg['configured'] != true) {
       // Firebase not set up → stay on WebSocket + delta sync (+ keep-alive local
       // notifications when enabled). Fully graceful.
       debugPrint(
@@ -195,8 +203,8 @@ class PushService {
         jsonEncode(fcmOptionsStorageMap(cfg)),
       );
     } catch (_) {
-      // Best-effort; the foreground init still proceeds. The background isolate
-      // will fall back to a default-app init.
+      // Foreground Firebase can continue; a fresh background engine requires
+      // these persisted options and skips initialization if they are missing.
     }
   }
 
@@ -331,9 +339,11 @@ class PushService {
 
   void _openNotification(String? payload) {
     if (_disposed || !app.hasProfile) return;
-    final device = notificationDeviceFromPayload(payload);
-    if (device != null && device != app.profile?.deviceId) return;
-    final guid = notificationChatFromPayload(payload);
+    final target = NotificationTarget.parse(payload);
+    if (target?.deviceId != null && target!.deviceId != app.profile?.deviceId) {
+      return;
+    }
+    final guid = target?.chatGuid;
     if (guid?.isNotEmpty == true) app.requestOpenChat(guid!);
   }
 }
@@ -513,7 +523,7 @@ Future<String> handleNotificationReply(
   AppController? app,
 }) async {
   final result = await sendNotificationReply(payload, text, app: app);
-  final guid = notificationChatFromPayload(payload);
+  final guid = NotificationTarget.parse(payload)?.chatGuid;
   if (guid == null) return result;
   final plugin = FlutterLocalNotificationsPlugin();
   try {
@@ -564,7 +574,7 @@ Future<String> sendNotificationReply(
 }) async {
   if (cleanReplyText(text) == null) return 'reply failed';
   return _withNotificationSession(
-    payload,
+    NotificationTarget.parse(payload),
     app: app,
     action: (api, chatGuid) async {
       await api.sendText(
@@ -585,10 +595,11 @@ Future<String> markNotificationRead(
   String payload, {
   AppController? app,
 }) async {
-  final through = notificationReadThrough(payload);
+  final target = NotificationTarget.parse(payload);
+  final through = target?.readThrough;
   if (through == null) return 'read failed';
   return _withNotificationSession(
-    payload,
+    target,
     app: app,
     kind: 'read',
     action: (api, chatGuid) async {
@@ -644,13 +655,13 @@ Future<String> markNotificationRead(
 }
 
 Future<String> _withNotificationSession(
-  String payload, {
+  NotificationTarget? target, {
   AppController? app,
   required String kind,
   required Future<void> Function(ApiClient, String) action,
 }) async {
-  final chatGuid = notificationChatFromPayload(payload);
-  final deviceId = notificationDeviceFromPayload(payload);
+  final chatGuid = target?.chatGuid;
+  final deviceId = target?.deviceId;
   if (chatGuid == null ||
       chatGuid.isEmpty ||
       deviceId == null ||

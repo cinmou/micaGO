@@ -1,7 +1,7 @@
 import Foundation
 
-/// Coalesces requests arriving before the SwiftUI scene is ready. Every open
-/// uses that scene, including the first menu-bar open after a silent launch.
+/// Coalesces early requests until App registers its SwiftUI window action.
+/// Registration must not depend on creating or displaying dashboard content.
 @MainActor
 final class DashboardWindowOpener {
     static let shared = DashboardWindowOpener()

@@ -27,7 +27,7 @@ public sealed partial class SettingsPage
         Loaded-=SettingsPage_Loaded;NavigationCacheMode=NavigationCacheMode.Required;
         ApplySection("about");var l=AppServices.Current.Localization;
         AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];
-        AboutVersionText.Text=string.Format(l["version"],"0.90.0");AboutGitHubLabel.Text=l["viewOnGitHub"];
+        AboutVersionText.Text=string.Format(l["version"],"0.91.0");AboutGitHubLabel.Text=l["viewOnGitHub"];
         AboutUpdateLabel.Text=l["checkUpdates"];AboutUpdateStatus.Text=l["updateCheckNow"];
         AboutUpdateButton.Content=l["updateCheckButton"];AboutOpenSourceLabel.Text=l["openSource"];
     }

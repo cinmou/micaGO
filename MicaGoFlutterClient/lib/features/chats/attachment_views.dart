@@ -22,7 +22,7 @@ import 'models/message_model.dart';
 import 'url_preview.dart';
 
 /// Renders a single attachment in a message bubble, choosing the right view by
-/// kind. Display-only — the server has no media-send endpoint (C2 gap).
+/// kind. Sending is handled by the composer attachment flow.
 ///
 /// [imageSiblings] are all image attachments in the same message; tapping an
 /// image opens the full-screen gallery at this image's [imageIndex] so the user
