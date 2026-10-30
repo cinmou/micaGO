@@ -5060,21 +5060,6 @@ class EmojiPanel extends StatefulWidget {
   final void Function(String emoji) onPick;
   const EmojiPanel({super.key, required this.onPick});
 
-  /// The panel's initial on-screen height, so the thread can reserve matching
-  /// bottom space in the message list (C50). Mirrors [_EmojiPanelState] bounds.
-  static double initialHeightFor(BuildContext context) {
-    final maxHeight =
-        MediaQuery.sizeOf(context).height * _EmojiPanelState._maxScreenFraction;
-    return _EmojiPanelState._initialHeight
-        .clamp(
-          maxHeight < _EmojiPanelState._minHeight
-              ? maxHeight
-              : _EmojiPanelState._minHeight,
-          maxHeight,
-        )
-        .toDouble();
-  }
-
   // In-memory most-recently-used list (most recent first), shared across threads
   // for the session. Simple + dependency-free.
   static final List<String> _recents = <String>[];

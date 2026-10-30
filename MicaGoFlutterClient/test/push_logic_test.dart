@@ -12,11 +12,45 @@ void main() {
       'chatGuid': 'route-a',
       'deviceId': 'device-a',
     });
-    expect(notificationChatFromPayload(payload), 'route-a');
-    expect(notificationDeviceFromPayload(payload), 'device-a');
-    expect(notificationChatFromPayload('legacy-route'), 'legacy-route');
-    expect(notificationDeviceFromPayload('legacy-route'), isNull);
-    expect(notificationChatFromPayload('{broken'), isNull);
+    expect(NotificationTarget.parse(payload)?.chatGuid, 'route-a');
+    expect(NotificationTarget.parse(payload)?.deviceId, 'device-a');
+    expect(NotificationTarget.parse('legacy-route')?.chatGuid, 'legacy-route');
+    expect(NotificationTarget.parse('legacy-route')?.deviceId, isNull);
+    expect(NotificationTarget.parse('{broken'), isNull);
+  });
+
+  test('notification target retains only a positive integer read cutoff', () {
+    final target = NotificationTarget.parse(
+      notificationPayload('route', 'device', readThrough: 123),
+    );
+    expect(target?.chatGuid, 'route');
+    expect(target?.deviceId, 'device');
+    expect(target?.readThrough, 123);
+    for (final invalid in [null, 0, -1, 1.5, '123']) {
+      final decoded = NotificationTarget.parse(
+        jsonEncode({
+          'chatGuid': 'route',
+          'deviceId': 'device',
+          'readThrough': invalid,
+        }),
+      );
+      expect(decoded?.readThrough, isNull);
+      expect(decoded?.chatGuid, 'route');
+    }
+  });
+
+  test('malformed notification identity cannot become an action target', () {
+    for (final payload in [
+      null,
+      '',
+      '{broken',
+      '{}',
+      '{"chatGuid":1}',
+      '{"chatGuid":""}',
+      '{"chatGuid":"route","deviceId":1}',
+    ]) {
+      expect(NotificationTarget.parse(payload), isNull);
+    }
   });
 
   group('C28 FCM options persistence (background-isolate init)', () {
@@ -80,9 +114,9 @@ void main() {
 
   group('C30 notification formatting + reply', () {
     test('title falls back to a generic label when sender is absent', () {
-      expect(notificationTitle({'title': 'Jane'}), 'Jane');
-      expect(notificationTitle({'title': ''}), 'New message');
-      expect(notificationTitle({}), 'New message');
+      expect(notificationSenderName({'title': 'Jane'}), 'Jane');
+      expect(notificationSenderName({'title': ''}), 'New message');
+      expect(notificationSenderName({}), 'New message');
     });
 
     test('body is null when preview is off', () {

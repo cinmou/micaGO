@@ -78,16 +78,6 @@ class MessageCollection {
 
   Map<String, MessageModel> snapshot() => Map.of(_server);
 
-  void removeServerMessages(Iterable<String> guids) {
-    for (final key in guids) {
-      final message = key.contains('\u001f') ? _server[key] : serverByGuid(key);
-      if (message == null) continue;
-      _server.remove(message.serverKey);
-      _presentationKeysByServerGuid.remove(message.serverKey);
-    }
-    _invalidate();
-  }
-
   void mergeServerPage(
     Iterable<MessageModel> page, {
     Map<String, MessageModel>? baseline,
@@ -121,14 +111,6 @@ class MessageCollection {
     _invalidate();
   }
 
-  /// Merges an older page (pagination) without dropping existing messages.
-  void mergeOlder(Iterable<MessageModel> older) {
-    for (final m in older) {
-      if (m.guid.isNotEmpty) _server.putIfAbsent(m.serverKey, () => m);
-    }
-    _invalidate();
-  }
-
   /// Inserts/merges a single server message (message:new / send confirmation).
   /// Patches in place by guid and reconciles any matching optimistic row.
   void upsertServer(MessageModel m) {
@@ -138,10 +120,6 @@ class MessageCollection {
     _reconcileOne(m, isNewRow: isNew);
     _invalidate();
   }
-
-  /// Patches an existing message by guid (message:update: delivered/read/edit).
-  /// If the guid isn't present, inserts it (so updates are never lost).
-  void applyUpdate(MessageModel m) => upsertServer(m);
 
   /// Marks an existing message retracted and clears its displayed content.
   /// Returns false when the guid is unknown (caller may schedule a reload).

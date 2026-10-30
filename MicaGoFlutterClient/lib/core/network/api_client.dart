@@ -224,14 +224,13 @@ class ApiClient {
        );
 
   Future<Map<String, dynamic>> redeemPairingCode(String code) async {
-    final response = await _http
-        .post(
-          _uri('/api/pairing/redeem'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'pairingCode': code}),
-        )
-        .timeout(timeout);
-    if (response.statusCode != 200) throw _errorFrom(response);
+    final response = await _request(
+      'POST',
+      _uri('/api/pairing/redeem'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'pairingCode': code}),
+    );
+
     return _decodeObject(response);
   }
 
@@ -242,21 +241,26 @@ class ApiClient {
     final file = File(
       '${directory.path}/micago-playable-${DateTime.now().microsecondsSinceEpoch}',
     );
-    final response = await _http
-        .send(
-          http.Request(
-            'GET',
-            _uri('/api/attachments/${Uri.encodeComponent(guid)}/playable'),
-          )..headers.addAll(_authHeaders),
-        )
-        .timeout(timeout);
+    final response = await _transport(
+      () => _http.send(
+        http.Request(
+          'GET',
+          _uri('/api/attachments/${Uri.encodeComponent(guid)}/playable'),
+        )..headers.addAll(_authHeaders),
+      ),
+      timeout,
+    );
     if (response.statusCode != 200) {
-      await response.stream.drain<void>();
-      throw StateError('Media download failed (${response.statusCode})');
+      throw _errorFrom(
+        await _transport(() => http.Response.fromStream(response), timeout),
+      );
     }
     final sink = file.openWrite();
     try {
-      await response.stream.timeout(const Duration(seconds: 30)).pipe(sink);
+      await _transport(
+        () => response.stream.timeout(const Duration(seconds: 30)).pipe(sink),
+        const Duration(seconds: 30),
+      );
       return file;
     } catch (_) {
       await sink.close();
@@ -271,83 +275,22 @@ class ApiClient {
     return base.replace(queryParameters: {...base.queryParameters, ...query});
   }
 
-  Future<Map<String, dynamic>> getChatPreferences() async {
-    final response = await _send(
-      () => _http
-          .get(_uri('/api/chat-preferences'), headers: _authHeaders)
-          .timeout(timeout),
-    );
-    if (response.statusCode != 200) throw _errorFrom(response);
-    return _decodeObject(response);
-  }
-
+  Future<Map<String, dynamic>> getChatPreferences() =>
+      _requestObject('GET', '/api/chat-preferences');
   Future<Map<String, dynamic>> patchChatPreferences(
     Map<String, dynamic> mutation,
-  ) async {
-    final response = await _send(
-      () => _http
-          .patch(
-            _uri('/api/chat-preferences'),
-            headers: _jsonHeaders,
-            body: jsonEncode(mutation),
-          )
-          .timeout(timeout),
-    );
-    if (response.statusCode != 200) throw _errorFrom(response);
-    return _decodeObject(response);
-  }
+  ) => _requestObject('PATCH', '/api/chat-preferences', body: mutation);
 
-  Future<Map<String, dynamic>> getReadState() async {
-    final response = await _send(
-      () => _http
-          .get(_uri('/api/read-state'), headers: _authHeaders)
-          .timeout(timeout),
-    );
-    if (response.statusCode != 200) throw _errorFrom(response);
-    return _decodeObject(response);
-  }
+  Future<Map<String, dynamic>> getReadState() =>
+      _requestObject('GET', '/api/read-state');
+  Future<Map<String, dynamic>> patchReadState(Map<String, dynamic> mutation) =>
+      _requestObject('PATCH', '/api/read-state', body: mutation);
 
-  Future<Map<String, dynamic>> patchReadState(
-    Map<String, dynamic> mutation,
-  ) async {
-    final response = await _send(
-      () => _http
-          .patch(
-            _uri('/api/read-state'),
-            headers: _jsonHeaders,
-            body: jsonEncode(mutation),
-          )
-          .timeout(timeout),
-    );
-    if (response.statusCode != 200) throw _errorFrom(response);
-    return _decodeObject(response);
-  }
-
-  Future<Map<String, dynamic>> getMessagePreferences() async {
-    final response = await _send(
-      () => _http
-          .get(_uri('/api/message-preferences'), headers: _authHeaders)
-          .timeout(timeout),
-    );
-    if (response.statusCode != 200) throw _errorFrom(response);
-    return _decodeObject(response);
-  }
-
+  Future<Map<String, dynamic>> getMessagePreferences() =>
+      _requestObject('GET', '/api/message-preferences');
   Future<Map<String, dynamic>> patchMessagePreferences(
     Map<String, dynamic> mutation,
-  ) async {
-    final response = await _send(
-      () => _http
-          .patch(
-            _uri('/api/message-preferences'),
-            headers: _jsonHeaders,
-            body: jsonEncode(mutation),
-          )
-          .timeout(timeout),
-    );
-    if (response.statusCode != 200) throw _errorFrom(response);
-    return _decodeObject(response);
-  }
+  ) => _requestObject('PATCH', '/api/message-preferences', body: mutation);
 
   Map<String, String> get _authHeaders => {
     'Authorization': 'Bearer $token',
@@ -360,56 +303,32 @@ class ApiClient {
 
   /// `GET /api/health` — no auth. Returns true when the server reports `ok`.
   Future<bool> health() async {
-    final res = await _send(
-      () => _http
-          .get(
-            _uri('/api/health'),
-            headers: const {'Accept': 'application/json'},
-          )
-          .timeout(timeout),
+    final res = await _request(
+      'GET',
+      _uri('/api/health'),
+      headers: const {'Accept': 'application/json'},
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     final body = _decodeObject(res);
     return body['ok'] == true;
   }
 
   /// `POST /api/auth/check` — verifies the bearer token. Throws [ApiException]
-  /// (`code: unauthorized`) on 401, or another code on failure.
+  /// (`code: unauthorized`) only for a structured micaGO rejection.
   Future<void> authCheck() async {
-    final res = await _send(
-      () => _http
-          .post(_uri('/api/auth/check'), headers: _authHeaders)
-          .timeout(timeout),
-    );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+    await _request('POST', _uri('/api/auth/check'));
   }
 
   /// `GET /api/server/urls` — aggregated connection endpoints (v0.11).
   Future<ServerUrls> getServerUrls() async {
-    final res = await _send(
-      () => _http
-          .get(_uri('/api/server/urls'), headers: _authHeaders)
-          .timeout(timeout),
-    );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+    final res = await _request('GET', _uri('/api/server/urls'));
+
     return ServerUrls.fromJson(_decodeObject(res));
   }
 
   Future<ServerNotificationConfig?> getNotificationConfig() async {
-    final res = await _send(
-      () => _http
-          .get(_uri('/api/server/status'), headers: _authHeaders)
-          .timeout(timeout),
-    );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+    final res = await _request('GET', _uri('/api/server/status'));
+
     final body = _decodeObject(res);
     final notifications = body['notifications'];
     if (notifications is Map<String, dynamic>) {
@@ -421,18 +340,13 @@ class ApiClient {
   Future<ServerNotificationConfig?> setNotificationPreview(
     String preview,
   ) async {
-    final res = await _send(
-      () => _http
-          .patch(
-            _uri('/api/server/notifications/preview'),
-            headers: _jsonHeaders,
-            body: jsonEncode({'preview': preview}),
-          )
-          .timeout(timeout),
+    final res = await _request(
+      'PATCH',
+      _uri('/api/server/notifications/preview'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'preview': preview}),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     final body = _decodeObject(res);
     return ServerNotificationConfig.fromJson(body);
   }
@@ -441,14 +355,12 @@ class ApiClient {
   /// catch-up sync. The response is intentionally ignored by most callers; WS
   /// events and subsequent list/thread fetches carry the user-facing data.
   Future<int> syncNow() async {
-    final res = await _send(
-      () => _http
-          .post(_uri('/api/sync/now'), headers: _authHeaders)
-          .timeout(const Duration(seconds: 20)),
+    final res = await _request(
+      'POST',
+      _uri('/api/sync/now'),
+      requestTimeout: const Duration(seconds: 20),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     final body = _decodeObject(res);
     final diagnostics = body['diagnostics'];
     if (diagnostics is Map<String, dynamic>) {
@@ -475,14 +387,8 @@ class ApiClient {
     if (withArchived != null) query['withArchived'] = '$withArchived';
     if (limit != null) query['limit'] = '$limit';
     if (debug) query['debug'] = 'true';
-    final res = await _send(
-      () => _http
-          .get(_uri('/api/chats', query), headers: _authHeaders)
-          .timeout(timeout),
-    );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+    final res = await _request('GET', _uri('/api/chats', query));
+
     final body = _decodeObject(res);
     final data = body['data'];
     if (data is! List) {
@@ -501,20 +407,14 @@ class ApiClient {
   /// messages changed since the cursor (oldest-first), the affected chat GUIDs,
   /// the new cursor, and whether more remain. `since == null` seeds the cursor.
   Future<MessageDelta> fetchDelta({int? since, int limit = 200}) async {
-    final res = await _send(
-      () => _http
-          .get(
-            _uri('/api/messages/delta', {
-              if (since != null) 'since': '$since',
-              'limit': '$limit',
-            }),
-            headers: _authHeaders,
-          )
-          .timeout(timeout),
+    final res = await _request(
+      'GET',
+      _uri('/api/messages/delta', {
+        if (since != null) 'since': '$since',
+        'limit': '$limit',
+      }),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     final body = _decodeObject(res);
     final msgs =
         (body['messages'] as List?)
@@ -536,17 +436,11 @@ class ApiClient {
   }
 
   Future<MessageActionCapabilities> getMessageActionCapabilities() async {
-    final res = await _send(
-      () => _http
-          .get(
-            _uri('/api/messages/actions/capabilities'),
-            headers: _authHeaders,
-          )
-          .timeout(timeout),
+    final res = await _request(
+      'GET',
+      _uri('/api/messages/actions/capabilities'),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     return MessageActionCapabilities.fromJson(_decodeObject(res));
   }
 
@@ -558,18 +452,12 @@ class ApiClient {
   }) async {
     final chat = Uri.encodeComponent(chatGuid);
     final message = Uri.encodeComponent(messageGuid);
-    final res = await _send(
-      () => _http
-          .post(
-            _uri('/api/chats/$chat/messages/$message/edit'),
-            headers: _jsonHeaders,
-            body: jsonEncode({'text': text, 'partIndex': partIndex}),
-          )
-          .timeout(timeout),
+    await _request(
+      'POST',
+      _uri('/api/chats/$chat/messages/$message/edit'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'text': text, 'partIndex': partIndex}),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
   }
 
   Future<void> retractMessage(
@@ -579,34 +467,18 @@ class ApiClient {
   }) async {
     final chat = Uri.encodeComponent(chatGuid);
     final message = Uri.encodeComponent(messageGuid);
-    final res = await _send(
-      () => _http
-          .post(
-            _uri('/api/chats/$chat/messages/$message/retract'),
-            headers: _jsonHeaders,
-            body: jsonEncode({'partIndex': partIndex}),
-          )
-          .timeout(timeout),
+    await _request(
+      'POST',
+      _uri('/api/chats/$chat/messages/$message/retract'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'partIndex': partIndex}),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
   }
 
   Future<void> deleteMessage(String chatGuid, String messageGuid) async {
     final chat = Uri.encodeComponent(chatGuid);
     final message = Uri.encodeComponent(messageGuid);
-    final res = await _send(
-      () => _http
-          .delete(
-            _uri('/api/chats/$chat/messages/$message'),
-            headers: _authHeaders,
-          )
-          .timeout(timeout),
-    );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+    await _request('DELETE', _uri('/api/chats/$chat/messages/$message'));
   }
 
   Future<MessageHistoryPage> getMessageHistory(
@@ -621,10 +493,8 @@ class ApiClient {
         'before': ?before,
       },
     );
-    final response = await _send(
-      () => _http.get(uri, headers: _authHeaders).timeout(timeout),
-    );
-    if (response.statusCode != 200) throw _errorFrom(response);
+    final response = await _request('GET', uri);
+
     final body = _decodeObject(response);
     final rows = body['data'];
     if (rows is! List || body['hasMore'] is! bool) {
@@ -659,15 +529,13 @@ class ApiClient {
     required String tempGuid,
     required String message,
   }) async {
-    final res = await _send(
-      () => _http
-          .post(
-            _uri('/api/chats/${Uri.encodeComponent(chatGuid)}/send'),
-            headers: {..._authHeaders, 'Content-Type': 'application/json'},
-            body: jsonEncode({'tempGuid': tempGuid, 'message': message}),
-          )
-          // Send confirmation can take up to ~15s server-side.
-          .timeout(const Duration(seconds: 20)),
+    final res = await _request(
+      'POST',
+      _uri('/api/chats/${Uri.encodeComponent(chatGuid)}/send'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'tempGuid': tempGuid, 'message': message}),
+      requestTimeout: const Duration(seconds: 20),
+      accepted: const {200, 202},
     );
     if (res.statusCode == 202) {
       final body = _decodeObject(res);
@@ -679,9 +547,7 @@ class ApiClient {
         statusCode: res.statusCode,
       );
     }
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     final confirmed = MessageModel.fromJson(_decodeObject(res));
     if (confirmed.guid.isEmpty) {
       throw const ApiException(
@@ -692,168 +558,83 @@ class ApiClient {
     return confirmed;
   }
 
-  /// `GET /api/sync/settings` — the server's authoritative sync settings,
-  /// including `allowSmsSend` (C20). Returns the flat settings map, or null on
-  /// failure (the caller falls back to read-only behavior).
-  Future<Map<String, dynamic>?> getSyncSettings() async {
-    try {
-      final res = await _send(
-        () => _http
-            .get(_uri('/api/sync/settings'), headers: _authHeaders)
-            .timeout(const Duration(seconds: 10)),
-      );
-      if (res.statusCode != 200) return null;
-      return _decodeObject(res);
-    } catch (_) {
-      return null;
-    }
-  }
+  Future<Map<String, dynamic>> getSyncSettings() =>
+      _requestObject('GET', '/api/sync/settings');
 
-  /// `PUT /api/sync/settings` — update the server settings. [settings] is the
-  /// full settings map (the server replaces all fields). Returns the updated
-  /// settings from the `{settings, diagnostics}` envelope, or null on failure.
-  Future<Map<String, dynamic>?> putSyncSettings(
+  /// The server replaces the full settings map.
+  Future<Map<String, dynamic>> putSyncSettings(
     Map<String, dynamic> settings,
   ) async {
-    try {
-      final res = await _send(
-        () => _http
-            .put(
-              _uri('/api/sync/settings'),
-              headers: {..._authHeaders, 'Content-Type': 'application/json'},
-              body: jsonEncode(settings),
-            )
-            .timeout(const Duration(seconds: 15)),
-      );
-      if (res.statusCode != 200) return null;
-      final body = _decodeObject(res);
-      final updated = body['settings'];
-      return updated is Map<String, dynamic> ? updated : null;
-    } catch (_) {
-      return null;
-    }
+    final body = await _requestObject(
+      'PUT',
+      '/api/sync/settings',
+      body: settings,
+    );
+    return _objectField(body, 'settings');
   }
 
-  /// `GET /api/sync/rules` — returns the server-authoritative muted chat GUIDs.
-  /// The Flutter client no longer persists a local mute table; it mirrors these
-  /// push rules in memory for UI state and local keep-alive notification gating.
-  Future<Set<String>?> getMutedChatGuids() async {
-    try {
-      final res = await _send(
-        () => _http
-            .get(_uri('/api/sync/rules'), headers: _authHeaders)
-            .timeout(const Duration(seconds: 10)),
+  Future<Set<String>> getMutedChatGuids() async {
+    final body = await _requestObject('GET', '/api/sync/rules');
+    final rules = body['rules'];
+    if (rules is! List) {
+      throw const ApiException(
+        code: 'bad_response',
+        message: 'Invalid sync rules response.',
       );
-      if (res.statusCode != 200) return null;
-      final rules = _decodeObject(res)['rules'];
-      if (rules is! List) return <String>{};
-      return {
-        for (final rule in rules.whereType<Map<String, dynamic>>())
-          if (rule['targetKind'] == 'chat' &&
-              rule['pushMode'] == 'muted' &&
-              (rule['targetValue'] as String?)?.trim().isNotEmpty == true)
-            (rule['targetValue'] as String).trim(),
-      };
-    } catch (_) {
-      return null;
     }
+    return {
+      for (final rule in rules.cast<Map<String, dynamic>>())
+        if (rule['targetKind'] == 'chat' &&
+            rule['pushMode'] == 'muted' &&
+            (rule['targetValue'] as String?)?.trim().isNotEmpty == true)
+          (rule['targetValue'] as String).trim(),
+    };
   }
 
-  /// `PUT /api/sync/rules` — set a server-side sync/push rule. The client uses
-  /// this only for notification mute parity: sync stays inherited, push is
-  /// muted/inherited so Companion remains the main policy surface.
-  Future<bool> putSyncRule({
+  Future<void> putSyncRule({
     required String targetKind,
     required String targetValue,
     String syncMode = 'inherit',
     String pushMode = 'inherit',
   }) async {
-    try {
-      final res = await _send(
-        () => _http
-            .put(
-              _uri('/api/sync/rules'),
-              headers: {..._authHeaders, 'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'targetKind': targetKind,
-                'targetValue': targetValue,
-                'syncMode': syncMode,
-                'pushMode': pushMode,
-              }),
-            )
-            .timeout(const Duration(seconds: 10)),
-      );
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
+    await _requestObject(
+      'PUT',
+      '/api/sync/rules',
+      body: {
+        'targetKind': targetKind,
+        'targetValue': targetValue,
+        'syncMode': syncMode,
+        'pushMode': pushMode,
+      },
+    );
   }
 
-  /// `GET /api/test-contact` — current offline loopback test-contact settings.
-  /// Returns null on any failure (the toggle then shows unavailable).
-  Future<TestContactConfig?> getTestContactConfig() async {
-    try {
-      final res = await _send(
-        () => _http
-            .get(_uri('/api/test-contact'), headers: _authHeaders)
-            .timeout(const Duration(seconds: 10)),
+  Future<TestContactConfig> getTestContactConfig() async =>
+      TestContactConfig.fromJson(
+        await _requestObject('GET', '/api/test-contact'),
       );
-      if (res.statusCode != 200) return null;
-      return TestContactConfig.fromJson(_decodeObject(res));
-    } catch (_) {
-      return null;
-    }
-  }
 
-  /// `PUT /api/test-contact` — update the offline test contact. Returns the
-  /// new config, or null on failure.
-  Future<TestContactConfig?> setTestContact({bool? enabled}) async {
-    try {
-      final body = <String, Object?>{};
-      if (enabled != null) body['enabled'] = enabled;
-      final res = await _send(
-        () => _http
-            .put(
-              _uri('/api/test-contact'),
-              headers: {..._authHeaders, 'Content-Type': 'application/json'},
-              body: jsonEncode(body),
-            )
-            .timeout(const Duration(seconds: 15)),
+  Future<TestContactConfig> setTestContact({bool? enabled}) async =>
+      TestContactConfig.fromJson(
+        await _requestObject(
+          'PUT',
+          '/api/test-contact',
+          body: {'enabled': ?enabled},
+        ),
       );
-      if (res.statusCode != 200) return null;
-      return TestContactConfig.fromJson(_decodeObject(res));
-    } catch (_) {
-      return null;
-    }
-  }
 
-  /// `POST /api/devices/register` — register this client so the server/Companion
-  /// can show a connected device (C19). [body] is a small identity built by
-  /// `buildDeviceRegistration`. Returns the server-assigned device id (echoed in
-  /// `data.id`), or null on any failure (registration is best-effort).
-  /// Registers this device. Returns the outcome ([status] 200 = ok; 0 = network
-  /// error) so the caller can LOG failures rather than swallow them (C29b).
+  /// Registers device identity and returns a diagnostic outcome for background callers.
   Future<({String? id, int status, String? error})> registerDevice(
     Map<String, Object?> body,
   ) async {
     try {
-      final res = await _send(
-        () => _http
-            .post(
-              _uri('/api/devices/register'),
-              headers: {..._authHeaders, 'Content-Type': 'application/json'},
-              body: jsonEncode(body),
-            )
-            .timeout(const Duration(seconds: 10)),
+      final res = await _request(
+        'POST',
+        _uri('/api/devices/register'),
+        headers: _jsonHeaders,
+        body: jsonEncode(body),
+        requestTimeout: const Duration(seconds: 10),
       );
-      if (res.statusCode != 200) {
-        final snippet = res.body.trim();
-        return (
-          id: null,
-          status: res.statusCode,
-          error: snippet.isEmpty ? 'HTTP ${res.statusCode}' : snippet,
-        );
-      }
       final data = _decodeObject(res)['data'];
       return (
         id: data is Map<String, dynamic> ? data['id'] as String? : null,
@@ -867,42 +648,15 @@ class ApiClient {
     }
   }
 
-  /// `GET /api/fcm/client` — the server's user-owned Firebase client config
-  /// (C22), parsed from the admin's google-services.json. Returns the `data`
-  /// map (`configured`, `projectId`, `appId`, `apiKey`, `messagingSenderId`,
-  /// `storageBucket`) or null on failure. When `configured` is false the app
-  /// stays on WebSocket + delta sync (Firebase is optional).
-  Future<Map<String, dynamic>?> fetchFcmClientConfig() async {
-    try {
-      final res = await _send(
-        () => _http
-            .get(_uri('/api/fcm/client'), headers: _authHeaders)
-            .timeout(const Duration(seconds: 10)),
-      );
-      if (res.statusCode != 200) return null;
-      final data = _decodeObject(res)['data'];
-      return data is Map<String, dynamic> ? data : null;
-    } catch (_) {
-      return null;
-    }
-  }
+  /// Optional Firebase configuration; `configured: false` is a successful response.
+  Future<Map<String, dynamic>> fetchFcmClientConfig() async =>
+      _objectField(await _requestObject('GET', '/api/fcm/client'), 'data');
 
-  /// `POST /api/devices/{id}/heartbeat` — refresh this device's last-seen time
-  /// (C21u) so the server can report it as connected. Best-effort; failures are
-  /// swallowed (the device simply goes stale → disconnected).
   Future<void> deviceHeartbeat(String id) async {
-    try {
-      await _send(
-        () => _http
-            .post(
-              _uri('/api/devices/${Uri.encodeComponent(id)}/heartbeat'),
-              headers: _authHeaders,
-            )
-            .timeout(const Duration(seconds: 10)),
-      );
-    } catch (_) {
-      // Ignore — presence is derived from freshness, not from this call.
-    }
+    await _request(
+      'POST',
+      _uri('/api/devices/${Uri.encodeComponent(id)}/heartbeat'),
+    );
   }
 
   /// `POST /api/chats/{guid}/send-attachment` — send a file to an iMessage chat
@@ -945,24 +699,14 @@ class ApiClient {
           : http.MultipartFile.fromBytes('file', bytes!, filename: filename),
     );
 
-    final http.Response res;
-    try {
-      final streamed = await _http
-          .send(request)
-          .timeout(const Duration(seconds: 60));
-      res = await http.Response.fromStream(
-        streamed,
-      ).timeout(const Duration(seconds: 30));
-    } on ApiException {
-      rethrow;
-    } on TimeoutException {
-      throw const ApiException(
-        code: 'timeout',
-        message: 'Attachment send timed out',
-      );
-    } catch (e) {
-      throw ApiException(code: 'network_error', message: '$e');
-    }
+    final streamed = await _transport(
+      () => _http.send(request),
+      const Duration(seconds: 60),
+    );
+    final res = await _transport(
+      () => http.Response.fromStream(streamed),
+      const Duration(seconds: 30),
+    );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw _errorFrom(res);
     }
@@ -975,17 +719,13 @@ class ApiClient {
 
   /// `GET /api/attachments/{guid}` — raw attachment bytes (authenticated).
   Future<Uint8List> getAttachmentBytes(String attachmentGuid) async {
-    final res = await _send(
-      () => _http
-          .get(
-            _uri('/api/attachments/${Uri.encodeComponent(attachmentGuid)}'),
-            headers: {'Authorization': 'Bearer $token'},
-          )
-          .timeout(const Duration(seconds: 30)),
+    final res = await _request(
+      'GET',
+      _uri('/api/attachments/${Uri.encodeComponent(attachmentGuid)}'),
+      headers: {'Authorization': 'Bearer $token'},
+      requestTimeout: const Duration(seconds: 30),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     return res.bodyBytes;
   }
 
@@ -994,14 +734,13 @@ class ApiClient {
   ) async {
     final path =
         '/api/attachments/${Uri.encodeComponent(attachment.guid)}/preview';
-    final res = await _send(
-      () => _http
-          .get(_uri(path), headers: {'Authorization': 'Bearer $token'})
-          .timeout(const Duration(seconds: 30)),
+    final res = await _request(
+      'GET',
+      _uri(path),
+      headers: {'Authorization': 'Bearer $token'},
+      requestTimeout: const Duration(seconds: 30),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     return res.bodyBytes;
   }
 
@@ -1015,14 +754,13 @@ class ApiClient {
     final path =
         '/api/attachments/${Uri.encodeComponent(attachment.guid)}/preview';
     final uri = _uri(path).replace(queryParameters: {'thumbnail': '1'});
-    final res = await _send(
-      () => _http
-          .get(uri, headers: {'Authorization': 'Bearer $token'})
-          .timeout(const Duration(seconds: 30)),
+    final res = await _request(
+      'GET',
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+      requestTimeout: const Duration(seconds: 30),
     );
-    if (res.statusCode != 200) {
-      throw _errorFrom(res);
-    }
+
     return res.bodyBytes;
   }
 
@@ -1030,9 +768,49 @@ class ApiClient {
 
   // --- internals -------------------------------------------------------------
 
-  Future<http.Response> _send(Future<http.Response> Function() run) async {
+  Future<http.Response> _request(
+    String method,
+    Uri uri, {
+    Map<String, String>? headers,
+    String? body,
+    Duration? requestTimeout,
+    Set<int> accepted = const {200},
+  }) async {
+    final response = await _transport(() async {
+      final request = http.Request(method, uri)
+        ..headers.addAll(headers ?? _authHeaders);
+      if (body != null) request.body = body;
+      return http.Response.fromStream(await _http.send(request));
+    }, requestTimeout ?? timeout);
+    if (!accepted.contains(response.statusCode)) throw _errorFrom(response);
+    return response;
+  }
+
+  Future<Map<String, dynamic>> _requestObject(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async => _decodeObject(
+    await _request(
+      method,
+      _uri(path),
+      headers: body == null ? _authHeaders : _jsonHeaders,
+      body: body == null ? null : jsonEncode(body),
+    ),
+  );
+
+  Map<String, dynamic> _objectField(Map<String, dynamic> body, String field) {
+    final value = body[field];
+    if (value is Map<String, dynamic>) return value;
+    throw const ApiException(
+      code: 'bad_response',
+      message: 'Invalid server response.',
+    );
+  }
+
+  Future<T> _transport<T>(Future<T> Function() run, Duration duration) async {
     try {
-      return await run();
+      return await run().timeout(duration);
     } on ApiException {
       rethrow;
     } on TimeoutException {
@@ -1040,7 +818,12 @@ class ApiClient {
         code: 'timeout',
         message: 'The server did not respond in time.',
       );
-    } catch (e) {
+    } on http.ClientException catch (e) {
+      throw ApiException(
+        code: 'network_error',
+        message: 'Could not reach the server: $e',
+      );
+    } on IOException catch (e) {
       throw ApiException(
         code: 'network_error',
         message: 'Could not reach the server: $e',

@@ -29,7 +29,6 @@ private struct ProviderStatusCard: View {
                 LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
                 LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
                 LabeledRow(label: "Implemented", value: n.implemented.joined(separator: ", "))
-                LabeledRow(label: "Stub", value: n.stub.isEmpty ? "—" : n.stub.joined(separator: ", "))
                 LabeledRow(label: "Firestore URL sync", value: model.firestoreSyncActive ? L10n.localized( "enabled") : L10n.localized( "disabled"))
             } else {
                 Text("Start the server to read notification status.").foregroundStyle(.secondary)
@@ -75,7 +74,7 @@ private struct FirebaseSetupCard: View {
                 ready: googleServicesReady,
                 title: googleServicesLabel,
                 button: "Choose google-services.json…",
-                action: chooseGoogleServices
+                action: { chooseJSONFile(into: $model.googleServicesPath) }
             )
             Text("The Android app uses this file to set up Firebase.")
                 .font(.caption2).foregroundStyle(.secondary)
@@ -86,7 +85,7 @@ private struct FirebaseSetupCard: View {
                 ready: serviceAccountReady,
                 title: serviceAccountLabel,
                 button: "Choose service-account JSON…",
-                action: chooseServiceAccount
+                action: { chooseJSONFile(into: $model.serviceAccountPath) }
             )
             Text("This file stays on the Mac. The server uses it to send pushes.")
                 .font(.caption2).foregroundStyle(.secondary)
@@ -123,11 +122,11 @@ private struct FirebaseSetupCard: View {
     }
 
     private var serviceAccountReady: Bool {
-        !model.serviceAccountPath.isEmpty || (model.status?.notifications.fcmServiceAccountConfigured ?? false)
+        model.serviceAccountPath.isEmpty && (model.status?.notifications.fcmServiceAccountConfigured ?? false)
     }
 
     private var googleServicesReady: Bool {
-        !model.googleServicesPath.isEmpty || (model.status?.notifications.fcmClientConfigured ?? false)
+        model.googleServicesPath.isEmpty && (model.status?.notifications.fcmClientConfigured ?? false)
     }
 
     private var serviceAccountLabel: String {
@@ -155,27 +154,17 @@ private struct FirebaseSetupCard: View {
         }
     }
 
-    private func chooseServiceAccount() {
+    private func chooseJSONFile(into selection: Binding<String>) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.json]
         if panel.runModal() == .OK, let url = panel.url {
-            model.serviceAccountPath = url.path
+            selection.wrappedValue = url.path
         }
     }
 
-    private func chooseGoogleServices() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.json]
-        if panel.runModal() == .OK, let url = panel.url {
-            model.googleServicesPath = url.path
-        }
-    }
 }
 
 private struct PushPrivacyCard: View {

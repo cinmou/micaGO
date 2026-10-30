@@ -19,7 +19,7 @@ void main() {
         'serviceName': 'iMessage',
         'serviceCategory': 'imessage',
       });
-      expect(c.service.canSend, isTrue);
+      expect(c.service.canSendWith(allowSmsSend: false), isTrue);
     });
 
     test('SMS and Unknown chats do not allow attachments', () {
@@ -32,8 +32,8 @@ void main() {
         'guid': 'x',
         'chatIdentifier': 'x',
       });
-      expect(sms.service.canSend, isFalse);
-      expect(unknown.service.canSend, isFalse);
+      expect(sms.service.canSendWith(allowSmsSend: false), isFalse);
+      expect(unknown.service.canSendWith(allowSmsSend: false), isFalse);
     });
   });
 

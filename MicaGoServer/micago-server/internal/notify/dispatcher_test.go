@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,9 +17,33 @@ import (
 	"micagoserver/internal/store"
 )
 
-func TestNoneProviderNoOp(t *testing.T) {
-	if err := (NoneProvider{}).Send(context.Background(), store.DeviceRecord{}, Notification{}); err != nil {
-		t.Fatalf("expected none provider to no-op, got %v", err)
+func TestDispatcherFCMAvailabilityTracksConfiguration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "service-account.json")
+	if err := os.WriteFile(path, testServiceAccountJSON(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{NotificationsEnabled: true}
+	d := NewDispatcher(cfg)
+	device := store.DeviceRecord{PushEnabled: true, PushProvider: "fcm"}
+	for _, accountPath := range []string{"", path + ".missing"} {
+		cfg.FCM = config.FCMConfig{Enabled: true, ServiceAccountPath: accountPath}
+		d.Reload(cfg)
+		if slices.Contains(d.ImplementedProviders(), "fcm") {
+			t.Fatal("unconfigured FCM reported as available")
+		}
+		if err := d.SendTest(context.Background(), device); err != ErrPushNotConfigured {
+			t.Fatalf("unconfigured FCM returned %v", err)
+		}
+	}
+	cfg.FCM.ServiceAccountPath = path
+	d.Reload(cfg)
+	if !slices.Contains(d.ImplementedProviders(), "fcm") {
+		t.Fatal("configured FCM missing from available providers")
+	}
+	cfg.FCM.Enabled = false
+	d.Reload(cfg)
+	if slices.Contains(d.ImplementedProviders(), "fcm") {
+		t.Fatal("disabled FCM still available after reload")
 	}
 }
 
@@ -211,7 +237,6 @@ type fakeProvider struct {
 	}
 }
 
-func (f *fakeProvider) Name() string { return "fcm" }
 func (f *fakeProvider) Send(_ context.Context, d store.DeviceRecord, n Notification) error {
 	f.sent = append(f.sent, struct {
 		device       store.DeviceRecord

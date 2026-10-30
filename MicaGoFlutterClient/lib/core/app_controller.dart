@@ -176,7 +176,6 @@ class AppController extends ChangeNotifier {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     _profile = null;
-    _serverUrls = null;
     _activeCandidate = null;
     _serverReachable = false;
     cache.accessAllowed = false;
@@ -227,13 +226,11 @@ class AppController extends ChangeNotifier {
 
   ConnectionProfile? _profile;
   ApiClient? _api;
-  ServerUrls? _serverUrls;
   ConnectionCandidate? _activeCandidate;
   final Map<String, RouteProbe> _routeProbes = {};
   final Set<String> _probingRoutes = {};
   String? _switchingRoute;
   int _selectionEpoch = 0;
-  final List<String> _connectionLog = <String>[];
   bool _bootstrapped = false;
   DateTime? _lastCatchUpSyncAt;
   bool _catchUpInFlight = false;
@@ -419,14 +416,16 @@ class AppController extends ChangeNotifier {
     final guid = chatGuid.trim();
     final api = _api;
     if (guid.isEmpty || api == null) return;
-    final ok = await api.putSyncRule(
-      targetKind: 'chat',
-      targetValue: guid,
-      syncMode: 'inherit',
-      pushMode: muted ? 'muted' : 'inherit',
-    );
-    if (!ok) {
-      debugPrint('MicaGo mute sync failed for chat $guid');
+    try {
+      await api.putSyncRule(
+        targetKind: 'chat',
+        targetValue: guid,
+        pushMode: muted ? 'muted' : 'inherit',
+      );
+    } on ApiException catch (error) {
+      debugPrint(
+        'MicaGo mute sync failed: ${error.code} (${error.statusCode})',
+      );
     }
   }
 
@@ -468,7 +467,6 @@ class AppController extends ChangeNotifier {
 
   ConnectionProfile? get profile => tokenRejected.value ? null : _profile;
   ApiClient? get api => tokenRejected.value ? null : _api;
-  ServerUrls? get serverUrls => _serverUrls;
   ConnectionCandidate? get activeCandidate => _activeCandidate;
 
   /// Routes in a stable order for Settings (the chosen route is not moved).
@@ -488,11 +486,9 @@ class AppController extends ChangeNotifier {
   Map<String, RouteProbe> get routeProbes => Map.unmodifiable(_routeProbes);
   List<ConnectionCandidate> get connectionCandidates =>
       _profile == null ? const [] : connectionCandidatesForProfile(_profile!);
-  List<String> get connectionLog => List.unmodifiable(_connectionLog);
   bool get hasProfile =>
       !tokenRejected.value && (_profile?.isComplete ?? false);
   bool get bootstrapped => _bootstrapped;
-  DateTime? get lastCatchUpSyncAt => _lastCatchUpSyncAt;
   bool get realtimeCatchingUp => _realtimeCatchingUp;
   String? customAvatarPathFor(String key) => _customAvatarPaths[key];
 
@@ -627,12 +623,17 @@ class AppController extends ChangeNotifier {
   Future<void> _refreshMutedChatsFromServer() async {
     final api = _api;
     if (api == null) return;
-    final muted = await api.getMutedChatGuids();
-    if (muted == null) return;
-    _mutedChats
-      ..clear()
-      ..addAll(muted);
-    notifyListeners();
+    try {
+      final muted = await api.getMutedChatGuids();
+      _mutedChats
+        ..clear()
+        ..addAll(muted);
+      notifyListeners();
+    } on ApiException catch (error) {
+      debugPrint(
+        'MicaGo mute refresh failed: ${error.code} (${error.statusCode})',
+      );
+    }
   }
 
   Future<void> _loadNotificationPreferences() async {
@@ -696,7 +697,6 @@ class AppController extends ChangeNotifier {
     _redeemedProfile = null;
     _profile = profile;
     _serverReachable = false;
-    _serverUrls = null;
     _activeCandidate = null;
     _logConnectionSelection('save profile mode=${profile.mode.name}');
     _logConnectionSelection(
@@ -763,8 +763,8 @@ class AppController extends ChangeNotifier {
   Future<void> refreshServerUrls() async {
     final api = _api;
     if (api == null) return;
-    _serverUrls = await api.getServerUrls();
-    await _persistEndpointCandidates(_serverUrls!);
+    final urls = await api.getServerUrls();
+    await _persistEndpointCandidates(urls);
     notifyListeners();
     unawaited(_registerDeviceIfPossible());
   }
@@ -1456,10 +1456,16 @@ class AppController extends ChangeNotifier {
 
   /// Fetches the server's sync settings (server-authoritative SMS sendability).
   Future<void> refreshSyncSettings() async {
-    final settings = await _api?.getSyncSettings();
-    if (settings != null) {
-      _syncSettings = settings;
-      notifyListeners();
+    try {
+      final settings = await _api?.getSyncSettings();
+      if (settings != null) {
+        _syncSettings = settings;
+        notifyListeners();
+      }
+    } on ApiException catch (error) {
+      debugPrint(
+        'MicaGo sync settings refresh failed: ${error.code} (${error.statusCode})',
+      );
     }
   }
 
@@ -1469,12 +1475,10 @@ class AppController extends ChangeNotifier {
     final api = _api;
     if (api == null) return false;
     final current = _syncSettings ?? await api.getSyncSettings();
-    if (current == null) return false;
     final updated = await api.putSyncSettings({
       ...current,
       'allowSmsSend': value,
     });
-    if (updated == null) return false;
     _syncSettings = updated;
     notifyListeners();
     return true;
@@ -1494,10 +1498,16 @@ class AppController extends ChangeNotifier {
 
   /// Fetches the current test-contact state from the server. Best-effort.
   Future<void> refreshTestContact() async {
-    final config = await _api?.getTestContactConfig();
-    if (config != null && config.enabled != _testContactEnabled) {
-      _testContactEnabled = config.enabled;
-      notifyListeners();
+    try {
+      final config = await _api?.getTestContactConfig();
+      if (config != null && config.enabled != _testContactEnabled) {
+        _testContactEnabled = config.enabled;
+        notifyListeners();
+      }
+    } on ApiException catch (error) {
+      debugPrint(
+        'MicaGo test contact refresh failed: ${error.code} (${error.statusCode})',
+      );
     }
   }
 
@@ -1508,7 +1518,6 @@ class AppController extends ChangeNotifier {
     final api = _api;
     if (api == null) return false;
     final result = await api.setTestContact(enabled: value);
-    if (result == null) return false;
     if (!result.enabled) {
       await cache.removeChats(_testChatGuids);
     }
@@ -1702,7 +1711,6 @@ class AppController extends ChangeNotifier {
   // the text. (The FCM path is gated server-side; this keeps the local path in
   // step for the default.)
   String _notificationPreview = 'sender_and_text';
-  String get notificationPreview => _notificationPreview;
   bool get notificationShowsMessageText =>
       _notificationPreview == 'sender_and_text';
 
@@ -2218,8 +2226,18 @@ class AppController extends ChangeNotifier {
   Timer? _heartbeatTimer;
   void _startDeviceHeartbeat(String id) {
     _heartbeatTimer ??= Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_api?.deviceHeartbeat(id) ?? Future<void>.value());
+      unawaited(_sendDeviceHeartbeat(id));
     });
+  }
+
+  Future<void> _sendDeviceHeartbeat(String id) async {
+    try {
+      await _api?.deviceHeartbeat(id);
+    } on ApiException catch (error) {
+      debugPrint(
+        'MicaGo heartbeat failed: ${error.code} (${error.statusCode})',
+      );
+    }
   }
 
   Future<bool> markRealtimeEventApplied(
@@ -2366,7 +2384,6 @@ class AppController extends ChangeNotifier {
     _api?.close();
     _api = null;
     _profile = null;
-    _serverUrls = null;
     _activeCandidate = null;
     _customAvatarPaths.clear();
     notifyListeners();
@@ -2450,10 +2467,6 @@ class AppController extends ChangeNotifier {
   void _logConnectionSelection(String message) {
     final line = '${DateTime.now().toIso8601String()} $message';
     debugPrint('[MicaGo connection] $line');
-    _connectionLog.add(line);
-    if (_connectionLog.length > 80) {
-      _connectionLog.removeRange(0, _connectionLog.length - 80);
-    }
   }
 
   @override
@@ -2478,8 +2491,4 @@ class AppController extends ChangeNotifier {
     unawaited(cache.close());
     super.dispose();
   }
-}
-
-extension _FirstOrNull<E> on List<E> {
-  E? get firstOrNull => isEmpty ? null : first;
 }

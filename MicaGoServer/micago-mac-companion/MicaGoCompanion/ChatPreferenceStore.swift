@@ -37,6 +37,7 @@ final class ChatPreferenceStore: ObservableObject {
     private var state: State
     @Published private(set) var hidden: Set<String> = []
     @Published private(set) var errorKey: String?
+    @Published private(set) var errorMessage: String?
     @Published private(set) var busy = false
     var hasConflicts: Bool { !state.conflicts.isEmpty }
     var pending: Bool { !state.queue.isEmpty }
@@ -95,7 +96,7 @@ final class ChatPreferenceStore: ObservableObject {
                             }
                         }
                     }
-                } catch APIError.status(409) {
+                } catch APIError.status(409, _) {
                     let fresh = try await client.chatPreferences()
                     guard fresh.serverId == state.serverId else { throw APIError.status(409) }
                     state.conflicts.append(state.queue.removeFirst())
@@ -104,7 +105,21 @@ final class ChatPreferenceStore: ObservableObject {
                 publish()
             }
             errorKey = hasConflicts ? "prefs.conflict" : nil
-        } catch { errorKey = "prefs.offline" }
+            errorMessage = nil
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
+        } catch let error as URLError where [
+            .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
+            .dnsLookupFailed, .networkConnectionLost, .timedOut,
+        ].contains(error.code) {
+            errorKey = "prefs.offline"
+            errorMessage = nil
+        } catch {
+            errorKey = nil
+            errorMessage = error.localizedDescription
+        }
     }
 
     func setHidden(_ guid: String, hidden: Bool, client: APIClient?) async {
@@ -113,7 +128,7 @@ final class ChatPreferenceStore: ObservableObject {
             changes: [ChatPreferenceChange(chatGuid: guid, hidden: hidden, baseRevision: state.rows[guid]?.revision ?? 0)]))
         publish()
         if let client { await sync(client: client) }
-        else { errorKey = "prefs.offline" }
+        else { errorKey = "prefs.offline"; errorMessage = nil }
     }
 
     func resolve(useMine: Bool, client: APIClient?) async {
@@ -128,6 +143,7 @@ final class ChatPreferenceStore: ObservableObject {
         }
         state.conflicts.removeAll()
         errorKey = nil
+        errorMessage = nil
         publish()
         if let client { await sync(client: client) }
     }

@@ -116,10 +116,8 @@ struct ContentView: View {
         .environmentObject(nav)
         .environment(\.locale, Locale(identifier: L10n.languageIdentifier(for: appLanguage)))
         .frame(minWidth: 820, idealWidth: 1000, minHeight: 560, idealHeight: 720)
-        // Expose the WindowGroup's openWindow to AppKit so the menu-bar "Open
-        // Dashboard" reopens THIS window (native toolbar/titlebar) rather than a
-        // hand-rolled NSWindow that renders the toolbar differently.
-        .dashboardWindowOpeningBridge()
+        // Track the dashboard for window reuse and Dock visibility.
+        .dashboardWindowTrackingBridge()
         .onChange(of: model.developerModeEnabled) { enabled in
             if !enabled, nav.selection == .debug || nav.selection == .log {
                 nav.selection = .advanced
@@ -1381,7 +1379,7 @@ private struct BackendIdentityCard: View {
                     LabeledRow(label: "Backfill", value: "\(s.backfillMode) (\(s.recentMessagesPerChat)/chat)")
                 }
             } else if model.status != nil {
-                Label("The running server doesn't report its build, so it predates v0.15 and lacks recent sync fixes. Restart it with the latest backend.",
+                Label("The running server does not report build details. Check which backend binary is running.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1599,14 +1597,7 @@ private struct PublicURLEditor: View {
         if !r.reachable {
             return (L10n.localized( "Couldn’t reach the public URL. Check that the tunnel is running and forwards to this server’s port."), false)
         }
-        switch r.status {
-        case 401, 403:
-            return (L10n.localized( "Reached a server, but it rejected the token (\(r.status)). The public URL may point to another server."), false)
-        case 502, 503, 504:
-            return (L10n.localized( "The tunnel answered, but no server is behind it (\(r.status)). Make sure micaGO is running and the tunnel forwards to its port."), false)
-        default:
-            return (r.message.isEmpty ? L10n.localized( "Validation failed (HTTP \(r.status)).") : r.message, false)
-        }
+        return (r.message.isEmpty ? L10n.localized( "Validation failed (HTTP \(r.status)).") : r.message, false)
     }
 
     private func providerLabel(_ hint: String) -> String {
@@ -1658,10 +1649,7 @@ private struct ReachableDot: View {
 
 // MARK: - Create Connection (C23 — one canonical pairing card)
 
-/// The single place to set up a client. Encodes ONE unified connection payload
-/// (all candidates + token + config revision) into a QR code and a copyable
-/// JSON. No LAN-only vs LAN+Public mode picker — the client auto-selects. No
-/// long explanations; per-endpoint rows live in an expandable detail only.
+/// Displays the v4 invitation and its available LAN/Public routes.
 private struct CreateConnectionCard: View {
     @EnvironmentObject var model: AppModel
 
@@ -1748,32 +1736,6 @@ private struct StatusFlag: View {
     }
 }
 
-// MARK: - Devices
-
-// MARK: - Notifications
-
-private struct NotificationsSection: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        SectionCard(title: "Notification Providers") {
-            if let n = model.status?.notifications {
-                LabeledRow(label: "Enabled", value: n.enabled ? L10n.localized( "yes") : L10n.localized( "no"))
-                LabeledRow(label: "Provider", value: n.provider)
-                LabeledRow(label: "Client config", value: (n.fcmClientConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
-                LabeledRow(label: "Service account", value: (n.fcmServiceAccountConfigured ?? false) ? L10n.localized( "configured") : L10n.localized( "not set"))
-                LabeledRow(label: "Implemented", value: n.implemented.joined(separator: ", "))
-                LabeledRow(label: "Stub", value: n.stub.isEmpty ? "—" : n.stub.joined(separator: ", "))
-            } else {
-                Text("Unavailable.").foregroundStyle(.secondary)
-            }
-            Text("Read-only. Set up Firebase (FCM) on the Notifications page.")
-                .font(.caption2).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
 // MARK: - Diagnostics
 
 private struct DiagnosticsSection: View {
@@ -1833,8 +1795,7 @@ private struct PermissionRow: View {
 
 // MARK: - Launch at login
 
-/// C23 cleanup: login-at-launch controls without their own card, so they live
-/// inside the merged "General Settings" section.
+/// Login item controls in General Settings.
 private struct LaunchAtLoginControls: View {
     @State private var enabled = LaunchAtLogin.isEnabled
     @State private var error: String?
@@ -1843,7 +1804,6 @@ private struct LaunchAtLoginControls: View {
         Toggle(isOn: $enabled) {
             Text(L10n.localized( "settings.login.startAtLogin"))
         }
-        .disabled(!LaunchAtLogin.isSupported)
         .onChange(of: enabled) { newValue in
             do {
                 try LaunchAtLogin.set(newValue)

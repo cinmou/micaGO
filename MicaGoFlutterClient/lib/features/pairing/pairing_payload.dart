@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import '../../core/models/connection_profile.dart'
-    show ConnectionProfile, ConnectionMode, EndpointRef, connectionModeFromWire;
+    show ConnectionProfile, ConnectionMode, EndpointRef;
 import '../../core/network/endpoint_utils.dart';
 import '../../core/l10n/app_localizations.dart';
 
@@ -13,8 +13,7 @@ class PairingParseException implements Exception {
   String toString() => 'PairingParseException: $message';
 }
 
-/// The kind of a pairing endpoint candidate. `local`/loopback is accepted for
-/// back-compat but is never surfaced as a user-facing pairing option.
+/// Local and unknown endpoint kinds are excluded from pairing candidates.
 enum EndpointKind { lan, public, local }
 
 EndpointKind endpointKindFromWire(String? v) {
@@ -28,7 +27,7 @@ EndpointKind endpointKindFromWire(String? v) {
   }
 }
 
-/// One candidate endpoint from a v2 pairing payload.
+/// One advertised pairing endpoint.
 class PairingEndpoint {
   final EndpointKind kind;
   final String baseUrl;
@@ -49,16 +48,7 @@ class PairingEndpoint {
       : deriveWebSocketUrl(baseUrl);
 }
 
-/// A parsed MicaGo pairing payload. Supports both the legacy v1 shape
-/// (`{baseUrl, websocketUrl?, token}`) and the C10 v2 shape:
-/// ```json
-/// { "version": 2, "mode": "lanFirst", "token": "...",
-///   "serverName": "Mac mini",
-///   "endpoints": [
-///     {"kind":"lan","baseUrl":"http://192.168.1.23:3000","priority":1},
-///     {"kind":"public","baseUrl":"https://micago.example.com","priority":2}
-///   ] }
-/// ```
+/// A secure v4 invitation, redeemed for device credentials on activation.
 class PairingPayload {
   final int version;
   final ConnectionMode mode;
@@ -67,9 +57,7 @@ class PairingPayload {
   final String? serverName;
   final List<PairingEndpoint> endpoints;
 
-  /// C23: the server's connection-config revision, carried in the v3 unified
-  /// payload so a paired client can detect later LAN/Public changes without
-  /// rescanning. Empty for v1/v2.
+  /// Detects advertised route changes after pairing.
   final String configRevision;
 
   const PairingPayload({
@@ -91,7 +79,7 @@ class PairingPayload {
   PairingEndpoint? get public =>
       endpoints.where((e) => e.kind == EndpointKind.public).firstOrNull;
 
-  /// Back-compat: the primary base URL (LAN first, else whatever leads).
+  /// Primary base URL, preferring a LAN route.
   String get baseUrl => (lan ?? _primary)?.baseUrl ?? '';
   String? get websocketUrl => (lan ?? _primary)?.wsUrl;
   String get effectiveWsUrl =>
@@ -103,8 +91,7 @@ class PairingPayload {
     final lanE = lan;
     final publicE = public;
     final primary = lanE ?? _primary;
-    // C26: keep ALL advertised LAN routes so the client can switch interfaces,
-    // not just the first one.
+    // Retain every LAN interface for runtime route selection.
     final lanRoutes = [
       for (final e in lanAll)
         EndpointRef(
@@ -116,7 +103,7 @@ class PairingPayload {
       baseUrl: normalizeBaseUrl(primary?.baseUrl ?? ''),
       token: token,
       tlsFingerprint: tlsFingerprint,
-      pairingCode: version >= 4 ? token : null,
+      pairingCode: token,
       wsUrlOverride: (primary?.wsUrl?.trim().isNotEmpty ?? false)
           ? primary!.wsUrl!.trim()
           : null,
@@ -133,8 +120,7 @@ class PairingPayload {
       'PairingPayload(v$version, mode: $mode, endpoints: ${endpoints.length}, token: <redacted>)';
 }
 
-/// Parses and validates a scanned QR string (v1 or v2). Throws
-/// [PairingParseException] with a user-readable message. Pure + unit-testable.
+/// Parses a v4 invitation or throws [PairingParseException].
 PairingPayload parsePairingPayload(String raw) {
   final trimmed = raw.trim();
   if (trimmed.isEmpty) {
@@ -155,27 +141,27 @@ PairingPayload parsePairingPayload(String raw) {
     );
   }
 
-  final version = (decoded['version'] as num?)?.toInt() ?? 1;
-  final token =
-      (decoded[version >= 4 ? 'pairingCode' : 'token'] as String?)?.trim() ??
-      '';
+  if (decoded['version'] != 4) {
+    throw PairingParseException(
+      MicaLocalizations.current.t('pair.secureUpgrade'),
+    );
+  }
+  final token = (decoded['pairingCode'] as String?)?.trim() ?? '';
   if (token.isEmpty) {
     throw PairingParseException(
       MicaLocalizations.current.t('pair.missingToken'),
     );
   }
 
-  // C23 v3: unified payload — all candidates, no mode, with a config revision.
-  if (version >= 3 && decoded['candidates'] is List) {
-    return _parseV3(decoded, token);
+  if (decoded['candidates'] is! List) {
+    throw PairingParseException(
+      MicaLocalizations.current.t('pair.noUsableEndpoint'),
+    );
   }
-  if (version >= 2 && decoded['endpoints'] is List) {
-    return _parseV2(decoded, token);
-  }
-  return _parseV1(decoded, token);
+  return _parseCandidates(decoded, token);
 }
 
-PairingPayload _parseV3(Map<String, dynamic> decoded, String token) {
+PairingPayload _parseCandidates(Map<String, dynamic> decoded, String token) {
   final rawCandidates = (decoded['candidates'] as List)
       .whereType<Map<String, dynamic>>()
       .toList(growable: false);
@@ -201,7 +187,7 @@ PairingPayload _parseV3(Map<String, dynamic> decoded, String token) {
     );
   }
 
-  // Drop loopback/local; the client always tries LAN first then Public.
+  // Hidden and local routes are not pairing candidates.
   final usable =
       parsed.where((e) => e.kind != EndpointKind.local && !e.hidden).toList()
         ..sort((a, b) => a.priority.compareTo(b.priority));
@@ -211,110 +197,23 @@ PairingPayload _parseV3(Map<String, dynamic> decoded, String token) {
     );
   }
 
-  if (((decoded['version'] as num?)?.toInt() ?? 3) >= 4) {
-    if (!RegExp(
-          r'^[a-fA-F0-9]{64}$',
-        ).hasMatch((decoded['tlsFingerprint'] as String?) ?? '') ||
-        usable.any((e) => !isSecureEndpointPair(e.baseUrl, e.effectiveWsUrl))) {
-      throw const PairingParseException(
-        'Invalid secure pairing endpoints or certificate fingerprint.',
-      );
-    }
+  if (!RegExp(
+        r'^[a-fA-F0-9]{64}$',
+      ).hasMatch((decoded['tlsFingerprint'] as String?) ?? '') ||
+      usable.any((e) => !isSecureEndpointPair(e.baseUrl, e.effectiveWsUrl))) {
+    throw const PairingParseException(
+      'Invalid secure pairing endpoints or certificate fingerprint.',
+    );
   }
   return PairingPayload(
-    version: (decoded['version'] as num?)?.toInt() ?? 3,
+    version: 4,
     tlsFingerprint: (decoded['tlsFingerprint'] as String?) ?? '',
-    // No user-facing mode in v3 — auto LAN-first, Public fallback.
+
     mode: ConnectionMode.lanFirst,
     token: token,
     serverName: (decoded['serverName'] as String?)?.trim(),
     configRevision: (decoded['configRevision'] as String?)?.trim() ?? '',
     endpoints: usable,
-  );
-}
-
-PairingPayload _parseV1(Map<String, dynamic> decoded, String token) {
-  final baseUrl = (decoded['baseUrl'] as String?)?.trim() ?? '';
-  final wsRaw = (decoded['websocketUrl'] as String?)?.trim();
-  if (baseUrl.isEmpty) {
-    throw PairingParseException(
-      MicaLocalizations.current.t('pair.missingServerUrl'),
-    );
-  }
-  if (!isValidHttpUrl(baseUrl)) {
-    throw PairingParseException(
-      MicaLocalizations.current.t('pair.serverUrlScheme'),
-    );
-  }
-  _validateWs(wsRaw);
-  return PairingPayload(
-    version: 1,
-    mode: ConnectionMode.auto,
-    token: token,
-    endpoints: [
-      PairingEndpoint(
-        kind: EndpointKind.lan,
-        baseUrl: baseUrl,
-        wsUrl: (wsRaw?.isNotEmpty ?? false) ? wsRaw : null,
-        priority: 1,
-      ),
-    ],
-  );
-}
-
-PairingPayload _parseV2(Map<String, dynamic> decoded, String token) {
-  final mode = connectionModeFromWire(decoded['mode'] as String?);
-  final rawEndpoints = (decoded['endpoints'] as List)
-      .whereType<Map<String, dynamic>>()
-      .toList(growable: false);
-
-  final parsed = <PairingEndpoint>[];
-  for (final e in rawEndpoints) {
-    final baseUrl = (e['baseUrl'] as String?)?.trim() ?? '';
-    if (baseUrl.isEmpty || !isValidHttpUrl(baseUrl)) continue;
-    final ws = (e['wsUrl'] as String?)?.trim();
-    _validateWs(ws);
-    parsed.add(
-      PairingEndpoint(
-        kind: endpointKindFromWire(e['kind'] as String?),
-        baseUrl: baseUrl,
-        wsUrl: (ws?.isNotEmpty ?? false) ? ws : null,
-        priority: (e['priority'] as num?)?.toInt() ?? 1,
-        hidden:
-            _boolFlag(e['hidden']) ||
-            _boolFlag(e['isHidden']) ||
-            _boolFlag(e['disabled']) ||
-            (e.containsKey('enabled') && !_boolFlag(e['enabled'])),
-      ),
-    );
-  }
-
-  // Drop loopback/local from the user-facing candidate set; sort by priority.
-  final usable =
-      parsed.where((e) => e.kind != EndpointKind.local && !e.hidden).toList()
-        ..sort((a, b) => a.priority.compareTo(b.priority));
-  if (usable.isEmpty) {
-    throw PairingParseException(
-      MicaLocalizations.current.t('pair.noUsableEndpoint'),
-    );
-  }
-
-  // LAN-only must never carry a public endpoint.
-  final endpoints = mode == ConnectionMode.lanOnly
-      ? usable.where((e) => e.kind == EndpointKind.lan).toList()
-      : usable;
-  if (endpoints.isEmpty) {
-    throw PairingParseException(
-      MicaLocalizations.current.t('pair.lanOnlyNoLan'),
-    );
-  }
-
-  return PairingPayload(
-    version: 2,
-    mode: mode == ConnectionMode.auto ? ConnectionMode.lanFirst : mode,
-    token: token,
-    serverName: (decoded['serverName'] as String?)?.trim(),
-    endpoints: endpoints,
   );
 }
 
@@ -333,12 +232,5 @@ void _validateWs(String? wsRaw) {
   final ws = Uri.tryParse(wsRaw);
   if (ws == null || (ws.scheme != 'ws' && ws.scheme != 'wss')) {
     throw PairingParseException(MicaLocalizations.current.t('pair.wsScheme'));
-  }
-}
-
-extension _FirstOrNull<E> on Iterable<E> {
-  E? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
   }
 }

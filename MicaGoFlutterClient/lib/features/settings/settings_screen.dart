@@ -1,3 +1,4 @@
+import '../../core/network/api_client.dart';
 import 'message_preference_status.dart';
 import 'dart:async';
 import 'dart:io';
@@ -835,15 +836,26 @@ class _SmsSendingTileState extends State<_SmsSendingTile> {
 
   Future<void> _toggle(bool value) async {
     setState(() => _busy = true);
-    final ok = await widget.app.setAllowSmsSend(value);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (!ok) {
-      TopBanner.show(
-        context,
-        MicaLocalizations.of(context).t('settings.smsUpdateFailed'),
-        kind: TopBannerKind.error,
-      );
+    try {
+      final ok = await widget.app.setAllowSmsSend(value);
+      if (!mounted) return;
+      if (!ok) {
+        TopBanner.show(
+          context,
+          MicaLocalizations.of(context).t('settings.smsUpdateFailed'),
+          kind: TopBannerKind.error,
+        );
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        TopBanner.show(
+          context,
+          error.localizedMessage(),
+          kind: TopBannerKind.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -886,15 +898,26 @@ class _TestContactCardState extends State<_TestContactCard> {
 
   Future<void> _toggle(bool value) async {
     setState(() => _busy = true);
-    final ok = await widget.app.setTestContactEnabled(value);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (!ok) {
-      TopBanner.show(
-        context,
-        MicaLocalizations.of(context).t('settings.testContactUpdateFailed'),
-        kind: TopBannerKind.error,
-      );
+    try {
+      final ok = await widget.app.setTestContactEnabled(value);
+      if (!mounted) return;
+      if (!ok) {
+        TopBanner.show(
+          context,
+          MicaLocalizations.of(context).t('settings.testContactUpdateFailed'),
+          kind: TopBannerKind.error,
+        );
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        TopBanner.show(
+          context,
+          error.localizedMessage(),
+          kind: TopBannerKind.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 

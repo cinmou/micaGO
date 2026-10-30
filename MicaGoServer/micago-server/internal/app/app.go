@@ -124,10 +124,7 @@ func (d *syncDiagnostics) recordError(err error) {
 	d.data.LastSyncError = err.Error()
 }
 
-// lookbackScanEvery is how often the date-window recovery scan runs (C57). The
-// rowid watermark catches new rows on every sync; the date union only recovers
-// rows a WAL/rowid race skipped, so once a minute keeps the recovery bound
-// tight while removing it from the 5s/mtime/send-burst hot path.
+// ROWID 扫描每次同步都执行；时间窗口补查限制为每分钟一次。
 const lookbackScanEvery = time.Minute
 
 // lookbackGate throttles the date-window recovery scan. take reports whether a
@@ -243,12 +240,6 @@ func Run(options Options) error {
 		dispatcher.SyncPublicURL(ctx, cfg.PublicBaseURL)
 	}
 	var syncMu sync.Mutex
-	// C57: the date-window recovery scan re-reads (and used to re-upsert) up to
-	// InitialSyncLimit rows of the lookback window on EVERY trigger — periodic
-	// 5s ticks, sub-second WAL mtime hits, and 12-shot send bursts alike. The
-	// rowid watermark is the primary new-message path and runs every sync; the
-	// date union is only a recovery net for WAL/rowid races, so it runs at most
-	// once per lookbackScanEvery (re-armed if the run fails).
 	lookbackScan := newLookbackGate(lookbackScanEvery)
 	runSync := func(ctx context.Context) (relaydb.SyncResult, error) {
 		syncMu.Lock()
@@ -326,12 +317,14 @@ func Run(options Options) error {
 		logSyncResult(startupSync, true)
 	}
 
-	// C11: a single coalescing sync engine consumes all background triggers so a
-	// burst of WAL/mtime/send triggers never piles up (and never gets dropped).
-	// Direct callers (startup, client request, the immediate post-send sync) keep
-	// running through runSync's mutex, so nothing overlaps.
+	// 后台触发由 SyncEngine 合并，所有同步执行仍通过 syncMu 串行化。
 	engine := NewSyncEngine(func(ctx context.Context, reason string) error {
-		_, err := syncAndBroadcast(ctx, reason)
+		result, err := syncAndBroadcast(ctx, reason)
+		if err != nil {
+			log.Printf("background sync failed (%s): %v", reason, err)
+		} else {
+			logSyncResult(result, false)
+		}
 		return err
 	})
 	engine.onLockRetry = diagnostics.recordLockRetry
@@ -342,14 +335,8 @@ func Run(options Options) error {
 		if interval <= 0 {
 			interval = 5 * time.Second
 		}
-		go runSyncLoop(ctx, interval, func(ctx context.Context) (relaydb.SyncResult, error) {
-			engine.Trigger("periodic")
-			return relaydb.SyncResult{}, nil
-		}, hub)
-		go runDBMtimeSyncLoop(ctx, cfg.DBPath, 750*time.Millisecond, diagnostics, func(ctx context.Context) (relaydb.SyncResult, error) {
-			engine.Trigger("chatdb_mtime")
-			return relaydb.SyncResult{}, nil
-		})
+		go runSyncLoop(ctx, interval, engine.Trigger)
+		go runDBMtimeSyncLoop(ctx, cfg.DBPath, 750*time.Millisecond, diagnostics, engine.Trigger)
 	}
 
 	sendDeps := &httpapi.SendDependencies{
@@ -364,8 +351,7 @@ func Run(options Options) error {
 			return err
 		},
 		Events: hub,
-		// Send-error fast-fail reads message.error from chat.db directly (the
-		// relay schema has no error column), so it works in both api-store modes.
+		// relay.db 不保存 message.error，发送错误直接从 chat.db 读取。
 		ErrorFinder: queries,
 		// Fast precondition: Messages.app must be running for AppleScript send.
 		MessagesRunning: micasend.MessagesRunning,
@@ -558,8 +544,7 @@ func sendCandidates(messages []store.MessageJSON) []micasend.ReconcileCandidate 
 func runSyncLoop(
 	ctx context.Context,
 	interval time.Duration,
-	syncNow func(context.Context) (relaydb.SyncResult, error),
-	hub *realtime.Hub,
+	trigger func(string),
 ) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -569,20 +554,7 @@ func runSyncLoop(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			result, err := syncNow(ctx)
-			if err != nil {
-				log.Printf("periodic sync failed: %v", err)
-				if hub != nil {
-					_ = hub.Broadcast(ctx, realtime.Event{
-						Type: "sync:error",
-						Data: map[string]any{
-							"message": "periodic sync failed",
-						},
-					})
-				}
-				continue
-			}
-			logSyncResult(result, false)
+			trigger("periodic")
 		}
 	}
 }
@@ -592,7 +564,7 @@ func runDBMtimeSyncLoop(
 	dbPath string,
 	interval time.Duration,
 	diagnostics *syncDiagnostics,
-	syncNow func(context.Context) (relaydb.SyncResult, error),
+	trigger func(string),
 ) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -636,12 +608,7 @@ func runDBMtimeSyncLoop(
 			if !chatChanged && !walChanged && !shmChanged {
 				continue
 			}
-			if _, err := syncNow(ctx); err != nil {
-				log.Printf("chat.db mtime sync failed: %v", err)
-				if diagnostics != nil {
-					diagnostics.recordError(err)
-				}
-			}
+			trigger("chatdb_mtime")
 		}
 	}
 }

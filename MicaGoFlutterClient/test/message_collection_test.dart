@@ -44,12 +44,10 @@ void main() {
     c.mergeServerPage([a, b]);
     expect(c.ordered.map((m) => m.text), ['A', 'B']);
     expect(c.serverByGuid('same'), isNull);
-    c.applyUpdate(b.copyWith(text: 'updated B'));
+    c.upsertServer(b.copyWith(text: 'updated B'));
     expect(c.serverByGuid('same', chatGuid: 'a')!.text, 'A');
     expect(c.applyUnsend('same', 300, chatGuid: 'b'), isTrue);
     expect(c.serverByGuid('same', chatGuid: 'a')!.isRetracted, isFalse);
-    c.removeServerMessages(['a\u001fsame']);
-    expect(c.ordered.single.chatGuid, 'b');
   });
 
   group('server message events', () {
@@ -72,7 +70,7 @@ void main() {
       c.upsertServer(
         _server(guid: 'a', text: 'hi', isFromMe: true, dateCreated: 100),
       );
-      c.applyUpdate(
+      c.upsertServer(
         _server(
           guid: 'a',
           text: 'hi',
@@ -101,7 +99,7 @@ void main() {
           dateDelivered: 150,
         ),
       );
-      c.applyUpdate(
+      c.upsertServer(
         _server(
           guid: 'a',
           isFromMe: true,
@@ -191,7 +189,7 @@ void main() {
       c.upsertServer(
         _server(guid: 'srv', text: 'yo', isFromMe: true, dateCreated: 1200),
       );
-      c.applyUpdate(
+      c.upsertServer(
         _server(
           guid: 'srv',
           text: 'yo',
@@ -307,16 +305,6 @@ void main() {
       expect(c.ordered.single.text, 'after');
     });
 
-    test('explicit removal survives an in-flight page', () {
-      final c = MessageCollection();
-      final row = _server(guid: 'a', dateCreated: 1000);
-      c.upsertServer(row);
-      final baseline = c.snapshot();
-      c.removeServerMessages(['a']);
-      c.mergeServerPage([row], baseline: baseline);
-      expect(c.ordered, isEmpty);
-    });
-
     test('an empty page never clears the thread', () {
       final c = MessageCollection();
       c.upsertServer(_server(guid: 'a', dateCreated: 1000));
@@ -324,10 +312,10 @@ void main() {
       expect(c.ordered.map((m) => m.guid).toList(), ['a']);
     });
 
-    test('mergeOlder does not drop newer messages', () {
+    test('pagination does not drop newer messages', () {
       final c = MessageCollection();
       c.upsertServer(_server(guid: 'new', dateCreated: 200));
-      c.mergeOlder([_server(guid: 'old', dateCreated: 100)]);
+      c.mergeServerPage([_server(guid: 'old', dateCreated: 100)]);
       expect(c.ordered.map((m) => m.guid).toList(), ['old', 'new']);
     });
   });

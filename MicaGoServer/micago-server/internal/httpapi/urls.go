@@ -249,8 +249,6 @@ func (c *NetworkController) Check(ctx context.Context) PublicURLCheckResult {
 		result.Message = "public URL reaches this server and bearer auth works"
 	case resp.StatusCode == http.StatusOK:
 		result.Message = "public URL returned an invalid MicaGo authentication response"
-	case resp.StatusCode == http.StatusUnauthorized:
-		result.Message = "reached a server but bearer auth was rejected"
 	default:
 		result.Message = fmt.Sprintf("reached an endpoint but received HTTP %d", resp.StatusCode)
 	}

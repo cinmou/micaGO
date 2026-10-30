@@ -27,7 +27,6 @@ type PendingSend struct {
 
 	// Lifecycle bookkeeping (set/maintained by PendingSendManager).
 	CreatedAt    time.Time
-	Deadline     time.Time
 	Status       SendStatus
 	MatchedGUID  string
 	MatchedROWID int64

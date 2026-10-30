@@ -18,8 +18,6 @@ class VoiceRecorder {
   final ValueNotifier<Duration> elapsed = ValueNotifier(Duration.zero);
   final ValueNotifier<List<double>> levels = ValueNotifier(<double>[]);
 
-  bool get isRecording => _path != null;
-
   /// Starts recording. Returns false when the mic permission is denied or the
   /// recorder can't start (no crash, no partial file left behind).
   Future<bool> start() async {

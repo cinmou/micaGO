@@ -79,15 +79,12 @@ func TestParseLegacyHandwrittenConfig(t *testing.T) {
 	if !cfg.FCM.Enabled || cfg.FCM.ProjectID != "my-project" || cfg.FCM.ServiceAccountPath != "~/.micago/sa.json" || cfg.FCM.GoogleServicesPath != "~/.micago/google-services.json" {
 		t.Fatalf("fcm section mismatch: %+v", cfg.FCM)
 	}
-	if !cfg.HMS.Enabled || cfg.HMS.AppID != "hms-app" || cfg.HMS.AppSecret != "hms-secret" || cfg.HMS.TokenCachePath != "~/.micago/hms-token.json" {
-		t.Fatalf("hms section mismatch: %+v", cfg.HMS)
-	}
 	if !cfg.Firebase.PublicURLSync || cfg.Firebase.URLCollection != "servers" || cfg.Firebase.URLDocument != "primary" {
 		t.Fatalf("firebase section mismatch: %+v", cfg.Firebase)
 	}
 }
 
-// A legacy file must survive parse → render → parse without losing or changing
+// Supported settings must survive parse → render → parse without changing
 // any field (what every UpdatePublicBaseURL / UpdateNotificationsConfig call
 // does to an existing config).
 func TestLegacyConfigRoundTripsThroughNewRenderer(t *testing.T) {
@@ -106,9 +103,15 @@ func TestLegacyConfigRoundTripsThroughNewRenderer(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("round-trip changed config:\nfirst:  %+v\nsecond: %+v", first, second)
 	}
-	// The renderer keeps the legacy byte format exactly, so a round-tripped
-	// legacy file is byte-identical too.
-	if rendered != legacyRenderedConfig {
+	// Deprecated HMS settings are ignored; supported sections retain their format.
+	const obsoleteHMS = `hms:
+  enabled: true
+  app_id: "hms-app"
+  app_secret: "hms-secret"
+  token_cache_path: "~/.micago/hms-token.json"
+
+`
+	if rendered != strings.Replace(legacyRenderedConfig, obsoleteHMS, "", 1) {
 		t.Fatalf("rendered output diverged from legacy format:\n%s", rendered)
 	}
 }
@@ -156,5 +159,23 @@ experimental:
 	}
 	if cfg.Server.Addr != "0.0.0.0:3000" || !cfg.Network.VerifyTLS || cfg.Notifications.Provider != "none" {
 		t.Fatalf("defaults not applied: %+v", cfg)
+	}
+}
+
+func TestRemovedNotificationProviders(t *testing.T) {
+	for _, provider := range []string{"hms", "harmony_push", "ntfy"} {
+		t.Run(provider, func(t *testing.T) {
+			cfg, err := parseConfig(strings.Replace(legacyRenderedConfig, `provider: "fcm"`, `provider: "`+provider+`"`, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Notifications.Provider != "none" || !cfg.FCM.Enabled {
+				t.Fatalf("obsolete provider should fall back without changing FCM: %+v", cfg.Notifications)
+			}
+			// Reject before attempting to read or write any file.
+			if err := UpdateNotificationsConfig("", NotificationsUpdate{Provider: provider, Preview: "sender"}); err == nil {
+				t.Fatal("accepted an unimplemented notification provider")
+			}
+		})
 	}
 }

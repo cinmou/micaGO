@@ -47,8 +47,6 @@ func NewFCMProvider(projectID string, tokens tokenProvider, client *http.Client,
 	return &FCMProvider{projectID: projectID, tokens: tokens, client: client, ttl: ttl, prune: prune}
 }
 
-func (p *FCMProvider) Name() string { return "fcm" }
-
 func (p *FCMProvider) Send(ctx context.Context, device store.DeviceRecord, notification Notification) error {
 	if device.PushToken == nil || strings.TrimSpace(*device.PushToken) == "" {
 		return ErrPushNotConfigured

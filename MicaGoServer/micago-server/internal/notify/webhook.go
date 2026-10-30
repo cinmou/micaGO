@@ -16,8 +16,6 @@ type WebhookProvider struct {
 	Client *http.Client
 }
 
-func (p WebhookProvider) Name() string { return "webhook" }
-
 func (p WebhookProvider) Send(ctx context.Context, device store.DeviceRecord, notification Notification) error {
 	if p.URL == "" {
 		return ErrPushNotConfigured

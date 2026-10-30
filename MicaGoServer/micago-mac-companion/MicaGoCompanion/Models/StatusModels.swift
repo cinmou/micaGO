@@ -6,7 +6,6 @@ import Foundation
 struct ServerStatus: Codable {
     var ok: Bool
     var version: String
-    var startedAt: Int64
     var uptimeSeconds: Int64
     var address: AddressStatus
     var store: String
@@ -14,15 +13,13 @@ struct ServerStatus: Codable {
     var sync: SyncStatus
     var notifications: NotificationStatus
     var devices: DevicesStatus
-    var websocket: WebSocketStatus
     var permissions: PermissionStatus
     // Added by v0.11.x schema probing. Optional so older servers still decode.
     var capabilities: ServerCapabilities?
     // C26: IMCore helper status for the advanced iMessage actions (edit/unsend/
     // delete). Optional so pre-C26 servers still decode (absence → unavailable).
     var messageActions: MessageActionsStatus?
-    // C17 backend identity: which binary is actually running. Optional so
-    // pre-v0.15 servers still decode — its absence itself means "stale backend".
+    // Optional build details; absence leaves binary freshness unverified.
     var backend: BackendStatus?
 }
 
@@ -39,7 +36,6 @@ struct MessageActionsStatus: Codable {
     var delete: Bool
     var helper: String?
     var reason: String?
-    var requiresMessages: Bool
     var minimumMacOS: String?
     var platformSupported: Bool?
     var platformWarning: String?
@@ -88,7 +84,6 @@ struct SchemaCapabilities: Codable {
 struct AddressStatus: Codable {
     var listen: String
     var baseUrl: String
-    var websocketUrl: String
     var lan: [String]
 }
 
@@ -97,10 +92,6 @@ struct AuthStatus: Codable {
 }
 
 struct SyncStatus: Codable {
-    var loopEnabled: Bool
-    var intervalSeconds: Int64
-    var lastSyncAt: Int64?
-    var lastMessageRowId: Int64?
     // C11 live sync monitor. Optional so older servers still decode.
     var diagnostics: SyncDiagnostics?
     // C17: settings the running backend actually loaded.
@@ -152,9 +143,7 @@ struct NotificationStatus: Codable {
     var enabled: Bool
     var provider: String
     var preview: String
-    var providers: [String]
     var implemented: [String]
-    var stub: [String]
     var fcmServiceAccountConfigured: Bool?
     var fcmClientConfigured: Bool?
     var fcmEnabled: Bool?
@@ -164,10 +153,6 @@ struct NotificationStatus: Codable {
 
 struct DevicesStatus: Codable {
     var count: Int
-}
-
-struct WebSocketStatus: Codable {
-    var clients: Int
 }
 
 // GET /api/server/connections -> { "data": [ActiveConnectionInfo] }
@@ -182,7 +167,6 @@ struct ActiveConnectionInfo: Codable, Identifiable {
     var platform: String?
     var appVersion: String?
     var remoteAddress: String?
-    var userAgent: String?
     var connectedAt: Int64
     var lastSeenAt: Int64
 
@@ -245,7 +229,6 @@ struct DeviceInfo: Codable, Identifiable {
     var mode: String?
     var pushProvider: String
     var pushEnabled: Bool
-    var pushTokenSet: Bool
     var background: Bool?
     var connected: Bool?
     var lastSeenAt: Int64?

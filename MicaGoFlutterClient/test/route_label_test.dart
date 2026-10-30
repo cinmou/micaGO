@@ -15,48 +15,21 @@ ChatSummary _route(
 });
 
 void main() {
-  group('C24 route label (service + handle)', () {
-    test('label includes the concrete handle, not just the service', () {
+  group('route details', () {
+    test('each route keeps its concrete handle', () {
       expect(
-        routeLabel(_route('g1', '+447700900123', 'imessage')),
-        'iMessage · +447700900123',
+        routeHandle(_route('phone', '+447700900123', 'imessage')),
+        '+447700900123',
       );
       expect(
-        routeLabel(_route('g2', 'a@icloud.com', 'imessage')),
-        'iMessage · a@icloud.com',
+        routeHandle(_route('email', 'a@icloud.com', 'imessage')),
+        'a@icloud.com',
       );
       expect(
-        routeLabel(_route('g3', '+8618000000000', 'sms')),
-        'SMS · +8618000000000',
-      );
-    });
-
-    test('two iMessage routes with different handles are distinguishable', () {
-      final phone = _route('p', '+447700900123', 'imessage');
-      final email = _route('e', 'a@icloud.com', 'imessage');
-      final lp = routeLabel(phone);
-      final le = routeLabel(email);
-      // Same service, but the labels differ because they include the handle.
-      expect(lp, isNot(le));
-      expect(lp.contains('+447700900123'), isTrue);
-      expect(le.contains('a@icloud.com'), isTrue);
-      expect(routeHandle(phone), '+447700900123');
-      expect(routeHandle(email), 'a@icloud.com');
-    });
-
-    test('a resolved contact name is appended alongside the handle', () {
-      expect(
-        routeLabel(_route('g', '+447700900123', 'imessage'), name: 'Alice'),
-        'iMessage · Alice (+447700900123)',
-      );
-      // When the name equals the handle, it is not duplicated.
-      expect(
-        routeLabel(_route('g', '+447700900123', 'imessage'),
-            name: '+447700900123'),
-        'iMessage · +447700900123',
+        routeHandle(ChatSummary.fromJson({'guid': 'group', 'isGroup': true})),
+        isEmpty,
       );
     });
-
     test('sendability label uses the server-provided capability', () {
       expect(
         routeSendabilityLabel(

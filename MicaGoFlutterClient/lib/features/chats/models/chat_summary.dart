@@ -66,10 +66,6 @@ class ChatSummary {
     this.hiddenReason = '',
   });
 
-  /// True when this chat has no normal content (only debug/noise or empty) and
-  /// should be hidden from the default list.
-  bool get isNoiseOnly => !hasRenderableMessages;
-
   /// The single server-authoritative service (C21): the server's message-aware
   /// `effectiveService` (prefers iMessage), with serviceCategory/serviceName as
   /// a fallback for older servers. Drives the badge, composer, and every send

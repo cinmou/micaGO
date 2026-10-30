@@ -6,6 +6,7 @@ import Combine
 struct MicaGoCompanionApp: App {
     @AppStorage(L10n.languageKey) private var appLanguage = "system"
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.openWindow) private var openWindow
     // Shared singletons so bootstrap/shutdown work even with no window open
     // (silent launch / menu-bar-only mode) and the AppDelegate can reach them.
     @StateObject private var model = AppModel.shared
@@ -15,8 +16,16 @@ struct MicaGoCompanionApp: App {
     @StateObject private var tunnel = TunnelController.shared
     @StateObject private var updates = SparkleUpdater.shared
 
-    var body: some Scene {
-        WindowGroup(id: "dashboard") {
+    var body: some Scene { dashboardScene }
+
+    private var dashboardScene: some Scene {
+        // The menu must work before SwiftUI creates any dashboard content.
+        let action = openWindow
+        DispatchQueue.main.async {
+            DashboardWindowOpener.shared.install { action(id: "dashboard", value: "dashboard") }
+        }
+        // A stable scene value keeps every open request on the same dashboard.
+        return WindowGroup(id: "dashboard", for: String.self) { _ in
             ContentView()
                 .environment(\.locale, Locale(identifier: L10n.languageIdentifier(for: appLanguage)))
                 .environmentObject(model)
@@ -38,6 +47,8 @@ struct MicaGoCompanionApp: App {
                     guard valid, contacts.loaded else { return }
                     Task { await model.syncContactCache(contacts.serverEntries) }
                 }
+        } defaultValue: {
+            "dashboard"
         }
         .defaultSize(width: 1000, height: 720)
         .defaultPosition(.center)
@@ -232,7 +243,6 @@ final class MenuBarStatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func quit() {
-        backend.shutdownForQuitIfNeeded()
         NSApp.terminate(nil)
     }
 }
@@ -269,14 +279,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // back to menu-bar-only (accessory) once the Dashboard is dismissed.
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: nil, queue: .main
-        ) { _ in
+        ) { notification in
+            if let window = notification.object as? NSWindow,
+               window === DashboardWindowBridgeView.dashboardWindow {
+                DashboardWindowBridgeView.dashboardWindow = nil
+            }
             // willClose fires before the window leaves the list; re-evaluate next tick.
             DispatchQueue.main.async { applyActivationPolicy() }
         }
 
         // Bootstrap regardless of whether a window is shown.
         Task { @MainActor in
-            AppModel.shared.reloadConfig()
             installTunnelFollower()
             await AppModel.shared.refresh()
             await BackendController.shared.resumeAfterAppUpdateIfNeeded(externalReachable: AppModel.shared.reachable)
@@ -333,13 +346,12 @@ extension BackendController {
 /// Only the scene's dashboard counts here. An updater or permission window
 /// must not be mistaken for the dashboard by menu/Dock reopen actions.
 func hasVisibleDashboardWindow() -> Bool {
-    existingDashboardWindow() != nil
+    guard let window = existingDashboardWindow() else { return false }
+    return window.isVisible || window.isMiniaturized
 }
 
 private func existingDashboardWindow() -> NSWindow? {
-    guard let window = DashboardWindowBridgeView.dashboardWindow,
-          window.isVisible || window.isMiniaturized else { return nil }
-    return window
+    DashboardWindowBridgeView.dashboardWindow
 }
 
 private final class DashboardWindowBridgeView: NSView {
@@ -351,37 +363,15 @@ private final class DashboardWindowBridgeView: NSView {
     }
 }
 
-/// Bridges SwiftUI's `openWindow` action to AppKit. The `WindowGroup` window has
-/// the correct native toolbar/titlebar (large inline title, trailing controls);
-/// a hand-rolled `NSWindow` does not. Register the scene's open action while
-/// building its view, including when the initial window is hidden.
-private struct DashboardWindowOpeningBridge: NSViewRepresentable {
-    @Environment(\.openWindow) private var openWindow
-
-    func makeNSView(context: Context) -> NSView {
-        // Register before onAppear: a silently launched scene may never appear.
-        // Defer pending presentation until SwiftUI has finished this update.
-        let action = openWindow
-        let view = DashboardWindowBridgeView()
-        DispatchQueue.main.async { [weak view] in
-            DashboardWindowOpener.shared.install { [weak view] in
-                if let window = view?.window {
-                    window.deminiaturize(nil)
-                    window.makeKeyAndOrderFront(nil)
-                } else {
-                    action(id: "dashboard")
-                }
-            }
-        }
-        return view
-    }
-
+/// Tracks only the dashboard's native window. Window creation belongs to App.
+private struct DashboardWindowTrackingBridge: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DashboardWindowBridgeView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 extension View {
-    func dashboardWindowOpeningBridge() -> some View {
-        background(DashboardWindowOpeningBridge().frame(width: 0, height: 0))
+    func dashboardWindowTrackingBridge() -> some View {
+        background(DashboardWindowTrackingBridge().frame(width: 0, height: 0))
     }
 }
 
@@ -404,11 +394,8 @@ func presentDashboardFromAppKit(selection: SidebarItem? = nil) {
     NSApp.setActivationPolicy(.regular)
     NSApp.activate(ignoringOtherApps: true)
 
-    // Reuse the real WindowGroup window so the menu-bar path looks identical to
-    // launching from the Dock (native toolbar/titlebar). Prefer an already-open
-    // window; otherwise reopen the WindowGroup via the captured SwiftUI action.
-    // Early requests wait for the scene bridge instead of creating a second,
-    // differently styled AppKit window.
+    // A hidden dashboard still exists and should be reused. If none exists,
+    // the App-level action creates its SwiftUI scene without waiting for a view.
     if let existing = existingDashboardWindow() {
         existing.deminiaturize(nil)
         existing.makeKeyAndOrderFront(nil)

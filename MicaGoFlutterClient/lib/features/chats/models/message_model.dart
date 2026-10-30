@@ -92,13 +92,6 @@ class AttachmentModel {
                       _hasInlineRenderableImageExtension(displayName) ||
                       _isInlineRenderableImageUti(uti) ||
                       _isInlineRenderableImageMime(mimeType)))));
-  bool get isTiff =>
-      needsPreviewConversion ||
-      mimeType == 'image/tiff' ||
-      originalMimeType == 'image/tiff' ||
-      uti == 'public.tiff' ||
-      displayName.toLowerCase().endsWith('.tif') ||
-      displayName.toLowerCase().endsWith('.tiff');
   bool get isAnimatedGif {
     final mime = (mimeType ?? '').trim().toLowerCase();
     final originalMime = (originalMimeType ?? '').trim().toLowerCase();

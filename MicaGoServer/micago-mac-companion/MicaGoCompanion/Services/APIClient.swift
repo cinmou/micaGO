@@ -1,13 +1,12 @@
 import Foundation
 
-/// Minimal async client for the MicaGoServer local control API. It only calls
-/// the read-only / control endpoints the companion needs; it is NOT a chat
-/// client.
+/// 本机控制 API 客户端。
 struct APIClient {
     var baseURL: URL
     var token: String
+    var session: URLSession = Self.sharedSession
 
-    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = []) -> URLRequest {
+    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) -> URLRequest {
         var url = baseURL
         for component in path.split(separator: "/") {
             url.appendPathComponent(String(component)) // percent-encodes each segment
@@ -18,12 +17,11 @@ struct APIClient {
         }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        // Data loads like `GET /api/chats?limit=500` aggregate per-chat over the
-        // whole relay.db; on a large DB that can take a few seconds. A tight
-        // timeout here is what surfaced as "chats — The request timed out" even
-        // though the server was healthy. Give real headroom (the server is local
-        // / LAN, so a genuinely-down server still fails fast with a connection
-        // error, not a timeout).
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+        }
+        // 大型 relay.db 查询可能耗时数秒。
         req.timeoutInterval = 20
         if !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -32,155 +30,113 @@ struct APIClient {
     }
 
     private func jsonRequest(_ path: String, method: String, body: [String: Any]) throws -> URLRequest {
-        var req = request(path, method: method)
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return req
+        request(path, method: method, body: try JSONSerialization.data(withJSONObject: body))
     }
 
     private static let sharedSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.waitsForConnectivity = false
-        // Was 4s — too tight for the larger Sync Control loads (see request()).
-        config.timeoutIntervalForRequest = 20
         return URLSession(configuration: config)
     }()
 
-    /// Liveness check against the unauthenticated health endpoint.
-    func health() async -> Bool {
-        let req = request("api/health")
-        guard let (_, response) = try? await Self.sharedSession.data(for: req),
-              let http = response as? HTTPURLResponse else {
-            return false
+    private func data(for request: URLRequest) async throws -> Data {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.badResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let message = (try? JSONDecoder().decode(ErrorEnvelope.self, from: data))?.error.message
+            throw APIError.status(http.statusCode, message: message)
         }
-        return http.statusCode == 200
+        return data
     }
 
-    /// Returns true if the configured token is accepted.
-    func checkAuth() async -> Bool {
-        let req = request("api/auth/check", method: "POST")
-        guard let (_, response) = try? await Self.sharedSession.data(for: req),
-              let http = response as? HTTPURLResponse else {
-            return false
-        }
-        return http.statusCode == 200
+    private func decode<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
+        try JSONDecoder().decode(type, from: await data(for: request))
+    }
+
+    private struct CheckResponse: Decodable { let ok: Bool }
+
+    /// Preserve HTTP failures and transport errors so callers do not confuse an
+    /// interrupted request or unavailable authorization service with HTTP 401.
+    func checkAuth() async throws {
+        let response = try await decode(request("api/auth/check", method: "POST"), as: CheckResponse.self)
+        guard response.ok else { throw APIError.badResponse }
     }
 
     func status() async throws -> ServerStatus {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/server/status"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(ServerStatus.self, from: data)
+        return try await decode(request("api/server/status"), as: ServerStatus.self)
     }
 
     func chatPreferences() async throws -> ChatPreferencesResponse {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/chat-preferences"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(ChatPreferencesResponse.self, from: data)
+        return try await decode(request("api/chat-preferences"), as: ChatPreferencesResponse.self)
     }
 
     func patchChatPreferences(_ mutation: ChatPreferenceMutation) async throws -> ChatPreferencesResponse {
-        var req = request("api/chat-preferences", method: "PATCH")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(mutation)
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response)
-        return try JSONDecoder().decode(ChatPreferencesResponse.self, from: data)
+        let req = request("api/chat-preferences", method: "PATCH", body: try JSONEncoder().encode(mutation))
+        return try await decode(req, as: ChatPreferencesResponse.self)
     }
 
     func devices() async throws -> [DeviceInfo] {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/devices"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(DeviceListResponse.self, from: data).data
+        return try await decode(request("api/devices"), as: DeviceListResponse.self).data
     }
 
     func activeConnections() async throws -> [ActiveConnectionInfo] {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/server/connections"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(ActiveConnectionListResponse.self, from: data).data
+        return try await decode(request("api/server/connections"), as: ActiveConnectionListResponse.self).data
     }
 
-    /// C28: force the backend to drop its cached IMCore-helper probe and re-scan,
-    /// returning the fresh capability state. Called right after a helper install.
+    /// 安装 helper 后刷新后端能力探测缓存。
     @discardableResult
     func refreshMessageActions() async throws -> MessageActionsStatus {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/messages/actions/refresh", method: "POST"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(MessageActionsStatus.self, from: data)
+        return try await decode(request("api/messages/actions/refresh", method: "POST"), as: MessageActionsStatus.self)
     }
 
-    // MARK: - Connection endpoints (v0.11)
+    // MARK: - Connection endpoints
 
     func serverURLs() async throws -> ServerURLs {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/server/urls"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(ServerURLs.self, from: data)
+        return try await decode(request("api/server/urls"), as: ServerURLs.self)
     }
 
     func setLANVisibility(_ hiddenBaseURLs: Set<String>) async throws -> ServerURLs {
-        var req = request("api/server/lan-visibility", method: "PUT")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["hiddenBaseUrls": hiddenBaseURLs.sorted()])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response)
-        return try JSONDecoder().decode(ServerURLs.self, from: data)
+        let req = try jsonRequest("api/server/lan-visibility", method: "PUT", body: ["hiddenBaseUrls": hiddenBaseURLs.sorted()])
+        return try await decode(req, as: ServerURLs.self)
     }
 
     /// Sets (or clears, with an empty string) the optional public endpoint.
     @discardableResult
     func setPublicURL(_ publicBaseURL: String, verifyTLS: Bool, preferred: String) async throws -> ServerURLs {
-        var req = request("api/server/public-url", method: "POST")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = [
+        let req = try jsonRequest("api/server/public-url", method: "POST", body: [
             "publicBaseUrl": publicBaseURL,
             "verifyTls": verifyTLS,
             "preferredPairingEndpoint": preferred,
-        ]
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response)
-        return try JSONDecoder().decode(ServerURLs.self, from: data)
+        ])
+        return try await decode(req, as: ServerURLs.self)
     }
 
     func checkPublicURL() async throws -> PublicURLCheckResult {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/server/public-url/check", method: "POST"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(PublicURLCheckResult.self, from: data)
+        return try await decode(request("api/server/public-url/check", method: "POST"), as: PublicURLCheckResult.self)
     }
 
-    // MARK: - Sync (C11 debug)
+    // MARK: - Sync
 
     /// Triggers an immediate server sync and returns the resulting diagnostics.
     @discardableResult
     func runSyncNow() async throws -> SyncDiagnostics {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/sync/now", method: "POST"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(SyncNowResponse.self, from: data).diagnostics
+        return try await decode(request("api/sync/now", method: "POST"), as: SyncNowResponse.self).diagnostics
     }
 
     func syncSettings() async throws -> SyncSettings {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/sync/settings"))
-        try Self.validate(response, body: data)
-        return try JSONDecoder().decode(SyncSettings.self, from: data)
+        return try await decode(request("api/sync/settings"), as: SyncSettings.self)
     }
 
     @discardableResult
     func putSyncSettings(_ settings: SyncSettings) async throws -> SyncSettingsResponse {
-        let data = try JSONEncoder().encode(settings)
-        var req = request("api/sync/settings", method: "PUT")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-        let (body, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response)
-        return try JSONDecoder().decode(SyncSettingsResponse.self, from: body)
+        let req = request("api/sync/settings", method: "PUT", body: try JSONEncoder().encode(settings))
+        return try await decode(req, as: SyncSettingsResponse.self)
     }
 
-    // MARK: - Sync control (v0.11.3)
+    // MARK: - Sync control
 
     func syncRules() async throws -> SyncRulesResponse {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/sync/rules"))
-        try Self.validate(response, body: data)
-        return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
+        return try await decode(request("api/sync/rules"), as: SyncRulesResponse.self)
     }
 
     @discardableResult
@@ -191,17 +147,12 @@ struct APIClient {
             "syncMode": syncMode,
             "pushMode": pushMode,
         ])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response)
-        return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
+        return try await decode(req, as: SyncRulesResponse.self)
     }
 
     @discardableResult
     func deleteSyncRule(targetKind: String, targetValue: String) async throws -> SyncRulesResponse {
-        let (data, response) = try await Self.sharedSession.data(
-            for: request("api/sync/rules/\(targetKind)/\(targetValue)", method: "DELETE"))
-        try Self.validate(response)
-        return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
+        return try await decode(request("api/sync/rules/\(targetKind)/\(targetValue)", method: "DELETE"), as: SyncRulesResponse.self)
     }
 
     @discardableResult
@@ -210,9 +161,7 @@ struct APIClient {
             "defaultSyncPolicy": defaultSync,
             "defaultPushPolicy": defaultPush,
         ])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response)
-        return try JSONDecoder().decode(SyncRulesResponse.self, from: data)
+        return try await decode(req, as: SyncRulesResponse.self)
     }
 
     /// Message Inspector (debug). Structural filters run server-side in SQL;
@@ -244,23 +193,19 @@ struct APIClient {
         add("hasAttachments", hasAttachments)
         add("groupBy", groupBy)
 
-        let (data, response) = try await Self.sharedSession.data(for: request("api/debug/recent-messages", query: items))
-        try Self.validate(response)
-        return try JSONDecoder().decode(DebugRecentResponse.self, from: data)
+        return try await decode(request("api/debug/recent-messages", query: items), as: DebugRecentResponse.self)
     }
 
     /// Chats (all services, including archived) so users can target rules.
     func chats() async throws -> [ChatSummary] {
-        let (data, response) = try await Self.sharedSession.data(for: request(
+        return try await decode(request(
             "api/chats",
             query: [URLQueryItem(name: "service", value: "all"),
                     URLQueryItem(name: "withArchived", value: "true"),
-                    URLQueryItem(name: "limit", value: "500")]))
-        try Self.validate(response, body: data)
-        return try JSONDecoder().decode(ChatListResponse.self, from: data).data
+                    URLQueryItem(name: "limit", value: "500")]), as: ChatListResponse.self).data
     }
 
-    // MARK: - Notifications / FCM config (v0.12)
+    // MARK: - Notifications / FCM config
 
     @discardableResult
     func setNotificationsConfig(enabled: Bool, provider: String, preview: String,
@@ -278,114 +223,65 @@ struct APIClient {
             "publicUrlSync": publicURLSync,
             "clearFirebaseConfig": clearFirebaseConfig,
         ])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        // Surface the server's validation message on 4xx (e.g. invalid service account).
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            if let env = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
-                throw APIError.message(env.error.message)
-            }
-            throw APIError.status(http.statusCode)
-        }
-        return try JSONDecoder().decode(NotificationsConfigResponse.self, from: data)
+        return try await decode(req, as: NotificationsConfigResponse.self)
     }
 
     /// Sends a real test push through the server's current notification setup.
     func testNotifications() async -> String {
-        let req = request("api/server/notifications/test", method: "POST")
-        guard let (data, response) = try? await Self.sharedSession.data(for: req),
-              let http = response as? HTTPURLResponse else {
-            return "Test push failed: could not reach server."
-        }
-        if let env = try? JSONDecoder().decode(TestNotificationsEnvelope.self, from: data) {
-            let result = env.data
+        do {
+            let envelope = try await decode(request("api/server/notifications/test", method: "POST"), as: TestNotificationsEnvelope.self)
+            let result = envelope.data
             if result.failed == 0 {
                 return "Test push sent to \(result.sent) device\(result.sent == 1 ? "" : "s")."
             }
             let first = result.failures?.first ?? "Unknown error"
             return "Sent \(result.sent), failed \(result.failed). \(first)"
+        } catch is URLError {
+            return "Test push failed: could not reach server."
+        } catch {
+            return "Test push failed: \(error.localizedDescription)"
         }
-        if let env = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
-            return "Test push failed: \(env.error.message)"
-        }
-        return "Test push failed: HTTP \(http.statusCode)."
     }
 
     func putContactCache(_ contacts: [ServerContactEntry]) async throws {
         let rows = contacts.map { ["name": $0.name, "addresses": $0.addresses] as [String: Any] }
         let req = try jsonRequest("api/server/contacts/cache", method: "PUT", body: ["contacts": rows])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response, body: data)
+        _ = try await data(for: req)
     }
 
-    /// Deletes a paired device record (C21u) — used to prune stale/historical
-    /// devices from the list.
+    /// A short-lived invitation returned by the local control API.
     struct PairingInvitation: Decodable {
         let pairingCode: String
         let expiresAt: Int64
         let tlsFingerprint: String
     }
     func createPairingCode() async throws -> PairingInvitation {
-        let (data,response)=try await Self.sharedSession.data(for:request("api/pairing/create",method:"POST"))
-        try Self.validate(response,body:data)
-        return try JSONDecoder().decode(PairingInvitation.self,from:data)
+        try await decode(request("api/pairing/create", method: "POST"), as: PairingInvitation.self)
     }
 
     struct PairingStatus: Decodable { let state: String }
     func pairingStatus(code: String) async throws -> String {
         let req = try jsonRequest("api/pairing/status", method: "POST", body: ["pairingCode": code])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response, body: data)
-        return try JSONDecoder().decode(PairingStatus.self, from: data).state
+        return try await decode(req, as: PairingStatus.self).state
     }
 
     func deleteDevice(deviceID: String) async throws {
         let req = request("api/devices/\(deviceID)", method: "DELETE")
-        let (_, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response)
-    }
-
-    private static func validate(_ response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.badResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw APIError.status(http.statusCode)
-        }
-    }
-
-    /// Like `validate`, but on a non-2xx it surfaces the server's structured
-    /// error message (the `{error:{code,message}}` envelope) so callers can show
-    /// *why* the request failed — e.g. "sync settings are not available" —
-    /// instead of a bare status code.
-    private static func validate(_ response: URLResponse, body data: Data) throws {
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.badResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            if let env = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
-               !env.error.message.isEmpty {
-                throw APIError.message("HTTP \(http.statusCode): \(env.error.message)")
-            }
-            throw APIError.status(http.statusCode)
-        }
+        _ = try await data(for: req)
     }
 
     // MARK: - Test contact (offline loopback)
 
     /// GET /api/test-contact — whether the offline test contact is on.
     func testContactInfo() async throws -> TestContactInfo {
-        let (data, response) = try await Self.sharedSession.data(for: request("api/test-contact"))
-        try Self.validate(response, body: data)
-        return try JSONDecoder().decode(TestContactInfo.self, from: data)
+        return try await decode(request("api/test-contact"), as: TestContactInfo.self)
     }
 
     /// PUT /api/test-contact — turn the offline test contact on or off.
     func setTestContact(enabled: Bool) async throws -> TestContactInfo {
         let req = try jsonRequest("api/test-contact", method: "PUT", body: ["enabled": enabled])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response, body: data)
+        _ = try await data(for: req)
         // PUT returns {enabled}; re-read for the full info shape.
-        _ = data
         return try await testContactInfo()
     }
 
@@ -393,16 +289,13 @@ struct APIClient {
     /// which pushes to the client like a received iMessage.
     func sendTestInbound(_ text: String) async throws {
         let req = try jsonRequest("api/test-contact/inbound", method: "POST", body: ["text": text])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response, body: data)
+        _ = try await data(for: req)
     }
 
     /// GET /api/chats/{guid}/messages — the conversation, newest first.
     func chatMessages(guid: String, limit: Int = 200) async throws -> [RecentMessage] {
         let req = request("api/chats/\(guid)/messages", query: [URLQueryItem(name: "limit", value: "\(limit)")])
-        let (data, response) = try await Self.sharedSession.data(for: req)
-        try Self.validate(response, body: data)
-        return try JSONDecoder().decode(RecentMessagesResponse.self, from: data).data
+        return try await decode(req, as: RecentMessagesResponse.self).data
     }
 }
 
@@ -415,14 +308,14 @@ struct TestContactInfo: Codable {
 
 enum APIError: LocalizedError {
     case badResponse
-    case status(Int)
-    case message(String)
+    case status(Int, message: String? = nil)
 
     var errorDescription: String? {
         switch self {
         case .badResponse: return L10n.localized( "Unexpected response from the server.")
-        case .status(let code): return L10n.localized( "Server returned HTTP \(code).")
-        case .message(let msg): return msg
+        case .status(let code, let message):
+            if let message, !message.isEmpty { return "HTTP \(code): \(message)" }
+            return L10n.localized( "Server returned HTTP \(code).")
         }
     }
 }

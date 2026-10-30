@@ -234,7 +234,6 @@ void main() {
         'downloadUrl': '/x',
       });
       expect(a.isImage, isTrue);
-      expect(a.isTiff, isTrue);
       expect(a.canRenderInlineImage, isFalse);
       expect(a.displayKind, 'image_needs_preview');
     });

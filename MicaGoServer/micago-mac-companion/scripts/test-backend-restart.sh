@@ -36,7 +36,7 @@ import Foundation
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(fixture, forKey: "serverBinaryPath")
-        let controller = BackendController(defaults: defaults, prepareConfiguration: {})
+        let controller = BackendController(defaults: defaults)
         controller.autoRestart = false
         func count() -> Int {
             let path = ProcessInfo.processInfo.environment["MICAGO_TEST_STARTS"]!
@@ -51,15 +51,20 @@ import Foundation
         }
         controller.start()
         await settle { count() == 1 }
+        precondition(controller.launchedBindAddress == "0.0.0.0:3000")
+        controller.bindAddress = "0.0.0.0:3100"
+        precondition(controller.launchedBindAddress == "0.0.0.0:3000", "unsaved launch intent must not change the running control endpoint")
         controller.restart()
         try? await Task.sleep(nanoseconds: 900_000_000)
         precondition(count() == 1 && controller.processState == .stopping,
                      "slow shutdown must not launch a replacement early")
         await settle { count() == 2 && controller.processState == .running }
+        precondition(controller.launchedBindAddress == "0.0.0.0:3100")
         controller.restart()
         controller.restart()
         controller.stop()
         await settle { controller.processState == .stopped }
+        precondition(controller.launchedBindAddress == nil)
         try? await Task.sleep(nanoseconds: 900_000_000)
         precondition(count() == 2, "Stop must cancel pending restarts")
         print("backend slow-exit restart and cancellation tests passed")

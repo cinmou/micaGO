@@ -59,42 +59,61 @@ void main() {
       ]);
     });
 
-    test('multiple LAN routes survive round-trip and all become candidates', () {
-      final p = ConnectionProfile(
-        baseUrl: 'http://192.168.1.5:3000',
-        token: 'tok',
-        lanRoutes: const [
-          EndpointRef(baseUrl: 'http://192.168.1.5:3000', wsUrl: 'ws://192.168.1.5:3000/ws'),
-          EndpointRef(baseUrl: 'http://10.0.0.9:3000', wsUrl: 'ws://10.0.0.9:3000/ws'),
-        ],
-        mode: ConnectionMode.lanFirst,
-      );
-      final back = ConnectionProfile.fromJson(p.toJson());
-      final candidates = connectionCandidatesForProfile(back);
-      expect(candidates.length, 2);
-      expect(candidates.map((e) => e.baseUrl), [
-        'http://192.168.1.5:3000',
-        'http://10.0.0.9:3000',
-      ]);
-    });
+    test(
+      'multiple LAN routes survive round-trip and all become candidates',
+      () {
+        final p = ConnectionProfile(
+          baseUrl: 'http://192.168.1.5:3000',
+          token: 'tok',
+          lanRoutes: const [
+            EndpointRef(
+              baseUrl: 'http://192.168.1.5:3000',
+              wsUrl: 'ws://192.168.1.5:3000/ws',
+            ),
+            EndpointRef(
+              baseUrl: 'http://10.0.0.9:3000',
+              wsUrl: 'ws://10.0.0.9:3000/ws',
+            ),
+          ],
+          mode: ConnectionMode.lanFirst,
+        );
+        final back = ConnectionProfile.fromJson(p.toJson());
+        final candidates = connectionCandidatesForProfile(back);
+        expect(candidates.length, 2);
+        expect(candidates.map((e) => e.baseUrl), [
+          'http://192.168.1.5:3000',
+          'http://10.0.0.9:3000',
+        ]);
+      },
+    );
 
     test('a pinned route is tried first; clearing it restores order', () {
       final base = ConnectionProfile(
         baseUrl: 'http://192.168.1.5:3000',
         token: 'tok',
         lanRoutes: const [
-          EndpointRef(baseUrl: 'http://192.168.1.5:3000', wsUrl: 'ws://192.168.1.5:3000/ws'),
-          EndpointRef(baseUrl: 'http://10.0.0.9:3000', wsUrl: 'ws://10.0.0.9:3000/ws'),
+          EndpointRef(
+            baseUrl: 'http://192.168.1.5:3000',
+            wsUrl: 'ws://192.168.1.5:3000/ws',
+          ),
+          EndpointRef(
+            baseUrl: 'http://10.0.0.9:3000',
+            wsUrl: 'ws://10.0.0.9:3000/ws',
+          ),
         ],
       );
       final pinned = base.copyWith(selectedBaseUrl: 'http://10.0.0.9:3000');
-      expect(connectionCandidatesForProfile(pinned).first.baseUrl,
-          'http://10.0.0.9:3000');
+      expect(
+        connectionCandidatesForProfile(pinned).first.baseUrl,
+        'http://10.0.0.9:3000',
+      );
       expect(pinned.lanBaseUrl, 'http://10.0.0.9:3000');
 
       final cleared = pinned.copyWith(selectedBaseUrl: null);
-      expect(connectionCandidatesForProfile(cleared).first.baseUrl,
-          'http://192.168.1.5:3000');
+      expect(
+        connectionCandidatesForProfile(cleared).first.baseUrl,
+        'http://192.168.1.5:3000',
+      );
     });
 
     test('a stale pin falls back to the first real route', () {
@@ -102,7 +121,10 @@ void main() {
         baseUrl: 'http://192.168.1.5:3000',
         token: 'tok',
         lanRoutes: const [
-          EndpointRef(baseUrl: 'http://192.168.1.5:3000', wsUrl: 'ws://192.168.1.5:3000/ws'),
+          EndpointRef(
+            baseUrl: 'http://192.168.1.5:3000',
+            wsUrl: 'ws://192.168.1.5:3000/ws',
+          ),
         ],
         selectedBaseUrl: 'http://10.0.0.9:3000',
       );
@@ -143,14 +165,11 @@ void main() {
       expect(urls.lan, hasLength(1));
       expect(urls.lan.first.baseUrl, 'http://192.168.1.23:3000');
       expect(urls.public?.enabled, isTrue);
-      expect(urls.public?.reachableLabel, 'unknown');
-      expect(urls.preferredPairingEndpoint, 'auto');
     });
 
     test('handles missing public block', () {
       final urls = ServerUrls.fromJson({'lan': []});
       expect(urls.public, isNull);
-      expect(urls.preferredPairingEndpoint, 'auto');
     });
   });
 }

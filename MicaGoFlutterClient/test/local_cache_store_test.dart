@@ -789,7 +789,10 @@ void main() {
     expect(await store.listChats(), isEmpty);
     expect(await store.listChats(includeDebug: true), hasLength(1));
 
-    await store.setChatAlwaysVisible('noise', true);
+    await store.setPendingChatFlags({
+      'noise': {'always_visible': 1},
+    });
+    await store.applyPendingChatFlags();
     expect(await store.listChats(), hasLength(1));
 
     await store.applyChatVisibility({'noise'});

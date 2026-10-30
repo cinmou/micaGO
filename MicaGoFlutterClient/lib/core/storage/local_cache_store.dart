@@ -269,17 +269,6 @@ ON CONFLICT(guid) DO UPDATE SET
     await batch.commit(noResult: true);
   }
 
-  /// Forces a noise-only chat to stay visible (overrides the renderable filter).
-  Future<void> setChatAlwaysVisible(String guid, bool visible) async {
-    final db = await _ready();
-    await db.update(
-      'chats',
-      {'always_visible': visible ? 1 : 0},
-      where: 'guid = ?',
-      whereArgs: [guid],
-    );
-  }
-
   // C42: pin/hide management. pinned/hidden live in columns so a server upsert
   // (which only rewrites the json blob) never resets them.
 

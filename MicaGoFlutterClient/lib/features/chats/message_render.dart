@@ -418,31 +418,6 @@ String tapbackEmoji(TapbackKind kind) {
   }
 }
 
-/// Past-tense verb for a tapback ("loved", "liked", …) used in the
-/// fallback system row when the target message isn't loaded.
-String tapbackVerb(TapbackKind kind) {
-  switch (kind) {
-    case TapbackKind.custom:
-      return 'reacted to';
-    case TapbackKind.love:
-      return 'loved';
-    case TapbackKind.like:
-      return 'liked';
-    case TapbackKind.dislike:
-      return 'disliked';
-    case TapbackKind.laugh:
-      return 'laughed at';
-    case TapbackKind.emphasize:
-      return 'emphasized';
-    case TapbackKind.question:
-      return 'questioned';
-    case TapbackKind.sticker:
-      return 'tagged';
-    case TapbackKind.unknown:
-      return 'reacted to';
-  }
-}
-
 /// The single canonical helper that resolves a reaction/tapback's target
 /// message GUID from its `associatedMessageGuid`. Strips the `p:`/`bp:` scheme,
 /// an optional `<part>/` segment, and a leading `+`, so it works for every
