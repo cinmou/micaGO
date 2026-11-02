@@ -51,6 +51,17 @@
                     <TextBlock x:Name="AppearanceHeader" Style="{StaticResource MicaGoSettingsHeaderStyle}"/>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE790;"/><TextBlock x:Name="ThemeLabel" Grid.Column="1" VerticalAlignment="Center"/><ComboBox x:Name="ThemePicker" Grid.Column="2" MinWidth="180" SelectionChanged="ThemePicker_SelectionChanged"><ComboBoxItem Content="System"/><ComboBoxItem Content="Light"/><ComboBoxItem Content="Dark"/></ComboBox></Grid></Border>
                     <Border Style="{StaticResource MicaGoSettingsCardStyle}"><Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xEB9F;"/><StackPanel Grid.Column="1" Spacing="2"><TextBlock x:Name="ChatBackgroundLabel"/><TextBlock x:Name="ChatBackgroundStatus" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"><Button x:Name="ChooseBackgroundButton" Click="ChooseBackgroundButton_Click"/><Button x:Name="ClearBackgroundButton" Click="ClearBackgroundButton_Click"/></StackPanel></Grid></Border>
+                    <Border Style="{StaticResource MicaGoSettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="&#xE740;"/>
+                            <TextBlock x:Name="BackgroundStretchLabel" Grid.Column="1" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="BackgroundStretchPicker" Grid.Column="2" MinWidth="180"
+                                      VerticalAlignment="Center" SelectionChanged="BackgroundStretchPicker_SelectionChanged">
+                                <ComboBoxItem/><ComboBoxItem/><ComboBoxItem/><ComboBoxItem/>
+                            </ComboBox>
+                        </Grid>
+                    </Border>
                     <Border x:Name="BubbleColorCard" Style="{StaticResource MicaGoSettingsCardStyle}">
                         <StackPanel Spacing="12">
                             <Grid x:Name="BubbleColorHeader" ColumnSpacing="16" SizeChanged="BubbleColorHeader_SizeChanged">

@@ -40,6 +40,7 @@ public sealed partial class SettingsPage : Page
         BubbleColorPicker.Color=services.Appearance.BubbleColor;
         CustomBubbleColorPanel.Visibility=services.Appearance.BubbleFollowsSystem?Visibility.Collapsed:Visibility.Visible;
         TwemojiFlagsToggle.IsOn=services.Appearance.TwemojiFlagsEnabled;
+        BackgroundStretchPicker.SelectedIndex = (int)services.Appearance.ChatBackgroundStretch;
         UpdateBackgroundStatus();
         DeveloperPanel.Visibility=(await services.Cache.GetSettingAsync("settings.developerMode"))=="true"?Visibility.Visible:Visibility.Collapsed;
         ApplyText();
@@ -274,9 +275,24 @@ public sealed partial class SettingsPage : Page
     private async void TwemojiFlagsToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await AppServices.Current.Appearance.SetTwemojiFlagsEnabledAsync(TwemojiFlagsToggle.IsOn);if(_context is not null)await _context.Host.RefreshAppearanceAsync();}
     // ComboBox shows a snapshot of the selected item, so re-select after renaming.
     // _loading keeps the selection handlers from saving or re-applying settings.
+    private async void BackgroundStretchPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || BackgroundStretchPicker.SelectedIndex < 0) return;
+        await AppServices.Current.Appearance.SetChatBackgroundStretchAsync((Microsoft.UI.Xaml.Media.Stretch)BackgroundStretchPicker.SelectedIndex);
+        if (_context is not null) await _context.Host.RefreshAppearanceAsync();
+    }
+
     private void LocalizePickers(LocalizationService l)
     {
         var wasLoading=_loading;_loading=true;
+        BackgroundStretchLabel.Text = l["backgroundStretch"];
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(BackgroundStretchPicker, l["backgroundStretch"]);
+        var stretchIndex = BackgroundStretchPicker.SelectedIndex;
+        var stretchKeys = new[] { "backgroundNone", "backgroundFill", "backgroundUniform", "backgroundUniformToFill" };
+        for (var i = 0; i < stretchKeys.Length; i++)
+            ((ComboBoxItem)BackgroundStretchPicker.Items[i]).Content = l[stretchKeys[i]];
+        BackgroundStretchPicker.SelectedIndex = -1;
+        BackgroundStretchPicker.SelectedIndex = stretchIndex;
         var theme=ThemePicker.SelectedIndex;var language=LanguagePicker.SelectedIndex;
         var bubbleMode=BubbleColorModePicker.SelectedIndex;
         ((ComboBoxItem)BubbleColorModePicker.Items[0]).Content=l["followSystemAccent"];((ComboBoxItem)BubbleColorModePicker.Items[1]).Content=l["customColorMode"];

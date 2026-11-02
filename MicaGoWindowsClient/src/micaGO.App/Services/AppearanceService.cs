@@ -1,5 +1,6 @@
 using MicaGo.Infrastructure.Storage;
 using Windows.UI;
+using Microsoft.UI.Xaml.Media;
 
 namespace MicaGo.App.Services;
 
@@ -9,11 +10,13 @@ public sealed class AppearanceService(LocalCacheStore cache)
     private const string BubbleModeKey = "appearance.bubbleMode";
     private const string BubbleColorKey = "appearance.bubbleColor";
     private const string TwemojiFlagsKey = "appearance.twemojiFlags";
+    private const string BackgroundStretchKey = "appearance.chatBackgroundStretch";
     private bool _initialized;
 
     public event EventHandler? AppearanceChanged;
 
     public string? ChatBackgroundPath { get; private set; }
+    public Stretch ChatBackgroundStretch { get; private set; } = Stretch.UniformToFill;
     public bool BubbleFollowsSystem { get; private set; } = true;
     public Color BubbleColor { get; private set; } = Color.FromArgb(0xFF, 0x0A, 0x84, 0xFF);
     public bool TwemojiFlagsEnabled { get; private set; }
@@ -40,6 +43,13 @@ public sealed class AppearanceService(LocalCacheStore cache)
         if (_initialized) return;
         await cache.InitializeAsync();
         ChatBackgroundPath = await cache.GetSettingAsync(BackgroundKey);
+        ChatBackgroundStretch = await cache.GetSettingAsync(BackgroundStretchKey) switch
+        {
+            "None" => Stretch.None,
+            "Fill" => Stretch.Fill,
+            "Uniform" => Stretch.Uniform,
+            _ => Stretch.UniformToFill
+        };
         BubbleFollowsSystem = !string.Equals(await cache.GetSettingAsync(BubbleModeKey), "custom", StringComparison.Ordinal);
         if (TryParseColor(await cache.GetSettingAsync(BubbleColorKey), out var color)) BubbleColor = color;
         // Windows ships no flag glyphs at all (regional indicators render as
@@ -63,6 +73,16 @@ public sealed class AppearanceService(LocalCacheStore cache)
         if (!string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase)) File.Copy(sourcePath, destination, true);
         ChatBackgroundPath = destination;
         await cache.SetSettingAsync(BackgroundKey, destination);
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task SetChatBackgroundStretchAsync(Stretch stretch)
+    {
+        await InitializeAsync();
+        if (stretch is not (Stretch.None or Stretch.Fill or Stretch.Uniform or Stretch.UniformToFill))
+            throw new ArgumentOutOfRangeException(nameof(stretch));
+        ChatBackgroundStretch = stretch;
+        await cache.SetSettingAsync(BackgroundStretchKey, stretch.ToString());
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 

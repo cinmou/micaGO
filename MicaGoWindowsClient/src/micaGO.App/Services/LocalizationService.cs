@@ -107,6 +107,11 @@ public sealed class LocalizationService
         values["sendUsing"] = traditional ? "傳送時使用" : chinese ? "发送时使用" : "Send using";
         values["general"] = traditional ? "一般" : chinese ? "通用" : "General";
         values["data"] = traditional ? "資料" : chinese ? "数据" : "Data";
+        values["backgroundStretch"] = traditional ? "背景縮放" : chinese ? "背景缩放" : "Background scaling";
+        values["backgroundNone"] = traditional ? "原始大小" : chinese ? "原始大小" : "None";
+        values["backgroundFill"] = traditional ? "填滿" : chinese ? "填充" : "Fill";
+        values["backgroundUniform"] = traditional ? "均勻" : chinese ? "均匀" : "Uniform";
+        values["backgroundUniformToFill"] = traditional ? "均勻填滿" : chinese ? "均匀填充" : "Uniform to fill";
         values["trayDescription"] = traditional ? "關閉視窗後繼續接收訊息" : chinese ? "关闭窗口后继续接收消息" : "Keep receiving messages after you close the window";
         values["allowSms"] = traditional ? "允許透過 Mac 傳送 SMS" : chinese ? "允许通过 Mac 发送短信" : "Allow SMS sending through the Mac";
         values["allowSmsDescription"] = traditional ? "儲存在伺服器上，預設關閉，不影響 iMessage。" : chinese ? "保存在服务器上，默认关闭，不影响 iMessage。" : "Saved on the server and off by default. iMessage isn't affected.";

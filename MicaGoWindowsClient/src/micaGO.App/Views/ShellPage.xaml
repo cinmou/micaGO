@@ -424,8 +424,7 @@
                     <Border x:Name="ComposerRegion" Grid.Row="1" VerticalAlignment="Bottom"
                             Margin="12,0,12,12" SizeChanged="ComposerRegion_SizeChanged">
                     <Grid>
-                        <!-- Flutter's attachment + inset editor + separate send action,
-                             floating over the canvas with native TextBox focus/IME. -->
+                        <!-- Floating composer retains native TextBox focus, selection and IME behavior. -->
                         <Grid x:Name="ComposerBorder" MaxWidth="920" ColumnSpacing="8">
                             <Grid.Transitions>
                                 <TransitionCollection>
@@ -438,7 +437,7 @@
                             </Grid.ColumnDefinitions>
                             <Border Background="{ThemeResource MicaGoComposerAcrylicBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="28" Padding="4">
+                                    BorderThickness="1" CornerRadius="25" Padding="0">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -446,7 +445,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <Button x:Name="AttachButton"
-                                            VerticalAlignment="Bottom"
+                                            VerticalAlignment="Center"
                                             Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
                                             ToolTipService.ToolTip="Attach">
                                         <FontIcon FontSize="20" Glyph="&#xE710;" />
@@ -463,11 +462,12 @@
                                     </Button>
                                     <TextBox x:Name="Composer" Grid.Column="1"
                                              MinHeight="48" MaxHeight="144" FontSize="14"
-                                             Padding="14,10" Margin="0,0,4,0"
+                                             Padding="10,13" Margin="0"
+                                             BorderThickness="0"
                                              Background="Transparent"
                                              Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                              VerticalAlignment="Center" VerticalContentAlignment="Center"
-                                             AcceptsReturn="True" CornerRadius="24" IsEnabled="False"
+                                             AcceptsReturn="True" CornerRadius="0" IsEnabled="False"
                                              PlaceholderText="Message" TextWrapping="Wrap"
                                              TextChanged="Composer_TextChanged" Paste="Composer_Paste"
                                              PreviewKeyDown="Composer_KeyDown">
@@ -491,7 +491,7 @@
                                         </TextBox.Resources>
                                     </TextBox>
                                     <Button x:Name="EmojiButton" Grid.Column="2"
-                                            VerticalAlignment="Bottom"
+                                            VerticalAlignment="Center"
                                             Style="{StaticResource MicaGoComposerGlyphButtonStyle}"
                                             ToolTipService.ToolTip="Emoji" IsEnabled="False"
                                             Click="EmojiButton_Click">
@@ -499,10 +499,10 @@
                                     </Button>
                                 </Grid>
                             </Border>
-                            <Grid Grid.Column="1" Width="52" Height="52" VerticalAlignment="Bottom" Margin="0,0,0,2"
+                            <Grid Grid.Column="1" Width="50" Height="50" VerticalAlignment="Bottom" Margin="0"
                                   CornerRadius="26" Background="{ThemeResource MicaGoSendAcrylicBrush}">
                             <Button x:Name="SendButton"
-                                    Width="52" Height="52" Padding="0" CornerRadius="26"
+                                    Width="50" Height="50" Padding="0" CornerRadius="25"
                                     Background="Transparent"
                                     Foreground="{ThemeResource MicaGoSendMaterialForegroundBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"

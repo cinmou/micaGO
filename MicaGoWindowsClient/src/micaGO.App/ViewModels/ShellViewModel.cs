@@ -236,11 +236,10 @@ public sealed class ShellViewModel : IAsyncDisposable
             SyncMessages([]);
         }
         SelectedChat = chat;
+        // Publish capabilities before awaiting history so composer actions are ready immediately.
+        StateChanged?.Invoke(this, EventArgs.Empty);
         _historyCursor=null;
-        // C74: the whole body is guarded. The first cache read and its
-        // ThrowIfCancellationRequested used to sit OUTSIDE the try, so clicking
-        // two conversations quickly threw OperationCanceledException straight
-        // into `async void ChatList_ItemClick` — an unhandled WinUI exception.
+        // Cache and network reads share the cancellation guard for rapid chat switching.
         var cached = Array.Empty<Message>();
         try
         {

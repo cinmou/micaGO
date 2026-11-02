@@ -182,11 +182,13 @@ public sealed partial class ShellPage : Page
         OlderMessagesProgress.IsActive=_viewModel.IsLoadingOlder;
         OlderMessagesProgress.Visibility=_viewModel.IsLoadingOlder?Visibility.Visible:Visibility.Collapsed;
         UpdateThreadSubtitle();
+        UpdateComposerActions();
         UpdateTrayContacts();
     }
 
     private void ViewModel_RealtimeChanged(object? sender,EventArgs e)
     {
+        UpdateComposerActions();
         UpdateThreadSubtitle();
         UpdateTrayContacts();
     }
@@ -297,7 +299,7 @@ public sealed partial class ShellPage : Page
             if(!wasSelected)return;
             ChatList.SelectedItem=null;
             if(_viewModel.Chats.FirstOrDefault() is{} next){ChatList.SelectedItem=next;await SelectChatAsync(next);return;}
-            EmptyState.Visibility=Visibility.Visible;Composer.IsEnabled=false;UpdateComposerActions();
+            EmptyState.Visibility=Visibility.Visible;UpdateComposerActions();
         };
         menu.Items.Add(hide);menu.ShowAt(ChatList,e.GetPosition(ChatList));e.Handled=true;
     }
@@ -330,10 +332,6 @@ public sealed partial class ShellPage : Page
         ThreadTitle.Text = chat.Title;
         ThreadSubtitle.Text = chat.Time;
         EmptyState.Visibility = Visibility.Collapsed;
-        Composer.IsEnabled = chat.CanSendText;
-        EmojiButton.IsEnabled = chat.CanSendText;
-        Composer.PlaceholderText = chat.CanSendText ? AppServices.Current.Localization["message"] : "—";
-        UpdateComposerActions();
         _keepingMessageBottom = true;
         try
         {
@@ -753,7 +751,7 @@ public sealed partial class ShellPage : Page
         {
             ChatList.SelectedItem=_viewModel.Chats.FirstOrDefault(row=>row.ListKey==chat.ListKey);
             ThreadAvatar.DisplayName=chat.Title;ThreadAvatar.ProfilePicture=Ui.Image(chat.AvatarPath);ThreadTitle.Text=chat.Title;
-            Composer.IsEnabled=chat.CanSendText;EmojiButton.IsEnabled=chat.CanSendText;UpdateComposerActions();
+            UpdateComposerActions();
         }
     }
 
@@ -794,6 +792,7 @@ public sealed partial class ShellPage : Page
 
     private void ApplyChatAppearance()
     {
+        ChatBackgroundImage.Stretch = AppServices.Current.Appearance.ChatBackgroundStretch;
         var path = AppServices.Current.Appearance.ChatBackgroundPath;
         var hasBackground = !string.IsNullOrWhiteSpace(path) && File.Exists(path);
         // A picked image is always copied to the same file name, so the write
@@ -970,6 +969,8 @@ public sealed partial class ShellPage : Page
     private void UpdateComposerActions()
     {
         var canSend = _viewModel?.SelectedChat?.CanSendText == true;
+        Composer.IsEnabled = canSend;
+        Composer.PlaceholderText = canSend ? AppServices.Current.Localization["message"] : "—";
         var hasText = !string.IsNullOrWhiteSpace(Composer.Text);
         SendButton.IsEnabled = canSend && hasText;
         var canAttach=_viewModel?.SelectedChat?.CanSendAttachments==true;

@@ -24,6 +24,8 @@ public sealed class TrayIconService : IDisposable
     private const uint TpmRightButton = 2;
     private const uint ImageIcon = 1;
     private const uint LrLoadFromFile = 0x10;
+    private const int SmCxSmIcon = 49;
+    private const int SmCySmIcon = 50;
     private const int OpenId = 1;
     private const int ExitId = 2;
     private const int RecentBaseId = 100;
@@ -57,7 +59,12 @@ public sealed class TrayIconService : IDisposable
         if (RegisterClassW(ref windowClass) == 0) throw new InvalidOperationException("Unable to register the micaGO tray window.");
         _window = CreateWindowExW(0, _className, "micaGO tray", 0, 0, 0, 0, 0, new IntPtr(-3), IntPtr.Zero, _instance, IntPtr.Zero);
         if (_window == IntPtr.Zero) throw new InvalidOperationException("Unable to create the micaGO tray window.");
-        _icon = LoadImageW(IntPtr.Zero, iconPath, ImageIcon, 0, 0, LrLoadFromFile);
+        // Zero dimensions select the ICO's first (16px) image, which the shell
+        // then stretches on high-DPI displays. Request the system small-icon
+        // metrics so LoadImage selects the matching image from the ICO.
+        var dpi = GetDpiForSystem();
+        _icon = LoadImageW(IntPtr.Zero, iconPath, ImageIcon,
+            GetSystemMetricsForDpi(SmCxSmIcon, dpi), GetSystemMetricsForDpi(SmCySmIcon, dpi), LrLoadFromFile);
         if (_icon == IntPtr.Zero) throw new InvalidOperationException("Unable to load the micaGO tray icon.");
         // Version 4 suppresses the standard tooltip unless NIF_SHOWTIP is set.
         var data = IconData(NifMessage | NifIcon | NifTip | NifShowTip);
@@ -152,6 +159,8 @@ public sealed class TrayIconService : IDisposable
     [DllImport("user32.dll")] private static extern IntPtr DefWindowProcW(IntPtr window,uint message,IntPtr wParam,IntPtr lParam);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr LoadImageW(IntPtr instance,string name,uint type,int width,int height,uint flags);
     [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
+    [DllImport("user32.dll")] private static extern uint GetDpiForSystem();
+    [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
     [DllImport("shell32.dll", CharSet=CharSet.Unicode)] private static extern bool Shell_NotifyIconW(uint message,ref NotifyIconData data);
     [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern bool AppendMenuW(IntPtr menu,uint flags,UIntPtr item,string? text);
