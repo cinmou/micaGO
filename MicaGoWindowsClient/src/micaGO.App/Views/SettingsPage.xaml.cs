@@ -42,6 +42,7 @@ public sealed partial class SettingsPage : Page
         TwemojiFlagsToggle.IsOn=services.Appearance.TwemojiFlagsEnabled;
         UpdateBackgroundStatus();
         DeveloperPanel.Visibility=(await services.Cache.GetSettingAsync("settings.developerMode"))=="true"?Visibility.Visible:Visibility.Collapsed;
+        ApplyText();
         await LoadSmsStateAsync();
         _loading=false;services.Notifications.Enabled=NotificationToggle.IsOn;services.Notifications.ShowMessageText=NotificationPreviewToggle.IsOn;ApplyText();ApplySection(_context?.Section??"general");
         await RestoreVcfSummaryAsync();
@@ -358,6 +359,13 @@ public sealed partial class SettingsPage : Page
             _checkingUpdate = false;
             AboutUpdateButton.IsEnabled = true;
         }
+    }
+
+    public void ShowSection(string section)
+    {
+        if (_context?.Section == section) return;
+        if (_context is not null) _context = _context with { Section = section };
+        ApplySection(section);
     }
 
     private void ApplySection(string section){GeneralSection.Visibility=section=="general"?Visibility.Visible:Visibility.Collapsed;AppearanceSection.Visibility=section=="appearance"?Visibility.Visible:Visibility.Collapsed;NotificationSection.Visibility=section=="notifications"?Visibility.Visible:Visibility.Collapsed;DataSection.Visibility=section=="data"?Visibility.Visible:Visibility.Collapsed;AboutSection.Visibility=section=="about"?Visibility.Visible:Visibility.Collapsed;}

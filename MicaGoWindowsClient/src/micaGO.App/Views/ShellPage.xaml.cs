@@ -54,6 +54,7 @@ public sealed partial class ShellPage : Page
     private ChatSummary? _undoHiddenChat;
     private readonly List<(MessageRow Row,MessageEntranceKind Kind)> _pendingMessageEntrances=[];
     private bool _messageEntranceDrainScheduled;
+    private int _chatSelectionGeneration;
 
     public ShellPage()
     {
@@ -322,24 +323,28 @@ public sealed partial class ShellPage : Page
             // visible bubble even though the conversation had not changed.
             return;
         }
+        var selection = ++_chatSelectionGeneration;
         Controls.MessageBubble.ResetTransientState();
         ThreadAvatar.DisplayName = chat.Title;
         ThreadAvatar.ProfilePicture = Ui.Image(chat.AvatarPath);
         ThreadTitle.Text = chat.Title;
         ThreadSubtitle.Text = chat.Time;
+        EmptyState.Visibility = Visibility.Collapsed;
+        Composer.IsEnabled = chat.CanSendText;
+        EmojiButton.IsEnabled = chat.CanSendText;
+        Composer.PlaceholderText = chat.CanSendText ? AppServices.Current.Localization["message"] : "—";
+        UpdateComposerActions();
         _keepingMessageBottom = true;
         try
         {
             await _viewModel.SelectChatAsync(chat);
-            EmptyState.Visibility = Visibility.Collapsed;
-            Composer.IsEnabled = chat.CanSendText;
-            EmojiButton.IsEnabled = chat.CanSendText;
-            Composer.PlaceholderText = chat.CanSendText ? AppServices.Current.Localization["message"] : "—";
-            UpdateComposerActions();
+            if (selection != _chatSelectionGeneration || _shutDown
+                || ConversationPane.Visibility != Visibility.Visible
+                || _viewModel.SelectedChat?.ListKey != chat.ListKey) return;
             UpdateThreadSubtitle();
-            await ScrollToLastMessageAsync();
+            await ScrollToLastMessageAsync(selection);
         }
-        finally { _keepingMessageBottom = false; }
+        finally { if (selection == _chatSelectionGeneration) _keepingMessageBottom = false; }
     }
 
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -366,6 +371,8 @@ public sealed partial class ShellPage : Page
 
     public void OpenSettings()
     {
+        ++_chatSelectionGeneration;
+        _keepingMessageBottom = false;
         ChatSidebar.Visibility = Visibility.Collapsed;
         SettingsSidebar.Visibility = Visibility.Visible;
         ConversationPane.Visibility = Visibility.Collapsed;
@@ -530,24 +537,7 @@ public sealed partial class ShellPage : Page
 
         var compositor=ElementCompositionPreview.GetElementVisual(actual[0].Container!).Compositor;
         var easing=compositor.CreateCubicBezierEasingFunction(new Vector2(0.1f,0.9f),new Vector2(0.2f,1f));
-        var duration=TimeSpan.FromMilliseconds(240);
-        var insertedHeight=(float)containers.Sum(item=>item.Container!.ActualHeight);
-
-        // Preserve the pre-insert visual position of rows pushed upward by an
-        // append, then settle them into the layout selected by KeepLastItemInView.
-        for(var index=Math.Max(0,panel.FirstVisibleIndex);index<first;index++)
-        {
-            if(MessageList.ContainerFromIndex(index) is not ListViewItem container)continue;
-            var element=container.ContentTemplateRoot as UIElement??container;
-            ElementCompositionPreview.SetIsTranslationEnabled(element,true);
-            var visual=ElementCompositionPreview.GetElementVisual(element);
-            var shift=compositor.CreateScalarKeyFrameAnimation();
-            shift.InsertKeyFrame(0,insertedHeight);
-            shift.InsertKeyFrame(1,0,easing);
-            shift.Duration=duration;
-            visual.StartAnimation("Translation.Y",shift);
-        }
-
+        var duration=TimeSpan.FromMilliseconds(160);
         foreach(var item in actual)
         {
             var container=item.Container!;
@@ -559,22 +549,17 @@ public sealed partial class ShellPage : Page
             visual.CenterPoint=new Vector3(item.Row.Value.IsOutgoing?(float)container.ActualWidth:0,(float)container.ActualHeight,0);
 
             var rise=compositor.CreateScalarKeyFrameAnimation();
-            rise.InsertKeyFrame(0,item.Kind==MessageEntranceKind.LocalSend?10:7);
+            rise.InsertKeyFrame(0,item.Kind==MessageEntranceKind.LocalSend?6:4);
             rise.InsertKeyFrame(1,0,easing);
             rise.Duration=duration;
-            var fade=compositor.CreateScalarKeyFrameAnimation();
-            fade.InsertKeyFrame(0,0);
-            fade.InsertKeyFrame(1,1,easing);
-            fade.Duration=TimeSpan.FromMilliseconds(190);
             visual.StartAnimation("Translation.Y",rise);
-            visual.StartAnimation("Opacity",fade);
 
             if(item.Kind==MessageEntranceKind.LocalSend)
             {
                 var scale=compositor.CreateVector3KeyFrameAnimation();
                 scale.InsertKeyFrame(0,new Vector3(0.985f,0.985f,1));
                 scale.InsertKeyFrame(1,Vector3.One,easing);
-                scale.Duration=TimeSpan.FromMilliseconds(210);
+                scale.Duration=duration;
                 visual.StartAnimation("Scale",scale);
             }
         }
@@ -582,8 +567,13 @@ public sealed partial class ShellPage : Page
 
     private void ShowSettingsSection(string section)
     {
+        if (DetailFrame.Content is SettingsPage settings)
+        {
+            settings.ShowSection(section);
+            return;
+        }
         var context = new ShellNavigationContext(this, null, section);
-        DetailFrame.Navigate(typeof(SettingsPage), context, ForwardTransition());
+        DetailFrame.Navigate(typeof(SettingsPage), context, new EntranceNavigationTransitionInfo());
     }
 
     public void OpenHiddenContacts()
@@ -1404,10 +1394,12 @@ public sealed partial class ShellPage : Page
         ThreadSubtitle.Text = _viewModel.FormatActivityTimestamp(Math.Max(chat.UpdatedAt, latestMessage));
     }
 
-    private async Task ScrollToLastMessageAsync()
+    private async Task ScrollToLastMessageAsync(int selection)
     {
         if (_viewModel?.Messages.Count is not > 0) return;
         await Task.Yield();
+        if (selection != _chatSelectionGeneration || _shutDown
+            || ConversationPane.Visibility != Visibility.Visible) return;
         MessageList.UpdateLayout();
         // One single scroll pass — the old ScrollIntoView + delay + second
         // ChangeView sequence produced a visible double-jump on every send.
