@@ -462,7 +462,7 @@
                                         </Button.Flyout>
                                     </Button>
                                     <TextBox x:Name="Composer" Grid.Column="1"
-                                             MinHeight="48" MaxHeight="144" FontSize="16"
+                                             MinHeight="48" MaxHeight="144" FontSize="14"
                                              Padding="14,10" Margin="0,0,4,0"
                                              Background="Transparent"
                                              Foreground="{ThemeResource TextFillColorPrimaryBrush}"

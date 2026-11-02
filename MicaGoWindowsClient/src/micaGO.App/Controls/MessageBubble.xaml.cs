@@ -169,7 +169,11 @@ public sealed partial class MessageBubble : UserControl
         ApplyDirection(outgoing);
         ApplySenderRow(message, outgoing);
         ApplyReply(message);
-        ApplyBubble(message, body, hasBody, hasMedia, outgoing);
+        if (!mediaUnchanged || previous is null || previous.Text != message.Text
+            || previous.IsOutgoing != message.IsOutgoing || previous.IsBigEmoji != message.IsBigEmoji
+            || previous.ShowBubbleTail != message.ShowBubbleTail
+            || (previous.Reactions?.Count ?? 0) != (message.Reactions?.Count ?? 0))
+            ApplyBubble(message, body, hasBody, hasMedia, outgoing);
         if (!mediaUnchanged)
         {
             BuildMediaPanel(message, hasMedia, hasBody);
@@ -178,7 +182,9 @@ public sealed partial class MessageBubble : UserControl
         {
             ApplyLinkPreview(message, body);
         }
-        ApplyReactions(message, outgoing);
+        if (!isSameRow || previous is null || previous.IsOutgoing != message.IsOutgoing
+            || !(previous.Reactions ?? []).SequenceEqual(message.Reactions ?? []))
+            ApplyReactions(message, outgoing);
         ApplyEffectAndFooter(message, outgoing);
         ApplyPendingOverlays(message);
         ApplyInvisibleInk(message);
