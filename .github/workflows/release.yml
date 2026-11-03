@@ -179,10 +179,12 @@ jobs:
       - name: Supply missing Inno Setup translations
         shell: pwsh
         run: |
-          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-          $inno = if ($compiler) { Split-Path $compiler.Source } else {
-            Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6"
-          }
+          $inno = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6"),
+            (Join-Path $env:ProgramFiles "Inno Setup 7"),
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 7")
+          ) | Where-Object { Test-Path (Join-Path $_ "ISCC.exe") } | Select-Object -First 1
+          if (!$inno) { throw "Inno Setup install directory was not found." }
           $source = "https://raw.githubusercontent.com/jrsoftware/issrc/cfdf48923178df4b4f040e038b423aa555a61ffc/Files/Languages/Unofficial"
           foreach ($language in @("ChineseSimplified", "ChineseTraditional")) {
             $destination = Join-Path $inno "Languages/$language.isl"
