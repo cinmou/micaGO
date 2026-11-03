@@ -176,6 +176,20 @@ jobs:
             choco install innosetup --yes --no-progress
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Supply missing Inno Setup translations
+        shell: pwsh
+        run: |
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          $inno = if ($compiler) { Split-Path $compiler.Source } else {
+            Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6"
+          }
+          $source = "https://raw.githubusercontent.com/jrsoftware/issrc/cfdf48923178df4b4f040e038b423aa555a61ffc/Files/Languages/Unofficial"
+          foreach ($language in @("ChineseSimplified", "ChineseTraditional")) {
+            $destination = Join-Path $inno "Languages/$language.isl"
+            if (!(Test-Path $destination)) {
+              Invoke-WebRequest "$source/$language.isl" -OutFile $destination
+            }
+          }
       - name: Build installer (x64)
         shell: pwsh
         run: |
