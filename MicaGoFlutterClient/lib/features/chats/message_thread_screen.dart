@@ -5737,7 +5737,15 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                     title: Text(strings.t('details.mute')),
                     subtitle: Text(strings.t('details.muteBody')),
                     value: muted,
-                    onChanged: (value) => app.setChatsMuted(routeGuids, value),
+                    onChanged: (value) async {
+                      try {
+                        await app.setChatsMuted(routeGuids, value);
+                      } on ApiException catch (error) {
+                        if (context.mounted) {
+                          TopBanner.show(context, error.friendly);
+                        }
+                      }
+                    },
                   ),
                   Row(
                     children: [

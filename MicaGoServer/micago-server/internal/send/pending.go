@@ -20,7 +20,7 @@ type PendingSend struct {
 	ChatGUID          string
 	OriginalMessage   string
 	NormalizedMessage string
-	// SentAtUnixMilli is the lower bound (with a small backdated tolerance) used
+	// SentAtUnixMilli is the request start time used as the lower bound
 	// to filter candidate outgoing rows by date.
 	SentAtUnixMilli int64
 	Timeout         time.Duration

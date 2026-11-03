@@ -375,3 +375,17 @@ func TestServiceAccountReadErrorDoesNotExposePath(t *testing.T) {
 		t.Fatal("credential path leaked in provider error")
 	}
 }
+
+func TestNonePreviewOmitsIdentityFromFCM(t *testing.T) {
+	d := NewDispatcher(config.Config{})
+	n := d.buildNotification(relaydb.NotificationEvent{ChatGUID: "private-chat"}, "none")
+	data := fcmMessage("test-token", n, 0)["message"].(map[string]any)["data"].(map[string]string)
+	for _, key := range []string{"chatGuid", "senderName", "conversationTitle", "handle", "body"} {
+		if value, ok := data[key]; ok {
+			t.Errorf("%s leaked as %q", key, value)
+		}
+	}
+	if n.Title != "New message" {
+		t.Fatalf("unexpected title %q", n.Title)
+	}
+}

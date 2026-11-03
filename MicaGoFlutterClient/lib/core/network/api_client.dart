@@ -591,6 +591,14 @@ class ApiClient {
     };
   }
 
+  Future<void> setChatsMuted(Iterable<String> chatGuids, bool muted) async {
+    await _requestObject(
+      'PUT',
+      '/api/chats/mute',
+      body: {'chatGuids': chatGuids.toList(), 'muted': muted},
+    );
+  }
+
   Future<void> putSyncRule({
     required String targetKind,
     required String targetValue,

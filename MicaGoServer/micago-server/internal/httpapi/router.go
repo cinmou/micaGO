@@ -41,6 +41,7 @@ func NewRouter(h *Handlers, hub *realtime.Hub, auth *DeviceAuth) http.Handler {
 	mux.Handle("GET /api/test-contact", auth.Wrap(http.HandlerFunc(h.GetTestContact)))
 	mux.Handle("PUT /api/test-contact", auth.Wrap(http.HandlerFunc(h.PutTestContact)))
 	mux.Handle("POST /api/test-contact/inbound", auth.Wrap(http.HandlerFunc(h.PostTestContactInbound)))
+	mux.Handle("PUT /api/chats/mute", auth.Wrap(http.HandlerFunc(h.PutChatsMuted)))
 	mux.Handle("GET /api/chats", auth.Wrap(http.HandlerFunc(h.GetChats)))
 	mux.Handle("GET /api/chats/{guid}/messages", auth.Wrap(http.HandlerFunc(h.GetChatMessages)))
 	mux.Handle("POST /api/chats/{guid}/send", auth.Wrap(http.HandlerFunc(h.SendText)))

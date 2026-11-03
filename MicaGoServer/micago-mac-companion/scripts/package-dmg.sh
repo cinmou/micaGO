@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.91.0}"
+VERSION="${VERSION:-0.93.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 GENERATE_APPCAST="${GENERATE_APPCAST:-${NOTARIZE:-0}}"
 if [ "$GENERATE_APPCAST" = "1" ] && { [ -z "${SIGN_IDENTITY:-}" ] || [ "${NOTARIZE:-0}" != "1" ]; }; then
@@ -126,7 +126,7 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   if [ "${SIGN_TIMESTAMP:-1}" = "0" ]; then
     CODESIGN_TIMESTAMP_ARGS=(--timestamp=none)
   fi
-  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago"
+  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --entitlements "$COMPANION_DIR/MicaGoCompanion/Automation.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago"
   if [ -f "$APP_PATH/Contents/Resources/micago-imcore-helper" ]; then
     codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago-imcore-helper"
   fi
@@ -150,7 +150,7 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
       --preserve-metadata=identifier,entitlements \
       --sign "$SIGN_IDENTITY" "$SPARKLE_FRAMEWORK"
   fi
-  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH"
+  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --entitlements "$COMPANION_DIR/MicaGoCompanion/Automation.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH"
   codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 else
   echo "==> SIGN_IDENTITY not set; leaving app unsigned for local testing"

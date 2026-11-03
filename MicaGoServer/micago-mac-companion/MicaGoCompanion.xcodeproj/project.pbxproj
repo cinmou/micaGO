@@ -291,7 +291,8 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 91;
+				CODE_SIGN_ENTITLEMENTS = MicaGoCompanion/Automation.entitlements;
+				CURRENT_PROJECT_VERSION = 93;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -303,7 +304,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.91.0;
+				MARKETING_VERSION = 0.93.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -319,7 +320,8 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 91;
+				CODE_SIGN_ENTITLEMENTS = MicaGoCompanion/Automation.entitlements;
+				CURRENT_PROJECT_VERSION = 93;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -331,7 +333,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.91.0;
+				MARKETING_VERSION = 0.93.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -74,7 +74,7 @@ public sealed class MainWindow : Window
         App.HideWindow(this);
     }
 
-    public Task OpenChatAsync(string chatId) => _shellPage.OpenChatAsync(chatId);
+    public Task OpenChatAsync(string chatId, long? notificationThrough = null) => _shellPage.OpenChatAsync(chatId, notificationThrough);
 
     private void WindowRoot_Loaded(object sender, RoutedEventArgs e)
     {

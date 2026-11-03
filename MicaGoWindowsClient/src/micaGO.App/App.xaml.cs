@@ -109,7 +109,7 @@ public partial class App : Application
         services.Notifications.HiddenBodyText = services.Localization["newMessage"];
     }
 
-    private static void OnNotificationReplyRequested(object? sender, (string ChatId, string DeviceId, string Text) reply)
+    private static void OnNotificationReplyRequested(object? sender, (string ChatId, string DeviceId, string Text, long Through) reply)
     {
         _dispatcher?.TryEnqueue(async () =>
         {
@@ -123,18 +123,18 @@ public partial class App : Application
                     .SendAsync(reply.ChatId, reply.DeviceId, reply.Text, timeout.Token);
             }
             catch { }
-            if (result == MicaGo.Infrastructure.Connection.NotificationReplyResult.Sent) await services.Notifications.DismissChatAsync(reply.ChatId);
+            if (result == MicaGo.Infrastructure.Connection.NotificationReplyResult.Sent) await services.Notifications.DismissChatThroughAsync(reply.ChatId, reply.Through);
             else services.Notifications.ShowReplyStatus(reply.ChatId, services.Localization[result == MicaGo.Infrastructure.Connection.NotificationReplyResult.Pending ? "notificationReplyPending" : result == MicaGo.Infrastructure.Connection.NotificationReplyResult.Rejected ? "notificationReplyRejected" : "notificationReplyFailed"]);
         });
     }
 
-    private static void OnNotificationChatActivated(object? sender, string chatId)
+    private static void OnNotificationChatActivated(object? sender, (string ChatId, long Through) notification)
     {
         var window = MainWindow ?? (Window?)_connectionWindow;
         window?.DispatcherQueue.TryEnqueue(async () =>
         {
             ShowCurrentWindow();
-            if (MainWindow is MainWindow main) await main.OpenChatAsync(chatId);
+            if (MainWindow is MainWindow main) await main.OpenChatAsync(notification.ChatId, notification.Through);
         });
     }
 

@@ -900,18 +900,18 @@
         }
       }
     },
-    "Contacts access is optional and stays on this Mac. It shows names for handles and makes handle rules easier to create. Contacts are never uploaded.": {
+    "Contacts access is optional. Names and handles are cached by the micaGO backend on this Mac for display and sync rules. When notification previews include senders, names may be sent through your configured push provider, including Google FCM.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通讯录权限是可选的，数据只留在这台 Mac 上。它用来显示地址对应的名字，也方便创建地址规则。通讯录不会上传。"
+            "value": "通讯录权限是可选的。姓名和地址会缓存在这台 Mac 的 micaGO 后端，用于显示和同步规则。通知预览包含发送者时，姓名可能通过配置的推送服务发送，包括 Google FCM。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "聯絡人權限是選用的，資料只留在這台 Mac 上。它用來顯示地址對應的名字，也方便建立地址規則。聯絡人不會上傳。"
+            "value": "聯絡人權限是選用的。姓名和地址會快取在這台 Mac 的 micaGO 後端，用於顯示和同步規則。通知預覽包含寄件人時，姓名可能透過設定的推播服務傳送，包括 Google FCM。"
           }
         }
       }
@@ -3308,22 +3308,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "選用的額外位址，沒有它區域網路照常可用。"
-          }
-        }
-      }
-    },
-    "Optional, and read only on this Mac. Contacts help show names for handles and create rules. They are never uploaded, saved to the relay, or sent in pushes.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可选，只在这台 Mac 上读取。通讯录用来显示地址对应的名字、帮助创建规则，不会上传、保存到中继或放进推送。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選用，只在這台 Mac 上讀取。聯絡人用來顯示地址對應的名字、協助建立規則，不會上傳、儲存到中繼或放進推播。"
           }
         }
       }

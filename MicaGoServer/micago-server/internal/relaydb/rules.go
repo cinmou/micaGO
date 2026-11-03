@@ -272,3 +272,26 @@ func validSyncMode(m string) bool {
 func validPushMode(m string) bool {
 	return m == PushEnabled || m == PushMuted || m == PushInherit
 }
+
+// SetChatsMuted updates only push mode, preserving administrator sync rules.
+func (db *DB) SetChatsMuted(ctx context.Context, guids []string, muted bool) error {
+	tx, err := db.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	mode := PushInherit
+	if muted {
+		mode = PushMuted
+	}
+	now := time.Now().UnixMilli()
+	for _, guid := range guids {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO sync_rules(target_kind, target_value, sync_mode, push_mode, created_at, updated_at)
+VALUES ('chat', ?, 'inherit', ?, ?, ?)
+ON CONFLICT(target_kind, target_value) DO UPDATE SET push_mode=excluded.push_mode, updated_at=excluded.updated_at`, guid, mode, now, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

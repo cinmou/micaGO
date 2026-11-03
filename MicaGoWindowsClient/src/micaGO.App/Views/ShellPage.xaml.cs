@@ -311,7 +311,7 @@ public sealed partial class ShellPage : Page
         if (chat is not null && _viewModel is not null) await _viewModel.RestoreHiddenChatsAsync([chat.Id]);
     }
 
-    private async Task SelectChatAsync(ChatSummary chat)
+    private async Task SelectChatAsync(ChatSummary chat, string? notificationRoute = null, long? notificationThrough = null)
     {
         if (_viewModel is null) return;
         ShowConversationPane();
@@ -335,7 +335,7 @@ public sealed partial class ShellPage : Page
         _keepingMessageBottom = true;
         try
         {
-            await _viewModel.SelectChatAsync(chat);
+            await _viewModel.SelectChatAsync(chat, notificationRoute: notificationRoute, notificationThrough: notificationThrough);
             if (selection != _chatSelectionGeneration || _shutDown
                 || ConversationPane.Visibility != Visibility.Visible
                 || _viewModel.SelectedChat?.ListKey != chat.ListKey) return;
@@ -599,13 +599,13 @@ public sealed partial class ShellPage : Page
         DetailFrame.Navigate(typeof(ConversationDetailsPage), new ShellNavigationContext(this, chat), ForwardTransition());
     }
 
-    public async Task OpenChatAsync(string chatId)
+    public async Task OpenChatAsync(string chatId, long? notificationThrough = null)
     {
         if(_viewModel is null)return;
         var chat=_viewModel.Chats.FirstOrDefault(item=>item.Id==chatId||(item.RouteIds?.Contains(chatId)??false));
         if(chat is null)return;
         ChatList.SelectedItem=chat;
-        await SelectChatAsync(chat);
+        await SelectChatAsync(chat, notificationThrough.HasValue ? chatId : null, notificationThrough);
     }
 
     public void ExitDetailMode()

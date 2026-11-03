@@ -21,6 +21,7 @@ public sealed class RealtimeSyncService(
     private readonly SemaphoreSlim _catchUpGate = new(1, 1);
     private Task? _loop;
 
+    public event EventHandler? ChatMuteChanged;
     public event EventHandler<RealtimeMessageBatch>? MessagesChanged;
     public event EventHandler<string>? StatusChanged;
     public event EventHandler<MessageActionCapabilities>? CapabilitiesChanged;
@@ -81,6 +82,7 @@ public sealed class RealtimeSyncService(
                 attempt = 0;
                 await foreach (var realtimeEvent in api.ListenRealtimeAsync(cancellationToken))
                 {
+                    if (realtimeEvent.Type == "sync:rules") ChatMuteChanged?.Invoke(this, EventArgs.Empty);
                     if(realtimeEvent.Type=="capabilities:updated") {
                         await RefreshCapabilitiesAsync(cancellationToken);
                     }

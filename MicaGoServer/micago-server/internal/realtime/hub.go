@@ -82,7 +82,7 @@ func (h *Hub) Broadcast(ctx context.Context, event Event) error {
 	h.mu.Unlock()
 
 	for _, conn := range clients {
-		writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		err := conn.Write(writeCtx, websocket.MessageText, payload)
 		cancel()
 		if err != nil {

@@ -17,7 +17,8 @@ type PendingSendManager struct {
 	mu      sync.Mutex
 	pending map[string]PendingSend
 	// claimed maps a matched message GUID -> the tempGUID that claimed it.
-	claimed map[string]string
+	claimed   map[string]string
+	claimedAt map[string]time.Time
 }
 
 type ReconcileCandidate struct {
@@ -30,8 +31,9 @@ type ReconcileCandidate struct {
 
 func NewPendingSendManager() *PendingSendManager {
 	return &PendingSendManager{
-		pending: map[string]PendingSend{},
-		claimed: map[string]string{},
+		pending:   map[string]PendingSend{},
+		claimed:   map[string]string{},
+		claimedAt: map[string]time.Time{},
 	}
 }
 
@@ -41,6 +43,7 @@ func (m *PendingSendManager) Add(p PendingSend) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.pruneLocked(time.Now())
 	if _, exists := m.pending[p.TempGUID]; exists {
 		return ErrDuplicateTempGUID
 	}
@@ -57,21 +60,43 @@ func (m *PendingSendManager) Add(p PendingSend) error {
 	return nil
 }
 
-// Remove deletes the pending send and releases any chat.db row it claimed.
+// Remove drops request bookkeeping while keeping confirmation claims until
+// no pending send can still match the same Messages row.
 func (m *PendingSendManager) Remove(tempGUID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if p, ok := m.pending[tempGUID]; ok && p.MatchedGUID != "" {
-		if owner, claimed := m.claimed[p.MatchedGUID]; claimed && owner == tempGUID {
-			delete(m.claimed, p.MatchedGUID)
+	delete(m.pending, tempGUID)
+	m.pruneLocked(time.Now())
+}
+
+func (m *PendingSendManager) pruneLocked(now time.Time) {
+	for guid, pending := range m.pending {
+		if pending.Status != StatusPending && !pending.RecoverUntil.IsZero() && !now.Before(pending.RecoverUntil) {
+			delete(m.pending, guid)
 		}
 	}
-	delete(m.pending, tempGUID)
+	for guid, claimedAt := range m.claimedAt {
+		if now.Before(claimedAt.Add(defaultLateMatchWindow + 10*time.Second)) {
+			continue
+		}
+		needed := false
+		for _, pending := range m.pending {
+			if pending.SentAtUnixMilli <= claimedAt.UnixMilli() {
+				needed = true
+				break
+			}
+		}
+		if !needed {
+			delete(m.claimed, guid)
+			delete(m.claimedAt, guid)
+		}
+	}
 }
 
 func (m *PendingSendManager) Has(tempGUID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.pruneLocked(time.Now())
 	_, exists := m.pending[tempGUID]
 	return exists
 }
@@ -92,6 +117,7 @@ func (m *PendingSendManager) Resolve(tempGUID, matchedGUID string, matchedROWID 
 		return false
 	}
 	m.claimed[matchedGUID] = tempGUID
+	m.claimedAt[matchedGUID] = time.Now()
 	p.Status = StatusConfirmed
 	p.MatchedGUID = matchedGUID
 	p.MatchedROWID = matchedROWID
@@ -130,6 +156,7 @@ func (m *PendingSendManager) MarkSentUnconfirmed(tempGUID, reason string, recove
 func (m *PendingSendManager) ClaimedSnapshot() map[string]struct{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.pruneLocked(time.Now())
 	out := make(map[string]struct{}, len(m.claimed))
 	for guid := range m.claimed {
 		out[guid] = struct{}{}
@@ -145,6 +172,7 @@ func (m *PendingSendManager) ReconcileMessages(messages []ReconcileCandidate, no
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.pruneLocked(now)
 	var matched []PendingSend
 	for _, message := range messages {
 		if !message.IsFromMe || message.GUID == "" {
@@ -156,7 +184,7 @@ func (m *PendingSendManager) ReconcileMessages(messages []ReconcileCandidate, no
 		chatGUID := message.ChatGUID
 		text := NormalizeText(message.Text)
 		for tempGUID, pending := range m.pending {
-			if pending.Status == StatusConfirmed {
+			if pending.Status != StatusSentUnconfirmed {
 				continue
 			}
 			if !pending.RecoverUntil.IsZero() && now.After(pending.RecoverUntil) {
@@ -175,6 +203,7 @@ func (m *PendingSendManager) ReconcileMessages(messages []ReconcileCandidate, no
 			pending.MatchedGUID = message.GUID
 			m.pending[tempGUID] = pending
 			m.claimed[message.GUID] = tempGUID
+			m.claimedAt[message.GUID] = now
 			matched = append(matched, pending)
 			break
 		}
@@ -185,5 +214,6 @@ func (m *PendingSendManager) ReconcileMessages(messages []ReconcileCandidate, no
 func (m *PendingSendManager) PendingCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.pruneLocked(time.Now())
 	return len(m.pending)
 }

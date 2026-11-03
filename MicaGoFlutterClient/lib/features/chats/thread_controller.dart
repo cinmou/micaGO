@@ -90,17 +90,26 @@ class ThreadController extends ChangeNotifier {
   Timer? _reloadDebounce;
 
   /// Chronological (oldest → newest); the thread view renders it reversed.
-  List<MessageModel> get messages => app.tokenRejected.value
-      ? const []
-      : _col.ordered
-            .where(
-              (message) =>
-                  !app.messagePreferences.isHidden(
-                    '${message.chatGuid ?? chatGuid}\u001f${message.guid}',
-                  ) &&
-                  !app.messagePreferences.isHidden(message.guid),
-            )
-            .toList(growable: false);
+  List<MessageModel>? _visibleMessages;
+  List<MessageModel>? _visibleSource;
+
+  List<MessageModel> get messages {
+    if (app.tokenRejected.value) return const [];
+    final source = _col.ordered;
+    if (!identical(source, _visibleSource) || _visibleMessages == null) {
+      _visibleSource = source;
+      _visibleMessages = List.unmodifiable(
+        source.where(
+          (message) =>
+              !app.messagePreferences.isHidden(
+                '${message.chatGuid ?? chatGuid}\u001f${message.guid}',
+              ) &&
+              !app.messagePreferences.isHidden(message.guid),
+        ),
+      );
+    }
+    return _visibleMessages!;
+  }
 
   Set<String> _visibleHidden = {};
 
@@ -108,7 +117,8 @@ class ThreadController extends ChangeNotifier {
     if (_disposed) return;
     final hidden = app.messagePreferences.hidden;
     if (setEquals(hidden, _visibleHidden)) return;
-    _visibleHidden = hidden;
+    _visibleHidden = Set.of(hidden);
+    _visibleMessages = null;
     _notify();
     unawaited(_restoreCachedVisibleMessages());
   }

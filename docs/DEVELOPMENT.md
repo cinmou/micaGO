@@ -1,6 +1,6 @@
 # 开发、测试与发布
 
-下面命令从仓库根目录开始。版本以各组件版本文件为准；目前为 0.91.0（Muscovite），Flutter build number 为 91。改版本时保留历史版本比较测试中的旧样本。
+下面命令从仓库根目录开始。CI 与发布元数据阶段使用 `scripts/check-versions.py` 核对 Go、Flutter、设备版本标签、Xcode、DMG 脚本和 Windows 的版本一致性，并核对 Flutter/Xcode build number。版本以各组件版本文件为准；目前为 0.93.0，Flutter build number 为 93。改版本时保留历史版本比较测试中的旧样本。
 
 ## 本地开发
 
@@ -66,7 +66,7 @@ cd MicaGoServer/micago-mac-companion
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPLE_TEAM_ID="TEAMID" \
 NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE="micaGO-notary" \
-VERSION=0.91.0 scripts/package-dmg.sh
+VERSION=0.93.0 scripts/package-dmg.sh
 ```
 
 公证凭据预先由 `notarytool store-credentials` 放入钥匙串；不要把密码和私钥写进文档或 shell 历史。Sparkle EdDSA 私钥也由发布环境安全提供。
@@ -96,7 +96,9 @@ ZIP 在 `MicaGoWindowsClient/artifacts/micaGO-release-x64.zip`；安装器需要
 
 ## GitHub Release
 
-[release.yml](../.github/workflows/release.yml) 在版本标签触发时构建产物并创建 draft；手动运行可只生成 artifacts。逐个查看 job 和实际附件，不以 workflow 名字推断发布完成。
+[release.yml](../.github/workflows/release.yml) 在版本标签触发时构建产物并创建 draft；手动运行可只生成 artifacts。逐个查看 job 和实际附件，不以 workflow 名字推断发布完成。发布工作流只生成 Android、Windows 和 Linux 产物，已移除不受支持的 iOS 未签名 IPA。Windows 发布 EXE 安装器，安装器脚本内部生成 ZIP 后封装，上传文件名为 `micaGO-<version>-Windows-release.exe`。SHA256SUMS 从本次最终上传附件生成并核验；它不包含后续手工添加的 Mac 签名产物。已有 Release 会使发布步骤失败，自动流程不覆盖既有资产。
+
+独立的 [ci.yml](../.github/workflows/ci.yml) 在分支 push 和 PR 上执行 Go vet/test、Companion API/配对脚本检查及 Flutter analyze/test/Linux 构建。Mac 和后端不在 release.yml 中打包，公开 Mac 产物继续本地签名、公证。Action 使用固定提交 SHA，Android 签名 secrets 仅在配置签名的步骤注入，构建后清理签名文件。分支保护是否要求这些检查通过由仓库规则配置决定。
 
 Mac 包在本地签名公证，上传同一轮生成的 DMG 和 `appcast.xml` 后再发布 draft。当前 feed 指向 latest release 的 appcast，缺少该附件会导致已安装的 Companion 检查更新失败。不要用另一份 DMG 搭配旧 appcast。
 

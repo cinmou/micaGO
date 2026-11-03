@@ -254,6 +254,23 @@ class AppController extends ChangeNotifier {
     // Public URLs without the user rescanning a QR.
     _connSub = ws.events.listen((e) {
       if (tokenRejected.value) return;
+      if (e.type == 'sync:rules' && e.data['rules'] is List) {
+        final rules = e.data['rules'] as List;
+        _mutedChats
+          ..clear()
+          ..addAll(
+            rules
+                .whereType<Map>()
+                .where(
+                  (rule) =>
+                      rule['targetKind'] == 'chat' &&
+                      rule['pushMode'] == 'muted',
+                )
+                .map((rule) => rule['targetValue'])
+                .whereType<String>(),
+          );
+        notifyListeners();
+      }
       if (e.type == 'read-state:changed') {
         unawaited(readState.sync());
       }
@@ -390,43 +407,28 @@ class AppController extends ChangeNotifier {
   final List<String> _foregroundAlertGuidOrder = <String>[];
 
   Future<void> setChatsMuted(Iterable<String> chatGuids, bool muted) async {
-    var changed = false;
-    for (final chatGuid in chatGuids) {
+    final guids = chatGuids
+        .map((guid) => guid.trim())
+        .where((guid) => guid.isNotEmpty)
+        .toSet();
+    if (guids.isEmpty) return;
+    final api = _api;
+    if (api == null) {
+      throw const ApiException(
+        code: 'not_connected',
+        message: 'Connect to the Mac to change conversation notifications.',
+      );
+    }
+    await api.setChatsMuted(guids, muted);
+    if (!identical(api, _api)) return;
+    for (final guid in guids) {
       if (muted) {
-        changed = _mutedChats.add(chatGuid) || changed;
+        _mutedChats.add(guid);
       } else {
-        changed = _mutedChats.remove(chatGuid) || changed;
+        _mutedChats.remove(guid);
       }
     }
-    if (!changed) return;
-    unawaited(_syncChatMuteRules(chatGuids, muted));
     notifyListeners();
-  }
-
-  Future<void> _syncChatMuteRules(
-    Iterable<String> chatGuids,
-    bool muted,
-  ) async {
-    for (final chatGuid in chatGuids) {
-      await _syncChatMuteRule(chatGuid, muted);
-    }
-  }
-
-  Future<void> _syncChatMuteRule(String chatGuid, bool muted) async {
-    final guid = chatGuid.trim();
-    final api = _api;
-    if (guid.isEmpty || api == null) return;
-    try {
-      await api.putSyncRule(
-        targetKind: 'chat',
-        targetValue: guid,
-        pushMode: muted ? 'muted' : 'inherit',
-      );
-    } on ApiException catch (error) {
-      debugPrint(
-        'MicaGo mute sync failed: ${error.code} (${error.statusCode})',
-      );
-    }
   }
 
   /// Called by the app shell on foreground resume (lightweight refresh).

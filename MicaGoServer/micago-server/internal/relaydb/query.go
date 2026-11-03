@@ -288,69 +288,64 @@ type DeltaResult struct {
 	HasMore   bool                `json:"hasMore"`
 }
 
-// ListMessagesSince returns renderable messages whose source_rowid is greater
-// than [since], oldest-first, capped at [limit]. The cursor advances to the last
-// returned row, or — when nothing is newer — to the current max so it never
-// regresses. This is the correctness path: realtime WS is the fast path, this
-// catch-up guarantees nothing missed while disconnected/backgrounded.
-//
-// A negative [since] means "uninitialized": return no messages, just the current
-// max cursor, so a fresh client seeds its cursor to "now" without backfilling.
+// ListMessagesSince pages current message snapshots by relay change sequence.
+// Missing cursors seed at the current revision. Legacy ROWID cursors replay once.
 func (db *DB) ListMessagesSince(ctx context.Context, since int64, limit int) (DeltaResult, error) {
-	maxRowID, err := db.maxMessageRowID(ctx)
-	if err != nil {
+	var ceiling int64
+	if err := db.sqlDB.QueryRowContext(ctx, `SELECT COALESCE(MAX(changes.seq), 0)
+FROM message_changes AS changes
+JOIN messages AS m ON m.guid = changes.guid
+WHERE m.source_rowid IS NOT NULL`).Scan(&ceiling); err != nil {
 		return DeltaResult{}, err
 	}
 	if since < 0 {
-		return DeltaResult{Messages: []store.MessageJSON{}, ChatGUIDs: []string{}, Cursor: maxRowID}, nil
+		return DeltaResult{Messages: []store.MessageJSON{}, ChatGUIDs: []string{}, Cursor: messageCursorBase + ceiling}, nil
+	}
+	if since < messageCursorBase {
+		since = messageCursorBase
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-
-	query := relayMessageSelect + `
-WHERE COALESCE(m.is_debug_only, 0) = 0
-  AND m.source_rowid > ?
-ORDER BY m.source_rowid ASC
-LIMIT ?;
-`
-	// Fetch one extra to detect hasMore.
-	rows, err := db.sqlDB.QueryContext(ctx, query, since, limit+1)
+	query := strings.Replace(relayMessageSelect, "m.source_rowid\n", "m.source_rowid, changes.seq\n", 1) + `
+JOIN message_changes AS changes ON changes.guid = m.guid
+WHERE m.source_rowid IS NOT NULL AND COALESCE(m.is_debug_only, 0) = 0 AND changes.seq > ?
+ORDER BY changes.seq ASC LIMIT ?`
+	rows, err := db.sqlDB.QueryContext(ctx, query, since-messageCursorBase, limit+1)
 	if err != nil {
 		return DeltaResult{}, err
 	}
-	defer rows.Close()
-	messages, err := db.scanRelayMessagesWithAttachments(ctx, rows)
+	var sequences []int64
+	messages, err := scanRelayMessages(rows, &sequences)
+	rows.Close()
 	if err != nil {
 		return DeltaResult{}, err
 	}
-
 	hasMore := len(messages) > limit
 	if hasMore {
 		messages = messages[:limit]
+		sequences = sequences[:limit]
 	}
-
 	cursor := since
-	chatSet := map[string]struct{}{}
-	chatGUIDs := []string{}
-	for _, m := range messages {
-		if m.SourceRowID != nil && *m.SourceRowID > cursor {
-			cursor = *m.SourceRowID
-		}
-		if m.ChatGUID != nil {
-			if _, seen := chatSet[*m.ChatGUID]; !seen {
-				chatSet[*m.ChatGUID] = struct{}{}
-				chatGUIDs = append(chatGUIDs, *m.ChatGUID)
-			}
+	if len(sequences) > 0 {
+		cursor = messageCursorBase + sequences[len(sequences)-1]
+	}
+	if !hasMore && cursor < messageCursorBase+ceiling {
+		cursor = messageCursorBase + ceiling
+	}
+	messages, err = db.attachMessageAttachments(ctx, messages)
+	if err != nil {
+		return DeltaResult{}, err
+	}
+	chats := []string{}
+	seen := map[string]bool{}
+	for _, message := range messages {
+		if message.ChatGUID != nil && !seen[*message.ChatGUID] {
+			seen[*message.ChatGUID] = true
+			chats = append(chats, *message.ChatGUID)
 		}
 	}
-	// No newer rows → advance to the current ceiling so quiet periods don't
-	// re-scan the same window forever.
-	if !hasMore && cursor < maxRowID {
-		cursor = maxRowID
-	}
-
-	return DeltaResult{Messages: messages, ChatGUIDs: chatGUIDs, Cursor: cursor, HasMore: hasMore}, nil
+	return DeltaResult{Messages: messages, ChatGUIDs: chats, Cursor: cursor, HasMore: hasMore}, nil
 }
 
 func (db *DB) maxMessageRowID(ctx context.Context) (int64, error) {
@@ -572,7 +567,7 @@ LIMIT 1;
 	return &meta, nil
 }
 
-func scanRelayMessages(rows *sql.Rows) ([]store.MessageJSON, error) {
+func scanRelayMessages(rows *sql.Rows, sequences ...*[]int64) ([]store.MessageJSON, error) {
 	var messages []store.MessageJSON
 	for rows.Next() {
 		var message store.MessageJSON
@@ -583,7 +578,7 @@ func scanRelayMessages(rows *sql.Rows) ([]store.MessageJSON, error) {
 		// fatal — NULL simply means false.
 		var isFromMe, isRead, isDelivered, hasAttachments, hasAttributedBody sql.NullInt64
 		var payloadPresent sql.NullInt64
-		if err := rows.Scan(
+		destinations := []any{
 			&message.GUID,
 			&message.Text,
 			&message.Subject,
@@ -614,10 +609,18 @@ func scanRelayMessages(rows *sql.Rows) ([]store.MessageJSON, error) {
 			&message.DateRetracted,
 			&message.Error,
 			&message.SourceRowID,
-		); err != nil {
+		}
+		var sequence int64
+		if len(sequences) > 0 {
+			destinations = append(destinations, &sequence)
+		}
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
 
+		if len(sequences) > 0 {
+			*sequences[0] = append(*sequences[0], sequence)
+		}
 		message.IsFromMe = isFromMe.Valid && isFromMe.Int64 != 0
 		message.IsRead = isRead.Valid && isRead.Int64 != 0
 		message.IsDelivered = isDelivered.Valid && isDelivered.Int64 != 0

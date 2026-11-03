@@ -2,7 +2,7 @@ name: mica_go
 description: "MicaGo Android client — connect to a MicaGo relay server."
 publish_to: 'none'
 
-version: 0.91.0+91
+version: 0.93.0+93
 
 environment:
   sdk: ^3.12.1

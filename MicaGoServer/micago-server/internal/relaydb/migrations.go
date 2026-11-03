@@ -197,6 +197,7 @@ func (db *DB) Migrate() error {
 	// Created after the additive columns above so composite indexes can include
 	// them. All IF NOT EXISTS — idempotent on every start.
 	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_messages_chat_row_date ON messages(chat_guid, source_rowid DESC, date_created DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_chat_date ON messages(chat_guid, date_created)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_chat_date_row ON messages(chat_guid, date_created DESC, source_rowid DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_source_rowid ON messages(source_rowid)`,
@@ -209,7 +210,7 @@ func (db *DB) Migrate() error {
 		}
 	}
 
-	return nil
+	return db.migrateMessageChanges()
 }
 
 func (db *DB) ensureColumn(table, column, columnType string) error {

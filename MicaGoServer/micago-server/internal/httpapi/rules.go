@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"micagoserver/internal/realtime"
 	"micagoserver/internal/store"
 )
 
@@ -149,6 +150,9 @@ func (h *Handlers) respondSyncRules(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w)
 		return
 	}
+	if h.send != nil && h.send.Events != nil {
+		_ = h.send.Events.Broadcast(context.WithoutCancel(r.Context()), realtime.Event{Type: "sync:rules", Data: resp})
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -166,4 +170,37 @@ func (h *Handlers) buildSyncRulesResponse(ctx context.Context) (store.SyncRulesR
 		DefaultPushPolicy: pushPolicy,
 		Rules:             rules,
 	}, nil
+}
+
+// PutChatsMuted is deliberately narrower than administrator rule editing.
+func (h *Handlers) PutChatsMuted(w http.ResponseWriter, r *http.Request) {
+	svc, ok := h.rules.(interface {
+		SetChatsMuted(context.Context, []string, bool) error
+	})
+	if !ok {
+		writeInternalError(w)
+		return
+	}
+	var req struct {
+		ChatGUIDs []string `json:"chatGuids"`
+		Muted     *bool    `json:"muted"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil || req.Muted == nil || len(req.ChatGUIDs) == 0 || len(req.ChatGUIDs) > 100 {
+		writeBadRequest(w, "chatGuids and muted are required (maximum 100 chats)")
+		return
+	}
+	for _, guid := range req.ChatGUIDs {
+		if strings.TrimSpace(guid) == "" {
+			writeBadRequest(w, "chat GUID is required")
+			return
+		}
+	}
+	if err := svc.SetChatsMuted(r.Context(), req.ChatGUIDs, *req.Muted); err != nil {
+		h.logInternal("set chat mute", err)
+		writeInternalError(w)
+		return
+	}
+	h.respondSyncRules(w, r)
 }

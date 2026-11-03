@@ -22,6 +22,9 @@ func writeUnauthorized(w http.ResponseWriter) {
 
 func writeAuthorizationFailure(w http.ResponseWriter, status int) {
 	switch status {
+	case http.StatusTooManyRequests:
+		w.Header().Set("Retry-After", "1")
+		writeAPIError(w, status, "rate_limited", "Too many authorization requests. Try again shortly.")
 	case http.StatusForbidden:
 		writeAPIError(w, status, "forbidden", "This device cannot access this endpoint.")
 	case http.StatusServiceUnavailable:

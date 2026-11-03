@@ -28,8 +28,10 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>micaGO controls Messages to send messages you compose on your paired devices.</string>
 	<key>NSContactsUsageDescription</key>
-	<string>micaGO reads Contacts only on this Mac to show names for message handles and help you create sync rules. Contacts are never uploaded.</string>
+	<string>Contacts access is optional. Names and handles are cached by the micaGO backend on this Mac for display and sync rules. When notification previews include senders, names may be sent through your configured push provider, including Google FCM.</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/cinmou/MicaGo/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
