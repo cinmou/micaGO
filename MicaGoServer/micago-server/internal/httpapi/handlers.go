@@ -590,7 +590,7 @@ func (h *Handlers) GetRecentMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMessagesDelta is the cursor catch-up endpoint (C21). The client passes its
-// persisted cursor as ?since=<rowid> (or omits it / passes -1 to seed); the
+// persisted opaque numeric cursor as ?since=<cursor> (or omits it / passes -1 to seed); the
 // server returns renderable messages newer than the cursor, the affected chat
 // GUIDs, the new cursor, and whether more remain. This is the correctness path
 // that guarantees nothing is missed while the WebSocket was down or the app
@@ -785,7 +785,7 @@ func (h *Handlers) SendText(w http.ResponseWriter, r *http.Request) {
 		OriginalMessage:   req.Message,
 		NormalizedMessage: micasend.NormalizeText(req.Message),
 		// Backdate slightly so clock skew / rounding never excludes the row.
-		SentAtUnixMilli: now.Add(-10 * time.Second).UnixMilli(),
+		SentAtUnixMilli: now.UnixMilli(),
 		CreatedAt:       now,
 		Timeout:         confirmationTimeout,
 	}
@@ -1901,8 +1901,8 @@ func validateDeviceRecord(device store.DeviceRecord, supportedProviders []string
 	if strings.TrimSpace(device.PushProvider) == "" {
 		return errors.New("pushProvider is required")
 	}
-	if !slices.Contains([]string{"windows", "android", "ios", "harmonyos", "web", "unknown"}, device.Platform) {
-		return errors.New("platform must be one of: windows, android, ios, harmonyos, web, unknown")
+	if !slices.Contains([]string{"windows", "android", "linux", "ios", "harmonyos", "web", "unknown"}, device.Platform) {
+		return errors.New("platform must be one of: windows, android, linux, ios, harmonyos, web, unknown")
 	}
 	if !slices.Contains([]string{"tauri", "flutter", "web", "native", "unknown"}, device.ClientType) {
 		return errors.New("clientType must be one of: tauri, flutter, web, native, unknown")

@@ -16,8 +16,8 @@ public sealed class NotificationService : IDisposable
     public string? RegistrationError { get; private set; }
 
     /// <summary>Raised (on a background thread) when the user clicks a message notification.</summary>
-    public event EventHandler<string>? ChatActivated;
-    public event EventHandler<(string ChatId, string DeviceId, string Text)>? ReplyRequested;
+    public event EventHandler<(string ChatId, long Through)>? ChatActivated;
+    public event EventHandler<(string ChatId, string DeviceId, string Text, long Through)>? ReplyRequested;
 
     public bool Register()
     {
@@ -60,14 +60,23 @@ public sealed class NotificationService : IDisposable
             if (args.Arguments.TryGetValue("action", out var action) && action == "reply")
             {
                 if (args.Arguments.TryGetValue("device", out var device) && args.UserInput.TryGetValue("replyText", out var text) && !string.IsNullOrWhiteSpace(text))
-                    ReplyRequested?.Invoke(this, (chatId, device, text));
+                {
+                    args.Arguments.TryGetValue("through", out var cutoff);
+                    long.TryParse(cutoff, out var replyThrough);
+                    ReplyRequested?.Invoke(this, (chatId, device, text, replyThrough));
+                }
                 return;
             }
-            ChatActivated?.Invoke(this, chatId);
+            if (args.Arguments.TryGetValue("device", out var owner) &&
+                owner != AppServices.Current.Connection.Profile?.DeviceId) return;
+            args.Arguments.TryGetValue("through", out var throughValue);
+            long.TryParse(throughValue, out var through);
+            if (string.IsNullOrEmpty(owner)) through = 0;
+            ChatActivated?.Invoke(this, (chatId, through));
         }
     }
 
-    public void Show(string title, string body, string chatId, string? avatarPath = null)
+    public void Show(string title, string body, string chatId, string? avatarPath = null, long through = 0)
     {
         if (!Enabled || AppServices.Current.Connection.TokenRejected) return;
         if (!Register() || _manager is null) return;
@@ -78,7 +87,7 @@ public sealed class NotificationService : IDisposable
             {
                 try
                 {
-                    _manager.Show(BuildNotification(title, visibleBody, chatId, avatarUri));
+                    _manager.Show(BuildNotification(title, visibleBody, chatId, avatarUri, through));
                     return;
                 }
                 catch (Exception exception)
@@ -89,7 +98,7 @@ public sealed class NotificationService : IDisposable
                 }
             }
 
-            _manager.Show(BuildNotification(title, visibleBody, chatId, null));
+            _manager.Show(BuildNotification(title, visibleBody, chatId, null, through));
         }
         catch (Exception exception)
         {
@@ -97,23 +106,26 @@ public sealed class NotificationService : IDisposable
         }
     }
 
-    private static AppNotification BuildNotification(string title, string body, string chatId, Uri? avatarUri)
+    private static AppNotification BuildNotification(string title, string body, string chatId, Uri? avatarUri, long through)
     {
         var builder = new AppNotificationBuilder()
             .AddText(title)
             .AddText(body)
-            .AddArgument("chat", chatId);
+            .AddArgument("chat", chatId)
+            .AddArgument("through", through.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (avatarUri is not null)
             builder.SetAppLogoOverride(avatarUri, AppNotificationImageCrop.Circle, title);
         if (AppServices.Current.Connection.Profile?.DeviceId is {Length:>0} device)
         {
+            builder.AddArgument("device", device);
             var l=AppServices.Current.Localization;
             builder.AddTextBox("replyText", l["message"], string.Empty)
                 .AddButton(new AppNotificationButton(l["notificationReply"])
-                    .AddArgument("action", "reply").AddArgument("chat", chatId).AddArgument("device", device).SetInputId("replyText"));
+                    .AddArgument("action", "reply").AddArgument("chat", chatId).AddArgument("device", device).AddArgument("through", through.ToString(System.Globalization.CultureInfo.InvariantCulture)).SetInputId("replyText"));
         }
         var notification=builder.BuildNotification();
         notification.Group=ChatNotificationGroup(chatId);
+        notification.Tag=through.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return notification;
     }
 
@@ -136,6 +148,22 @@ public sealed class NotificationService : IDisposable
         if(_manager is null)return;
         try {await _manager.RemoveByGroupAsync(ChatNotificationGroup(chatId));}
         catch(Exception error) {System.Diagnostics.Debug.WriteLine($"[Notifications] dismissal failed: {error.GetType().Name}");}
+    }
+
+    public async Task DismissChatThroughAsync(string chatId, long through)
+    {
+        if (_manager is null || through <= 0) return;
+        try
+        {
+            foreach (var notification in await _manager.GetAllAsync())
+                if (notification.Group == ChatNotificationGroup(chatId) &&
+                    long.TryParse(notification.Tag, out var timestamp) && timestamp > 0 && timestamp <= through)
+                    await _manager.RemoveByIdAsync(notification.Id);
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Notifications] dismissal failed: {error.GetType().Name}");
+        }
     }
 
     private static bool TryGetAvatarUri(string? avatarPath, out Uri? avatarUri)

@@ -91,7 +91,7 @@ public sealed class ShellViewModel : IAsyncDisposable
             var marked=_services.ReadState.UnreadMarks.GetValueOrDefault(route);
             if(_routeChats.TryGetValue(route,out var row) && (marked||row.UpdatedAt<=at))
                 _routeChats[route]=row with {HasUnread=marked,UnreadCount=0};
-            if(row is not null && row.UpdatedAt<=at)_ = _services.Notifications.DismissChatAsync(route);
+            if(row is not null)_ = _services.Notifications.DismissChatThroughAsync(route, at);
         }
         foreach(var row in _allChats) {
             var routes=row.RouteIds is {Count:>0}?row.RouteIds:[row.Id];
@@ -127,6 +127,11 @@ public sealed class ShellViewModel : IAsyncDisposable
 
         if (_services.Connection.TokenRejected) return;
         _realtime = new RealtimeSyncService(_api, _services.Cache, _services.ChatPreferences, _services.Connection.ReselectRouteAsync, _services.MessagePreferences, _services.ReadState, _services.Connection.RefreshEndpointsAsync, () => _services.Connection.TokenRejected);
+        _realtime.ChatMuteChanged += (_, _) => Dispatch(async () =>
+        {
+            try { await RefreshContactsAsync(); }
+            catch { SyncStatus = _services.Localization["prefsOffline"]; StateChanged?.Invoke(this, EventArgs.Empty); }
+        });
         _realtime.MessagesChanged += OnRealtimeMessagesChanged;
         _realtime.CapabilitiesChanged += (_, capabilities) => Dispatch(() => {
             ActionCapabilities=capabilities;
@@ -219,7 +224,7 @@ public sealed class ShellViewModel : IAsyncDisposable
         return ids.Length;
     }
 
-    public async Task SelectChatAsync(ChatSummary chat, CancellationToken cancellationToken = default)
+    public async Task SelectChatAsync(ChatSummary chat, CancellationToken cancellationToken = default, string? notificationRoute = null, long? notificationThrough = null)
     {
         if (_services.Connection.TokenRejected) return;
         _selectionCts?.Cancel(); _selectionCts?.Dispose(); _selectionCts=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);var token=_selectionCts.Token;
@@ -258,7 +263,7 @@ public sealed class ShellViewModel : IAsyncDisposable
         }
         catch (OperationCanceledException){return;}
         catch when (cached.Length > 0) { HasMoreMessages=cached.Length==MessagePageSize; }
-        try { await MarkSelectedChatReadAsync(chat,token); }
+        try { await MarkSelectedChatReadAsync(chat,token,notificationRoute,notificationThrough); }
         catch (OperationCanceledException){return;}
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -281,21 +286,27 @@ public sealed class ShellViewModel : IAsyncDisposable
         finally{IsLoadingOlder=false;StateChanged?.Invoke(this,EventArgs.Empty);}
     }
 
-    private async Task MarkSelectedChatReadAsync(ChatSummary chat,CancellationToken token)
+    private async Task MarkSelectedChatReadAsync(ChatSummary chat,CancellationToken token,string? notificationRoute = null,long? notificationThrough = null)
     {
         var positions=new Dictionary<string,long>();
         foreach(var route in chat.RouteIds is{Count:>0} routes?routes:[chat.Id])
         {
             var latest=_rawMessages.Where(row=>row.ChatId.Equals(route,StringComparison.OrdinalIgnoreCase)).Select(row=>row.DateCreated).DefaultIfEmpty(0).Max();
-            latest=Math.Max(latest,_routeChats.GetValueOrDefault(route)?.UpdatedAt??0);
+            if (notificationRoute is not null)
+            {
+                if (route != notificationRoute || notificationThrough is not > 0) continue;
+                latest = Math.Min(latest, notificationThrough.Value);
+            }
+            if (latest <= 0) continue;
             var prior=await _services.Cache.GetSettingAsync("read.watermark."+route,token);long.TryParse(prior,out var previous);
             if(latest>previous)await _services.Cache.AdvanceReadWatermarkAsync(route,latest,token);
             positions[route]=latest;
-            _ = _services.Notifications.DismissChatAsync(route);
-            if(_routeChats.TryGetValue(route,out var routeRow)) _routeChats[route]=routeRow with{HasUnread=false,UnreadCount=0};
+            _ = _services.Notifications.DismissChatThroughAsync(route,latest);
+            if(_routeChats.TryGetValue(route,out var routeRow) && routeRow.UpdatedAt <= latest) _routeChats[route]=routeRow with{HasUnread=false,UnreadCount=0};
         }
         _ = SynchronizeReadPositionsAsync(positions);
-        var current=_allChats.FirstOrDefault(item=>item.ListKey==chat.ListKey);if(current is null)return;current.UpdateFrom(current with{UnreadCount=0,HasUnread=false});SelectedChat=current;
+        var current=_allChats.FirstOrDefault(item=>item.ListKey==chat.ListKey);if(current is null)return;var unread = (current.RouteIds ?? [current.Id]).Any(route => _routeChats.GetValueOrDefault(route)?.HasUnread == true);
+        current.UpdateFrom(current with{UnreadCount=unread ? current.UnreadCount : 0,HasUnread=unread});SelectedChat=current;
     }
 
     public async Task SendTextAsync(string text,CancellationToken cancellationToken=default)
@@ -447,7 +458,7 @@ public sealed class ShellViewModel : IAsyncDisposable
                 if(allowNotifications&&unknownRouteFirstObservation&&!message.IsOutgoing&&message.DateCreated>_services.ReadState.Positions.GetValueOrDefault(message.ChatId)&&!_services.ChatPreferences.Hidden.Contains(message.ChatId)&&!_hiddenMessageKeys.Contains(message.ServerKey)&&!_hiddenMessageKeys.Contains(message.Id))
                 {
                     var title=string.IsNullOrWhiteSpace(message.SenderName)?_services.Localization["newMessage"]:message.SenderName;
-                    _services.Notifications.Show(title,MessageSemantics.PreviewText(message),message.ChatId,message.SenderAvatarPath);
+                    _services.Notifications.Show(title,MessageSemantics.PreviewText(message),message.ChatId,message.SenderAvatarPath,message.DateCreated);
                 }
                 continue;
             }
@@ -478,7 +489,7 @@ public sealed class ShellViewModel : IAsyncDisposable
             if(allowNotifications&&incomingUnseen&&!chat.IsMuted&&!IsChatHidden(chat)&&!_hiddenMessageKeys.Contains(message.ServerKey)&&!_hiddenMessageKeys.Contains(message.Id))
             {
                 var avatarPath=chat.IsGroup?message.SenderAvatarPath??chat.AvatarPath:chat.AvatarPath;
-                _services.Notifications.Show(chat.Title,preview,message.ChatId,avatarPath);
+                _services.Notifications.Show(chat.Title,preview,message.ChatId,avatarPath,message.DateCreated);
             }
         }
         if (updates.Count==0) return needsReload;
@@ -578,6 +589,35 @@ public sealed class ShellViewModel : IAsyncDisposable
         || chat.RouteIds?.Contains(route,StringComparer.OrdinalIgnoreCase)==true;
     private async Task<IReadOnlyList<ChatSummary>> ApplyContactNamesAsync(IReadOnlyList<ChatSummary> rows, CancellationToken cancellationToken)
     {
+        HashSet<string>? serverMuted = null;
+        if (_api is MicaGo.Infrastructure.Api.MicaGoApi muteApi)
+        {
+            try
+            {
+                serverMuted = await muteApi.GetMutedChatGuidsAsync(cancellationToken);
+                if (rows.Count > 0 && await _services.Cache.GetSettingAsync("chat.mute.serverMigrated", cancellationToken) != "1")
+                {
+                    var legacyMuted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var row in rows)
+                    {
+                        var muted = await _services.Cache.GetSettingAsync("chat.muted." + row.Id, cancellationToken) == "1";
+                        if (!row.IsGroup && row.Participants is { Count: > 0 })
+                        {
+                            var contact = await _services.Cache.ResolveContactAsync(row.Participants[0], cancellationToken);
+                            if (contact is not null)
+                                muted |= await _services.Cache.GetSettingAsync("chat.muted.contact:" + contact.ContactId.ToUpperInvariant(), cancellationToken) == "1";
+                        }
+                        if (muted) legacyMuted.Add(row.Id);
+                    }
+                    foreach (var batch in legacyMuted.Chunk(100))
+                        await muteApi.SetChatsMutedAsync(batch, true, cancellationToken);
+                    serverMuted.UnionWith(legacyMuted);
+                    await _services.Cache.SetSettingAsync("chat.mute.serverMigrated", "1", cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { serverMuted = null; /* Retain cached mute state if refresh or migration failed. */ }
+        }
         var result = new List<ChatSummary>(rows.Count);
         foreach (var snapshot in rows)
         {
@@ -586,6 +626,8 @@ public sealed class ShellViewModel : IAsyncDisposable
                 chat = snapshot with { UpdatedAt=live.UpdatedAt,LatestFromMe=live.LatestFromMe,Preview=live.Preview,UnreadCount=live.UnreadCount };
             var pending=(await _services.Cache.GetPendingSendsAsync(chat.Id,cancellationToken)).LastOrDefault();
             if(pending is not null&&pending.DateCreated>=chat.UpdatedAt)chat=chat with{UpdatedAt=pending.DateCreated,Preview=MessageSemantics.PreviewText(pending.ToMessage()),LatestFromMe=true,UnreadCount=0};
+            if (serverMuted is not null)
+                await _services.Cache.SetSettingAsync("chat.muted." + chat.Id, serverMuted.Contains(chat.Id) ? "1" : "0", cancellationToken);
             var locallyMuted=await _services.Cache.GetSettingAsync("chat.muted."+chat.Id,cancellationToken)=="1";var locallyPinned=await _services.Cache.GetSettingAsync("chat.pinned."+chat.Id,cancellationToken)=="1";
             // C43-style derived unread: the dot survives restarts because it is
             // computed from the read watermark, never from a live counter.
@@ -597,7 +639,7 @@ public sealed class ShellViewModel : IAsyncDisposable
             }
             var marked=_services.ReadState.UnreadMarks.GetValueOrDefault(chat.Id);
             var hasUnread=marked||(!chat.LatestFromMe&&chat.UpdatedAt>0&&chat.UpdatedAt>watermark);
-            var decorated=chat with{UnreadCount=hasUnread&&!marked?Math.Max(chat.UnreadCount,_routeChats.GetValueOrDefault(chat.Id)?.UnreadCount??0):0,IsMuted=chat.IsMuted||locallyMuted,IsPinned=chat.IsPinned||locallyPinned,HasUnread=hasUnread};
+            var decorated=chat with{UnreadCount=hasUnread&&!marked?Math.Max(chat.UnreadCount,_routeChats.GetValueOrDefault(chat.Id)?.UnreadCount??0):0,IsMuted=serverMuted is not null ? locallyMuted : chat.IsMuted||locallyMuted,IsPinned=chat.IsPinned||locallyPinned,HasUnread=hasUnread};
             if (chat.IsGroup || chat.Participants is not { Count: > 0 }) { result.Add(decorated); continue; }
             var contact = await _services.Cache.ResolveContactAsync(chat.Participants[0], cancellationToken);
             if (contact is null) { result.Add(decorated); continue; }
@@ -605,7 +647,7 @@ public sealed class ShellViewModel : IAsyncDisposable
             var conversationKey="contact:"+contact.ContactId.ToUpperInvariant();
             var contactMuted=await _services.Cache.GetSettingAsync("chat.muted."+conversationKey,cancellationToken)=="1";
             var contactPinned=await _services.Cache.GetSettingAsync("chat.pinned."+conversationKey,cancellationToken)=="1";
-            result.Add(decorated with { Title = contact.DisplayName, Initials = string.IsNullOrWhiteSpace(initials) ? chat.Initials : initials, AvatarPath=contact.AvatarPath,RouteIds=[chat.Id],PrimaryRouteId=chat.Id,ContactId=contact.ContactId,IsMuted=decorated.IsMuted||contactMuted,IsPinned=decorated.IsPinned||contactPinned });
+            result.Add(decorated with { Title = contact.DisplayName, Initials = string.IsNullOrWhiteSpace(initials) ? chat.Initials : initials, AvatarPath=contact.AvatarPath,RouteIds=[chat.Id],PrimaryRouteId=chat.Id,ContactId=contact.ContactId,IsMuted=decorated.IsMuted||(serverMuted is null && contactMuted),IsPinned=decorated.IsPinned||contactPinned });
         }
         _routeChats.Clear();
         foreach(var route in result) _routeChats[route.Id]=route;

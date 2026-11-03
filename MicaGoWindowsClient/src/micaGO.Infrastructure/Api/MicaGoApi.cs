@@ -14,6 +14,18 @@ namespace MicaGo.Infrastructure.Api;
 
 public sealed class MicaGoApi : IMicaGoApi
 {
+    public Task SetChatsMutedAsync(IReadOnlyList<string> chatGuids, bool muted, CancellationToken cancellationToken = default) =>
+        SendActionAsync(HttpMethod.Put, "api/chats/mute", new { chatGuids, muted }, cancellationToken);
+
+    public async Task<HashSet<string>> GetMutedChatGuidsAsync(CancellationToken cancellationToken = default)
+    {
+        using var document = await GetJsonAsync("api/sync/rules", cancellationToken);
+        return document.RootElement.GetProperty("rules").EnumerateArray()
+            .Where(rule => rule.GetProperty("targetKind").GetString() == "chat" && rule.GetProperty("pushMode").GetString() == "muted")
+            .Select(rule => rule.GetProperty("targetValue").GetString()!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     private readonly string _token;
     private readonly CredentialSession _credential = new();
     public event EventHandler? CredentialRejected { add => _credential.Rejected += value; remove => _credential.Rejected -= value; }

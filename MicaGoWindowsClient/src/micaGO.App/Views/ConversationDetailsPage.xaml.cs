@@ -10,6 +10,7 @@ namespace MicaGo.App.Views;
 
 public sealed partial class ConversationDetailsPage : Page
 {
+    private bool _loadingMute = true;
     private ChatSummary? _chat;
     private ShellNavigationContext? _context;
 
@@ -56,7 +57,8 @@ public sealed partial class ConversationDetailsPage : Page
             ParticipantsCard.Visibility = Visibility.Collapsed;
         }
 
-        MuteToggle.IsOn = await IsEnabledAsync("chat.muted.");
+        MuteToggle.IsOn = _chat.IsMuted;
+        _loadingMute = false;
         PinToggle.IsOn = await IsEnabledAsync("chat.pinned.");
         await LoadRoutesCardAsync(l);
 
@@ -210,10 +212,29 @@ public sealed partial class ConversationDetailsPage : Page
 
     private async void MuteToggle_Toggled(object sender, RoutedEventArgs e)
     {
-        if (_chat is not null)
+        if (_loadingMute || _chat is null) return;
+        var services = AppServices.Current;
+        var muted = MuteToggle.IsOn;
+        MuteToggle.IsEnabled = false;
+        try
         {
-            await AppServices.Current.Cache.SetSettingAsync("chat.muted." + PreferenceKey, MuteToggle.IsOn ? "1" : "0");
+            var api = services.Connection.Api as MicaGo.Infrastructure.Api.MicaGoApi ?? throw new InvalidOperationException("Connect to the Mac to change conversation notifications.");
+            var routes = _chat.RouteIds is { Count: > 0 } ? _chat.RouteIds : [_chat.Id];
+            await api.SetChatsMutedAsync(routes, muted);
+            await services.Cache.SetSettingAsync("chat.muted." + PreferenceKey, "0");
+            foreach (var route in routes)
+                await services.Cache.SetSettingAsync("chat.muted." + route, "0");
+            if (_context is not null) await _context.Host.RefreshContactsAsync();
         }
+        catch (Exception error)
+        {
+            _loadingMute = true;
+            MuteToggle.IsOn = !muted;
+            _loadingMute = false;
+            var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = services.Localization["mute"], Content = error.Message, CloseButtonText = "OK" };
+            await dialog.ShowAsync();
+        }
+        finally { MuteToggle.IsEnabled = true; }
     }
 
     private async void PinToggle_Toggled(object sender, RoutedEventArgs e)

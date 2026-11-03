@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 
 /// App version embedded in the device label so the Companion can show which
 /// client build is connected (C19). Bump alongside pubspec `version`.
-const String kAppVersion = '0.91.0';
+const String kAppVersion = '0.93.0';
 
 /// The device's real name for the Companion's Paired Devices list (C53).
 ///   • iOS → the user-set device name ("Alex's iPhone").
@@ -38,7 +38,7 @@ Future<String> resolveDeviceName() async {
 }
 
 /// Maps the Flutter runtime platform to the server's accepted device platform
-/// set (windows, android, ios, harmonyos, web, unknown).
+/// set (windows, android, linux, ios, harmonyos, web, unknown).
 String serverPlatformFor(TargetPlatform platform, {bool isWeb = false}) {
   if (isWeb) return 'web';
   switch (platform) {
@@ -46,6 +46,8 @@ String serverPlatformFor(TargetPlatform platform, {bool isWeb = false}) {
       return 'android';
     case TargetPlatform.iOS:
       return 'ios';
+    case TargetPlatform.linux:
+      return 'linux';
     case TargetPlatform.windows:
       return 'windows';
     default:

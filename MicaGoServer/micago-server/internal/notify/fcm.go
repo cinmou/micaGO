@@ -117,6 +117,11 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 		"createdAt":         strconv.FormatInt(n.CreatedAt, 10),
 		"dateCreated":       strconv.FormatInt(n.DateCreated, 10),
 	}
+	for key, value := range data {
+		if value == "" {
+			delete(data, key)
+		}
+	}
 	return map[string]any{
 		"message": map[string]any{
 			"token": deviceToken,

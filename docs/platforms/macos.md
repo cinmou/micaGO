@@ -51,3 +51,5 @@ Mac 联系人用于本机名字匹配，也会通过本机控制 API提供名字
 [AppModel.swift](../../MicaGoServer/micago-mac-companion/MicaGoCompanion/AppModel.swift) 管理控制状态；[BackendController.swift](../../MicaGoServer/micago-mac-companion/MicaGoCompanion/Services/BackendController.swift) 管理后端；[TunnelController.swift](../../MicaGoServer/micago-mac-companion/MicaGoCompanion/Services/TunnelController.swift) 管理隧道。
 
 构建和脚本见[开发](../DEVELOPMENT.md)。窗口、Dock 图标、隐藏启动、更新恢复与系统权限需要实际在 macOS 检查。
+
+Companion 声明 Messages 自动化用途，并在 Xcode 与 DMG 签名流程中为 App 和后端添加 Apple Events entitlement。权限实际授权和签名安装包发送仍需实机确认。

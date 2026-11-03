@@ -36,6 +36,10 @@ type DeviceAuth struct {
 	adminToken  string
 	fingerprint string
 	probeToken  string
+	lookupSlots chan struct{}
+	rateMu      sync.Mutex
+	rateTokens  float64
+	rateUpdated time.Time
 }
 
 func NewDeviceAuth(store credentialStore, hub *realtime.Hub, adminToken, fingerprint string) *DeviceAuth {
@@ -43,7 +47,7 @@ func NewDeviceAuth(store credentialStore, hub *realtime.Hub, adminToken, fingerp
 	if _, err := rand.Read(b[:]); err != nil {
 		panic("secure random unavailable")
 	}
-	return &DeviceAuth{store: store, hub: hub, adminToken: adminToken, fingerprint: fingerprint, probeToken: hex.EncodeToString(b[:])}
+	return &DeviceAuth{lookupSlots: make(chan struct{}, 16), rateTokens: 240, rateUpdated: time.Now(), store: store, hub: hub, adminToken: adminToken, fingerprint: fingerprint, probeToken: hex.EncodeToString(b[:])}
 }
 func localControl(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -72,7 +76,18 @@ func (a *DeviceAuth) authorize(r *http.Request) (*http.Request, int) {
 	if len(token) != 64 {
 		return r, http.StatusUnauthorized
 	}
-	id, err := a.store.DeviceForToken(r.Context(), token)
+	if !a.allowCredentialLookup() {
+		return r, http.StatusTooManyRequests
+	}
+	select {
+	case a.lookupSlots <- struct{}{}:
+		defer func() { <-a.lookupSlots }()
+	default:
+		return r, http.StatusServiceUnavailable
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	id, err := a.store.DeviceForToken(ctx, token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, http.StatusUnauthorized
 	}
@@ -87,28 +102,78 @@ func (a *DeviceAuth) authorize(r *http.Request) (*http.Request, int) {
 	}
 	return r.WithContext(context.WithValue(r.Context(), deviceAuthKey{}, id)), http.StatusOK
 }
-func clientRouteAllowed(r *http.Request, id string) bool {
-	p := r.URL.Path
-	if p == "/api/devices/register" {
-		return true
-	}
-	if strings.HasPrefix(p, "/api/devices/") {
-		return p == "/api/devices/"+id || p == "/api/devices/"+id+"/heartbeat"
-	}
-	if p == "/api/devices" || p == "/api/debug/recent-messages" {
+
+// Bound anonymous database work without retaining attacker-controlled IP keys.
+// Loopback administrator requests bypass this budget in authorize.
+func (a *DeviceAuth) allowCredentialLookup() bool {
+	a.rateMu.Lock()
+	defer a.rateMu.Unlock()
+	now := time.Now()
+	a.rateTokens = min(240, a.rateTokens+now.Sub(a.rateUpdated).Seconds()*120)
+	a.rateUpdated = now
+	if a.rateTokens < 1 {
 		return false
 	}
-	if strings.HasPrefix(p, "/api/server/") {
-		return r.Method == http.MethodGet && (p == "/api/server/info" || p == "/api/server/status" || p == "/api/server/urls") || p == "/api/server/notifications/preview" && r.Method == http.MethodPatch
-	}
-
+	a.rateTokens--
 	return true
+}
+
+func clientRouteAllowed(r *http.Request, id string) bool {
+	p := r.URL.Path
+	switch r.Method {
+	case http.MethodGet:
+		switch p {
+		case "/ws", "/api/server/info", "/api/server/status", "/api/server/urls",
+			"/api/read-state", "/api/message-preferences", "/api/chat-preferences",
+			"/api/messages/recent", "/api/messages/history", "/api/messages/delta",
+			"/api/messages/actions/capabilities", "/api/chats", "/api/fcm/client",
+			"/api/sync/settings", "/api/sync/rules", "/api/test-contact":
+			return true
+		}
+	case http.MethodPost:
+		switch p {
+		case "/api/auth/check", "/api/devices/register", "/api/sync/now", "/api/messages/actions/refresh":
+			return true
+		}
+		if p == "/api/devices/"+id+"/heartbeat" {
+			return true
+		}
+	case http.MethodPut:
+		return p == "/api/chats/mute"
+	case http.MethodPatch:
+		switch p {
+		case "/api/read-state", "/api/message-preferences", "/api/chat-preferences":
+			return true
+		}
+		return p == "/api/devices/"+id
+	case http.MethodDelete:
+		if p == "/api/devices/"+id {
+			return true
+		}
+	}
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) == 3 && parts[0] == "api" && parts[1] == "attachments" && r.Method == http.MethodGet {
+		return true
+	}
+	if len(parts) < 4 || parts[0] != "api" {
+		return false
+	}
+	if parts[1] == "attachments" && r.Method == http.MethodGet {
+		return len(parts) == 4 && (parts[3] == "playable" || parts[3] == "preview")
+	}
+	if parts[1] != "chats" {
+		return false
+	}
+	if len(parts) == 4 {
+		return r.Method == http.MethodGet && parts[3] == "messages" ||
+			r.Method == http.MethodPost && (parts[3] == "send" || parts[3] == "send-attachment" || parts[3] == "send-attachments")
+	}
+	return parts[3] == "messages" && (len(parts) == 5 && r.Method == http.MethodDelete ||
+		len(parts) == 6 && r.Method == http.MethodPost && (parts[5] == "edit" || parts[5] == "retract"))
 }
 func (a *DeviceAuth) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		a.mu.Lock()
 		authed, status := a.authorize(r)
-		a.mu.Unlock()
 		if status != http.StatusOK {
 			writeAuthorizationFailure(w, status)
 			return
@@ -119,6 +184,10 @@ func (a *DeviceAuth) Wrap(next http.Handler) http.Handler {
 	})
 }
 func (a *DeviceAuth) Socket(w http.ResponseWriter, r *http.Request) {
+	if _, status := a.authorize(r); status != http.StatusOK {
+		writeAuthorizationFailure(w, status)
+		return
+	}
 	// Admission runs under the same lock as revoke; the hub registers the
 	// connection before unlocking, so a concurrent revoke cannot miss it.
 	a.mu.Lock()
@@ -146,6 +215,13 @@ func (a *DeviceAuth) CreateCode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"pairingCode": code, "expiresAt": expires, "tlsFingerprint": a.fingerprint})
 }
 func (a *DeviceAuth) Redeem(w http.ResponseWriter, r *http.Request) {
+	if !a.allowCredentialLookup() {
+		writeAuthorizationFailure(w, http.StatusTooManyRequests)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	r = r.WithContext(ctx)
 	if !limitRequestBody(w, r) {
 		return
 	}

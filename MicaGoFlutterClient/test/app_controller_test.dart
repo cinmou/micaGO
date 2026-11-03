@@ -685,24 +685,27 @@ void main() {
     },
   );
 
-  test('batch mute applies to every route in a merged conversation', () async {
-    final controller = AppController(store: _MemoryStore());
-    const routes = ['iMessage;+1', 'iMessage;email@example.com', 'SMS;+1'];
+  test(
+    'offline batch mute preserves every route in a merged conversation',
+    () async {
+      final controller = AppController(store: _MemoryStore());
+      const routes = ['iMessage;+1', 'iMessage;email@example.com', 'SMS;+1'];
 
-    expect(controller.areChatsMuted(routes), isFalse);
-
-    await controller.setChatsMuted(routes, true);
-    expect(controller.areChatsMuted(routes), isTrue);
-    for (final route in routes) {
-      expect(controller.isChatMuted(route), isTrue);
-    }
-
-    await controller.setChatsMuted(routes, false);
-    expect(controller.areChatsMuted(routes), isFalse);
-    for (final route in routes) {
-      expect(controller.isChatMuted(route), isFalse);
-    }
-  });
+      await expectLater(
+        controller.setChatsMuted(routes, true),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.code,
+            'code',
+            'not_connected',
+          ),
+        ),
+      );
+      for (final route in routes) {
+        expect(controller.isChatMuted(route), isFalse);
+      }
+    },
+  );
 }
 
 class _FailOnceStore extends _MemoryStore {

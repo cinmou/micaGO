@@ -8,8 +8,7 @@
 #
 # Release artifacts:
 #   micaGO-<version>-android-release.apk
-#   micaGO-<version>-Windows-release.zip        (native WinUI client)
-#   micaGO-<version>-iOS-release-unsigned.ipa
+#   micaGO-<version>-Windows-release.exe        (native WinUI client)
 #   micaGO-<version>-Linux-release.tar.gz
 #
 # The macOS Companion is NOT built here: it is signed, notarized and given its
@@ -56,7 +55,10 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       build_number: ${{ steps.v.outputs.build_number }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check component versions
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/check-versions.py
       - id: v
         name: Read version from pubspec and check the tag matches
         run: |
@@ -79,18 +81,13 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: "21"
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -98,8 +95,19 @@ jobs:
       - name: Pub get
         working-directory: MicaGoFlutterClient
         run: flutter pub get
+      - name: Analyze
+        working-directory: MicaGoFlutterClient
+        run: flutter analyze
+      - name: Test
+        working-directory: MicaGoFlutterClient
+        run: flutter test
       - name: Configure release signing
         id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           missing=""
           for value in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
@@ -125,90 +133,64 @@ jobs:
             "keyPassword=$ANDROID_KEY_PASSWORD" \
             > MicaGoFlutterClient/android/key.properties
           echo "enabled=true" >> "$GITHUB_OUTPUT"
-      - name: Analyze
-        working-directory: MicaGoFlutterClient
-        run: flutter analyze
-      - name: Test
-        working-directory: MicaGoFlutterClient
-        run: flutter test
       - name: Build APK
         if: steps.signing.outputs.enabled == 'true'
         working-directory: MicaGoFlutterClient
         run: flutter build apk --release
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/micago-release.jks" MicaGoFlutterClient/android/key.properties
       - name: Rename artifact
         if: steps.signing.outputs.enabled == 'true'
         run: |
           mkdir -p out
           cp MicaGoFlutterClient/build/app/outputs/flutter-apk/app-release.apk \
             "out/micaGO-${{ needs.meta.outputs.version }}-android-release.apk"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: steps.signing.outputs.enabled == 'true'
         with:
           name: android-apk
           path: out/*.apk
           if-no-files-found: error
 
-  ios:
-    name: iOS IPA (unsigned)
-    needs: meta
-    # The app icon is an Icon Composer `.icon` (MicaGoC), which only Xcode 26+
-    # compiles; macos-15's default Xcode 16 fails with "no app icon set named MicaGoC".
-    runs-on: macos-26
-    timeout-minutes: 50
-    steps:
-      - uses: actions/checkout@v7
-      - name: Show Xcode version
-        run: xcodebuild -version
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-      - name: Pub get
-        working-directory: MicaGoFlutterClient
-        run: flutter pub get
-      - name: Build iOS (no codesign)
-        working-directory: MicaGoFlutterClient
-        run: flutter build ios --release --no-codesign
-      - name: Package unsigned IPA
-        run: |
-          mkdir -p out Payload
-          cp -R MicaGoFlutterClient/build/ios/iphoneos/Runner.app Payload/
-          zip -qry "out/micaGO-${{ needs.meta.outputs.version }}-iOS-release-unsigned.ipa" Payload
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ios-ipa
-          path: out/*.ipa
-          if-no-files-found: error
-
   windows:
-    name: Windows zip (WinUI client)
+    name: Windows installer (WinUI client)
     needs: meta
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       # Pinned explicitly: the windows-latest image's bundled .NET changes over
       # time, and the client targets net10.0.
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           dotnet-version: "10.0.x"
       - name: Core contract tests
         shell: pwsh
         run: dotnet run --project MicaGoWindowsClient/tests/micaGO.Core.ContractTests/micaGO.Core.ContractTests.csproj -c Release
-      - name: Build and package (x64)
+      - name: Install Inno Setup
         shell: pwsh
-        run: ./MicaGoWindowsClient/scripts/package-release-x64.ps1
+        run: |
+          choco install innosetup --version=6.4.3 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build installer (x64)
+        shell: pwsh
+        run: |
+          [xml]$props = Get-Content MicaGoWindowsClient/Directory.Build.props
+          if ([string]$props.Project.PropertyGroup.MicaGoVersion -ne "${{ needs.meta.outputs.version }}") {
+            throw "Windows version does not match release version"
+          }
+          ./MicaGoWindowsClient/scripts/build-installer-x64.ps1
       - name: Rename artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Copy-Item MicaGoWindowsClient/artifacts/micaGO-release-x64.zip `
-            "out/micaGO-${{ needs.meta.outputs.version }}-Windows-release.zip"
-      - uses: actions/upload-artifact@v7
+          Copy-Item MicaGoWindowsClient/artifacts/micaGO-Setup-x64.exe `
+            "out/micaGO-${{ needs.meta.outputs.version }}-Windows-release.exe"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: windows-zip
-          path: out/*.zip
+          name: windows-installer
+          path: out/*.exe
           if-no-files-found: error
 
   linux:
@@ -217,13 +199,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Linux desktop build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config \
             libgtk-3-dev liblzma-dev libsecret-1-dev
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -239,7 +221,7 @@ jobs:
           mkdir -p out staging
           cp -r MicaGoFlutterClient/build/linux/x64/release/bundle staging/micaGO
           tar -C staging -czf "out/micaGO-${{ needs.meta.outputs.version }}-Linux-release.tar.gz" micaGO
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-tarball
           path: out/*.tar.gz
@@ -248,7 +230,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     if: github.ref_type == 'tag'
-    needs: [meta, android, ios, windows, linux]
+    needs: [meta, android, windows, linux]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -256,17 +238,21 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           path: dist
           merge-multiple: true
       - name: Create checksums
         working-directory: dist
-        run: sha256sum * > SHA256SUMS
+        run: |
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' |
+            sort -z | xargs -0 sha256sum > SHA256SUMS
+          sha256sum --check SHA256SUMS
       - name: Prepare release assets (new releases stay draft until Mac updates are attached)
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+            echo "::error::Release already exists. Review its assets manually; automatic replacement is disabled."
+            exit 1
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
               --draft \

@@ -54,13 +54,13 @@ func TestPendingManagerResolveRejectsRowClaimedByAnother(t *testing.T) {
 	}
 }
 
-func TestPendingManagerRemoveReleasesClaim(t *testing.T) {
+func TestPendingManagerRemoveRetainsClaim(t *testing.T) {
 	m := NewPendingSendManager()
 	_ = m.Add(PendingSend{TempGUID: "t1"})
 	m.Resolve("t1", "msg-1", 0)
 	m.Remove("t1")
-	if _, claimed := m.ClaimedSnapshot()["msg-1"]; claimed {
-		t.Fatal("expected claim released on Remove")
+	if _, claimed := m.ClaimedSnapshot()["msg-1"]; !claimed {
+		t.Fatal("expected claim retained after Remove")
 	}
 }
 
@@ -165,4 +165,18 @@ func (m *PendingSendManager) Get(tempGUID string) (PendingSend, bool) {
 	defer m.mu.Unlock()
 	p, ok := m.pending[tempGUID]
 	return p, ok
+}
+
+func TestReconcileLeavesPendingForHandler(t *testing.T) {
+	m := NewPendingSendManager()
+	if err := m.Add(PendingSend{TempGUID: "pending", ChatGUID: "chat", NormalizedMessage: NormalizeText("hello"), SentAtUnixMilli: time.Now().UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	matches := m.ReconcileMessages([]ReconcileCandidate{{GUID: "real", ChatGUID: "chat", Text: "hello", DateCreated: ptrInt64(time.Now().UnixMilli()), IsFromMe: true}}, time.Now())
+	if len(matches) != 0 {
+		t.Fatalf("background claimed foreground send: %+v", matches)
+	}
+	if !m.Resolve("pending", "real", 1) {
+		t.Fatal("handler could not confirm send")
+	}
 }

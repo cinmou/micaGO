@@ -8,7 +8,7 @@ void main() {
       expect(serverPlatformFor(TargetPlatform.android), 'android');
       expect(serverPlatformFor(TargetPlatform.iOS), 'ios');
       expect(serverPlatformFor(TargetPlatform.windows), 'windows');
-      expect(serverPlatformFor(TargetPlatform.linux), 'unknown');
+      expect(serverPlatformFor(TargetPlatform.linux), 'linux');
       expect(serverPlatformFor(TargetPlatform.android, isWeb: true), 'web');
     });
 

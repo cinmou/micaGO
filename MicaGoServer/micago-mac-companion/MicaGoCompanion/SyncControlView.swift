@@ -231,7 +231,7 @@ private struct ContactsCard: View {
                 }
             }
             if contacts.status == .notDetermined {
-                Text("Contacts access is optional and stays on this Mac. It shows names for handles and makes handle rules easier to create. Contacts are never uploaded.")
+                Text("Contacts access is optional. Names and handles are cached by the micaGO backend on this Mac for display and sync rules. When notification previews include senders, names may be sent through your configured push provider, including Google FCM.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !contacts.isAuthorized {
@@ -244,7 +244,7 @@ private struct ContactsCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                Text("Optional, and read only on this Mac. Contacts help show names for handles and create rules. They are never uploaded, saved to the relay, or sent in pushes.")
+                Text("Contacts access is optional. Names and handles are cached by the micaGO backend on this Mac for display and sync rules. When notification previews include senders, names may be sent through your configured push provider, including Google FCM.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

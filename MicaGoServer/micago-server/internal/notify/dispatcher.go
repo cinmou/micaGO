@@ -206,6 +206,9 @@ func (d *Dispatcher) DispatchNewMessages(ctx context.Context, devices []store.De
 
 func (d *Dispatcher) buildNotification(event relaydb.NotificationEvent, previewMode string) Notification {
 	notification := buildNotification(event, previewMode)
+	if previewMode == "none" {
+		return notification
+	}
 	handle := strings.TrimSpace(notification.Handle)
 	if handle == "" {
 		return notification
@@ -301,6 +304,11 @@ func buildNotification(event relaydb.NotificationEvent, previewMode string) Noti
 	var sourceRowID int64
 	if event.Message.SourceRowID != nil {
 		sourceRowID = *event.Message.SourceRowID
+	}
+
+	if previewMode == "none" {
+		sender, conversationTitle, handle = "", "", ""
+		event.ChatGUID = ""
 	}
 
 	return Notification{
