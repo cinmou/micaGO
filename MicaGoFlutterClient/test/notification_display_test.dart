@@ -96,6 +96,26 @@ void main() {
       expect(notificationTimestampMs({'createdAt': 999999}), isNull);
     },
   );
+  test('chat-less pushes replace instead of stacking forever', () async {
+    Future<void> showTest() => showMessageNotification(
+      plugin,
+      chatGuid: null,
+      messageGuid: '',
+      deviceId: 'device',
+      senderName: 'micaGO Server test notification',
+      conversationTitle: 'micaGO Server test notification',
+      body: 'Notifications are configured for this device',
+    );
+    await showTest();
+    await showTest();
+    await showTest();
+    final android = shown.last['platformSpecifics'] as Map;
+    final style = android['styleInformation'] as Map;
+    expect((style['messages'] as List).length, 1);
+    expect(android['actions'], isNull);
+    final ids = shown.reversed.take(3).map((n) => n['id']).toSet();
+    expect(ids.length, 1, reason: 'each test push reuses one notification id');
+  });
   test(
     'transactional buffers isolate devices and retain later arrivals after read',
     () async {
