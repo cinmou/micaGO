@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/app_controller.dart';
 import '../../core/platform/resume_tracker.dart';
+import '../../core/platform/linux_desktop.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/push_service.dart';
 import '../../core/platform/incoming_share_service.dart';
@@ -39,6 +41,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Timer? _foregroundAlertTimer;
   Timer? _pushRetryTimer;
   final ValueNotifier<int> _searchRequests = ValueNotifier<int>(0);
+  bool _viewFocused = true;
   static const double _tabletBreakpoint = 840;
 
   @override
@@ -56,7 +59,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       unawaited(_push!.start());
       _pushRetryTimer = Timer.periodic(const Duration(seconds: 20), (_) {
         final push = _push;
-        if (push == null || push.available) {
+        if (push == null ||
+            push.available ||
+            (isLinuxDesktop && push.localReady)) {
           _pushRetryTimer?.cancel();
           _pushRetryTimer = null;
           return;
@@ -134,7 +139,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final app = _app ?? context.read<AppController>();
     // C31: track foreground/background so the keep-alive path only raises a
     // system notification when the UI isn't already showing the message.
-    app.setForeground(state == AppLifecycleState.resumed);
+    app.setForeground(
+      state == AppLifecycleState.resumed && (!isLinuxDesktop || _viewFocused),
+    );
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       FocusManager.instance.primaryFocus?.unfocus();
@@ -152,6 +159,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         if (mounted) setState(() {});
       });
     }
+  }
+
+  @override
+  void didChangeViewFocus(ui.ViewFocusEvent event) {
+    if (!isLinuxDesktop ||
+        !mounted ||
+        event.viewId != View.of(context).viewId) {
+      return;
+    }
+    _viewFocused = event.state == ui.ViewFocusState.focused;
+    (_app ?? context.read<AppController>()).setForeground(_viewFocused);
   }
 
   @override
@@ -176,6 +194,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   void _openSettings() {
+    if (isLinuxDesktop) {
+      unawaited(
+        LinuxDesktop.openSettings(
+          '${MicaLocalizations.of(context).t('nav.settings')} — micaGO',
+        ),
+      );
+      return;
+    }
     Navigator.of(
       context,
     ).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
@@ -188,16 +214,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final tablet = MediaQuery.sizeOf(context).width >= _tabletBreakpoint;
     final theme = context.watch<ThemeController>();
     final glass = theme.useLiquidGlass;
-    final inkWash = theme.useBlackWhite;
+    final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
     final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
         ? glassBg
-        : inkWash
+        : neutralSurfaces
         ? scheme.surface
         : _homeAccent1_100(scheme);
     final pageBg = glass
         ? glassBg
-        : inkWash
+        : neutralSurfaces
         ? scheme.surface
         : _homeAccent1_50(scheme);
     final chats = ChatsPane(
@@ -205,7 +231,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       onSearchRequested: () => _searchRequests.value++,
       onOpenSettings: _openSettings,
     );
-    return KeyboardInsetGuard(
+    final content = KeyboardInsetGuard(
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         backgroundColor: pageBg,
@@ -244,6 +270,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 ),
               ),
       ),
+    );
+    if (!isLinuxDesktop) return content;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+            _searchRequests.value++,
+      },
+      child: content,
     );
   }
 }

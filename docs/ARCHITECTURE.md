@@ -29,6 +29,8 @@ flowchart LR
     FCM -. 通知预览 .-> Client
 ```
 
+Linux Flutter 客户端的聊天与设置使用同一引擎中的两个原生窗口。`LinuxWindowHost` 管理视图生命周期，各窗口通过 `.value` 共享主入口创建的控制器，关闭设置窗口仅释放其视图和路由。平台交互见 [Flutter 平台文档](platforms/flutter.md)。
+
 ## 数据在哪里
 
 `chat.db` 是 Apple Messages 的数据库，Go 只读它；发送通过 Messages 执行，随后再从数据库确认结果。

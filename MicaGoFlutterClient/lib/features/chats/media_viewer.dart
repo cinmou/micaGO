@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/l10n/app_localizations.dart';
+import '../../core/platform/linux_desktop.dart';
 import '../../core/network/api_client.dart';
 import '../../core/storage/media_cache.dart';
 import 'attachment_views.dart';
@@ -78,10 +79,21 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
     super.dispose();
   }
 
+  void _navigate(int delta) {
+    final next = (_index + delta).clamp(0, widget.images.length - 1);
+    if (_page.hasClients && next != _index) {
+      _page.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final multi = widget.images.length > 1;
-    return Scaffold(
+    final content = Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
@@ -104,6 +116,33 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
               },
             ),
           ),
+          if (isLinuxDesktop && multi)
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton.filledTonal(
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).previousPageTooltip,
+                      onPressed: _index > 0 ? () => _navigate(-1) : null,
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    IconButton.filledTonal(
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).nextPageTooltip,
+                      onPressed: _index < widget.images.length - 1
+                          ? () => _navigate(1)
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           // Top bar: close + counter, over a subtle gradient for legibility.
           Positioned(
             top: 0,
@@ -134,6 +173,18 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
+                    if (isLinuxDesktop)
+                      IconButton(
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).showMenuTooltip,
+                        icon: const Icon(Icons.more_horiz, color: Colors.white),
+                        onPressed: () => showAttachmentActions(
+                          context,
+                          api: widget.api,
+                          attachment: widget.images[_index],
+                        ),
+                      ),
                     if (multi)
                       Padding(
                         padding: const EdgeInsets.only(right: 16),
@@ -149,6 +200,18 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
           ),
         ],
       ),
+    );
+    if (!isLinuxDesktop) return content;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+            _navigate(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+            _navigate(1),
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            Navigator.of(context).pop(),
+      },
+      child: Focus(autofocus: true, child: content),
     );
   }
 }
@@ -342,6 +405,13 @@ class FullscreenVideo extends StatefulWidget {
     required ApiClient api,
     required AttachmentModel attachment,
   }) {
+    if (isLinuxDesktop) {
+      return openAttachmentExternally(
+        context,
+        api: api,
+        attachment: attachment,
+      );
+    }
     return Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,

@@ -22,6 +22,7 @@ import '../../core/network/connection_candidate.dart';
 import '../../core/network/device_identity.dart';
 import '../../core/storage/local_cache_store.dart';
 import '../../core/theme_controller.dart';
+import '../../core/platform/linux_desktop.dart';
 import '../../core/ui/glass_theme_widgets.dart';
 import '../../core/ui/top_banner.dart';
 import '../chats/chat_service.dart';
@@ -39,19 +40,37 @@ import '../../core/ui/app_dialog.dart';
 /// App settings. Simple preferences stay inline; groups of related options
 /// open a settings subpage.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.separateWindow = false});
+  final bool separateWindow;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+enum _DesktopSettingsSection {
+  general('settings.general', Icons.tune),
+  appearance('settings.appearance', Icons.palette_outlined),
+  messages('settings.messageDisplay', Icons.chat_bubble_outline),
+  notifications('settings.notifications', Icons.notifications_outlined),
+  contacts('desktop.contacts', Icons.contacts_outlined),
+  data('desktop.data', Icons.storage_outlined),
+  about('settings.about', Icons.info_outline),
+  developer('settings.developerMode', Icons.developer_mode);
+
+  const _DesktopSettingsSection(this.labelKey, this.icon);
+  final String labelKey;
+  final IconData icon;
+}
+
 class _SettingsScreenState extends State<SettingsScreen> {
   Future<bool>? _compatibilityStatus;
+  _DesktopSettingsSection _desktopSection = _DesktopSettingsSection.general;
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
     _compatibilityStatus ??= app.store.compatibilityStorageEnabled();
+    if (isLinuxDesktop) return _buildDesktopSettings(app);
     // C61: persisted on the controller (SecureStore-backed) so the entry no
     // longer vanishes when this screen is rebuilt or the app restarts.
     final testingAndDebugUnlocked = app.developerModeEnabled;
@@ -136,6 +155,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   _GeneralSettingsCard(app: app, push: _push),
+                  if (isLinuxDesktop) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      child: ListTile(
+                        leading: _leadingIcon(Icons.exit_to_app),
+                        title: Text(strings.t('desktop.quit')),
+                        subtitle: Text(strings.t('desktop.closeHint')),
+                        onTap: LinuxDesktop.quit,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Text(
                     strings.t('settings.notifications'),
@@ -246,6 +276,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildDesktopSettings(AppController app) {
+    final strings = MicaLocalizations.of(context);
+    final sections = _DesktopSettingsSection.values
+        .where(
+          (section) =>
+              section != _DesktopSettingsSection.developer ||
+              app.developerModeEnabled,
+        )
+        .toList();
+    final selected = sections.contains(_desktopSection)
+        ? _desktopSection
+        : _DesktopSettingsSection.general;
+    final content = Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
+        child: KeyedSubtree(
+          key: ValueKey(selected),
+          child: _desktopSettingsContent(selected, app),
+        ),
+      ),
+    );
+    return Scaffold(
+      appBar: widget.separateWindow
+          ? null
+          : AppBar(title: Text(strings.t('nav.settings'))),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 720) {
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: DropdownButton<_DesktopSettingsSection>(
+                      value: selected,
+                      isExpanded: true,
+                      items: [
+                        for (final section in sections)
+                          DropdownMenuItem(
+                            value: section,
+                            child: Text(strings.t(section.labelKey)),
+                          ),
+                      ],
+                      onChanged: (section) {
+                        if (section != null) {
+                          setState(() => _desktopSection = section);
+                        }
+                      },
+                    ),
+                  ),
+                  Expanded(child: content),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                SizedBox(
+                  width: 208,
+                  child: ListView(
+                    padding: const EdgeInsets.all(8),
+                    children: [
+                      for (final section in sections)
+                        ListTile(
+                          leading: Icon(section.icon, size: 20),
+                          title: Text(strings.t(section.labelKey)),
+                          selected: section == selected,
+                          selectedTileColor: Theme.of(
+                            context,
+                          ).colorScheme.secondaryContainer,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          onTap: () =>
+                              setState(() => _desktopSection = section),
+                        ),
+                    ],
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: content),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _desktopSettingsList(List<Widget> children) =>
+      ListView(padding: const EdgeInsets.all(20), children: children);
+
+  Widget _desktopSettingsContent(
+    _DesktopSettingsSection section,
+    AppController app,
+  ) {
+    final strings = MicaLocalizations.of(context);
+    switch (section) {
+      case _DesktopSettingsSection.general:
+        return _desktopSettingsList([
+          if (app.profile != null)
+            _RouteSwitcher(
+              app: app,
+              onEdit: () => context.push(Routes.connection),
+            )
+          else
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.link_off_outlined),
+                title: Text(strings.t('settings.connection')),
+                onTap: () => context.push(Routes.connection),
+              ),
+            ),
+          const SizedBox(height: 16),
+          Card(child: _SmsSendingTile(app: app)),
+          FutureBuilder<bool>(
+            future: _compatibilityStatus,
+            builder: (context, snapshot) => snapshot.data == true
+                ? Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.security_outlined),
+                      title: Text(
+                        strings.t('settings.credentialCompatibility'),
+                      ),
+                      subtitle: Text(
+                        strings.t('settings.credentialCompatibilityDetail'),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.exit_to_app),
+              title: Text(strings.t('desktop.quit')),
+              subtitle: Text(strings.t('desktop.closeHint')),
+              onTap: LinuxDesktop.quit,
+            ),
+          ),
+          if (app.profile != null) ...[
+            const SizedBox(height: 24),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: OutlinedButton.icon(
+                onPressed: () => _confirmDisconnect(context, app),
+                icon: const Icon(Icons.link_off),
+                label: Text(strings.t('settings.unpair')),
+              ),
+            ),
+          ],
+        ]);
+      case _DesktopSettingsSection.appearance:
+        return _desktopSettingsList([
+          _AppearanceCard(theme: context.watch<ThemeController>()),
+        ]);
+      case _DesktopSettingsSection.messages:
+        return const MessageDisplayPage();
+      case _DesktopSettingsSection.notifications:
+        return _desktopSettingsList([_NotificationsCard(app: app)]);
+      case _DesktopSettingsSection.contacts:
+        return _desktopSettingsList([
+          const Card(child: ContactsMatchingTile()),
+        ]);
+      case _DesktopSettingsSection.data:
+        return _desktopSettingsList([
+          const _BackupRestoreCard(),
+          const SizedBox(height: 16),
+          _HiddenItemsCard(app: app),
+        ]);
+      case _DesktopSettingsSection.about:
+        return const _AboutBody();
+      case _DesktopSettingsSection.developer:
+        return _DeveloperModeBody(app: app);
+    }
+  }
+
   /// Pushes a Settings sub-page wrapped in its own Scaffold (title + back).
   void _push(BuildContext context, String title, Widget body) {
     Navigator.of(context).push(
@@ -276,7 +483,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (confirmed == true) {
       await app.signOut();
-      if (context.mounted) context.go(Routes.connection);
+      if (context.mounted) {
+        if (widget.separateWindow) {
+          await LinuxDesktop.closeSettings();
+        } else {
+          context.go(Routes.connection);
+        }
+      }
     }
   }
 }
@@ -616,24 +829,27 @@ class _NotificationsCardState extends State<_NotificationsCard> {
     final strings = MicaLocalizations.of(context);
     final configured = app.pushConfigured;
     final scheme = Theme.of(context).colorScheme;
+    final isLinux = !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
     return Card(
       child: Column(
         children: [
-          ListTile(
-            leading: _leadingIcon(
-              configured
-                  ? Icons.notifications_active_outlined
-                  : Icons.notifications_off_outlined,
-              color: configured ? scheme.primary : scheme.onSurfaceVariant,
+          if (!isLinux) ...[
+            ListTile(
+              leading: _leadingIcon(
+                configured
+                    ? Icons.notifications_active_outlined
+                    : Icons.notifications_off_outlined,
+                color: configured ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+              title: Text(strings.t('notif.fcmBeta')),
+              subtitle: Text(
+                configured
+                    ? strings.t('notif.registered')
+                    : strings.t('notif.notConfiguredBody'),
+              ),
             ),
-            title: Text(strings.t('notif.fcmBeta')),
-            subtitle: Text(
-              configured
-                  ? strings.t('notif.registered')
-                  : strings.t('notif.notConfiguredBody'),
-            ),
-          ),
-          const Divider(height: 1),
+            const Divider(height: 1),
+          ],
           SwitchListTile(
             secondary: _leadingIcon(Icons.subject_outlined),
             title: Text(strings.t('notif.showMessageText')),
@@ -692,25 +908,30 @@ class _NotificationDiagnosticsTile extends StatelessWidget {
   const _NotificationDiagnosticsTile({required this.app});
 
   List<MapEntry<String, String>> _rows() {
+    final isLinux = !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
     String perm = switch (app.notificationPermission) {
       'granted' => 'granted',
       'denied' => 'denied',
       _ => 'unknown',
     };
     return [
-      MapEntry('FCM', app.pushConfigured ? 'enabled' : 'off'),
-      MapEntry(
-        'FCM token available',
-        app.pushConfigured ? 'yes (${app.pushProvider})' : 'no',
-      ),
+      if (!isLinux) ...[
+        MapEntry('FCM', app.pushConfigured ? 'enabled' : 'off'),
+        MapEntry(
+          'FCM token available',
+          app.pushConfigured ? 'yes (${app.pushProvider})' : 'no',
+        ),
+      ],
       MapEntry(
         'Device registration',
         app.lastRegisterResult ?? 'not attempted',
       ),
-      MapEntry('Keep-alive', app.keepAliveEnabled ? 'enabled' : 'off'),
-      MapEntry('Notification permission', perm),
-      MapEntry('Last notification', app.lastNotificationSource ?? '—'),
-      MapEntry('Last direct reply', app.lastReplyResult ?? '—'),
+      if (!isLinux) ...[
+        MapEntry('Keep-alive', app.keepAliveEnabled ? 'enabled' : 'off'),
+        MapEntry('Notification permission', perm),
+        MapEntry('Last notification', app.lastNotificationSource ?? '—'),
+        MapEntry('Last direct reply', app.lastReplyResult ?? '—'),
+      ],
     ];
   }
 
@@ -957,10 +1178,19 @@ class _SettingsSubPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = context.watch<ThemeController>().useLiquidGlass;
+    final theme = context.watch<ThemeController>();
+    final glass = theme.useLiquidGlass;
     final glassBg = liquidGlassPageColor(context);
-    final headerBg = glass ? glassBg : _settingsAccent1_100(scheme);
-    final pageBg = glass ? glassBg : _settingsAccent1_50(scheme);
+    final headerBg = glass
+        ? glassBg
+        : theme.useLinuxTheme
+        ? scheme.surface
+        : _settingsAccent1_100(scheme);
+    final pageBg = glass
+        ? glassBg
+        : theme.useLinuxTheme
+        ? scheme.surface
+        : _settingsAccent1_50(scheme);
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
@@ -1627,7 +1857,15 @@ class _AppearanceSettingsBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final activeTheme = context.watch<ThemeController>();
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.symmetric(
+        horizontal: isLinuxDesktop
+            ? ((MediaQuery.sizeOf(context).width - 820) / 2).clamp(
+                16,
+                double.infinity,
+              )
+            : 16,
+        vertical: 16,
+      ),
       children: [_AppearanceCard(theme: activeTheme)],
     );
   }
@@ -1652,6 +1890,24 @@ class _AppearanceCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // --- Theme mode ---
+            if (isLinuxDesktop) ...[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(strings.t('desktop.textSize')),
+                trailing: Text('${(theme.desktopTextScale * 100).round()}%'),
+              ),
+              Slider(
+                min: 0.85,
+                max: 1.3,
+                divisions: 9,
+                value: theme.desktopTextScale,
+                label: '${(theme.desktopTextScale * 100).round()}%',
+                onChanged: (value) =>
+                    theme.setDesktopTextScale(value, save: false),
+                onChangeEnd: theme.setDesktopTextScale,
+              ),
+              const Divider(height: 28),
+            ],
             if (!kIsWeb && Platform.isAndroid) ...[
               const LauncherIconPicker(),
               const Divider(height: 28),
@@ -1802,6 +2058,8 @@ class _AppearanceCard extends StatelessWidget {
         return const Color(0xFFB8792B);
       case ThemeColorChoice.liquidGlass:
         return const Color(0xFF007AFF);
+      case ThemeColorChoice.linuxDesktop:
+        return const Color(0xFF1D699D);
     }
   }
 
@@ -1835,6 +2093,8 @@ class _AppearanceCard extends StatelessWidget {
         return strings.t('themeColor.amber');
       case ThemeColorChoice.liquidGlass:
         return strings.t('themeColor.liquidGlass');
+      case ThemeColorChoice.linuxDesktop:
+        return strings.t('themeColor.linuxDesktop');
     }
   }
 }

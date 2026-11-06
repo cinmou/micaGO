@@ -1,9 +1,12 @@
+import '../../core/ui/linux_context_actions.dart';
+import '../../core/platform/linux_desktop.dart';
 import '../../core/ui/app_dialog.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:confetti/confetti.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +28,7 @@ import '../../core/ui/glass_theme_widgets.dart';
 import '../../core/ui/keyboard_insets.dart';
 import '../../core/ui/top_banner.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:pasteboard/pasteboard.dart';
 
 import '../contacts/contacts_service.dart';
 import 'attachment_panel.dart';
@@ -335,7 +339,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _selectModeController.dispose();
     _sendEffects.dispose();
     _recorder.dispose();
-    final app = context.read<AppController>();
+    final app = _controller.app;
     if (_routeGuids.any(app.isChatActive)) {
       app.setActiveChatGuid(null);
     }
@@ -432,12 +436,117 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
 
   void _toggleAttachPanel() {
     if (!_canSendAttachments) return;
+    if (isLinuxDesktop) {
+      unawaited(_pickLinuxFiles());
+      return;
+    }
     final opening = !_attachOpen;
     if (opening) FocusScope.of(context).unfocus();
     setState(() {
       _attachOpen = opening;
       if (_attachOpen) _emojiOpen = false; // mutually exclusive
     });
+  }
+
+  Future<void> _pickLinuxFiles() async {
+    try {
+      final chatGuid = _active.guid;
+      final paths = await LinuxDesktop.pickFiles(
+        MicaLocalizations.of(context).t('chat.chooseFiles'),
+      );
+      await _stageAttachmentPaths(paths, chatGuid);
+    } catch (error) {
+      if (mounted) {
+        TopBanner.show(
+          context,
+          MicaLocalizations.of(
+            context,
+          ).t('chat.filesFailed').replaceAll('{error}', '$error'),
+          kind: TopBannerKind.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _stageAttachmentPaths(
+    Iterable<String> paths,
+    String chatGuid,
+  ) async {
+    if (!mounted || _active.guid != chatGuid || !_canSendAttachments) return;
+    final picked = <StagedAttachment>[];
+    Object? failure;
+    for (final path in paths.toSet()) {
+      try {
+        final uri = Uri.tryParse(path);
+        final file = uri?.scheme == 'file' ? File.fromUri(uri!) : File(path);
+        final stat = await file.stat();
+        if (stat.type != FileSystemEntityType.file) {
+          throw FileSystemException('Not a readable file', file.path);
+        }
+        picked.add(
+          StagedAttachment.file(
+            path: file.path,
+            size: stat.size,
+            filename: file.uri.pathSegments.last,
+          ),
+        );
+      } catch (error) {
+        failure = error;
+      }
+    }
+    if (!mounted || _active.guid != chatGuid || !_canSendAttachments) return;
+    if (picked.isNotEmpty) _onPicked(picked);
+    if (failure != null) _showAttachmentImportError(failure);
+  }
+
+  void _showAttachmentImportError(Object error) {
+    TopBanner.show(
+      context,
+      MicaLocalizations.of(
+        context,
+      ).t('chat.prepareAttachmentFailed').replaceAll('{error}', '$error'),
+      kind: TopBannerKind.error,
+    );
+  }
+
+  Future<bool> _pasteAttachments() async {
+    final chatGuid = _active.guid;
+    try {
+      // Android clipboard file URIs need ContentResolver access. The existing
+      // share channel copies them to the app cache without loading them in RAM.
+      final paths = Platform.isAndroid
+          ? await const MethodChannel(
+                  'micago/share',
+                ).invokeListMethod<String>('readClipboardFiles') ??
+                const <String>[]
+          : await Pasteboard.files();
+      if (!mounted || _active.guid != chatGuid) return true;
+      if (paths.isNotEmpty) {
+        if (!_canSendAttachments) {
+          TopBanner.show(
+            context,
+            MicaLocalizations.of(context).t('chat.attachmentsNotAllowed'),
+          );
+        } else {
+          await _stageAttachmentPaths(paths, chatGuid);
+        }
+        return true;
+      }
+      final bytes = await Pasteboard.image;
+      if (!mounted || _active.guid != chatGuid) return true;
+      if (bytes == null || bytes.isEmpty) return false;
+      _onKeyboardContentInserted(
+        KeyboardInsertedContent(mimeType: 'image/png', uri: '', data: bytes),
+      );
+      return true;
+    } on MissingPluginException {
+      return false;
+    } catch (error) {
+      if (mounted && _active.guid == chatGuid) {
+        _showAttachmentImportError(error);
+      }
+      return true;
+    }
   }
 
   // C24: open/close the bottom emoji panel. Opening it closes the attachment
@@ -630,6 +739,10 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     }
     setState(() {
       _voiceBusy = true;
+      if (isLinuxDesktop) {
+        _emojiOpen = false;
+        _attachOpen = false;
+      }
       _pendingVoice = null;
       _pendingVoiceDuration = Duration.zero;
       _pendingVoiceLevels = const [];
@@ -643,7 +756,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     if (!ok) {
       TopBanner.show(
         context,
-        'Couldn’t start recording — allow microphone access in Android Settings.',
+        isLinuxDesktop
+            ? MicaLocalizations.of(context).t('chat.recordingFailed')
+            : 'Couldn’t start recording — allow microphone access in Android Settings.',
         kind: TopBannerKind.error,
       );
     }
@@ -819,6 +934,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
                   emojiOpen: _emojiOpen,
                   onEmoji: _toggleEmojiPanel,
                   onContentInserted: _onKeyboardContentInserted,
+                  onPasteAttachments: _pasteAttachments,
                   onInputFocused: _onInputFocused,
                   onFocusChanged: _onComposerFocusChanged,
                 ),
@@ -931,14 +1047,15 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       ],
     );
     final glass = _isLiquidGlassTheme(context);
-    final inkWash = context.watch<ThemeController>().useBlackWhite;
+    final theme = context.watch<ThemeController>();
+    final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
     final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
         ? glassBg
-        : inkWash
+        : neutralSurfaces
         ? Theme.of(context).colorScheme.surface
         : _accent1_100(Theme.of(context).colorScheme);
-    final themedContent = DecoratedBox(
+    final decoratedContent = DecoratedBox(
       decoration: BoxDecoration(color: headerBg),
       child: ClipRRect(
         borderRadius: widget.flatSplitView
@@ -947,6 +1064,24 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         child: _ChatBackground(child: content),
       ),
     );
+    final themedContent = isLinuxDesktop
+        ? DropTarget(
+            enable:
+                _canSendAttachments &&
+                !_selectMode &&
+                (ModalRoute.of(context)?.isCurrent ?? true),
+            onDragDone: (details) {
+              if (ModalRoute.of(context)?.isCurrent == false) return;
+              unawaited(
+                _stageAttachmentPaths(
+                  details.files.map((file) => file.path),
+                  _active.guid,
+                ),
+              );
+            },
+            child: decoratedContent,
+          )
+        : decoratedContent;
 
     // Tapping the name/avatar area opens chat details (C53) — there's no
     // separate details button any more.
@@ -1242,10 +1377,16 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         // does not shift the viewport, so scroll position is preserved.
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onHorizontalDragStart: _startTimestampRevealDrag,
-          onHorizontalDragUpdate: _updateTimestampReveal,
-          onHorizontalDragEnd: _releaseTimestampReveal,
-          onHorizontalDragCancel: _releaseTimestampReveal,
+          onHorizontalDragStart: isLinuxDesktop
+              ? null
+              : _startTimestampRevealDrag,
+          onHorizontalDragUpdate: isLinuxDesktop
+              ? null
+              : _updateTimestampReveal,
+          onHorizontalDragEnd: isLinuxDesktop ? null : _releaseTimestampReveal,
+          onHorizontalDragCancel: isLinuxDesktop
+              ? null
+              : _releaseTimestampReveal,
           child: ListView.builder(
             controller: _scroll,
             reverse: true,
@@ -1847,7 +1988,7 @@ class _ChatBackground extends StatelessWidget {
           child: child,
         );
       }
-      if (theme.useBlackWhite) {
+      if (theme.useBlackWhite || theme.useLinuxTheme) {
         return DecoratedBox(
           decoration: BoxDecoration(color: scheme.surface),
           child: child,
@@ -1861,7 +2002,7 @@ class _ChatBackground extends StatelessWidget {
 
     final file = File(path);
     if (!file.existsSync()) {
-      if (theme.useBlackWhite) {
+      if (theme.useBlackWhite || theme.useLinuxTheme) {
         return DecoratedBox(
           decoration: BoxDecoration(color: scheme.surface),
           child: child,
@@ -2035,7 +2176,7 @@ Future<void> showMessageActionMenu(
 }) async {
   final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
   final text = displayText(message);
-  unawaited(HapticFeedback.mediumImpact());
+  if (!isLinuxDesktop) unawaited(HapticFeedback.mediumImpact());
   var caps = const MessageActionCapabilities();
   if (api != null) {
     caps = await _fetchMessageActionCapabilities(api).timeout(
@@ -3321,10 +3462,22 @@ class _MessageBubbleState extends State<_MessageBubble> {
     );
     // C64: every bubble opens the unified menu on long-press — media bubbles
     // included (their tiles pass the pressed attachment through onActions).
-    final messageColumn = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onLongPressStart: (details) => widget.onActions(details.globalPosition),
-      child: messageColumnBody,
+    final messageColumn = LinuxContextActions(
+      onOpen: (position) => widget.onActions(position),
+      child: Tooltip(
+        message: isLinuxDesktop && message.dateCreated != null
+            ? _threadTimestampLabel(
+                context,
+                DateTime.fromMillisecondsSinceEpoch(message.dateCreated!),
+              )
+            : '',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPressStart: (details) =>
+              widget.onActions(details.globalPosition),
+          child: messageColumnBody,
+        ),
+      ),
     );
 
     final row = showGroupSender
@@ -4162,12 +4315,27 @@ class _LinkedMessageTextState extends State<_LinkedMessageText> {
     final textStyle = _withCompatSymbolFallback(widget.style);
     final hasLinks = urlPreviewRegex.hasMatch(widget.text);
     final hasShibuya = _shibuyaEmoji.hasMatch(widget.text);
-    if (!hasLinks && !hasShibuya) {
-      return Text(widget.text, style: textStyle);
+    Widget content(BuildContext textContext) {
+      if (!hasLinks && !hasShibuya) {
+        return Text(widget.text, style: textStyle);
+      }
+      return RichText(
+        textScaler: isLinuxDesktop
+            ? MediaQuery.textScalerOf(textContext)
+            : TextScaler.noScaling,
+        text: TextSpan(style: textStyle, children: _spans ?? const []),
+        selectionRegistrar: isLinuxDesktop
+            ? SelectionContainer.maybeOf(textContext)
+            : null,
+        selectionColor: isLinuxDesktop
+            ? Theme.of(textContext).colorScheme.primary.withValues(alpha: 0.25)
+            : null,
+      );
     }
-    return RichText(
-      text: TextSpan(style: textStyle, children: _spans ?? const []),
-    );
+
+    return isLinuxDesktop
+        ? SelectionArea(child: Builder(builder: content))
+        : content(context);
   }
 
   List<InlineSpan> _buildSpans() {
@@ -4246,6 +4414,16 @@ class _LinkedMessageTextState extends State<_LinkedMessageText> {
 TextStyle _withCompatSymbolFallback(TextStyle? style) {
   const compatFamily = 'MicaGoCompatSymbols';
   final fallback = style?.fontFamilyFallback ?? const <String>[];
+  if (isLinuxDesktop) {
+    return (style ?? const TextStyle()).copyWith(
+      fontFamily: style?.fontFamily ?? 'sans-serif',
+      fontFamilyFallback: <String>{
+        'Noto Color Emoji',
+        compatFamily,
+        ...fallback,
+      }.toList(),
+    );
+  }
   if (fallback.contains(compatFamily)) return style ?? const TextStyle();
   return (style ?? const TextStyle()).copyWith(
     fontFamilyFallback: <String>[compatFamily, ...fallback],
@@ -4649,6 +4827,7 @@ class _Composer extends StatefulWidget {
   final bool emojiOpen;
   final VoidCallback onEmoji;
   final ValueChanged<KeyboardInsertedContent> onContentInserted;
+  final Future<bool> Function() onPasteAttachments;
   final VoidCallback onInputFocused;
   final ValueChanged<bool> onFocusChanged;
 
@@ -4665,6 +4844,7 @@ class _Composer extends StatefulWidget {
     required this.emojiOpen,
     required this.onEmoji,
     required this.onContentInserted,
+    required this.onPasteAttachments,
     required this.onInputFocused,
     required this.onFocusChanged,
   });
@@ -4673,8 +4853,52 @@ class _Composer extends StatefulWidget {
   State<_Composer> createState() => _ComposerState();
 }
 
+enum _LinuxComposerAction { files, record }
+
 class _ComposerState extends State<_Composer> {
   final FocusNode _focus = FocusNode();
+  final _attachButtonKey = GlobalKey();
+
+  Future<void> _openAttachmentMenu() async {
+    if (!isLinuxDesktop) {
+      widget.onAttach();
+      return;
+    }
+    final button =
+        _attachButtonKey.currentContext!.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final rectangle = Rect.fromPoints(
+      button.localToGlobal(Offset.zero, ancestor: overlay),
+      button.localToGlobal(
+        button.size.bottomRight(Offset.zero),
+        ancestor: overlay,
+      ),
+    );
+    final strings = MicaLocalizations.of(context);
+    final action = await showMenu<_LinuxComposerAction>(
+      context: context,
+      position: RelativeRect.fromRect(rectangle, Offset.zero & overlay.size),
+      items: [
+        PopupMenuItem(
+          value: _LinuxComposerAction.files,
+          child: Text(strings.t('chat.chooseFiles')),
+        ),
+        PopupMenuItem(
+          value: _LinuxComposerAction.record,
+          child: Text(strings.t('chat.recordAudio')),
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _LinuxComposerAction.files:
+        widget.onAttach();
+      case _LinuxComposerAction.record:
+        widget.onVoice();
+      case null:
+        break;
+    }
+  }
 
   String get _hintText => switch (widget.service) {
     ChatService.imessage => 'iMessage',
@@ -4737,15 +4961,17 @@ class _ComposerState extends State<_Composer> {
 
     final dark = Theme.of(context).brightness == Brightness.dark;
     final outerColor = dark ? _accent2_800(scheme) : _accent1_500(scheme);
-    final attachIconColor = dark ? _accent1_50(scheme) : scheme.onPrimary;
+    final attachIconColor = context.watch<ThemeController>().useLinuxTheme
+        ? (dark ? scheme.onSurface : scheme.onPrimary)
+        : dark
+        ? _accent1_50(scheme)
+        : scheme.onPrimary;
     final inputColor = _accent1_10(scheme);
     final inputIconColor = _accent1_800(scheme);
     final onInput = scheme.onSurface;
     final hintColor = scheme.onSurface.withValues(alpha: 0.68);
-    // Show the emoji button while the field is focused OR the bottom emoji panel
-    // is open (so it stays reachable after the keyboard is dismissed); otherwise
-    // the voice button.
-    final showEmoji = _focus.hasFocus || widget.emojiOpen;
+    // Linux keeps emoji visible even when the input is unfocused.
+    final showEmoji = isLinuxDesktop || _focus.hasFocus || widget.emojiOpen;
 
     final panelOpen = widget.attachOpen || widget.emojiOpen;
     final bar = Container(
@@ -4780,7 +5006,8 @@ class _ComposerState extends State<_Composer> {
                           ),
                         )
                       : IconButton(
-                          onPressed: widget.onAttach,
+                          key: _attachButtonKey,
+                          onPressed: _openAttachmentMenu,
                           tooltip: MicaLocalizations.of(
                             context,
                           ).t('chat.attachments'),
@@ -4895,6 +5122,8 @@ class _ComposerState extends State<_Composer> {
         cursorColor: inputIconColor,
         hint: _hintText,
         onContentInserted: widget.onContentInserted,
+        onPasteAttachments: widget.onPasteAttachments,
+        onSend: widget.canSend ? widget.onSend : null,
       );
 
   Widget _buildLiquidComposer(BuildContext context) {
@@ -4902,9 +5131,10 @@ class _ComposerState extends State<_Composer> {
     final onInput = scheme.onSurface;
     final hintColor = scheme.onSurface.withValues(alpha: 0.58);
     final inputIconColor = scheme.onSurfaceVariant;
-    final showEmoji = _focus.hasFocus || widget.emojiOpen;
+    final showEmoji = isLinuxDesktop || _focus.hasFocus || widget.emojiOpen;
 
     Widget glassCircle({
+      Key? key,
       required Widget icon,
       required VoidCallback? onPressed,
       Color? color,
@@ -4914,6 +5144,7 @@ class _ComposerState extends State<_Composer> {
       final effectiveColor =
           color ?? scheme.surfaceContainerHighest.withValues(alpha: 0.50);
       return SizedBox(
+        key: key,
         width: 52,
         height: 52,
         child: GlassContainer(
@@ -4950,8 +5181,9 @@ class _ComposerState extends State<_Composer> {
                   ),
                 )
               : glassCircle(
+                  key: _attachButtonKey,
                   tooltip: MicaLocalizations.of(context).t('chat.attachments'),
-                  onPressed: widget.onAttach,
+                  onPressed: _openAttachmentMenu,
                   icon: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 150),
                     transitionBuilder: (child, anim) =>
@@ -5608,16 +5840,16 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
     final insets = activeKeyboardInset(context);
     final theme = context.watch<ThemeController>();
     final glass = theme.useLiquidGlass;
-    final inkWash = theme.useBlackWhite;
+    final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
     final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
         ? glassBg
-        : inkWash
+        : neutralSurfaces
         ? scheme.surface
         : _accent1_100(scheme);
     final pageBg = glass
         ? glassBg
-        : inkWash
+        : neutralSurfaces
         ? scheme.surface
         : _accent1_50(scheme);
     final strings = MicaLocalizations.of(context);
@@ -5919,6 +6151,19 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(a.displayKind),
+                        trailing: isLinuxDesktop
+                            ? IconButton(
+                                tooltip: MaterialLocalizations.of(
+                                  context,
+                                ).showMenuTooltip,
+                                icon: const Icon(Icons.more_horiz),
+                                onPressed: () => showAttachmentActions(
+                                  context,
+                                  api: api,
+                                  attachment: a,
+                                ),
+                              )
+                            : null,
                         onLongPress: () => showAttachmentActions(
                           context,
                           api: api,
@@ -6330,6 +6575,13 @@ class _DetailsMediaTileState extends State<_DetailsMediaTile> {
             );
           }
         },
+        onSecondaryTap: isLinuxDesktop
+            ? () => showAttachmentActions(
+                context,
+                api: widget.api,
+                attachment: widget.attachment,
+              )
+            : null,
         onLongPress: () => showAttachmentActions(
           context,
           api: widget.api,

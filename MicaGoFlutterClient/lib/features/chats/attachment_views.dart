@@ -17,6 +17,8 @@ import '../../core/l10n/app_localizations.dart';
 import '../../core/network/api_client.dart';
 import '../../core/storage/media_cache.dart';
 import '../../core/ui/top_banner.dart';
+import '../../core/platform/linux_desktop.dart';
+import '../../core/ui/linux_context_actions.dart';
 import 'media_viewer.dart';
 import 'models/message_model.dart';
 import 'url_preview.dart';
@@ -56,7 +58,16 @@ class AttachmentView extends StatelessWidget {
               !attachment.isVideo
           ? const ValueKey('inline-image')
           : ValueKey((api, MediaCache.previewMediaKey(attachment))),
-      child: _buildAttachment(context),
+      child: LinuxContextActions(
+        onOpen: (position) => _tileLongPress(
+          context,
+          onLongPress == null ? null : (p) => onLongPress!(p, attachment),
+          position,
+          api: api,
+          attachment: attachment,
+        ),
+        child: _buildAttachment(context),
+      ),
     );
   }
 
@@ -105,6 +116,13 @@ class AttachmentView extends StatelessWidget {
       );
     }
     if (attachment.isAudio) {
+      if (isLinuxDesktop) {
+        return _LinuxAudioAttachment(
+          api: api,
+          attachment: attachment,
+          onLongPress: override,
+        );
+      }
       return _AudioAttachment(
         api: api,
         attachment: attachment,
@@ -158,7 +176,7 @@ Future<void> runAttachmentAction(
     case AttachmentAction.share:
       await _shareAttachment(context, api: api, attachment: attachment);
     case AttachmentAction.open:
-      await _openAttachment(context, api: api, attachment: attachment);
+      await openAttachmentExternally(context, api: api, attachment: attachment);
   }
 }
 
@@ -257,7 +275,9 @@ Future<File> _writeTempAttachment({
 }) async {
   final bytes = await MediaCache.instance.attachmentFull(api, attachment.guid);
   final dir = await getTemporaryDirectory();
-  final folder = Directory('${dir.path}/micago-attachments');
+  final folder = isLinuxDesktop
+      ? await dir.createTemp('micago-media-')
+      : Directory('${dir.path}/micago-attachments');
   if (!await folder.exists()) {
     await folder.create(recursive: true);
   }
@@ -290,7 +310,7 @@ Future<void> _shareAttachment(
   }
 }
 
-Future<void> _openAttachment(
+Future<void> openAttachmentExternally(
   BuildContext context, {
   required ApiClient api,
   required AttachmentModel attachment,
@@ -298,6 +318,14 @@ Future<void> _openAttachment(
   final strings = MicaLocalizations.of(context);
   try {
     final file = await _writeTempAttachment(api: api, attachment: attachment);
+    if (isLinuxDesktop) {
+      final opened = await launchUrl(
+        Uri.file(file.path),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) throw StateError('No application could open the attachment');
+      return;
+    }
     final result = await OpenFilex.open(file.path, type: attachment.mimeType);
     if (!context.mounted || result.type == ResultType.done) return;
     TopBanner.show(
@@ -1062,6 +1090,68 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
   }
 }
 
+class _LinuxAudioAttachment extends StatefulWidget {
+  const _LinuxAudioAttachment({
+    required this.api,
+    required this.attachment,
+    this.onLongPress,
+  });
+  final ApiClient api;
+  final AttachmentModel attachment;
+  final void Function(Offset)? onLongPress;
+
+  @override
+  State<_LinuxAudioAttachment> createState() => _LinuxAudioAttachmentState();
+}
+
+class _LinuxAudioAttachmentState extends State<_LinuxAudioAttachment> {
+  bool _busy = false;
+
+  Future<void> _open() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await openAttachmentExternally(
+        context,
+        api: widget.api,
+        attachment: widget.attachment,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onLongPressStart: (details) => _tileLongPress(
+      context,
+      widget.onLongPress,
+      details.globalPosition,
+      api: widget.api,
+      attachment: widget.attachment,
+    ),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: ListTile(
+        leading: _busy
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.play_circle_outline),
+        title: Text(
+          widget.attachment.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(MicaLocalizations.of(context).t('desktop.openMedia')),
+        onTap: _busy ? null : _open,
+      ),
+    ),
+  );
+}
+
 class _AudioAttachment extends StatefulWidget {
   final ApiClient api;
   final AttachmentModel attachment;
@@ -1430,18 +1520,19 @@ class _FileAttachment extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: MicaLocalizations.of(
-                    context,
-                  ).t('chat.attachmentActions'),
-                  color: scheme.onSurfaceVariant,
-                  onPressed: () => showAttachmentActions(
-                    context,
-                    api: api,
-                    attachment: attachment,
+                if (!isLinuxDesktop)
+                  IconButton(
+                    tooltip: MicaLocalizations.of(
+                      context,
+                    ).t('chat.attachmentActions'),
+                    color: scheme.onSurfaceVariant,
+                    onPressed: () => showAttachmentActions(
+                      context,
+                      api: api,
+                      attachment: attachment,
+                    ),
+                    icon: const Icon(Icons.more_vert),
                   ),
-                  icon: const Icon(Icons.more_vert),
-                ),
               ],
             ),
           ),

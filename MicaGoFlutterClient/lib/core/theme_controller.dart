@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app/theme.dart';
 import 'storage/secure_store.dart';
+import 'platform/linux_desktop.dart';
 
 /// Theme color choice. `system` = use Android 12+ dynamic (Material You) colors
 /// when available; the rest are fixed seed colors.
@@ -25,6 +26,7 @@ enum ThemeColorChoice {
   witheredGrass,
   amber,
   liquidGlass,
+  linuxDesktop,
 }
 
 /// Language choice. Null locale follows the system.
@@ -41,15 +43,33 @@ class ThemeController extends ChangeNotifier {
   LanguageChoice language = LanguageChoice.system;
   String? chatBackgroundPath;
   bool systemColorsAvailable = false;
+  double desktopTextScale = 1;
+
+  Future<void> setDesktopTextScale(double scale, {bool save = true}) async {
+    if (!isLinuxDesktop || !scale.isFinite) return;
+    desktopTextScale = scale.clamp(0.85, 1.3);
+    notifyListeners();
+    if (!save) return;
+    await store.writeValue(
+      'micago.linux.textScale',
+      desktopTextScale.toString(),
+    );
+  }
 
   bool get useSystemColors =>
-      systemColorsAvailable && colorChoice == ThemeColorChoice.system;
+      !isLinuxDesktop &&
+      systemColorsAvailable &&
+      colorChoice == ThemeColorChoice.system;
   bool get useBlackWhite => colorChoice == ThemeColorChoice.blackWhite;
   bool get useLiquidGlass => colorChoice == ThemeColorChoice.liquidGlass;
+  bool get useLinuxTheme =>
+      isLinuxDesktop && colorChoice == ThemeColorChoice.linuxDesktop;
   List<ThemeColorChoice> get availableColorChoices => [
-    if (systemColorsAvailable) ThemeColorChoice.system,
+    if (!isLinuxDesktop && systemColorsAvailable) ThemeColorChoice.system,
     for (final choice in ThemeColorChoice.values)
-      if (choice != ThemeColorChoice.system) choice,
+      if (choice != ThemeColorChoice.system &&
+          (isLinuxDesktop || choice != ThemeColorChoice.linuxDesktop))
+        choice,
   ];
 
   /// Seed color used when dynamic color is off/unavailable.
@@ -82,6 +102,8 @@ class ThemeController extends ChangeNotifier {
         return const Color(0xFFB8792B);
       case ThemeColorChoice.liquidGlass:
         return const Color(0xFF007AFF);
+      case ThemeColorChoice.linuxDesktop:
+        return const Color(0xFF1D699D);
     }
   }
 
@@ -105,6 +127,14 @@ class ThemeController extends ChangeNotifier {
   static const _kChatBackground = 'micago.theme.chatBackgroundPath';
 
   Future<void> bootstrap() async {
+    if (isLinuxDesktop) {
+      final scale = double.tryParse(
+        await store.readValue('micago.linux.textScale') ?? '',
+      );
+      if (scale != null && scale.isFinite) {
+        desktopTextScale = scale.clamp(0.85, 1.3);
+      }
+    }
     themeMode = _parseMode(await store.readValue(_kMode));
     colorChoice = _parseColor(await store.readValue(_kColor));
     language = _parseLang(await store.readValue(_kLang));
@@ -119,7 +149,11 @@ class ThemeController extends ChangeNotifier {
   }
 
   Future<void> setColorChoice(ThemeColorChoice choice) async {
-    if (choice == ThemeColorChoice.system && !systemColorsAvailable) {
+    if (!isLinuxDesktop && choice == ThemeColorChoice.linuxDesktop) {
+      choice = ThemeColorChoice.micago;
+    }
+    if (choice == ThemeColorChoice.system &&
+        (isLinuxDesktop || !systemColorsAvailable)) {
       choice = ThemeColorChoice.micago;
     }
     colorChoice = choice;
@@ -187,18 +221,28 @@ class ThemeController extends ChangeNotifier {
     (m) => m.name == v,
     orElse: () => ThemeMode.system,
   );
-  ThemeColorChoice _parseColor(String? v) => ThemeColorChoice.values.firstWhere(
-    (c) => c.name == v,
-    orElse: () => switch (v) {
-      'blue' => ThemeColorChoice.micago,
-      'green' => ThemeColorChoice.bicao,
-      'purple' => ThemeColorChoice.wisteria,
-      'orange' => ThemeColorChoice.citrus,
-      'suoh' => ThemeColorChoice.wineRed,
-      'enshuNezu' => ThemeColorChoice.micago,
-      _ => ThemeColorChoice.micago,
-    },
-  );
+
+  ThemeColorChoice _parseColor(String? v) {
+    if (isLinuxDesktop && v == ThemeColorChoice.system.name) {
+      return ThemeColorChoice.micago;
+    }
+    if (!isLinuxDesktop && v == ThemeColorChoice.linuxDesktop.name) {
+      return ThemeColorChoice.micago;
+    }
+    return ThemeColorChoice.values.firstWhere(
+      (c) => c.name == v,
+      orElse: () => switch (v) {
+        'blue' => ThemeColorChoice.micago,
+        'green' => ThemeColorChoice.bicao,
+        'purple' => ThemeColorChoice.wisteria,
+        'orange' => ThemeColorChoice.citrus,
+        'suoh' => ThemeColorChoice.wineRed,
+        'enshuNezu' => ThemeColorChoice.micago,
+        _ => ThemeColorChoice.micago,
+      },
+    );
+  }
+
   LanguageChoice _parseLang(String? v) {
     if (v == 'chinese') return LanguageChoice.simplifiedChinese;
     return LanguageChoice.values.firstWhere(

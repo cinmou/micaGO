@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/platform/linux_desktop.dart';
+
 /// MicaGo branding + Material 3 light/dark themes.
 class MicaGoTheme {
   MicaGoTheme._();
@@ -9,6 +11,94 @@ class MicaGoTheme {
 
   static ThemeData light() => fromSeed(seed, Brightness.light);
   static ThemeData dark() => fromSeed(seed, Brightness.dark);
+
+  /// Linux desktop palette inspired by Breeze's neutral surfaces and blue focus.
+  static ThemeData linux(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1D699D),
+          brightness: brightness,
+        ).copyWith(
+          primary: dark ? const Color(0xFF79C5EE) : const Color(0xFF1D699D),
+          onPrimary: dark ? const Color(0xFF102F41) : Colors.white,
+          primaryContainer: dark
+              ? const Color(0xFF254759)
+              : const Color(0xFFD7EAF8),
+          onPrimaryContainer: dark
+              ? const Color(0xFFDCEFFB)
+              : const Color(0xFF163E59),
+          secondary: dark ? const Color(0xFF303A42) : const Color(0xFFE3E8EC),
+          onSecondary: dark ? const Color(0xFFE9EEF2) : const Color(0xFF25333F),
+          secondaryContainer: dark
+              ? const Color(0xFF254759)
+              : const Color(0xFFD7EAF8),
+          onSecondaryContainer: dark
+              ? const Color(0xFFDCEFFB)
+              : const Color(0xFF163E59),
+          tertiary: dark ? const Color(0xFF79C5EE) : const Color(0xFF1D699D),
+          onTertiary: dark ? const Color(0xFF102F41) : Colors.white,
+          surface: dark ? const Color(0xFF202428) : const Color(0xFFF5F6F7),
+          onSurface: dark ? const Color(0xFFE9EEF2) : const Color(0xFF232A30),
+          onSurfaceVariant: dark
+              ? const Color(0xFFB4C0C9)
+              : const Color(0xFF53616D),
+          surfaceContainerLowest: dark ? const Color(0xFF1A1E22) : Colors.white,
+          surfaceContainerLow: dark ? const Color(0xFF252A2F) : Colors.white,
+          surfaceContainer: dark
+              ? const Color(0xFF2A3036)
+              : const Color(0xFFEDF0F2),
+          surfaceContainerHigh: dark
+              ? const Color(0xFF30383F)
+              : const Color(0xFFE6EBEF),
+          surfaceContainerHighest: dark
+              ? const Color(0xFF3A444D)
+              : const Color(0xFFDCE3E8),
+          outline: dark ? const Color(0xFF7B8D9B) : const Color(0xFF71818E),
+          outlineVariant: dark
+              ? const Color(0xFF46535E)
+              : const Color(0xFFC7D0D8),
+          surfaceTint: Colors.transparent,
+        );
+    final base = fromScheme(scheme);
+    final controlShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(6),
+    );
+    return base.copyWith(
+      cardTheme: base.cardTheme.copyWith(
+        color: scheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+      ),
+      dialogTheme: base.dialogTheme.copyWith(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      popupMenuTheme: base.popupMenuTheme.copyWith(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      inputDecorationTheme: base.inputDecorationTheme.copyWith(
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(64, 36),
+          shape: controlShape,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(64, 36),
+          shape: controlShape,
+        ),
+      ),
+    );
+  }
 
   /// Builds a theme from a seed color (used when dynamic color is off).
   static ThemeData fromSeed(Color seedColor, Brightness brightness) =>
@@ -27,7 +117,11 @@ class MicaGoTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      fontFamilyFallback: const ['MicaGoCompatSymbols'],
+      fontFamily: isLinuxDesktop ? 'sans-serif' : null,
+      fontFamilyFallback: [
+        'MicaGoCompatSymbols',
+        if (isLinuxDesktop) 'Noto Color Emoji',
+      ],
       appBarTheme: const AppBarTheme(centerTitle: false),
       iconButtonTheme: inkWash
           ? IconButtonThemeData(

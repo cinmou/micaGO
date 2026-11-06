@@ -19,7 +19,9 @@ import 'network/connection_candidate.dart';
 import 'network/endpoint_utils.dart';
 import 'network/device_identity.dart';
 import 'network/notification_contact_cache.dart';
-import 'network/notification_display.dart' show clearAndroidNotificationState;
+import 'network/notification_display.dart'
+    show clearSystemNotificationState, clearSuppressedLinuxNotifications;
+import 'platform/linux_desktop.dart';
 import 'network/push_logic.dart';
 import 'network/refresh_coordinator.dart';
 import 'network/websocket_client.dart';
@@ -120,13 +122,17 @@ class AppController extends ChangeNotifier {
     api: () => _api,
     onChanged: () {
       if (!_chatReloadController.isClosed) _chatReloadController.add(null);
+      _clearSuppressedDesktopNotifications();
       notifyListeners();
     },
   );
   late final MessagePreferenceSync messagePreferences = MessagePreferenceSync(
     cache: cache,
     api: () => api,
-    onChanged: notifyListeners,
+    onChanged: () {
+      _clearSuppressedDesktopNotifications();
+      notifyListeners();
+    },
   );
 
   late final ReadStateSync readState = ReadStateSync(
@@ -198,7 +204,7 @@ class AppController extends ChangeNotifier {
       } catch (_) {}
       try {
         await store.clearProfile();
-        await clearAndroidNotificationState();
+        await clearSystemNotificationState();
       } catch (_) {}
       try {
         await cache.clearAll();
@@ -271,6 +277,7 @@ class AppController extends ChangeNotifier {
           );
         notifyListeners();
       }
+      if (e.type == 'sync:rules') _clearSuppressedDesktopNotifications();
       if (e.type == 'read-state:changed') {
         unawaited(readState.sync());
       }
@@ -285,7 +292,12 @@ class AppController extends ChangeNotifier {
       } else if (e.type == 'message:new') {
         // C31: keep-alive local-notification path (no Firebase required).
         unawaited(_maybeEmitForegroundAlert(e));
-        unawaited(_maybeNotifyBackgroundMessage(e));
+        final notification = _maybeNotifyBackgroundMessage(e);
+        unawaited(
+          isLinuxDesktop
+              ? notification.catchError((Object _) {})
+              : notification,
+        );
       }
     });
   }
@@ -406,6 +418,19 @@ class AppController extends ChangeNotifier {
   final Set<String> _foregroundAlertGuids = <String>{};
   final List<String> _foregroundAlertGuidOrder = <String>[];
 
+  void _clearSuppressedDesktopNotifications() {
+    if (!isLinuxDesktop) return;
+    unawaited(
+      clearSuppressedLinuxNotifications(
+        (chat, message) =>
+            isChatMuted(chat) ||
+            chatPreferences.isHidden(chat) ||
+            messagePreferences.isHidden('$chat\u001f$message') ||
+            messagePreferences.isHidden(message),
+      ).catchError((Object _) {}),
+    );
+  }
+
   Future<void> setChatsMuted(Iterable<String> chatGuids, bool muted) async {
     final guids = chatGuids
         .map((guid) => guid.trim())
@@ -428,6 +453,7 @@ class AppController extends ChangeNotifier {
         _mutedChats.remove(guid);
       }
     }
+    _clearSuppressedDesktopNotifications();
     notifyListeners();
   }
 
@@ -1725,6 +1751,7 @@ class AppController extends ChangeNotifier {
       if (preview == null || preview.isEmpty) return;
       if (_notificationPreview == preview) return;
       _notificationPreview = preview;
+      if (isLinuxDesktop) await clearSystemNotificationState();
       notifyListeners();
     } catch (error) {
       debugPrint('MicaGo notification config refresh failed: $error');
@@ -1748,6 +1775,7 @@ class AppController extends ChangeNotifier {
         _notificationPreview = preview;
         notifyListeners();
       }
+      if (isLinuxDesktop) await clearSystemNotificationState();
     } catch (error) {
       _notificationPreview = previous;
       notifyListeners();
@@ -1843,7 +1871,9 @@ class AppController extends ChangeNotifier {
         title: conversationTitle,
         body: messagePreviewText(msg),
         handle: msg.handleId,
-        avatarFilePath: avatars.conversation ?? avatars.sender,
+        avatarFilePath: isLinuxDesktop
+            ? avatars.sender ?? avatars.conversation
+            : avatars.conversation ?? avatars.sender,
         isGroup: isGroup,
         timestampMs: msg.dateCreated,
       ),
@@ -1866,7 +1896,8 @@ class AppController extends ChangeNotifier {
   /// UI, so this no-ops; the shared per-chat id + message-guid dedup means any
   /// FCM notification for the same message collapses into one.
   Future<void> _maybeNotifyBackgroundMessage(WsEvent e) async {
-    if (_foreground || !_keepAliveEnabled) return;
+    if (_foreground || (!isLinuxDesktop && !_keepAliveEnabled)) return;
+    final notificationDevice = _profile?.deviceId;
     final show = showLocalNotification;
     if (show == null) return; // local notifications not initialized yet
     final msg = messageFromWsEvent(e);
@@ -1902,19 +1933,33 @@ class AppController extends ChangeNotifier {
       senderName: senderName,
       isGroup: isGroup,
     );
+    if (isLinuxDesktop &&
+        (_foreground ||
+            tokenRejected.value ||
+            !hasProfile ||
+            notificationDevice != _profile?.deviceId ||
+            (chatGuid != null &&
+                (isChatMuted(chatGuid) ||
+                    chatPreferences.isHidden(chatGuid) ||
+                    messagePreferences.isHidden('$chatGuid\u001f${msg.guid}') ||
+                    messagePreferences.isHidden(msg.guid) ||
+                    await _alreadyRead(chatGuid, msg))))) {
+      return;
+    }
+    final privateDesktop = isLinuxDesktop && _notificationPreview == 'none';
     await show(
       chatGuid: chatGuid,
       messageGuid: msg.guid,
-      senderName: senderName,
+      senderName: privateDesktop ? 'micaGO' : senderName,
       senderKey: msg.handleId ?? senderName,
-      conversationTitle: conversationTitle,
+      conversationTitle: privateDesktop ? 'micaGO' : conversationTitle,
       body: body,
-      avatarFilePath: avatars.sender,
-      conversationAvatarFilePath: avatars.conversation,
+      avatarFilePath: privateDesktop ? null : avatars.sender,
+      conversationAvatarFilePath: privateDesktop ? null : avatars.conversation,
       isGroup: isGroup,
       timestampMs: msg.dateCreated,
     );
-    noteNotificationSource('keep-alive');
+    noteNotificationSource(isLinuxDesktop ? 'desktop' : 'keep-alive');
   }
 
   bool _isGroupChatGuid(String? chatGuid) => (chatGuid ?? '').contains(';+;');
@@ -2381,7 +2426,7 @@ class AppController extends ChangeNotifier {
     _redeemedInvitationCode = null;
     _redeemedProfile = null;
     await store.clearProfile();
-    await clearAndroidNotificationState();
+    await clearSystemNotificationState();
     await cache.clearAll();
     _api?.close();
     _api = null;

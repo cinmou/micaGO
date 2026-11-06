@@ -1,6 +1,7 @@
 package com.micago.message.mica_go
 
 import android.content.Intent
+import android.content.ClipboardManager
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.Bitmap
@@ -14,6 +15,7 @@ import android.graphics.Shader
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import android.view.View
 import android.view.ViewGroup
 import io.flutter.embedding.android.FlutterActivity
@@ -21,6 +23,8 @@ import io.flutter.embedding.android.FlutterView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlin.math.roundToInt
+import java.io.File
+import java.util.UUID
 
 class MainActivity : FlutterActivity() {
     private val channelName = "micago/keepalive"
@@ -58,6 +62,43 @@ class MainActivity : FlutterActivity() {
         shareChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, shareChannelName)
         shareChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
+                "readClipboardFiles" -> {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = clipboard.primaryClip
+                    val uris = (0 until (clip?.itemCount ?: 0)).mapNotNull {
+                        clip?.getItemAt(it)?.uri
+                    }.filter { it.scheme == "content" || it.scheme == "file" }
+                    if (uris.isEmpty()) {
+                        result.success(emptyList<String>())
+                    } else {
+                        Thread {
+                            val directory = File(cacheDir, "micago-paste-${UUID.randomUUID()}")
+                            try {
+                                check(directory.mkdirs())
+                                val paths = uris.mapIndexed { index, uri ->
+                                    var name = uri.lastPathSegment ?: "attachment"
+                                    if (uri.scheme == "content") {
+                                        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                                            if (cursor.moveToFirst() && !cursor.isNull(0)) name = cursor.getString(0)
+                                        }
+                                    }
+                                    name = File(name).name.takeUnless { it.isBlank() || it == "." || it == ".." } ?: "attachment"
+                                    val targetDirectory = File(directory, "$index").apply { check(mkdir()) }
+                                    val target = File(targetDirectory, name)
+                                    contentResolver.openInputStream(uri).use { input ->
+                                        checkNotNull(input) { "Unable to read clipboard file" }
+                                        target.outputStream().use { output -> input.copyTo(output) }
+                                    }
+                                    target.absolutePath
+                                }
+                                runOnUiThread { result.success(paths) }
+                            } catch (error: Exception) {
+                                directory.deleteRecursively()
+                                runOnUiThread { result.error("clipboard_file_failed", "Unable to read clipboard files", null) }
+                            }
+                        }.start()
+                    }
+                }
                 "getInitialShare" -> result.success(pendingShare)
                 "clearInitialShare" -> {
                     pendingShare = null

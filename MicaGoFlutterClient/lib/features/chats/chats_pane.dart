@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/theme_controller.dart';
+import '../../core/platform/linux_desktop.dart';
 import '../../core/ui/glass_theme_widgets.dart';
 import 'chat_list_screen.dart';
 import 'message_thread_screen.dart';
@@ -34,7 +35,7 @@ class ChatsPane extends StatefulWidget {
 
 class _ChatsPaneState extends State<ChatsPane> {
   MergedChat? _selected;
-  double _sidebarWidth = _defaultSidebarWidth;
+  double _sidebarWidth = isLinuxDesktop ? 320 : _defaultSidebarWidth;
   bool _loadedSidebarWidth = false;
   bool _draggingSplitter = false;
 
@@ -44,8 +45,9 @@ class _ChatsPaneState extends State<ChatsPane> {
   static const double _minExpandedSidebarWidth = 280;
   static const double _defaultSidebarWidth = 360;
   static const double _maxSidebarWidth = 480;
-  static const double _tabletHeaderHeight = 72;
-  static const String _sidebarWidthKey = 'tablet_sidebar_width';
+  double get _tabletHeaderHeight => isLinuxDesktop ? 56 : 72;
+  String get _sidebarWidthKey =>
+      isLinuxDesktop ? 'linux_sidebar_width' : 'tablet_sidebar_width';
 
   @override
   void didChangeDependencies() {
@@ -115,16 +117,16 @@ class _ChatsPaneState extends State<ChatsPane> {
         final scheme = Theme.of(context).colorScheme;
         final theme = context.watch<ThemeController>();
         final glass = theme.useLiquidGlass;
-        final inkWash = theme.useBlackWhite;
+        final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
         final glassBg = liquidGlassPageColor(context);
         final headerBg = glass
             ? glassBg
-            : inkWash
+            : neutralSurfaces
             ? scheme.surface
             : _chatsAccent1_100(scheme);
         final pageBg = glass
             ? glassBg
-            : inkWash
+            : neutralSurfaces
             ? scheme.surface
             : _chatsAccent1_50(scheme);
         final compact = _compactSidebar;
@@ -208,9 +210,12 @@ class _TabletSidebarHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final headerColor = context.watch<ThemeController>().useLinuxTheme
+        ? scheme.surface
+        : _chatsAccent1_100(scheme);
     if (compact) {
       return DecoratedBox(
-        decoration: BoxDecoration(color: _chatsAccent1_100(scheme)),
+        decoration: BoxDecoration(color: headerColor),
         child: SizedBox(
           height: height,
           child: Center(
@@ -224,7 +229,7 @@ class _TabletSidebarHeader extends StatelessWidget {
       );
     }
     return DecoratedBox(
-      decoration: BoxDecoration(color: _chatsAccent1_100(scheme)),
+      decoration: BoxDecoration(color: headerColor),
       child: SizedBox(
         height: height,
         child: Row(
@@ -283,7 +288,9 @@ class _SplitHandleState extends State<_SplitHandle> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final active = _hovering || widget.dragging;
-    final idleColor = _chatsAccent1_100(scheme);
+    final idleColor = context.watch<ThemeController>().useLinuxTheme
+        ? scheme.surface
+        : _chatsAccent1_100(scheme);
     final activeColor = Color.alphaBlend(
       scheme.primary.withValues(alpha: 0.18),
       idleColor,

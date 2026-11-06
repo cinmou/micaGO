@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app/mica_go_app.dart';
+import 'app/linux_window_host.dart';
+import 'core/platform/linux_desktop.dart';
 import 'core/app_controller.dart';
 import 'core/ui/keyboard_insets.dart';
 import 'core/network/push_service.dart';
@@ -72,14 +74,29 @@ Future<void> main() async {
   // lock/unlock (see keyboard_insets.dart).
   KeyboardLifecycle.instance.install();
 
-  runApp(
-    MicaGoApp(
-      controller: controller,
-      contacts: contacts,
-      theme: theme,
-      messageDisplay: messageDisplay,
-    ),
+  final app = MicaGoApp(
+    controller: controller,
+    contacts: contacts,
+    theme: theme,
+    messageDisplay: messageDisplay,
   );
+  if (isLinuxDesktop) {
+    runWidget(
+      LinuxWindowHost(
+        controller: controller,
+        mainApp: app,
+        settingsApp: MicaGoApp(
+          controller: controller,
+          contacts: contacts,
+          theme: theme,
+          messageDisplay: messageDisplay,
+          settingsOnly: true,
+        ),
+      ),
+    );
+  } else {
+    runApp(app);
+  }
 }
 
 Future<void> _startupStep(

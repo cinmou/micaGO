@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=micaGO
+Comment=iMessages everywhere
+Exec=mica_go
+Icon=com.micago.message.mica_go
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupWMClass=com.micago.message.mica_go

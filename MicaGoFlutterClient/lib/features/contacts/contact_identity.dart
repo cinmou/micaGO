@@ -31,12 +31,14 @@ class ContactIdentity {
   final String displayName;
   final List<String> phones;
   final List<String> emails;
+  final String? avatarFile;
 
   const ContactIdentity({
     required this.id,
     required this.displayName,
     this.phones = const [],
     this.emails = const [],
+    this.avatarFile,
   });
 }
 

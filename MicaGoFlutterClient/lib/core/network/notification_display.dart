@@ -1,9 +1,52 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:micago_conversations/micago_conversations.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'notification_store.dart';
+import 'linux_notification_avatar.dart';
 import 'push_logic.dart';
+import '../platform/linux_desktop.dart';
+import '../l10n/app_localizations.dart';
+
+final _linuxPosted =
+    <
+      String,
+      ({String guid, int timestamp, FlutterLocalNotificationsPlugin plugin})
+    >{};
+final _linuxSeen = <String>{};
+Future<void> _linuxWork = Future<void>.value();
+
+Future<void> _serializeLinux(Future<void> Function() action) {
+  final next = _linuxWork.then((_) => action());
+  _linuxWork = next.catchError((Object _) {});
+  return next;
+}
+
+Future<void> clearSuppressedLinuxNotifications(
+  bool Function(String chatGuid, String messageGuid) suppressed,
+) async {
+  if (!isLinuxDesktop) return;
+  await _serializeLinux(() async {
+    for (final chat in _linuxPosted.keys.toList()) {
+      if (!suppressed(chat, _linuxPosted[chat]!.guid)) continue;
+      await _linuxPosted[chat]!.plugin.cancel(notificationIdForChat(chat));
+      _linuxPosted.remove(chat);
+    }
+  });
+}
+
+Future<void> cancelLinuxNotificationThrough(String chat, int through) =>
+    _serializeLinux(() async {
+      final latest = _linuxPosted[chat];
+      if (latest == null ||
+          latest.timestamp <= 0 ||
+          latest.timestamp > through) {
+        return;
+      }
+      await _linuxPosted[chat]!.plugin.cancel(notificationIdForChat(chat));
+      _linuxPosted.remove(chat);
+    });
 
 /// C31/C32 — the single place that defines how a message notification looks and
 /// is identified. Every path that shows one (the FCM background isolate and the
@@ -117,6 +160,55 @@ Future<void> showMessageNotification(
       ? timestampMs
       : DateTime.now().millisecondsSinceEpoch;
   final preview = (body == null || body.trim().isEmpty) ? 'New message' : body;
+
+  if (isLinuxDesktop) {
+    await _serializeLinux(() async {
+      final identity = '$chatKey\u001f$messageGuid';
+      final latest = _linuxPosted[chatKey];
+      if (_linuxSeen.contains(identity) ||
+          latest?.guid == messageGuid ||
+          (latest != null && latest.timestamp > ts)) {
+        return;
+      }
+      String? avatarPath;
+      for (final path in [avatarFilePath, conversationAvatarFilePath]) {
+        if (path == null) continue;
+        avatarPath = await circularLinuxNotificationAvatar(path);
+        if (avatarPath != null) break;
+      }
+      await plugin.show(
+        notificationIdForChat(chatKey),
+        conversationTitle,
+        const HtmlEscape(HtmlEscapeMode.element).convert(
+          body == null || body.trim().isEmpty
+              ? MicaLocalizations.current.t('chat.newMessage')
+              : preview,
+        ),
+        NotificationDetails(
+          linux: LinuxNotificationDetails(
+            icon: avatarPath == null ? null : FilePathLinuxIcon(avatarPath),
+            category: LinuxNotificationCategory.imReceived,
+            urgency: LinuxNotificationUrgency.normal,
+          ),
+        ),
+        payload: chatGuid == null
+            ? null
+            : notificationPayload(
+                chatGuid,
+                deviceId ?? '',
+                readThrough: timestampMs ?? 0,
+              ),
+      );
+      _linuxSeen.add(identity);
+      if (_linuxSeen.length > 512) _linuxSeen.remove(_linuxSeen.first);
+      _linuxPosted[chatKey] = (
+        guid: messageGuid,
+        timestamp: timestampMs ?? 0,
+        plugin: plugin,
+      );
+    });
+    return;
+  }
 
   final buffer = await appendChatNotification(
     chatKey,
@@ -266,6 +358,13 @@ Future<void> cancelChatNotification(
   String chatGuid,
 ) async {
   if (chatGuid.isEmpty) return;
+  if (isLinuxDesktop) {
+    await _serializeLinux(() async {
+      await plugin.cancel(notificationIdForChat(chatGuid));
+      _linuxPosted.remove(chatGuid);
+    });
+    return;
+  }
   await clearChatNotificationBuffer(chatGuid);
   await plugin.cancel(notificationIdForChat(chatGuid));
 }
@@ -288,7 +387,19 @@ Future<void> cancelNotificationThrough(String payload) async {
   );
 }
 
-Future<void> clearAndroidNotificationState() async {
+Future<void> clearSystemNotificationState() async {
+  if (isLinuxDesktop) {
+    await _serializeLinux(() async {
+      try {
+        await FlutterLocalNotificationsPlugin().cancelAll();
+        await clearLinuxNotificationAvatars();
+      } finally {
+        _linuxPosted.clear();
+        _linuxSeen.clear();
+      }
+    }).catchError((Object _) {});
+    return;
+  }
   if (!Platform.isAndroid) return;
   try {
     await FlutterLocalNotificationsPlugin().cancelAll();

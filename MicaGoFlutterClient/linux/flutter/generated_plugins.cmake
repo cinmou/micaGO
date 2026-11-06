@@ -3,9 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  desktop_drop
   dynamic_color
   file_selector_linux
   flutter_secure_storage_linux
+  pasteboard
   record_linux
   url_launcher_linux
 )

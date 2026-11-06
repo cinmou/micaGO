@@ -1,5 +1,6 @@
 import '../pairing/pairing_dialogs.dart';
 import '../../core/storage/secure_store.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -86,12 +87,15 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 children: [
                   _BrandHeader(strings: strings),
                   const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () => context.push(Routes.pair),
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: Text(strings.t('pair.scanQr')),
-                  ),
-                  const SizedBox(height: 12),
+                  if (kIsWeb ||
+                      defaultTargetPlatform != TargetPlatform.linux) ...[
+                    FilledButton.icon(
+                      onPressed: () => context.push(Routes.pair),
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: Text(strings.t('pair.scanQr')),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   FilledButton.tonalIcon(
                     onPressed: _pasteConnectionJson,
                     icon: const Icon(Icons.content_paste),

@@ -1,3 +1,5 @@
+import '../../core/platform/linux_desktop.dart';
+import '../../core/ui/linux_context_actions.dart';
 import '../../core/ui/top_banner.dart';
 import '../../core/ui/app_dialog.dart';
 import 'dart:async';
@@ -214,7 +216,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _hideWithUndo(MergedChat chat) async {
     final guids = chat.routes.map((route) => route.guid).toList();
-    HapticFeedback.selectionClick();
+    if (!isLinuxDesktop) HapticFeedback.selectionClick();
     try {
       await _controller.setChatsHidden(guids, true);
     } catch (_) {
@@ -254,42 +256,74 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  void _showChatMenu(BuildContext context, MergedChat m) async {
+  void _showChatMenu(
+    BuildContext context,
+    MergedChat m, {
+    Offset? position,
+  }) async {
     HapticFeedback.selectionClick();
     final strings = MicaLocalizations.of(context);
     final pinned = m.primary.isPinned;
     final guids = m.routes.map((r) => r.guid).toList();
-    final action = await showAppBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(
-                m.hasUnread
-                    ? Icons.mark_chat_read_outlined
-                    : Icons.mark_chat_unread_outlined,
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final anchor = position ?? overlay.localToGlobal(const Offset(40, 80));
+    final action = isLinuxDesktop
+        ? await showMenu<String>(
+            context: context,
+            position: RelativeRect.fromRect(
+              Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+              overlay.localToGlobal(Offset.zero) & overlay.size,
+            ),
+            items: [
+              PopupMenuItem(
+                value: m.hasUnread ? 'read' : 'unread',
+                child: Text(
+                  strings.t(m.hasUnread ? 'chat.markRead' : 'chat.markUnread'),
+                ),
               ),
-              title: Text(
-                strings.t(m.hasUnread ? 'chat.markRead' : 'chat.markUnread'),
+              PopupMenuItem(
+                value: 'pin',
+                child: Text(strings.t(pinned ? 'chat.unpin' : 'chat.pin')),
               ),
-              onTap: () => Navigator.pop(ctx, m.hasUnread ? 'read' : 'unread'),
+              PopupMenuItem(value: 'hide', child: Text(strings.t('chat.hide'))),
+            ],
+          )
+        : await showAppBottomSheet<String>(
+            context: context,
+            builder: (ctx) => SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(
+                      m.hasUnread
+                          ? Icons.mark_chat_read_outlined
+                          : Icons.mark_chat_unread_outlined,
+                    ),
+                    title: Text(
+                      strings.t(
+                        m.hasUnread ? 'chat.markRead' : 'chat.markUnread',
+                      ),
+                    ),
+                    onTap: () =>
+                        Navigator.pop(ctx, m.hasUnread ? 'read' : 'unread'),
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      pinned ? Icons.push_pin_outlined : Icons.push_pin,
+                    ),
+                    title: Text(strings.t(pinned ? 'chat.unpin' : 'chat.pin')),
+                    onTap: () => Navigator.pop(ctx, 'pin'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.visibility_off_outlined),
+                    title: Text(strings.t('chat.hide')),
+                    onTap: () => Navigator.pop(ctx, 'hide'),
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              leading: Icon(pinned ? Icons.push_pin_outlined : Icons.push_pin),
-              title: Text(strings.t(pinned ? 'chat.unpin' : 'chat.pin')),
-              onTap: () => Navigator.pop(ctx, 'pin'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.visibility_off_outlined),
-              title: Text(strings.t('chat.hide')),
-              onTap: () => Navigator.pop(ctx, 'hide'),
-            ),
-          ],
-        ),
-      ),
-    );
+          );
     if (!context.mounted) return;
     switch (action) {
       case 'read':
@@ -336,7 +370,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     _controller.setIncludeDebug(
       context.watch<MessageDisplayController>().prefs.showDebugChats,
     );
-    return ListenableBuilder(
+    final content = ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
         switch (_controller.state) {
@@ -352,6 +386,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
             );
           case ChatListState.empty:
             return RefreshIndicator(
+              notificationPredicate: (notification) =>
+                  !isLinuxDesktop &&
+                  defaultScrollNotificationPredicate(notification),
               onRefresh: () => _controller.load(showSpinner: false),
               child: const _EmptyState(),
             );
@@ -374,10 +411,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     focusNode: _searchFocus,
                     onChanged: (v) => setState(() => _query = v),
                     onClose: _closeSearch,
+                    onRefresh: isLinuxDesktop
+                        ? () => _controller.load(showSpinner: false)
+                        : null,
                   ),
                 ),
                 Expanded(
                   child: RefreshIndicator(
+                    notificationPredicate: (notification) =>
+                        !isLinuxDesktop &&
+                        defaultScrollNotificationPredicate(notification),
                     onRefresh: () => _controller.load(showSpinner: false),
                     child: merged.isEmpty
                         ? _NoMatches(query: _query)
@@ -398,6 +441,25 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                 : const SizedBox(height: 2),
                             itemBuilder: (context, i) {
                               final m = merged[i];
+                              if (isLinuxDesktop) {
+                                return LinuxContextActions(
+                                  onOpen: (position) => _showChatMenu(
+                                    context,
+                                    m,
+                                    position: position,
+                                  ),
+                                  child: widget.compact
+                                      ? _ChatRailRow(
+                                          merged: m,
+                                          onTap: () => _openMerged(m),
+                                        )
+                                      : _ChatRow(
+                                          merged: m,
+                                          sidebar: widget.sidebar,
+                                          onTap: () => _openMerged(m),
+                                        ),
+                                );
+                              }
                               if (widget.compact) {
                                 return _ChatRailRow(
                                   merged: m,
@@ -460,6 +522,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
         }
       },
     );
+    if (!isLinuxDesktop) return content;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            _openSearch,
+        const SingleActivator(LogicalKeyboardKey.escape): _closeSearch,
+        const SingleActivator(LogicalKeyboardKey.f5): () =>
+            _controller.load(showSpinner: false),
+      },
+      child: content,
+    );
   }
 }
 
@@ -506,11 +579,13 @@ class _SearchField extends StatelessWidget {
   final FocusNode focusNode;
   final ValueChanged<String> onChanged;
   final VoidCallback onClose;
+  final VoidCallback? onRefresh;
   const _SearchField({
     required this.controller,
     required this.focusNode,
     required this.onChanged,
     required this.onClose,
+    this.onRefresh,
   });
 
   @override
@@ -525,7 +600,19 @@ class _SearchField extends StatelessWidget {
         hintText: strings.t('chat.searchChats'),
         leading: const Icon(Icons.search),
         trailing: [
-          IconButton(icon: const Icon(Icons.close), onPressed: onClose),
+          if (onRefresh != null)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: strings.t('common.refresh'),
+              onPressed: onRefresh,
+            ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: onClose,
+            tooltip: isLinuxDesktop
+                ? MaterialLocalizations.of(context).deleteButtonTooltip
+                : null,
+          ),
         ],
         elevation: const WidgetStatePropertyAll(0),
         padding: const WidgetStatePropertyAll(
@@ -842,12 +929,16 @@ class _ChatRow extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     // Badge is draggable: flick it away to mark the chat read (C43).
     final badge = hasUnread
-        ? _DraggableUnreadBadge(
-            onDismiss: onDismissUnread ?? () {},
-            child: muted || unreadCount <= 0
-                ? const _UnreadDot()
-                : _UnreadCountPill(count: unreadCount),
-          )
+        ? isLinuxDesktop
+              ? (muted || unreadCount <= 0
+                    ? const _UnreadDot()
+                    : _UnreadCountPill(count: unreadCount))
+              : _DraggableUnreadBadge(
+                  onDismiss: onDismissUnread ?? () {},
+                  child: muted || unreadCount <= 0
+                      ? const _UnreadDot()
+                      : _UnreadCountPill(count: unreadCount),
+                )
         : null;
     // C45: time on top, badge below, centered on a single vertical line so the
     // dot sits directly under the timestamp (the badge's transparent hit-padding

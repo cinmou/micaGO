@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../core/app_controller.dart';
 import '../core/l10n/app_localizations.dart';
 import '../core/theme_controller.dart';
+import '../core/platform/linux_desktop.dart';
 import '../features/contacts/contacts_service.dart';
 import '../features/settings/message_display_controller.dart';
 import 'router.dart';
@@ -22,6 +23,7 @@ class MicaGoApp extends StatefulWidget {
   final ContactsService contacts;
   final ThemeController theme;
   final MessageDisplayController messageDisplay;
+  final bool settingsOnly;
 
   const MicaGoApp({
     super.key,
@@ -29,6 +31,7 @@ class MicaGoApp extends StatefulWidget {
     required this.contacts,
     required this.theme,
     required this.messageDisplay,
+    this.settingsOnly = false,
   });
 
   @override
@@ -36,13 +39,18 @@ class MicaGoApp extends StatefulWidget {
 }
 
 class _MicaGoAppState extends State<MicaGoApp> {
-  late final GoRouter _router = createRouter(widget.controller);
+  late final GoRouter _router = createRouter(
+    widget.controller,
+    settingsOnly: widget.settingsOnly,
+  );
 
   @override
   void initState() {
     super.initState();
-    widget.contacts.addListener(_refreshNotificationContacts);
-    _refreshNotificationContacts();
+    if (!widget.settingsOnly) {
+      widget.contacts.addListener(_refreshNotificationContacts);
+      _refreshNotificationContacts();
+    }
   }
 
   void _refreshNotificationContacts() {
@@ -52,7 +60,10 @@ class _MicaGoAppState extends State<MicaGoApp> {
 
   @override
   void dispose() {
-    widget.contacts.removeListener(_refreshNotificationContacts);
+    if (!widget.settingsOnly) {
+      widget.contacts.removeListener(_refreshNotificationContacts);
+    }
+    _router.dispose();
     super.dispose();
   }
 
@@ -110,10 +121,37 @@ class _MicaGoAppState extends State<MicaGoApp> {
                   quality: GlassQuality.standard,
                 ),
                 child: MaterialApp.router(
+                  builder: (context, child) {
+                    if (!isLinuxDesktop) {
+                      return child ?? const SizedBox.shrink();
+                    }
+                    final media = MediaQuery.of(context);
+                    return MediaQuery(
+                      data: media.copyWith(
+                        textScaler: DesktopTextScaler(
+                          media.textScaler,
+                          theme.desktopTextScale,
+                        ),
+                      ),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          visualDensity: const VisualDensity(
+                            horizontal: -1,
+                            vertical: -1,
+                          ),
+                        ),
+                        child: child ?? const SizedBox.shrink(),
+                      ),
+                    );
+                  },
                   title: 'micaGO',
                   debugShowCheckedModeBanner: false,
-                  theme: MicaGoTheme.fromScheme(lightScheme),
-                  darkTheme: MicaGoTheme.fromScheme(darkScheme),
+                  theme: theme.useLinuxTheme
+                      ? MicaGoTheme.linux(Brightness.light)
+                      : MicaGoTheme.fromScheme(lightScheme),
+                  darkTheme: theme.useLinuxTheme
+                      ? MicaGoTheme.linux(Brightness.dark)
+                      : MicaGoTheme.fromScheme(darkScheme),
                   themeMode: theme.themeMode,
                   locale: theme.locale,
                   supportedLocales: const [

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:async/async.dart';
 import '../storage/local_cache_store.dart';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -17,6 +18,7 @@ import 'api_client.dart';
 import 'notification_contact_cache.dart';
 import 'notification_display.dart';
 import 'push_logic.dart';
+import '../platform/linux_desktop.dart';
 
 /// Storage key for the user-owned Firebase client options. C28: MicaGo bakes no
 /// google-services.json, so the FCM **background isolate** (a fresh process when
@@ -27,6 +29,7 @@ import 'push_logic.dart';
 const String fcmOptionsStorageKey = 'micago.fcm_options.v1';
 
 void registerMicaGoFirebaseBackgroundHandler() {
+  if (isLinuxDesktop) return;
   try {
     FirebaseMessaging.onBackgroundMessage(micaGoFirebaseBackgroundHandler);
   } catch (e) {
@@ -68,7 +71,8 @@ FirebaseOptions firebaseOptionsFromMap(Map<String, dynamic> m) {
 /// Dedup rule (BlueBubbles): if the app is alive and the socket is connected,
 /// the socket already handled the event, so the FCM message is ignored.
 class PushService {
-  PushService(this.app);
+  PushService(this.app, {FlutterLocalNotificationsPlugin? localNotifications})
+    : _local = localNotifications ?? FlutterLocalNotificationsPlugin();
 
   final AppController app;
 
@@ -79,10 +83,10 @@ class PushService {
   StreamSubscription<RemoteMessage>? _tapSubscription;
   bool available = false;
   bool _localReady = false;
+  bool get localReady => _localReady;
   String? token;
 
-  final FlutterLocalNotificationsPlugin _local =
-      FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _local;
 
   /// Idempotent start. Safe to call on every (re)connect. It always brings up
   /// local notifications first (the keep-alive path needs them and does NOT need
@@ -93,7 +97,13 @@ class PushService {
     if (_disposed || !app.hasProfile) return;
     // 0) Local notifications + the keep-alive shower — independent of Firebase,
     //    so background WebSocket/delta messages can notify even with no FCM.
-    await _ensureLocalNotifications();
+    try {
+      await _ensureLocalNotifications();
+    } catch (error) {
+      if (!isLinuxDesktop) rethrow;
+      // A missing/unavailable desktop notification service must not break chat.
+      return;
+    }
     if (_disposed || !app.hasProfile) return;
 
     if (defaultTargetPlatform != TargetPlatform.android) {
@@ -283,14 +293,15 @@ class PushService {
     // Opening a chat clears its stacked conversation notification.
     app.clearChatNotification = (chatGuid) =>
         cancelChatNotification(_local, chatGuid);
-    app.clearReadNotification = (chatGuid, through) =>
-        cancelNotificationThrough(
-          notificationPayload(
-            chatGuid,
-            app.profile?.deviceId ?? '',
-            readThrough: through,
-          ),
-        );
+    app.clearReadNotification = (chatGuid, through) => isLinuxDesktop
+        ? cancelLinuxNotificationThrough(chatGuid, through)
+        : cancelNotificationThrough(
+            notificationPayload(
+              chatGuid,
+              app.profile?.deviceId ?? '',
+              readThrough: through,
+            ),
+          );
     await refreshNotificationPermission();
   }
 
@@ -305,7 +316,18 @@ class PushService {
       '@drawable/$androidNotificationSmallIcon',
     );
     await _local.initialize(
-      const InitializationSettings(android: android),
+      InitializationSettings(
+        android: android,
+        linux: LinuxInitializationSettings(
+          defaultActionName: MicaLocalizations.current.t('desktop.open'),
+          defaultIcon: isLinuxDesktop
+              ? FilePathLinuxIcon(
+                  '${File(Platform.resolvedExecutable).parent.path}/data/icons/hicolor/256x256/apps/com.micago.message.mica_go.png',
+                )
+              : ThemeLinuxIcon('com.micago.message.mica_go'),
+          defaultSound: ThemeLinuxSound('message-new-instant'),
+        ),
+      ),
       onDidReceiveNotificationResponse: (resp) {
         if (resp.actionId == notificationReplyActionId ||
             resp.actionId == notificationReadActionId) {
@@ -317,6 +339,7 @@ class PushService {
       onDidReceiveBackgroundNotificationResponse:
           notificationBackgroundResponse,
     );
+    if (isLinuxDesktop) return;
     final launch = await _local.getNotificationAppLaunchDetails();
     if (launch?.didNotificationLaunchApp == true) {
       final response = launch?.notificationResponse;
@@ -344,6 +367,9 @@ class PushService {
       return;
     }
     final guid = target?.chatGuid;
+    if (isLinuxDesktop && !app.tokenRejected.value) {
+      unawaited(LinuxDesktop.show().catchError((Object _) {}));
+    }
     if (guid?.isNotEmpty == true) app.requestOpenChat(guid!);
   }
 }

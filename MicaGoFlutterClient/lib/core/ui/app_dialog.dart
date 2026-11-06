@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../platform/linux_desktop.dart';
 
 /// Shared Material dialog surface for confirmation, notices and input.
 class AppDialog extends StatelessWidget {
@@ -126,13 +127,48 @@ Future<T?> showAppBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isScrollControlled = false,
-}) => showModalBottomSheet<T>(
-  context: context,
-  builder: builder,
-  isScrollControlled: isScrollControlled,
-  useSafeArea: true,
-  showDragHandle: true,
-);
+}) {
+  if (isLinuxDesktop) {
+    return showDialog<T>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 560,
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.85,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: MaterialLocalizations.of(
+                    dialogContext,
+                  ).closeButtonTooltip,
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              Flexible(
+                fit: FlexFit.loose,
+                child: Builder(builder: builder),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  return showModalBottomSheet<T>(
+    context: context,
+    builder: builder,
+    isScrollControlled: isScrollControlled,
+    useSafeArea: true,
+    showDragHandle: true,
+  );
+}
 
 Future<String?> showAppTextInput({
   required BuildContext context,

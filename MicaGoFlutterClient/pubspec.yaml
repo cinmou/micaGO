@@ -64,6 +64,13 @@ dependencies:
   archive: ^4.0.0
   shared_preferences: ^2.5.5
   connectivity_plus: ^6.1.5
+  pasteboard: ^0.6.0
+  # Upstream Linux portal lifetime fix, compatible with our cross_file 0.3 APIs.
+  desktop_drop:
+    git:
+      url: https://github.com/MixinNetwork/flutter-plugins.git
+      path: packages/desktop_drop
+      ref: 5f33a92bf8d6da7ee3a26f9a7d675f984ace66f9
 
 # C19: file_picker pulls a flutter_plugin_android_lifecycle that demands its
 # consumers compile against android-36, conflicting with file_picker's own
