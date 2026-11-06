@@ -17,10 +17,6 @@ def main():
     icon = ET.Element(f"{{{SVG}}}svg", {
         "width": "512", "height": "512", "viewBox": "18 18 72 72",
     })
-    ET.SubElement(icon, f"{{{SVG}}}rect", {
-        "x": "18", "y": "18", "width": "72", "height": "72",
-        "rx": "16", "fill": "#FFFFFF",
-    })
     artwork = ET.SubElement(icon, f"{{{SVG}}}g", {
         "transform": "translate(54 54) scale(.82) translate(-54 -54)",
     })
