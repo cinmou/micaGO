@@ -8,6 +8,7 @@
 | [0002](0002-device-credentials.md) | 短期邀请换独立设备凭据，设备连接使用 TLS |
 | [0003](0003-native-clients.md) | 共用 micaGO 协议，各端使用自己的原生能力 |
 | [0004](0004-delta-change-sequence.md) | Delta 使用事务内更新的 relay 变更序号 |
+| [0005](0005-unifiedpush.md) | 待确认：Android 推送改用 UnifiedPush（Web Push 加密） |
 
 这几份记录于 2026-10-21 根据当前实现和已有说明整理，日期不是原始决策日期，也不代表完整复原了当时的讨论。
 

@@ -67,6 +67,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Opt-in side-by-side debug install next to a release build signed
+            // with another key: flutter build apk --debug
+            //   --android-project-arg=micagoAppIdSuffix=.dev
+            (project.findProperty("micagoAppIdSuffix") as String?)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { applicationIdSuffix = it }
+        }
         release {
             signingConfig = signingConfigs.findByName("release")
             // C62: keep ML Kit barcode classes — R8 full mode stripped them and
@@ -89,7 +97,18 @@ flutter {
     source = "../.."
 }
 
+// The UnifiedPush connector depends on the JVM `tink` artifact while
+// flutter_secure_storage uses `tink-android`, which already contains the same
+// classes. Keep only the Android build.
+configurations.configureEach {
+    exclude(group = "com.google.crypto.tink", module = "tink")
+}
+
 dependencies {
     // C22: required by flutter_local_notifications for Java 8+ API desugaring.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // UnifiedPush fallback for users without another distributor: registers
+    // with Google Play services' native WebPush endpoint using the server's
+    // VAPID key. No Google SDK blobs and no Firebase project.
+    implementation("org.unifiedpush.android:embedded-fcm-distributor:3.1.0")
 }

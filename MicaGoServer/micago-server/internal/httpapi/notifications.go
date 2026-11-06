@@ -192,7 +192,7 @@ func (h *Handlers) PatchNotificationsPreview(w http.ResponseWriter, r *http.Requ
 }
 
 // TestNotifications handles POST /api/server/notifications/test.
-// One settings-page action tests the current FCM delivery path; per-device
+// One settings-page action tests every FCM / UnifiedPush device; per-device
 // testing was removed so device cards stay focused on paired-device privacy.
 func (h *Handlers) TestNotifications(w http.ResponseWriter, r *http.Request) {
 	if h.devices == nil {
@@ -215,19 +215,19 @@ func (h *Handlers) TestNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fcmDevices := make([]store.DeviceRecord, 0, len(devices))
+	pushDevices := make([]store.DeviceRecord, 0, len(devices))
 	for _, device := range devices {
-		if device.PushProvider == "fcm" && device.PushEnabled && device.PushToken != nil && strings.TrimSpace(*device.PushToken) != "" {
-			fcmDevices = append(fcmDevices, device)
+		if (device.PushProvider == "fcm" || device.PushProvider == "unifiedpush") && device.PushEnabled && device.PushToken != nil && strings.TrimSpace(*device.PushToken) != "" {
+			pushDevices = append(pushDevices, device)
 		}
 	}
-	if len(fcmDevices) == 0 {
-		writeAPIError(w, http.StatusBadRequest, "push_no_fcm_devices", "No registered FCM devices. Open micaGO on Android and let it reconnect.")
+	if len(pushDevices) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "push_no_fcm_devices", "No devices registered for push. Open micaGO on Android and let it reconnect.")
 		return
 	}
 
 	resp := testNotificationsResponse{}
-	for _, device := range fcmDevices {
+	for _, device := range pushDevices {
 		err := h.notify.SendTest(r.Context(), device)
 		switch {
 		case err == nil:

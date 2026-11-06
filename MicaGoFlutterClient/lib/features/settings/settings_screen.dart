@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/router.dart';
 import '../../core/app_controller.dart';
 import '../../core/network/notification_display.dart';
+import '../../core/network/unified_push.dart';
 import '../../core/network/update_check.dart';
 import '../../core/network/websocket_client.dart';
 import '../../core/l10n/app_localizations.dart';
@@ -811,6 +812,68 @@ class _NotificationsCard extends StatefulWidget {
 }
 
 class _NotificationsCardState extends State<_NotificationsCard> {
+  String _pushServiceSummary(AppController app, MicaLocalizations strings) {
+    if (!app.pushConfigured) return strings.t('notif.notConfiguredBody');
+    final host = app.pushEndpointHost;
+    if (host != null) {
+      return strings.t('notif.pushServiceVia').replaceAll('{host}', host);
+    }
+    if (app.pushProvider == 'fcm') return strings.t('notif.pushServiceFcm');
+    return strings.t('notif.registered');
+  }
+
+  /// DAVx5-style picker: installed UnifiedPush distributors (the bundled
+  /// embedded FCM distributor shows as "FCM (Google Play)"), the legacy
+  /// Firebase project path, or off.
+  Future<void> _choosePushService(BuildContext context) async {
+    final app = widget.app;
+    final strings = MicaLocalizations.of(context);
+    final distributors = await unifiedPushDistributors();
+    final saved = await app.store.readValue(pushTransportKey) ?? 'auto';
+    final current = saved == 'auto'
+        ? switch (await unifiedPushCurrentDistributor()) {
+            final String id => 'up:$id',
+            null => app.pushProvider == 'fcm' ? 'fcm' : 'auto',
+          }
+        : saved;
+    if (!context.mounted) return;
+    final options = <MapEntry<String, String>>[
+      for (final id in distributors) MapEntry('up:$id', distributorLabel(id)),
+      MapEntry('fcm', strings.t('notif.pushServiceFcm')),
+      MapEntry('off', strings.t('notif.pushServiceOff')),
+    ];
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(strings.t('notif.pushService')),
+        children: [
+          for (final option in options)
+            ListTile(
+              leading: Icon(
+                option.key == current
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+              ),
+              title: Text(option.value),
+              onTap: () => Navigator.of(context).pop(option.key),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+            child: Text(
+              distributors.isEmpty
+                  ? strings.t('notif.pushServiceNoDistributor')
+                  : strings.t('notif.pushServiceEncrypted'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || choice == current) return;
+    await app.store.writeValue(pushTransportKey, choice);
+    await UnifiedPushBridge.restart?.call();
+  }
+
   Future<void> _enableNotifications() async {
     final granted = await requestSystemNotificationPermission();
     widget.app.noteNotificationPermission(granted);
@@ -841,12 +904,14 @@ class _NotificationsCardState extends State<_NotificationsCard> {
                     : Icons.notifications_off_outlined,
                 color: configured ? scheme.primary : scheme.onSurfaceVariant,
               ),
-              title: Text(strings.t('notif.fcmBeta')),
-              subtitle: Text(
-                configured
-                    ? strings.t('notif.registered')
-                    : strings.t('notif.notConfiguredBody'),
-              ),
+              title: Text(strings.t('notif.pushService')),
+              subtitle: Text(_pushServiceSummary(app, strings)),
+              trailing: unifiedPushSupported
+                  ? const Icon(Icons.chevron_right)
+                  : null,
+              onTap: unifiedPushSupported
+                  ? () => _choosePushService(context)
+                  : null,
             ),
             const Divider(height: 1),
           ],

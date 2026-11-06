@@ -2,13 +2,15 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Notifications page (v0.12): provider status + self-host Firebase (FCM) setup.
-/// micaGO provides no cloud — each user brings their own Firebase project.
+/// Notifications page: UnifiedPush (Web Push) needs no setup on the Mac — each
+/// phone picks its own distributor (ntfy, FCM via Google Play, ...). The
+/// self-hosted Firebase project remains as a legacy, optional path.
 struct NotificationsPage: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
         Group {
+            UnifiedPushCard()
             ProviderStatusCard()
             FirebaseSetupCard()
             PushPrivacyCard()
@@ -46,28 +48,101 @@ private struct ProviderStatusCard: View {
     }
 }
 
-private struct FirebaseSetupCard: View {
+/// DAVx5-style: the Mac only signs and encrypts; which push service carries
+/// the ciphertext is chosen on each phone.
+private struct UnifiedPushCard: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        SectionCard(title: "Firebase Self-Host (Android FCM)") {
+        SectionCard(title: "Push Notifications (UnifiedPush)") {
             Toggle("Notifications enabled", isOn: $model.notifEnabled)
-            Toggle("Enable FCM delivery", isOn: $model.fcmEnabled)
-                .onChange(of: model.fcmEnabled) { enabled in
-                    if enabled { model.notifEnabled = true }
-                }
 
-            // C60: what a push may reveal. "Sender & message" is what makes the
-            // phone show the actual text; the payload travels through FCM.
             Picker("Notification preview", selection: $model.notifPreview) {
                 Text("Sender & message").tag("sender_and_text")
                 Text("Sender only").tag("sender")
                 Text("None (silent wake)").tag("none")
             }
             .pickerStyle(.menu)
-            Text("“Sender & message” puts the message text in the push, which goes through Google FCM. Pick “Sender only” or “None” to keep message text off Google's servers.")
+            Text("UnifiedPush messages are end-to-end encrypted to each phone. The push service (ntfy, Google, …) only relays ciphertext and sees timing and size. Legacy Firebase pushes are not encrypted this way.")
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let key = model.status?.notifications.unifiedPushVapidPublicKey, !key.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                    Text("VAPID public key").font(.callout)
+                    Text(key)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(key, forType: .string)
+                    }
+                }
+                Text("Generated on this Mac; the private key never leaves it. Nothing to configure here — pick ntfy or FCM (Google Play) in micaGO on each phone.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("UnifiedPush is unavailable: the running backend has no VAPID key. Update the backend.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+
+            let pushDevices = model.devices.filter { $0.pushEnabled && $0.pushProvider != "none" && !$0.pushProvider.isEmpty }
+            if pushDevices.isEmpty {
+                Text("No phones registered for push yet.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(pushDevices) { device in
+                    HStack(spacing: 8) {
+                        Image(systemName: "iphone.gen3.radiowaves.left.and.right").foregroundStyle(.secondary)
+                        Text(device.name).font(.callout)
+                        Spacer()
+                        Text(routeLabel(device)).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            HStack(spacing: 12) {
+                Button("Save") { Task { await model.saveNotificationsConfig() } }
+                    .disabled(model.notifBusy)
+                Button("Send test notification") { Task { await model.testAllPushDevices() } }
+                    .disabled(model.notifBusy || pushDevices.isEmpty)
+                if model.notifBusy { ProgressView().controlSize(.small) }
+            }
+            if let result = model.notifResult {
+                Text(result).font(.caption)
+                    .foregroundStyle(result.hasPrefix("Saved") || result.contains("sent") ? .green : .orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func routeLabel(_ device: DeviceInfo) -> String {
+        switch device.pushProvider {
+        case "unifiedpush":
+            if let host = device.pushEndpointHost, !host.isEmpty {
+                return L10n.localized("via \(host)")
+            }
+            return "UnifiedPush"
+        case "fcm": return L10n.localized("Firebase (legacy)")
+        default: return device.pushProvider
+        }
+    }
+}
+
+private struct FirebaseSetupCard: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        SectionCard(title: "Legacy: Firebase Self-Host (optional)") {
+            Text("Only needed for phones that use the old Firebase path. UnifiedPush above covers FCM without a Firebase project.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle("Enable FCM delivery", isOn: $model.fcmEnabled)
+                .onChange(of: model.fcmEnabled) { enabled in
+                    if enabled { model.notifEnabled = true }
+                }
 
             firebaseFileRow(
                 icon: "iphone.gen3.radiowaves.left.and.right",
@@ -103,21 +178,9 @@ private struct FirebaseSetupCard: View {
             HStack(spacing: 12) {
                 Button("Save") { Task { await model.saveNotificationsConfig() } }
                     .disabled(model.notifBusy)
-                Button("Send test notification") { Task { await model.testAllPushDevices() } }
-                    .disabled(model.notifBusy || !model.fcmEnabled)
                 Button("Clear Firebase config", role: .destructive) { Task { await model.clearNotificationsConfig() } }
                     .disabled(model.notifBusy)
-                if model.notifBusy { ProgressView().controlSize(.small) }
             }
-
-            if let result = model.notifResult {
-                Text(result).font(.caption)
-                    .foregroundStyle(result.hasPrefix("Saved") || result.contains("sent") ? .green : .orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Text("Sends a test to every registered FCM device.")
-                .font(.caption2).foregroundStyle(.secondary)
         }
     }
 
@@ -171,10 +234,10 @@ private struct PushPrivacyCard: View {
     var body: some View {
         SectionCard(title: "Push Privacy") {
             Text("""
-            • micaGO has no cloud server. You use your own Firebase project.
-            • Firebase is only used for Android push and the optional public URL lookup.
+            • micaGO has no cloud server. Android push uses UnifiedPush: each phone picks a distributor (your own ntfy, FCM via Google Play, …).
+            • UnifiedPush payloads are encrypted to the phone (RFC 8291). The push service sees only ciphertext, timing and size — not the sender or text.
             • Windows clients get notifications over WebSocket while they run. Huawei/HarmonyOS push isn't supported yet, and iOS push isn't planned.
-            • FCM processes notification payloads. Depending on your preview setting, a push can include the sender and message text.
+            • Legacy Firebase pushes are not end-to-end encrypted: depending on your preview setting they can include the sender and message text.
             • Optional Firestore sync stores only the public server URL. Chat history and attachments still sync over your micaGO connection.
             """)
             .font(.caption)

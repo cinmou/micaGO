@@ -59,6 +59,7 @@ func NewRouter(h *Handlers, hub *realtime.Hub, auth *DeviceAuth) http.Handler {
 	mux.Handle("POST /api/devices/{id}/heartbeat", auth.Wrap(http.HandlerFunc(h.DeviceHeartbeat)))
 	mux.Handle("DELETE /api/devices/{id}", auth.Wrap(http.HandlerFunc(h.DeleteDevice)))
 	mux.Handle("GET /api/fcm/client", auth.Wrap(http.HandlerFunc(h.GetFCMClientConfig)))
+	mux.Handle("GET /api/push/unifiedpush", auth.Wrap(http.HandlerFunc(h.GetUnifiedPushConfig)))
 	mux.Handle("POST /api/server/notifications/test", auth.Wrap(http.HandlerFunc(h.TestNotifications)))
 	mux.Handle("PATCH /api/server/notifications/preview", auth.Wrap(http.HandlerFunc(h.PatchNotificationsPreview)))
 	mux.Handle("PUT /api/server/contacts/cache", auth.Wrap(http.HandlerFunc(h.PutContactCache)))

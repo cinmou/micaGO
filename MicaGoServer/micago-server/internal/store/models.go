@@ -293,11 +293,15 @@ type DeviceJSON struct {
 	PushProvider string `json:"pushProvider"`
 	PushEnabled  bool   `json:"pushEnabled"`
 	PushTokenSet bool   `json:"pushTokenSet"`
-	Background   bool   `json:"background"`
-	Connected    bool   `json:"connected"`
-	LastSeenAt   *int64 `json:"lastSeenAt"`
-	CreatedAt    int64  `json:"createdAt"`
-	UpdatedAt    int64  `json:"updatedAt"`
+	// PushEndpointHost is the UnifiedPush distributor host (e.g. ntfy.example
+	// or fcm.googleapis.com). The full endpoint is a capability URL and is
+	// never returned.
+	PushEndpointHost string `json:"pushEndpointHost,omitempty"`
+	Background       bool   `json:"background"`
+	Connected        bool   `json:"connected"`
+	LastSeenAt       *int64 `json:"lastSeenAt"`
+	CreatedAt        int64  `json:"createdAt"`
+	UpdatedAt        int64  `json:"updatedAt"`
 }
 
 type DeviceResponse struct {
@@ -497,6 +501,10 @@ type ServerNotificationStatus struct {
 	FCMEnabled                  bool     `json:"fcmEnabled"`
 	FCMProjectID                string   `json:"fcmProjectId"`
 	PublicURLSync               bool     `json:"publicUrlSync"`
+	// UnifiedPush (WebPush) needs no user-provided files; it is available
+	// whenever the server's VAPID key loaded. The public key is not secret.
+	UnifiedPushAvailable      bool   `json:"unifiedPushAvailable"`
+	UnifiedPushVAPIDPublicKey string `json:"unifiedPushVapidPublicKey,omitempty"`
 }
 
 type ServerDevicesStatus struct {

@@ -26,6 +26,7 @@
 | 同步控制 | `/api/sync/settings`、`/api/sync/rules`、`/api/sync/policy`、`POST /api/sync/now` |
 | 设备 | `POST /api/devices/register`、设备自身 heartbeat；管理员可以列出与撤销设备 |
 | FCM 配置 | `GET /api/fcm/client`；只返回客户端配置，不返回服务账号 |
+| UnifiedPush 配置 | `GET /api/push/unifiedpush`；返回 `configured` 与 VAPID 公钥 |
 | 通知设置 | `POST /api/server/notifications`、`PATCH /api/server/notifications/preview`、`POST /api/server/notifications/test` |
 
 具体方法、查询参数和错误码必须在修改前读 handler，不从这张缩写表生成请求。

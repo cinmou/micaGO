@@ -88,3 +88,50 @@ func TestRegisterAndroidDeviceWithFcm(t *testing.T) {
 		t.Fatalf("fcm fields not echoed: %+v", resp.Data)
 	}
 }
+
+// A UnifiedPush device registers its WebPush subscription as the push token.
+// The list echoes only the distributor host, never the capability endpoint.
+func TestRegisterAndroidDeviceWithUnifiedPush(t *testing.T) {
+	h, _ := newDeviceHandlers()
+	token := `{"endpoint":"https://ntfy.example.com/upAbCdEfGhIjKl?up=1","p256dh":"BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4","auth":"BTBZMqHH6r4Tts7J_aSIgg"}`
+	tokenJSON, _ := json.Marshal(token)
+	body := `{"id":"up1","name":"moto","platform":"android","clientType":"flutter","pushProvider":"unifiedpush","pushToken":` + string(tokenJSON) + `,"pushEnabled":true,"background":true}`
+	rec := httptest.NewRecorder()
+	h.RegisterDevice(rec, httptest.NewRequest(http.MethodPost, "/api/devices/register", bytes.NewBufferString(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unifiedpush register: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("upAbCdEfGhIjKl")) {
+		t.Fatalf("response leaks the push endpoint: %s", rec.Body.String())
+	}
+	var resp store.DeviceResponse
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp.Data.PushProvider != "unifiedpush" || !resp.Data.PushTokenSet || resp.Data.PushEndpointHost != "ntfy.example.com" {
+		t.Fatalf("unifiedpush fields not echoed: %+v", resp.Data)
+	}
+}
+
+func TestRegisterUnifiedPushRejectsPlainHTTPEndpoint(t *testing.T) {
+	h, _ := newDeviceHandlers()
+	token := `{"endpoint":"http://192.168.1.10/upAbCdEfGhIjKl","p256dh":"BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4","auth":"BTBZMqHH6r4Tts7J_aSIgg"}`
+	tokenJSON, _ := json.Marshal(token)
+	body := `{"id":"up2","name":"moto","platform":"android","clientType":"flutter","pushProvider":"unifiedpush","pushToken":` + string(tokenJSON) + `,"pushEnabled":true}`
+	rec := httptest.NewRecorder()
+	h.RegisterDevice(rec, httptest.NewRequest(http.MethodPost, "/api/devices/register", bytes.NewBufferString(body)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for http endpoint, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Paired devices (not just the admin token) must be able to fetch the VAPID
+// key, otherwise the Android client can never subscribe.
+func TestDeviceCredentialMayReadPushConfig(t *testing.T) {
+	for _, path := range []string{"/api/fcm/client", "/api/push/unifiedpush"} {
+		if !clientRouteAllowed(httptest.NewRequest(http.MethodGet, path, nil), "dev-1") {
+			t.Errorf("device credential blocked from GET %s", path)
+		}
+	}
+	if clientRouteAllowed(httptest.NewRequest(http.MethodPost, "/api/server/notifications", nil), "dev-1") {
+		t.Error("device credential must not change notification config")
+	}
+}

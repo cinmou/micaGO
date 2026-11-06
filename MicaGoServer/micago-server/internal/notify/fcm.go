@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"micagoserver/internal/store"
 )
@@ -97,10 +98,24 @@ func (p *FCMProvider) Send(ctx context.Context, device store.DeviceRecord, notif
 // fcmMessage builds the FCM HTTP v1 request body. Only the gated Notification
 // fields are sent as string data; no contacts, tokens, or history.
 func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[string]any {
-	body := n.Body
-	if len(body) > fcmMaxBodyChars {
-		body = body[:fcmMaxBodyChars]
+	return map[string]any{
+		"message": map[string]any{
+			"token": deviceToken,
+			"data":  notificationData(n, fcmMaxBodyChars),
+			"android": map[string]any{
+				"priority": "HIGH",
+				"ttl":      strconv.FormatInt(int64(ttl/time.Second), 10) + "s",
+			},
+		},
 	}
+}
+
+// notificationData flattens the gated Notification fields into the string map
+// shared by every push transport (FCM data message, WebPush JSON body), so the
+// client parses one shape regardless of how the push arrived. Empty values are
+// omitted; maxBody caps the preview text in bytes without splitting UTF-8.
+func notificationData(n Notification, maxBody int) map[string]string {
+	body := truncateUTF8(n.Body, maxBody)
 	data := map[string]string{
 		"type":              n.Type,
 		"messageGuid":       n.MessageGUID,
@@ -122,16 +137,19 @@ func fcmMessage(deviceToken string, n Notification, ttl time.Duration) map[strin
 			delete(data, key)
 		}
 	}
-	return map[string]any{
-		"message": map[string]any{
-			"token": deviceToken,
-			"data":  data,
-			"android": map[string]any{
-				"priority": "HIGH",
-				"ttl":      strconv.FormatInt(int64(ttl/time.Second), 10) + "s",
-			},
-		},
+	return data
+}
+
+// truncateUTF8 returns at most max bytes of s, backing off to a rune boundary.
+func truncateUTF8(s string, max int) string {
+	if max < 0 || len(s) <= max {
+		return s
 	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 type fcmOutcome int

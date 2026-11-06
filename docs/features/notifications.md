@@ -10,9 +10,18 @@ Windows 运行时通过自己的实时连接显示原生通知，不依赖 FCM�
 
 Linux 在进程仍运行且窗口不在前台时，通过现有 WebSocket 和桌面通知服务显示通知，不依赖 FCM 或 Android 保活。关闭窗口仅最小化，显式退出后不能收通知。通知按会话替换、按消息去重，正文转义为文本。通知头像优先使用发送者头像，其次使用会话头像，生成透明外角的圆形 PNG 遮罩并按图片内容缓存。文件不可用时使用默认应用图标。隐藏全部预览时省略联系人头像。遵守已有预览、静音、隐藏与已读规则；完全隐藏预览时使用通用应用标题。点击校验当前设备身份后打开会话并尝试恢复窗口，Wayland 是否允许前置由桌面决定。打开、标读、静音、隐藏、解绑或凭据撤销会清理对应通知，标读截止点不能删除更新的通知。最小接入不提供通知内回复和标读按钮；通知服务不可用时不影响消息连接。
 
-服务端支持 `none`（关闭）、`webhook` 和 `fcm`。HMS、Harmony Push、ntfy 的未实现占位已移除，新配置和设备注册不接受这些渠道；旧配置中的 `hms` 段会被忽略，废弃的默认渠道回退为 `none`。FCM 未配置或服务账号无效时不列为可用投递渠道。
+服务端支持 `none`（关闭）、`webhook`、`fcm` 和 `unifiedpush`。HMS、Harmony Push 的未实现占位已移除，新配置和设备注册不接受这些渠道；旧配置中的 `hms` 段会被忽略，废弃的默认渠道回退为 `none`。FCM 未配置或服务账号无效时不列为可用投递渠道。
+
+## UnifiedPush（待确认，见 [ADR 0005](../decisions/0005-unifiedpush.md)）
+
+`unifiedpush` 渠道发送标准 Web Push：载荷与 FCM data 相同的扁平字段，按 RFC 8291 加密到设备公钥，用 VAPID 签名。VAPID 私钥首次加载时生成于 `~/.micago/vapid_private_key.pem`，文件损坏时报错而不是静默重建。客户端通过 `GET /api/push/unifiedpush` 取 VAPID 公钥，注册时 pushToken 为 `{endpoint,p256dh,auth}` JSON；服务端只接受 https endpoint，不跟随重定向，404/410 时清除该设备令牌，设备列表只返回 `pushEndpointHost`。
+
+Android 设置 → 通知 → 推送服务列出已安装的 distributor 和内置的 “FCM (Google Play)”，另可选旧 Firebase 路径或关闭。默认使用已保存或系统默认的 distributor；服务端不支持时回退旧 Firebase 路径，明确选定的 distributor 失败时不回退。进程存活时，可见状态下由 WebSocket / delta 处理，后台则与 FCM 后台处理器一样显示本地通知并按消息去重。
 
 ## 会经过 Google 的数据
+
+以下针对旧 Firebase 路径。UnifiedPush 经 Google（embedded FCM）或 ntfy 投递时，推送服务只看到密文、时间与大小。
+
 
 通知预览设置决定 FCM 载荷是否包含发送者和正文：仅发送者、发送者和消息、或不显示内容。选择发送者和正文，就不能再宣称消息内容从不经过 Google。“不显示内容”会省略正文、发送者姓名、handle、会话标题和聊天 GUID，使用通用通知标题，点击时不再携带会话定位。消息标识、时间和附件等元数据仍可能经过 Google。
 
