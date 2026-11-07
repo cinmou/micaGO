@@ -149,6 +149,8 @@ struct NotificationStatus: Codable {
     var fcmEnabled: Bool?
     var fcmProjectId: String?
     var publicUrlSync: Bool?
+    var unifiedPushAvailable: Bool?
+    var unifiedPushVapidPublicKey: String?
 }
 
 struct DevicesStatus: Codable {
@@ -229,6 +231,8 @@ struct DeviceInfo: Codable, Identifiable {
     var mode: String?
     var pushProvider: String
     var pushEnabled: Bool
+    /// UnifiedPush distributor host (e.g. ntfy.example.com, fcm.googleapis.com).
+    var pushEndpointHost: String?
     var background: Bool?
     var connected: Bool?
     var lastSeenAt: Int64?
@@ -256,7 +260,11 @@ struct DeviceInfo: Codable, Identifiable {
         if pushProvider == "none" || pushProvider.isEmpty {
             return "not configured"
         }
-        return pushEnabled ? "enabled (\(pushProvider))" : "disabled"
+        guard pushEnabled else { return "disabled" }
+        if pushProvider == "unifiedpush", let host = pushEndpointHost, !host.isEmpty {
+            return "enabled (UnifiedPush via \(host))"
+        }
+        return "enabled (\(pushProvider))"
     }
 
     /// Background (FCM wake) capability for the secondary line (C22).

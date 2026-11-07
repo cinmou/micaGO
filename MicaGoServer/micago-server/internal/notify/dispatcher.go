@@ -23,6 +23,7 @@ type Dispatcher struct {
 	firestore       *FirestoreURLSync
 	pruneFunc       func(deviceID string)
 	contacts        *contactCache
+	vapidPublicKey  string
 }
 
 func NewDispatcher(cfg config.Config) *Dispatcher {
@@ -81,7 +82,24 @@ func (d *Dispatcher) apply(cfg config.Config) {
 		}
 	}
 
+	// UnifiedPush needs no user setup: the VAPID key is created on first load.
+	vapidPublicKey := ""
+	if keyPath := strings.TrimSpace(cfg.UnifiedPush.VAPIDKeyPath); keyPath != "" {
+		key, err := LoadOrCreateVAPIDKey(keyPath)
+		if err != nil {
+			log.Printf("unifiedpush: vapid key unavailable (%v); unifiedpush disabled", err)
+		} else if publicKey, err := VAPIDPublicKey(key); err != nil {
+			log.Printf("unifiedpush: vapid public key unavailable (%v); unifiedpush disabled", err)
+		} else {
+			vapidPublicKey = publicKey
+			providers["unifiedpush"] = NewWebPushProvider(key, cfg.UnifiedPush.VAPIDSubject, &http.Client{Timeout: 15 * time.Second}, 24*time.Hour, func(id string) {
+				d.invokePrune(id)
+			}, cfg.UnifiedPush.PrivateHosts...)
+		}
+	}
+
 	d.mu.Lock()
+	d.vapidPublicKey = vapidPublicKey
 	d.enabled = cfg.NotificationsEnabled
 	d.previewMode = cfg.NotificationPreview
 	d.defaultProvider = cfg.NotificationProvider
@@ -121,7 +139,8 @@ func (d *Dispatcher) invokePrune(id string) {
 }
 
 // ImplementedProviders lists providers that actually deliver right now. `fcm` is
-// included only when a valid service account is configured.
+// included only when a valid service account is configured; `unifiedpush` when
+// the VAPID key loaded.
 func (d *Dispatcher) ImplementedProviders() []string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -129,7 +148,18 @@ func (d *Dispatcher) ImplementedProviders() []string {
 	if _, ok := d.providers["fcm"]; ok {
 		out = append(out, "fcm")
 	}
+	if _, ok := d.providers["unifiedpush"]; ok {
+		out = append(out, "unifiedpush")
+	}
 	return out
+}
+
+// UnifiedPushVAPIDPublicKey returns the base64url VAPID public key clients pass
+// to their UnifiedPush distributor, or "" when UnifiedPush is unavailable.
+func (d *Dispatcher) UnifiedPushVAPIDPublicKey() string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.vapidPublicKey
 }
 
 // FirestoreSyncEnabled reports whether optional public-URL sync is active.

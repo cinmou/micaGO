@@ -126,7 +126,7 @@ func clientRouteAllowed(r *http.Request, id string) bool {
 		case "/ws", "/api/server/info", "/api/server/status", "/api/server/urls",
 			"/api/read-state", "/api/message-preferences", "/api/chat-preferences",
 			"/api/messages/recent", "/api/messages/history", "/api/messages/delta",
-			"/api/messages/actions/capabilities", "/api/chats", "/api/fcm/client",
+			"/api/messages/actions/capabilities", "/api/chats", "/api/fcm/client", "/api/push/unifiedpush",
 			"/api/sync/settings", "/api/sync/rules", "/api/test-contact":
 			return true
 		}

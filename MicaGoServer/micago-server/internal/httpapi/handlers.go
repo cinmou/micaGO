@@ -115,6 +115,12 @@ type notificationConfigurator interface {
 	FirestoreSyncEnabled() bool
 }
 
+// unifiedPushKeySource is implemented by *notify.Dispatcher; kept optional so
+// test dispatchers need not implement it.
+type unifiedPushKeySource interface {
+	UnifiedPushVAPIDPublicKey() string
+}
+
 type contactCacheReceiver interface {
 	SetContactCache([]notify.ContactEntry)
 }
@@ -452,6 +458,7 @@ func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
 	}
 	clientConfig, clientConfigErr := notify.LoadFirebaseClientConfig(h.cfg.FCM.GoogleServicesPath)
 	_, serviceAccountErr := notify.LoadServiceAccount(h.cfg.FCM.ServiceAccountPath)
+	vapidPublicKey := h.unifiedPushVAPIDPublicKey()
 	return store.ServerNotificationStatus{
 		Enabled:                     enabled,
 		Provider:                    provider,
@@ -464,7 +471,16 @@ func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
 		FCMEnabled:                  h.cfg.FCM.Enabled,
 		FCMProjectID:                h.cfg.FCM.ProjectID,
 		PublicURLSync:               h.cfg.Firebase.PublicURLSync,
+		UnifiedPushAvailable:        vapidPublicKey != "",
+		UnifiedPushVAPIDPublicKey:   vapidPublicKey,
 	}
+}
+
+func (h *Handlers) unifiedPushVAPIDPublicKey() string {
+	if source, ok := h.notify.(unifiedPushKeySource); ok && source != nil {
+		return source.UnifiedPushVAPIDPublicKey()
+	}
+	return ""
 }
 
 func (h *Handlers) permissionStatus() store.ServerPermissionStatus {
@@ -1543,6 +1559,17 @@ func (h *Handlers) GetFCMClientConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": cfg})
 }
 
+// GetUnifiedPushConfig serves the VAPID public key the Android app passes to
+// its UnifiedPush distributor (GET /api/push/unifiedpush). The key is public;
+// {configured:false} lets the app fall back to WebSocket + delta sync.
+func (h *Handlers) GetUnifiedPushConfig(w http.ResponseWriter, r *http.Request) {
+	key := h.unifiedPushVAPIDPublicKey()
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"configured":     key != "",
+		"vapidPublicKey": key,
+	}})
+}
+
 func (h *Handlers) ListDevices(w http.ResponseWriter, r *http.Request) {
 	if h.devices == nil {
 		writeInternalError(w)
@@ -1924,8 +1951,25 @@ func validateDeviceRecord(device store.DeviceRecord, supportedProviders []string
 		if tokenMissing {
 			return errors.New("pushToken is required when pushEnabled is true")
 		}
+		if device.PushProvider == "unifiedpush" {
+			if _, err := notify.ParseWebPushSubscription(*device.PushToken); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// pushEndpointHost reports the distributor host for UnifiedPush devices.
+func pushEndpointHost(device store.DeviceRecord) string {
+	if device.PushProvider != "unifiedpush" || device.PushToken == nil {
+		return ""
+	}
+	sub, err := notify.ParseWebPushSubscription(*device.PushToken)
+	if err != nil {
+		return ""
+	}
+	return sub.EndpointHost()
 }
 
 // deviceConnectedWindow is how recently a device must have checked in (via
@@ -1943,20 +1987,21 @@ func deviceConnected(lastSeenAt *int64) bool {
 
 func deviceToJSON(device store.DeviceRecord) store.DeviceJSON {
 	return store.DeviceJSON{
-		ID:           device.ID,
-		Name:         device.Name,
-		Platform:     device.Platform,
-		ClientType:   device.ClientType,
-		AppVersion:   device.AppVersion,
-		Mode:         device.Mode,
-		PushProvider: device.PushProvider,
-		PushEnabled:  device.PushEnabled,
-		PushTokenSet: device.PushToken != nil && strings.TrimSpace(*device.PushToken) != "",
-		Background:   device.Background,
-		Connected:    deviceConnected(device.LastSeenAt),
-		LastSeenAt:   device.LastSeenAt,
-		CreatedAt:    device.CreatedAt,
-		UpdatedAt:    device.UpdatedAt,
+		ID:               device.ID,
+		Name:             device.Name,
+		Platform:         device.Platform,
+		ClientType:       device.ClientType,
+		AppVersion:       device.AppVersion,
+		Mode:             device.Mode,
+		PushProvider:     device.PushProvider,
+		PushEnabled:      device.PushEnabled,
+		PushTokenSet:     device.PushToken != nil && strings.TrimSpace(*device.PushToken) != "",
+		PushEndpointHost: pushEndpointHost(device),
+		Background:       device.Background,
+		Connected:        deviceConnected(device.LastSeenAt),
+		LastSeenAt:       device.LastSeenAt,
+		CreatedAt:        device.CreatedAt,
+		UpdatedAt:        device.UpdatedAt,
 	}
 }
 

@@ -10,6 +10,7 @@ import 'core/platform/linux_desktop.dart';
 import 'core/app_controller.dart';
 import 'core/ui/keyboard_insets.dart';
 import 'core/network/push_service.dart';
+import 'core/network/unified_push.dart';
 import 'core/storage/secure_store.dart';
 import 'core/theme_controller.dart';
 import 'features/contacts/contacts_service.dart';
@@ -18,6 +19,10 @@ import 'features/settings/message_display_controller.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerMicaGoFirebaseBackgroundHandler();
+  // UnifiedPush delivers killed-app pushes by starting this entrypoint in a
+  // headless engine, so its callbacks must exist before anything else.
+  installUnifiedPushBackgroundHooks();
+  await initializeUnifiedPush();
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
     debugPrint('[Startup] FlutterError: ${details.exception}');

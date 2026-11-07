@@ -39,10 +39,16 @@ const (
 var ValidPairingPreferences = []string{"auto", "local", "lan", "public"}
 
 // NotificationProviders lists supported configuration and device-registration
-// values. FCM delivery additionally requires a configured service account.
+// values. FCM delivery additionally requires a configured service account;
+// UnifiedPush (WebPush) only needs the server's auto-generated VAPID key.
 func NotificationProviders() []string {
-	return []string{"none", "webhook", "fcm"}
+	return []string{"none", "webhook", "fcm", "unifiedpush"}
 }
+
+// defaultVAPIDSubject is the RFC 8292 contact claim used when the user has not
+// set unifiedpush.vapid_subject. Push services only use it to reach the
+// operator; FCM requires it to be a mailto: or https: URI.
+const defaultVAPIDSubject = "https://github.com/cinmou/micaGO"
 
 type Options struct {
 	Addr            string
@@ -78,7 +84,17 @@ type Config struct {
 	WebhookURL               string
 	FCM                      FCMConfig
 	Firebase                 FirebaseConfig
+	UnifiedPush              UnifiedPushConfig
 	FirstRun                 bool
+}
+
+// UnifiedPushConfig controls WebPush delivery to UnifiedPush distributors
+// (ntfy, NextPush, the embedded FCM distributor, ...). The VAPID private key is
+// generated on first use and kept in its own 0600 file next to config.yaml.
+type UnifiedPushConfig struct {
+	PrivateHosts []string
+	VAPIDKeyPath string
+	VAPIDSubject string
 }
 
 type FCMConfig struct {
@@ -138,6 +154,10 @@ type fileConfig struct {
 		URLCollection string `yaml:"url_collection"`
 		URLDocument   string `yaml:"url_document"`
 	} `yaml:"firebase"`
+	UnifiedPush struct {
+		PrivateHosts []string `yaml:"private_hosts,omitempty"`
+		VAPIDSubject string   `yaml:"vapid_subject,omitempty"`
+	} `yaml:"unifiedpush,omitempty"`
 }
 
 func Load(opts Options) (Config, error) {
@@ -225,6 +245,11 @@ func Load(opts Options) (Config, error) {
 			PublicURLSync: fileCfg.Firebase.PublicURLSync,
 			URLCollection: valueOrDefault("", fileCfg.Firebase.URLCollection, "server"),
 			URLDocument:   valueOrDefault("", fileCfg.Firebase.URLDocument, "config"),
+		},
+		UnifiedPush: UnifiedPushConfig{
+			PrivateHosts: fileCfg.UnifiedPush.PrivateHosts,
+			VAPIDKeyPath: filepath.Join(baseDir, "vapid_private_key.pem"),
+			VAPIDSubject: valueOrDefault("", strings.TrimSpace(fileCfg.UnifiedPush.VAPIDSubject), defaultVAPIDSubject),
 		},
 		FirstRun: firstRun,
 	}

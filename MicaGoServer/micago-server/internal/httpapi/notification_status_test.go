@@ -108,3 +108,43 @@ func TestDisablingFCMPreservesFilesUntilExplicitClear(t *testing.T) {
 		t.Fatal("explicit clear did not clear Firebase configuration")
 	}
 }
+
+func TestUnifiedPushConfigServesGeneratedVAPIDKey(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.Load(config.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &Handlers{cfg: cfg}
+	dispatcher := notify.NewDispatcher(cfg)
+	h.notify = dispatcher
+	h.SetNotificationConfigurator(dispatcher)
+
+	rec := httptest.NewRecorder()
+	h.GetUnifiedPushConfig(rec, httptest.NewRequest(http.MethodGet, "/api/push/unifiedpush", nil))
+	var response struct {
+		Data struct {
+			Configured     bool   `json:"configured"`
+			VAPIDPublicKey string `json:"vapidPublicKey"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Data.Configured || len(response.Data.VAPIDPublicKey) != 87 {
+		t.Fatalf("unifiedpush config = %+v", response.Data)
+	}
+	status := h.notificationStatus()
+	if !status.UnifiedPushAvailable || status.UnifiedPushVAPIDPublicKey != response.Data.VAPIDPublicKey {
+		t.Fatalf("status disagrees with endpoint: %+v", status)
+	}
+	info, err := os.Stat(cfg.UnifiedPush.VAPIDKeyPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("vapid key file: %v %v", info, err)
+	}
+	// Reload must reuse the persisted key, not rotate it.
+	dispatcher.Reload(cfg)
+	if dispatcher.UnifiedPushVAPIDPublicKey() != response.Data.VAPIDPublicKey {
+		t.Fatal("reload rotated the VAPID key")
+	}
+}
