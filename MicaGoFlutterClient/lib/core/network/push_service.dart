@@ -258,14 +258,16 @@ class PushService {
 
     transportInUse = 'unifiedpush';
     UnifiedPushBridge.onEndpoint = (t) {
-      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush')
+      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush') {
         return;
+      }
       token = t;
       unawaited(_registerUnifiedPushToken());
     };
     UnifiedPushBridge.onUnregistered = () {
-      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush')
+      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush') {
         return;
+      }
       token = null;
       unawaited(
         app.updatePushRegistration(
@@ -276,8 +278,9 @@ class PushService {
       );
     };
     UnifiedPushBridge.onForegroundMessage = (data) {
-      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush')
+      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush') {
         return false;
+      }
       app.noteNotificationSource('UnifiedPush');
       final visible =
           WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
