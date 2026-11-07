@@ -239,7 +239,7 @@ class PushService {
   }
 
   /// Registers with a UnifiedPush distributor when the server offers WebPush.
-  /// [transport] is `auto` or `up:<distributor package>`.
+  /// [transport] is an explicit `up:<distributor package>` selection.
   Future<bool> _startUnifiedPush(ApiClient api, String transport) async {
     if (!unifiedPushSupported) return false;
     final Map<String, dynamic> cfg;
@@ -297,7 +297,7 @@ class PushService {
     }
     final ok = await registerUnifiedPush(
       vapidPublicKey: vapid,
-      distributor: transport.startsWith('up:') ? transport.substring(3) : null,
+      distributor: transport.substring(3),
     );
     if (!ok) {
       transportInUse = null;

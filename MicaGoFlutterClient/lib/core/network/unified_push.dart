@@ -25,8 +25,8 @@ const String unifiedPushInstance = 'micago';
 const String unifiedPushTokenKey = 'micago.unifiedpush.token.v1';
 
 /// User choice in Settings → Notifications → Push service:
-/// `auto` (saved/default distributor), `up:<package>` (a specific
-/// distributor), `fcm` (legacy Firebase project), or `off`.
+/// `up:<package>` (a specific distributor), `fcm` (existing Firebase
+/// project, the default), or `off`.
 const String pushTransportKey = 'micago.push.transport.v1';
 
 /// Pure: the WebPush subscription JSON the server validates. Returns null when
@@ -153,30 +153,15 @@ Future<List<String>> unifiedPushDistributors() async {
   }
 }
 
-Future<String?> unifiedPushCurrentDistributor() async {
-  if (!unifiedPushSupported) return null;
-  try {
-    return await UnifiedPush.getDistributor();
-  } catch (_) {
-    return null;
-  }
-}
-
-/// Registers with [distributor] (or the saved/system default when null).
-/// Returns false when no distributor is usable.
+/// Registers only with the distributor explicitly selected by the user.
 Future<bool> registerUnifiedPush({
   required String vapidPublicKey,
-  String? distributor,
+  required String distributor,
 }) async {
   if (!unifiedPushSupported) return false;
   try {
-    if (distributor != null) {
-      await UnifiedPush.saveDistributor(distributor);
-    } else if (!await UnifiedPush.tryUseCurrentOrDefaultDistributor()) {
-      final all = await UnifiedPush.getDistributors();
-      if (all.isEmpty) return false;
-      await UnifiedPush.saveDistributor(all.first);
-    }
+    if (distributor.isEmpty) return false;
+    await UnifiedPush.saveDistributor(distributor);
     await UnifiedPush.register(
       instance: unifiedPushInstance,
       vapid: vapidPublicKey,
