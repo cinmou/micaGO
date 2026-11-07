@@ -368,7 +368,7 @@ func TestTruncateUTF8KeepsRuneBoundary(t *testing.T) {
 }
 
 func TestWebPushAddressPolicy(t *testing.T) {
-	for _, raw := range []string{"127.0.0.1", "::1", "10.0.0.1", "192.168.1.1", "100.64.0.1", "169.254.169.254", "::ffff:127.0.0.1", "fd00::1", "fe80::1", "0.0.0.0", "224.0.0.1", "198.18.0.1"} {
+	for _, raw := range []string{"127.0.0.1", "::1", "10.0.0.1", "192.168.1.1", "100.64.0.1", "169.254.169.254", "::ffff:127.0.0.1", "fd00::1", "fe80::1", "0.0.0.0", "224.0.0.1", "198.18.0.1", "2002:7f00:1::1", "2001:db8::1", "2001::1"} {
 		if webPushIPAllowed(netip.MustParseAddr(raw), false) {
 			t.Errorf("accepted non-public address %s", raw)
 		}
