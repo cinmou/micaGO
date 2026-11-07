@@ -210,22 +210,25 @@ Future<void> showMessageNotification(
     return;
   }
 
-  final buffer = await appendChatNotification(
-    chatKey,
-    BufferedNotifMessage(
-      guid: messageGuid,
-      sender: senderName,
-      senderKey: (senderKey == null || senderKey.trim().isEmpty)
-          ? senderName
-          : senderKey.trim(),
-      text: preview,
-      ts: ts,
-      readThrough: timestampMs,
-      avatarPath: avatarFilePath,
-      avatarResource: avatarDrawableResource,
-    ),
-    deviceId: deviceId,
+  final buffered = BufferedNotifMessage(
+    guid: messageGuid,
+    sender: senderName,
+    senderKey: (senderKey == null || senderKey.trim().isEmpty)
+        ? senderName
+        : senderKey.trim(),
+    text: preview,
+    ts: ts,
+    readThrough: timestampMs,
+    avatarPath: avatarFilePath,
+    avatarResource: avatarDrawableResource,
   );
+  // Only chat notifications stack. A chat-less push (e.g. the server test
+  // notification) has no open/read/reply path that could ever clear a buffer,
+  // so buffering it would re-show every earlier copy forever; it replaces its
+  // previous notification instead.
+  final buffer = chatGuid?.isNotEmpty == true
+      ? await appendChatNotification(chatKey, buffered, deviceId: deviceId)
+      : [buffered];
 
   if (avatarFilePath != null && !await File(avatarFilePath).exists()) {
     avatarFilePath = null;
