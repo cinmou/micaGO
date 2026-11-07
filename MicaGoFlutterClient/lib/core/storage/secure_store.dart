@@ -281,14 +281,16 @@ class SecureStore {
     if (await _fallbackEnabled()) {
       return _readFallback(key);
     }
+    final String? secureValue;
     try {
-      final secureValue = await _storage.read(key: key).timeout(_secureTimeout);
-      if (secureValue != null) return secureValue;
-      return _readFallback(key);
+      secureValue = await _storage.read(key: key).timeout(_secureTimeout);
     } catch (error) {
       await _enableFallback(error);
       return _readFallback(key);
     }
+    // Outside the try: a fallback-store failure must not be mistaken for a
+    // secure-storage failure (which would switch fallback mode on).
+    return secureValue ?? _readFallback(key);
   }
 
   Future<void> _write(String key, String value) async {

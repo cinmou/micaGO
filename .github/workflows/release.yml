@@ -44,7 +44,7 @@ concurrency:
 
 env:
   # Matches the toolchain release builds are verified with locally.
-  FLUTTER_VERSION: "3.44.3"
+  FLUTTER_VERSION: "3.47.9"
 
 jobs:
   meta:
