@@ -41,23 +41,30 @@ func LoadOrCreateVAPIDKey(path string) (*ecdsa.PrivateKey, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create vapid key directory: %w", err)
 	}
-	// O_EXCL: if another process created it concurrently, use theirs.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, os.ErrExist) {
-		return LoadOrCreateVAPIDKey(path)
-	}
+	// Publish only a complete key. Concurrent readers must never see a
+	// partially written PEM, and concurrent creators must reuse the winner.
+	f, err := os.CreateTemp(filepath.Dir(path), ".vapid-*.pem")
 	if err != nil {
-		return nil, fmt.Errorf("create vapid key: %w", err)
+		return nil, errors.New("create temporary vapid key failed")
 	}
+	defer os.Remove(f.Name())
 	if err := pem.Encode(f, &pem.Block{Type: "EC PRIVATE KEY", Bytes: der}); err != nil {
 		f.Close()
-		os.Remove(path)
-		return nil, fmt.Errorf("write vapid key: %w", err)
+		return nil, errors.New("write vapid key failed")
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return nil, errors.New("sync vapid key failed")
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(path)
-		return nil, fmt.Errorf("write vapid key: %w", err)
+		return nil, errors.New("close vapid key failed")
 	}
+	if err := os.Link(f.Name(), path); errors.Is(err, os.ErrExist) {
+		return LoadOrCreateVAPIDKey(path)
+	} else if err != nil {
+		return nil, errors.New("publish vapid key failed")
+	}
+
 	return key, nil
 }
 

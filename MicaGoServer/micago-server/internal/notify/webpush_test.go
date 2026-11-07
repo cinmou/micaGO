@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,7 +202,7 @@ func TestWebPushProviderSendsEncryptedSignedPush(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewWebPushProvider(key, "mailto:test@example.com", server.Client(), time.Hour, nil)
+	provider := NewWebPushProvider(key, "mailto:test@example.com", server.Client(), time.Hour, nil, "127.0.0.1")
 	token := sub.token(server.URL + "/upAbC?up=1")
 	err := provider.Send(context.Background(), store.DeviceRecord{ID: "d1", PushProvider: "unifiedpush", PushToken: &token}, Notification{
 		Type: "message:new", Title: "Alice", Body: "你好 watermelon", ChatGUID: "chat-1", PreviewMode: "sender_and_text",
@@ -236,7 +237,7 @@ func TestWebPushProviderPrunesGoneSubscription(t *testing.T) {
 	}))
 	defer server.Close()
 	pruned := ""
-	provider := NewWebPushProvider(testVAPIDKey(t), "mailto:test@example.com", server.Client(), time.Hour, func(id string) { pruned = id })
+	provider := NewWebPushProvider(testVAPIDKey(t), "mailto:test@example.com", server.Client(), time.Hour, func(id string) { pruned = id }, "127.0.0.1")
 	token := sub.token(server.URL + "/gone")
 	if err := provider.Send(context.Background(), store.DeviceRecord{ID: "dead", PushToken: &token}, Notification{Type: "test"}); err != nil {
 		t.Fatal(err)
@@ -254,7 +255,7 @@ func TestWebPushProviderDoesNotFollowRedirects(t *testing.T) {
 		http.Redirect(w, r, "/elsewhere", http.StatusTemporaryRedirect)
 	}))
 	defer server.Close()
-	provider := NewWebPushProvider(testVAPIDKey(t), "mailto:test@example.com", server.Client(), time.Hour, nil)
+	provider := NewWebPushProvider(testVAPIDKey(t), "mailto:test@example.com", server.Client(), time.Hour, nil, "127.0.0.1")
 	token := sub.token(server.URL + "/start")
 	err := provider.Send(context.Background(), store.DeviceRecord{ID: "d", PushToken: &token}, Notification{Type: "test"})
 	if err == nil || hits != 1 {
@@ -363,5 +364,50 @@ func TestTruncateUTF8KeepsRuneBoundary(t *testing.T) {
 	}
 	if got := truncateUTF8("abc", 10); got != "abc" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestWebPushAddressPolicy(t *testing.T) {
+	for _, raw := range []string{"127.0.0.1", "::1", "10.0.0.1", "192.168.1.1", "100.64.0.1", "169.254.169.254", "::ffff:127.0.0.1", "fd00::1", "fe80::1", "0.0.0.0", "224.0.0.1", "198.18.0.1"} {
+		if webPushIPAllowed(netip.MustParseAddr(raw), false) {
+			t.Errorf("accepted non-public address %s", raw)
+		}
+	}
+	for _, raw := range []string{"8.8.8.8", "2606:4700:4700::1111"} {
+		if !webPushIPAllowed(netip.MustParseAddr(raw), false) {
+			t.Errorf("rejected public address %s", raw)
+		}
+	}
+	if !webPushIPAllowed(netip.MustParseAddr("192.168.1.2"), true) {
+		t.Fatal("administrator-approved private host rejected")
+	}
+}
+
+func TestWebPushRejectsLocalEndpointBeforeDial(t *testing.T) {
+	sub := newTestSubscriber(t)
+	hits := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	defer server.Close()
+	provider := NewWebPushProvider(testVAPIDKey(t), "mailto:test@example.com", server.Client(), time.Hour, nil)
+	token := sub.token(server.URL + "/secret")
+	if err := provider.Send(context.Background(), store.DeviceRecord{ID: "local", PushToken: &token}, Notification{Type: "test"}); err == nil {
+		t.Fatal("private endpoint accepted without administrator permission")
+	}
+	if hits != 0 {
+		t.Fatal("private endpoint contacted")
+	}
+}
+
+func TestWebPushErrorOmitsResponseBody(t *testing.T) {
+	sub := newTestSubscriber(t)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "secret-subscription-path", http.StatusBadRequest)
+	}))
+	defer server.Close()
+	provider := NewWebPushProvider(testVAPIDKey(t), "mailto:test@example.com", server.Client(), time.Hour, nil, "127.0.0.1")
+	token := sub.token(server.URL + "/secret")
+	err := provider.Send(context.Background(), store.DeviceRecord{ID: "test", PushToken: &token}, Notification{Type: "test"})
+	if err == nil || strings.Contains(err.Error(), "secret-subscription-path") {
+		t.Fatalf("unsafe error: %v", err)
 	}
 }

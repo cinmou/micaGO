@@ -34,9 +34,15 @@ const String fcmOptionsStorageKey = 'micago.fcm_options.v1';
 /// [AppController] (headless engine started by the connector). Call from
 /// `main()` before [initializeUnifiedPush].
 void installUnifiedPushBackgroundHooks() {
-  UnifiedPushBridge.showNotification = showPushNotificationData;
+  UnifiedPushBridge.showNotification = (data) async {
+    final choice = await SecureStore().readValue(pushTransportKey);
+    if (choice?.startsWith('up:') != true) return;
+    await showPushNotificationData(data);
+  };
   UnifiedPushBridge.persistToken = (token) async {
     final store = SecureStore();
+    final choice = await store.readValue(pushTransportKey);
+    if (choice?.startsWith('up:') != true) return;
     if (token == null) {
       await store.deleteValue(unifiedPushTokenKey);
     } else {
@@ -142,16 +148,15 @@ class PushService {
     final api = app.api;
     if (api == null) return;
 
-    // 0b) UnifiedPush first: no Firebase project, end-to-end encrypted. An
-    //     explicit distributor choice never silently falls back to Firebase.
-    final transport = await app.store.readValue(pushTransportKey) ?? 'auto';
+    // Preserve existing Firebase setup unless a distributor was explicitly chosen.
+    final transport = await app.store.readValue(pushTransportKey) ?? 'fcm';
     if (transport == 'off') {
       transportInUse = 'off';
       return;
     }
-    if (transport != 'fcm') {
-      if (await _startUnifiedPush(api, transport)) return;
-      if (transport.startsWith('up:')) return;
+    if (transport.startsWith('up:')) {
+      await _startUnifiedPush(api, transport);
+      return;
     }
 
     // 1) Pull the user-owned Firebase client config from the server.
@@ -214,7 +219,7 @@ class PushService {
     await _registerToken();
     if (_disposed || !app.hasProfile) return;
     _tokenSubscription = messaging.onTokenRefresh.listen((t) {
-      if (_disposed || !app.hasProfile) return;
+      if (_disposed || !app.hasProfile || transportInUse != 'fcm') return;
       token = t;
       unawaited(_registerToken());
     });
@@ -251,13 +256,16 @@ class PushService {
     if (cfg['configured'] != true || vapid.isEmpty) return false;
     if (_disposed || !app.hasProfile) return false;
 
+    transportInUse = 'unifiedpush';
     UnifiedPushBridge.onEndpoint = (t) {
-      if (_disposed || !app.hasProfile) return;
+      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush')
+        return;
       token = t;
       unawaited(_registerUnifiedPushToken());
     };
     UnifiedPushBridge.onUnregistered = () {
-      if (_disposed || !app.hasProfile) return;
+      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush')
+        return;
       token = null;
       unawaited(
         app.updatePushRegistration(
@@ -268,7 +276,8 @@ class PushService {
       );
     };
     UnifiedPushBridge.onForegroundMessage = (data) {
-      if (_disposed || !app.hasProfile) return false;
+      if (_disposed || !app.hasProfile || transportInUse != 'unifiedpush')
+        return false;
       app.noteNotificationSource('UnifiedPush');
       final visible =
           WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
@@ -291,6 +300,7 @@ class PushService {
       distributor: transport.startsWith('up:') ? transport.substring(3) : null,
     );
     if (!ok) {
+      transportInUse = null;
       debugPrint('PushService: no UnifiedPush distributor available');
       return false;
     }
@@ -300,6 +310,7 @@ class PushService {
   }
 
   Future<void> _registerUnifiedPushToken() async {
+    if (_disposed || transportInUse != 'unifiedpush') return;
     await app.updatePushRegistration(
       provider: 'unifiedpush',
       token: token,
@@ -308,11 +319,24 @@ class PushService {
   }
 
   /// Applies a changed push-service choice: tears down the current transport
-  /// and starts again. Switching away from a Firebase session that already
-  /// started still needs an app restart to stop FCM delivery entirely.
+  /// and starts again. Late messages from the previous transport are ignored.
   Future<void> restart() async {
     if (_disposed) return;
-    if (transportInUse == 'unifiedpush') await unregisterUnifiedPush();
+    // Let any ongoing startup settle before tearing down its subscriptions.
+    await start();
+    if (_disposed) return;
+    await _tokenSubscription?.cancel();
+    await _messageSubscription?.cancel();
+    await _tapSubscription?.cancel();
+    _tokenSubscription = null;
+    _messageSubscription = null;
+    _tapSubscription = null;
+    final wasUnifiedPush = transportInUse == 'unifiedpush';
+    transportInUse = null;
+    UnifiedPushBridge.onEndpoint = null;
+    UnifiedPushBridge.onUnregistered = null;
+    UnifiedPushBridge.onForegroundMessage = null;
+    if (wasUnifiedPush) await unregisterUnifiedPush();
     await app.store.deleteValue(unifiedPushTokenKey);
     token = null;
     available = false;
@@ -351,6 +375,7 @@ class PushService {
   }
 
   Future<void> _registerToken() async {
+    if (_disposed || transportInUse != 'fcm') return;
     await app.updatePushRegistration(
       provider: 'fcm',
       token: token,
@@ -363,7 +388,7 @@ class PushService {
   // socket happens to be down, run a delta catch-up so the open thread/list
   // still update — GUID dedup prevents duplicate bubbles.
   void _onForegroundMessage(RemoteMessage message) {
-    if (_disposed || !app.hasProfile) return;
+    if (_disposed || !app.hasProfile || transportInUse != 'fcm') return;
     if (!pushShouldCatchUp(realtimeConnected: app.isRealtimeConnected)) {
       return; // socket already handled it (BlueBubbles dedup)
     }
@@ -374,7 +399,7 @@ class PushService {
   // Tap (from background or terminated): delta-sync FIRST so we don't show stale
   // content, then ask the shell to open the conversation.
   void _onNotificationTap(RemoteMessage message) {
-    if (_disposed || !app.hasProfile) return;
+    if (_disposed || !app.hasProfile || transportInUse != 'fcm') return;
     app.noteNotificationSource('FCM');
     unawaited(app.runDeltaSync(reason: 'fcm-tap'));
     final chatGuid = pushChatGuid(message.data);
@@ -562,8 +587,11 @@ Future<bool> ensureBackgroundFirebase() async {
 /// local chats such as the offline test contact.
 final _notificationCache = LocalCacheStore();
 
-Future<void> showPushNotification(RemoteMessage message) =>
-    showPushNotificationData(message.data);
+Future<void> showPushNotification(RemoteMessage message) async {
+  final choice = await SecureStore().readValue(pushTransportKey) ?? 'fcm';
+  if (choice == 'off' || choice.startsWith('up:')) return;
+  await showPushNotificationData(message.data);
+}
 
 /// Shows a push from its flat data map — the same shape for FCM data messages
 /// and decrypted UnifiedPush (WebPush) payloads.

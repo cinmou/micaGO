@@ -58,3 +58,11 @@ Android 使用系统 `MessagingStyle`，按会话叠放消息，发送者用 `Pe
 - 测试：[notification_display_test.dart](../../MicaGoFlutterClient/test/notification_display_test.dart)、[notification_reply_test.dart](../../MicaGoFlutterClient/test/notification_reply_test.dart)、[通知相关测试目录](../../MicaGoFlutterClient/test)。
 
 实机要检查后台、锁屏、冷启动、头像、展开、点击定位、回复、标读和撤销配对。FCM 接口返回成功只说明请求被接收，不代表手机已经显示通知。
+
+## UnifiedPush 接入边界
+
+Android 的 UnifiedPush 分发器由用户在通知设置中明确选择，未保存选择时沿用原有 Firebase 配置检查。选择分发器失败时保持该选择，不自动切换推送服务。关闭推送或切换服务时取消旧监听器，旧渠道的迟到通知不会继续显示。Firebase、Firestore 与 WebSocket/delta 继续沿用原有用途。
+
+Mac 默认只向公网 HTTPS 推送地址投递，每次建立连接时校验全部 DNS 结果并直连已核验的 IP，不经过环境代理，不跟随重定向。局域网自建分发器需由 Mac 管理员在 config.yaml 的 `unifiedpush.private_hosts` 列出准确主机名或 IP，例如 `private_hosts: [ntfy.home.example]`。该允许列表不能由配对设备修改，不支持通配符；允许私有主机仍校验 TLS 证书。链路本地、组播和保留地址不接受。
+
+VAPID 私钥原子写入，多个进程首次加载时复用同一份完整密钥。投递错误只记录主机和 HTTP 状态，不记录推送服务响应正文，避免能力 URL 被响应回显到日志。

@@ -829,13 +829,7 @@ class _NotificationsCardState extends State<_NotificationsCard> {
     final app = widget.app;
     final strings = MicaLocalizations.of(context);
     final distributors = await unifiedPushDistributors();
-    final saved = await app.store.readValue(pushTransportKey) ?? 'auto';
-    final current = saved == 'auto'
-        ? switch (await unifiedPushCurrentDistributor()) {
-            final String id => 'up:$id',
-            null => app.pushProvider == 'fcm' ? 'fcm' : 'auto',
-          }
-        : saved;
+    final current = await app.store.readValue(pushTransportKey) ?? 'fcm';
     if (!context.mounted) return;
     final options = <MapEntry<String, String>>[
       for (final id in distributors) MapEntry('up:$id', distributorLabel(id)),

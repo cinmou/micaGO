@@ -94,7 +94,7 @@ func (d *Dispatcher) apply(cfg config.Config) {
 			vapidPublicKey = publicKey
 			providers["unifiedpush"] = NewWebPushProvider(key, cfg.UnifiedPush.VAPIDSubject, &http.Client{Timeout: 15 * time.Second}, 24*time.Hour, func(id string) {
 				d.invokePrune(id)
-			})
+			}, cfg.UnifiedPush.PrivateHosts...)
 		}
 	}
 

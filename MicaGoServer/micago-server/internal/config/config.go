@@ -92,6 +92,7 @@ type Config struct {
 // (ntfy, NextPush, the embedded FCM distributor, ...). The VAPID private key is
 // generated on first use and kept in its own 0600 file next to config.yaml.
 type UnifiedPushConfig struct {
+	PrivateHosts []string
 	VAPIDKeyPath string
 	VAPIDSubject string
 }
@@ -154,7 +155,8 @@ type fileConfig struct {
 		URLDocument   string `yaml:"url_document"`
 	} `yaml:"firebase"`
 	UnifiedPush struct {
-		VAPIDSubject string `yaml:"vapid_subject,omitempty"`
+		PrivateHosts []string `yaml:"private_hosts,omitempty"`
+		VAPIDSubject string   `yaml:"vapid_subject,omitempty"`
 	} `yaml:"unifiedpush,omitempty"`
 }
 
@@ -245,6 +247,7 @@ func Load(opts Options) (Config, error) {
 			URLDocument:   valueOrDefault("", fileCfg.Firebase.URLDocument, "config"),
 		},
 		UnifiedPush: UnifiedPushConfig{
+			PrivateHosts: fileCfg.UnifiedPush.PrivateHosts,
 			VAPIDKeyPath: filepath.Join(baseDir, "vapid_private_key.pem"),
 			VAPIDSubject: valueOrDefault("", strings.TrimSpace(fileCfg.UnifiedPush.VAPIDSubject), defaultVAPIDSubject),
 		},

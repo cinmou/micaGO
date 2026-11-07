@@ -16,7 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -113,13 +115,22 @@ type WebPushProvider struct {
 	random  io.Reader
 }
 
-func NewWebPushProvider(vapid *ecdsa.PrivateKey, subject string, client *http.Client, ttl time.Duration, prune func(string)) *WebPushProvider {
+func NewWebPushProvider(vapid *ecdsa.PrivateKey, subject string, client *http.Client, ttl time.Duration, prune func(string), privateHosts ...string) *WebPushProvider {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
 	// Never follow redirects: the endpoint was supplied by a device and a
 	// redirect could point the Mac at another host.
 	guarded := *client
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if configured, ok := client.Transport.(*http.Transport); ok {
+		transport = configured.Clone()
+	}
+	transport.Proxy = nil
+	transport.DialTLSContext = nil
+	transport.DialTLS = nil
+	transport.DialContext = webPushDialer(privateHosts)
+	guarded.Transport = transport
 	guarded.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
@@ -164,7 +175,7 @@ func (p *WebPushProvider) Send(ctx context.Context, device store.DeviceRecord, n
 		return fmt.Errorf("webpush send to %s: %w", sub.EndpointHost(), err)
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
 
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
@@ -178,14 +189,7 @@ func (p *WebPushProvider) Send(ctx context.Context, device store.DeviceRecord, n
 	case resp.StatusCode == http.StatusRequestEntityTooLarge:
 		return nil // already sized to one record; tolerate like FCM
 	default:
-		text := strings.TrimSpace(string(respBody))
-		if len(text) > 200 {
-			text = text[:200] + "..."
-		}
-		if text == "" {
-			return fmt.Errorf("webpush send to %s failed: HTTP %d", sub.EndpointHost(), resp.StatusCode)
-		}
-		return fmt.Errorf("webpush send to %s failed: HTTP %d: %s", sub.EndpointHost(), resp.StatusCode, text)
+		return fmt.Errorf("webpush send to %s failed: HTTP %d", sub.EndpointHost(), resp.StatusCode)
 	}
 }
 
@@ -309,4 +313,69 @@ func decodeBase64URL(value string) ([]byte, error) {
 	value = strings.TrimRight(value, "=")
 	value = strings.NewReplacer("+", "-", "/", "_").Replace(value)
 	return base64.RawURLEncoding.DecodeString(value)
+}
+
+// Resolve and validate at connection time, then dial the checked IP directly.
+// This prevents DNS rebinding and proxy environment variables bypassing policy.
+func webPushDialer(privateHosts []string) func(context.Context, string, string) (net.Conn, error) {
+	allowed := map[string]bool{}
+	for _, host := range privateHosts {
+		allowed[strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))] = true
+	}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, errors.New("invalid push endpoint address")
+		}
+		ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		if err != nil {
+			return nil, errors.New("push endpoint DNS lookup failed")
+		}
+		if len(ips) == 0 {
+			return nil, errors.New("push endpoint has no addresses")
+		}
+		privateAllowed := allowed[strings.ToLower(strings.TrimSuffix(host, "."))]
+		for _, ip := range ips {
+			if !webPushIPAllowed(ip, privateAllowed) {
+				return nil, errors.New("push endpoint address is not allowed")
+			}
+		}
+		dialer := net.Dialer{Timeout: 10 * time.Second}
+		for _, ip := range ips {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+		}
+		return nil, errors.New("push endpoint connection failed")
+	}
+}
+
+var webPushReservedNetworks = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+}
+
+func webPushIPAllowed(ip netip.Addr, privateAllowed bool) bool {
+	ip = ip.Unmap()
+	if ip.IsLoopback() || ip.IsPrivate() {
+		return privateAllowed
+	}
+	if !ip.IsGlobalUnicast() {
+		return false
+	}
+	for _, prefix := range webPushReservedNetworks {
+		if prefix.Contains(ip) {
+			return false
+		}
+	}
+	// Public IPv6 is allocated within 2000::/3. Other ranges include local
+	// translation/tunneling addresses that must not bypass the IPv4 checks.
+	return ip.Is4() || netip.MustParsePrefix("2000::/3").Contains(ip)
 }

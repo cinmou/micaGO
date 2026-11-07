@@ -67,14 +67,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            // Opt-in side-by-side debug install next to a release build signed
-            // with another key: flutter build apk --debug
-            //   --android-project-arg=micagoAppIdSuffix=.dev
-            (project.findProperty("micagoAppIdSuffix") as String?)
-                ?.takeIf { it.isNotBlank() }
-                ?.let { applicationIdSuffix = it }
-        }
         release {
             signingConfig = signingConfigs.findByName("release")
             // C62: keep ML Kit barcode classes — R8 full mode stripped them and

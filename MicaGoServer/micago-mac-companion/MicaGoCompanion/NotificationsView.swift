@@ -81,7 +81,7 @@ private struct UnifiedPushCard: View {
                         NSPasteboard.general.setString(key, forType: .string)
                     }
                 }
-                Text("Generated on this Mac; the private key never leaves it. Nothing to configure here — pick ntfy or FCM (Google Play) in micaGO on each phone.")
+                Text("Generated on this Mac; the private key never leaves it. Choose ntfy or FCM (Google Play) in micaGO on each phone to enable this path. Private push hosts require an explicit Mac administrator configuration.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -125,7 +125,7 @@ private struct UnifiedPushCard: View {
                 return L10n.localized("via \(host)")
             }
             return "UnifiedPush"
-        case "fcm": return L10n.localized("Firebase (legacy)")
+        case "fcm": return L10n.localized("Firebase")
         default: return device.pushProvider
         }
     }
@@ -135,8 +135,8 @@ private struct FirebaseSetupCard: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        SectionCard(title: "Legacy: Firebase Self-Host (optional)") {
-            Text("Only needed for phones that use the old Firebase path. UnifiedPush above covers FCM without a Firebase project.")
+        SectionCard(title: "Firebase Self-Host (optional)") {
+            Text("Use your own Firebase project, or choose a UnifiedPush distributor on each phone.")
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Enable FCM delivery", isOn: $model.fcmEnabled)
