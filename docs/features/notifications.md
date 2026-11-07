@@ -12,11 +12,17 @@ Linux 在进程仍运行且窗口不在前台时，通过现有 WebSocket 和桌
 
 服务端支持 `none`（关闭）、`webhook`、`fcm` 和 `unifiedpush`。HMS、Harmony Push 的未实现占位已移除，新配置和设备注册不接受这些渠道；旧配置中的 `hms` 段会被忽略，废弃的默认渠道回退为 `none`。FCM 未配置或服务账号无效时不列为可用投递渠道。
 
-## UnifiedPush（待确认，见 [ADR 0005](../decisions/0005-unifiedpush.md)）
+## UnifiedPush
 
 `unifiedpush` 渠道发送标准 Web Push：载荷与 FCM data 相同的扁平字段，按 RFC 8291 加密到设备公钥，用 VAPID 签名。VAPID 私钥首次加载时生成于 `~/.micago/vapid_private_key.pem`，文件损坏时报错而不是静默重建。客户端通过 `GET /api/push/unifiedpush` 取 VAPID 公钥，注册时 pushToken 为 `{endpoint,p256dh,auth}` JSON；服务端只接受 https endpoint，不跟随重定向，404/410 时清除该设备令牌，设备列表只返回 `pushEndpointHost`。
 
-Android 设置 → 通知 → 推送服务列出已安装的 distributor 和内置的 “FCM (Google Play)”，另可选旧 Firebase 路径或关闭。默认使用已保存或系统默认的 distributor；服务端不支持时回退旧 Firebase 路径，明确选定的 distributor 失败时不回退。进程存活时，可见状态下由 WebSocket / delta 处理，后台则与 FCM 后台处理器一样显示本地通知并按消息去重。
+Android 设置 → 通知 → 推送服务列出已安装的 distributor 和内置的 “FCM (Google Play)”，另可选旧 Firebase 路径或关闭。用户需明确选择 distributor，未选择时沿用已有 Firebase 配置。选定的 distributor 失败时保持该选择，不自动切换推送服务。进程存活时，可见状态下由 WebSocket / delta 处理，后台则与 FCM 后台处理器一样显示本地通知并按消息去重。
+
+Mac 默认只向公网 HTTPS 推送地址投递，每次建立连接时校验全部 DNS 结果并直连已核验的 IP，不经过环境代理，不跟随重定向。局域网自建分发器需由 Mac 管理员在 config.yaml 的 `unifiedpush.private_hosts` 列出准确主机名或 IP，例如 `private_hosts: [ntfy.home.example]`。该允许列表不能由配对设备修改，不支持通配符；允许私有主机仍校验 TLS 证书。链路本地、组播和保留地址不接受。
+
+VAPID 私钥原子写入，多个进程首次加载时复用同一份完整密钥。投递错误只记录主机和 HTTP 状态，不记录推送服务响应正文，避免能力 URL 被响应回显到日志。
+
+技术取舍见 [ADR 0005](../decisions/0005-unifiedpush.md)。
 
 ## 会经过 Google 的数据
 
@@ -58,11 +64,3 @@ Android 使用系统 `MessagingStyle`，按会话叠放消息，发送者用 `Pe
 - 测试：[notification_display_test.dart](../../MicaGoFlutterClient/test/notification_display_test.dart)、[notification_reply_test.dart](../../MicaGoFlutterClient/test/notification_reply_test.dart)、[通知相关测试目录](../../MicaGoFlutterClient/test)。
 
 实机要检查后台、锁屏、冷启动、头像、展开、点击定位、回复、标读和撤销配对。FCM 接口返回成功只说明请求被接收，不代表手机已经显示通知。
-
-## UnifiedPush 接入边界
-
-Android 的 UnifiedPush 分发器由用户在通知设置中明确选择，未保存选择时沿用原有 Firebase 配置检查。选择分发器失败时保持该选择，不自动切换推送服务。关闭推送或切换服务时取消旧监听器，旧渠道的迟到通知不会继续显示。Firebase、Firestore 与 WebSocket/delta 继续沿用原有用途。
-
-Mac 默认只向公网 HTTPS 推送地址投递，每次建立连接时校验全部 DNS 结果并直连已核验的 IP，不经过环境代理，不跟随重定向。局域网自建分发器需由 Mac 管理员在 config.yaml 的 `unifiedpush.private_hosts` 列出准确主机名或 IP，例如 `private_hosts: [ntfy.home.example]`。该允许列表不能由配对设备修改，不支持通配符；允许私有主机仍校验 TLS 证书。链路本地、组播和保留地址不接受。
-
-VAPID 私钥原子写入，多个进程首次加载时复用同一份完整密钥。投递错误只记录主机和 HTTP 状态，不记录推送服务响应正文，避免能力 URL 被响应回显到日志。
