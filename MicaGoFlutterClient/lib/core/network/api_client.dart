@@ -660,6 +660,12 @@ class ApiClient {
   Future<Map<String, dynamic>> fetchFcmClientConfig() async =>
       _objectField(await _requestObject('GET', '/api/fcm/client'), 'data');
 
+  /// `GET /api/push/unifiedpush` — the Mac's VAPID public key for WebPush.
+  Future<Map<String, dynamic>> fetchUnifiedPushConfig() async => _objectField(
+    await _requestObject('GET', '/api/push/unifiedpush'),
+    'data',
+  );
+
   Future<void> deviceHeartbeat(String id) async {
     await _request(
       'POST',

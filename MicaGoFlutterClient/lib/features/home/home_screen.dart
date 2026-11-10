@@ -11,6 +11,7 @@ import '../../core/platform/resume_tracker.dart';
 import '../../core/platform/linux_desktop.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/push_service.dart';
+import '../../core/network/unified_push.dart';
 import '../../core/platform/incoming_share_service.dart';
 import '../../core/theme_controller.dart';
 import '../../core/ui/top_banner.dart';
@@ -56,6 +57,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       app.refreshServerUrls().catchError((_) {});
       // C22: start the optional FCM wake path (no-op without Firebase config).
       _push = PushService(app);
+      UnifiedPushBridge.restart = _push!.restart;
       unawaited(_push!.start());
       _pushRetryTimer = Timer.periodic(const Duration(seconds: 20), (_) {
         final push = _push;

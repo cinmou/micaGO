@@ -11,8 +11,11 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_windows
   pasteboard
   record_windows
+  screen_retriever_windows
   share_plus
   url_launcher_windows
+  webcrypto
+  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

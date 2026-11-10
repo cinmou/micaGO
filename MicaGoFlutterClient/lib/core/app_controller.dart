@@ -24,6 +24,7 @@ import 'network/notification_display.dart'
 import 'platform/linux_desktop.dart';
 import 'l10n/app_localizations.dart';
 import 'network/push_logic.dart';
+import 'network/unified_push.dart';
 import 'network/refresh_coordinator.dart';
 import 'network/websocket_client.dart';
 import 'storage/local_cache_store.dart';
@@ -2280,6 +2281,10 @@ class AppController extends ChangeNotifier {
 
   // C27: push status surfaced to the Settings → Notifications card.
   String get pushProvider => _pushProvider;
+
+  /// Distributor host for UnifiedPush ("ntfy.example.com"); null otherwise.
+  String? get pushEndpointHost =>
+      _pushProvider == 'unifiedpush' ? unifiedPushHost(_pushToken) : null;
   bool get pushEnabled => _pushEnabled;
   bool get pushConfigured => _pushEnabled && (_pushToken?.isNotEmpty ?? false);
 
