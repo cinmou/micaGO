@@ -72,6 +72,12 @@ void main() {
       expect(isControlLikeText('+1'), isFalse);
       expect(isControlLikeText('你好'), isFalse);
     });
+    test('does not flag punctuation-only messages', () {
+      for (final t in ['?', '??', '...', '!', '?!', '-_-']) {
+        expect(isControlLikeText(t), isFalse, reason: t);
+      }
+      expect(displayText(_msg(text: '?')), '?');
+    });
     test('displayText strips placeholder and drops control payloads', () {
       expect(displayText(_msg(text: '￼Hello')), 'Hello');
       expect(displayText(_msg(text: '�')), isNull);

@@ -20,6 +20,13 @@ func TestIsControlLikeText(t *testing.T) {
 		"+1":       false,
 		"你好":       false,
 		"see ya 👋": false,
+		// Punctuation-only messages are real content, not typedstream leaks.
+		"?":   false,
+		"??":  false,
+		"...": false,
+		"!":   false,
+		"?!":  false,
+		"-_-": false,
 	}
 	for in, want := range cases {
 		if got := IsControlLikeText(in); got != want {
@@ -112,6 +119,12 @@ func TestClassifyMessageJSONForNormalAPI(t *testing.T) {
 		{
 			name:     "normal text",
 			msg:      MessageJSON{Text: sp("hello")},
+			wantKind: SemanticKindNormalText,
+			wantRec:  RenderRecommendationBubble,
+		},
+		{
+			name:     "punctuation-only text",
+			msg:      MessageJSON{Text: sp("?")},
 			wantKind: SemanticKindNormalText,
 			wantRec:  RenderRecommendationBubble,
 		},
