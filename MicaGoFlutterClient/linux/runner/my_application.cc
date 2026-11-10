@@ -130,8 +130,12 @@ static void set_tray_enabled(MyApplication* self, gboolean enabled,
     show_main_window(self);
     return;
   }
+  // Keep the GTK3 Ayatana API used by the supported desktop builds.
+  // Newer headers deprecate this constructor in favor of a separate GLib API.
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   self->tray = app_indicator_new(APPLICATION_ID, APPLICATION_ID,
                                  APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
+  G_GNUC_END_IGNORE_DEPRECATIONS
   g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
   if (executable != nullptr) {
     g_autofree gchar* bundle_dir = g_path_get_dirname(executable);
