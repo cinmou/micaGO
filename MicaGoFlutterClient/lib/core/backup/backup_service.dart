@@ -22,6 +22,8 @@ import '../storage/secure_store.dart';
 /// the current installation's paired credential and device identity.
 /// User-owned Firebase client options are included because the killed-app
 /// background isolate needs them to re-initialize FCM after a restore.
+/// The push service choice is restored, but never its endpoint: the restored
+/// install registers its own with the distributor.
 class BackupService {
   final SecureStore store;
   final LocalCacheStore cache;
@@ -34,18 +36,44 @@ class BackupService {
   static const _legacyMutedChatsKey = 'micago.muted_chats.v1';
   static const _sidebarWidthKey = 'tablet_sidebar_width';
 
+  static const _pushTransportKey = 'micago.push.transport.v1';
+
   /// Appearance/message/notification keys allowed in a settings backup.
-  /// Device credentials and durable synchronization queues are excluded.
-  static const _secureKeys = <String>[
+  /// Every SecureStore key must be listed here or in [localOnlyKeys]; a test
+  /// fails when a new key is in neither list.
+  static const backedUpKeys = <String>[
     'micago.contacts_matching_enabled.v1',
     'micago.theme.mode',
     'micago.theme.color',
     'micago.theme.lang',
     'micago.theme.chatBackgroundPath',
     'micago.in_app_notifications_enabled.v1',
+    'micago.developer_mode.v1',
+    'micago.merged_display.v1',
     'micago.keepalive.v1',
     'micago.message_display_prefs.v1',
     'micago.fcm_options.v1',
+    // The choice only; restoring it re-registers with this install's endpoint.
+    _pushTransportKey,
+  ];
+
+  /// SecureStore keys that never leave this installation.
+  static const localOnlyKeys = <String>[
+    // Device credential and its storage-backend selectors.
+    'micago.connection_profile.v1',
+    'micago.credential_rejected.v1',
+    'micago.credential_aes_backend.v1',
+    'micago.credential_software_backend.v1',
+    'micago.secure_store_fallback.v1',
+    // Endpoint and keys issued to this install by its distributor.
+    'micago.unifiedpush.token.v1',
+    // Server sync rules are authoritative; read only from old backups.
+    _legacyMutedChatsKey,
+    // Rebuilt from the local contact book.
+    'micago.notif_contact_cache.v1',
+    // Linux desktop-local preferences (see docs/platforms/flutter.md).
+    'micago.linux.textScale',
+    'micago.linux.trayEnabled',
   ];
 
   String suggestedFileName() {
@@ -64,7 +92,7 @@ class BackupService {
     final settings = <String, dynamic>{};
 
     final secure = <String, String>{};
-    for (final key in _secureKeys) {
+    for (final key in backedUpKeys) {
       final value = await store.readValue(key);
       if (value != null && value.isNotEmpty) secure[key] = value;
     }
@@ -151,7 +179,7 @@ class BackupService {
     return BackupSummary(
       appVersion: (manifest['appVersion'] as String?) ?? '',
       createdAt: DateTime.tryParse((manifest['createdAt'] as String?) ?? ''),
-      hasServer: false,
+      hasPushService: secure.containsKey(_pushTransportKey),
       hasAppearance: secure.keys.any((k) => k.startsWith('micago.theme.')),
       hasMessageDisplay: secure.containsKey('micago.message_display_prefs.v1'),
       hasChatBackground: settings['chatBackgroundAsset'] != null,
@@ -173,7 +201,7 @@ class BackupService {
     for (final entry in secure.entries) {
       // The stored background path is device-specific; it's rewritten below from
       // the restored asset, so skip it here.
-      if (!_secureKeys.contains(entry.key) ||
+      if (!backedUpKeys.contains(entry.key) ||
           entry.key == _chatBackgroundKey ||
           entry.key == _legacyMutedChatsKey) {
         continue;
@@ -275,7 +303,7 @@ class BackupService {
 class BackupSummary {
   final String appVersion;
   final DateTime? createdAt;
-  final bool hasServer;
+  final bool hasPushService;
   final bool hasAppearance;
   final bool hasMessageDisplay;
   final bool hasChatBackground;
@@ -286,7 +314,7 @@ class BackupSummary {
   const BackupSummary({
     required this.appVersion,
     required this.createdAt,
-    required this.hasServer,
+    required this.hasPushService,
     required this.hasAppearance,
     required this.hasMessageDisplay,
     required this.hasChatBackground,

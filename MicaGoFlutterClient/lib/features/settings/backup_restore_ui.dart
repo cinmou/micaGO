@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/app_controller.dart';
 import '../../core/backup/backup_service.dart';
 import '../../core/l10n/app_localizations.dart';
+import '../../core/network/unified_push.dart';
 import '../../core/theme_controller.dart';
 import '../contacts/contacts_service.dart';
 import 'message_display_controller.dart';
@@ -78,7 +79,7 @@ Future<bool> importSettingsBackup(BuildContext context) async {
     builder: (ctx) {
       final s = MicaLocalizations.of(ctx);
       final items = <String>[
-        if (summary.hasServer) s.t('backup.itemServer'),
+        if (summary.hasPushService) s.t('backup.itemPushService'),
         if (summary.hasAppearance) s.t('backup.itemAppearance'),
         if (summary.hasChatBackground) s.t('backup.itemChatBackground'),
         if (summary.hasMessageDisplay) s.t('backup.itemMessageDisplay'),
@@ -124,6 +125,7 @@ Future<bool> importSettingsBackup(BuildContext context) async {
   final messageDisplay = context.read<MessageDisplayController>();
   final contacts = context.read<ContactsService>();
   try {
+    final previousTransport = await app.store.readValue(pushTransportKey);
     await service.applyBackup(data);
     await app.messagePreferences.registerLocalRecords();
     // Rebuild the storage-backed controllers + reconnect.
@@ -131,7 +133,22 @@ Future<bool> importSettingsBackup(BuildContext context) async {
     await messageDisplay.bootstrap();
     await contacts.bootstrap();
     await app.reloadAfterRestore();
-    if (context.mounted) _toast(context, strings.t('backup.restoreDone'));
+    // A restored push service must register this install's own endpoint.
+    // Unpaired installs start push with the restored choice after pairing.
+    if (app.hasProfile &&
+        await app.store.readValue(pushTransportKey) != previousTransport) {
+      await UnifiedPushBridge.restart?.call();
+    }
+    if (context.mounted) {
+      _toast(
+        context,
+        strings.t(
+          app.hasProfile
+              ? 'backup.restoreDone'
+              : 'backup.restoreDonePairingRequired',
+        ),
+      );
+    }
     return true;
   } catch (e) {
     if (context.mounted) {

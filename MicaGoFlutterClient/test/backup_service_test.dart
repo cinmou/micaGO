@@ -91,6 +91,67 @@ void main() {
     },
   );
 
+  test('every SecureStore key is classified for settings backups', () {
+    // Literals that are not SecureStore keys: a notification group, the
+    // appearance prefix used by inspect(), and SecureStore's own internal
+    // probe/fallback prefixes.
+    const notStoreKeys = {
+      'micago.messages',
+      'micago.theme.',
+      'micago.credential_probe.',
+      'micago.secure_fallback.',
+    };
+    final literal = RegExp(r'''['"](micago\.[A-Za-z0-9_.]+)['"]''');
+    final found = <String>{};
+    for (final file in Directory('lib').listSync(recursive: true)) {
+      if (file is! File || !file.path.endsWith('.dart')) continue;
+      for (final m in literal.allMatches(file.readAsStringSync())) {
+        found.add(m.group(1)!);
+      }
+    }
+    final classified = {
+      ...BackupService.backedUpKeys,
+      ...BackupService.localOnlyKeys,
+      ...notStoreKeys,
+    };
+    expect(
+      found.difference(classified),
+      isEmpty,
+      reason:
+          'Add new keys to BackupService.backedUpKeys or '
+          'BackupService.localOnlyKeys.',
+    );
+    expect(
+      BackupService.backedUpKeys.toSet().intersection(
+        BackupService.localOnlyKeys.toSet(),
+      ),
+      isEmpty,
+    );
+  });
+
+  test('round-trips push service and app preferences', () async {
+    final source = _Store()
+      ..values.addAll({
+        'micago.push.transport.v1': 'up:io.heckel.ntfy',
+        'micago.merged_display.v1': '["contact-1"]',
+        'micago.developer_mode.v1': '1',
+        // Bound to this install's distributor registration; never portable.
+        'micago.unifiedpush.token.v1': '{"endpoint":"https://ntfy.example/x"}',
+      });
+    final bytes = await BackupService(
+      store: source,
+      cache: _Cache(),
+    ).exportBackup();
+    expect(BackupService.inspect(bytes).hasPushService, isTrue);
+
+    final target = _Store();
+    await BackupService(store: target, cache: _Cache()).applyBackup(bytes);
+    expect(target.values['micago.push.transport.v1'], 'up:io.heckel.ntfy');
+    expect(target.values['micago.merged_display.v1'], '["contact-1"]');
+    expect(target.values['micago.developer_mode.v1'], '1');
+    expect(target.values.containsKey('micago.unifiedpush.token.v1'), isFalse);
+  });
+
   group('BackupService.inspect', () {
     test('summarises a valid backup', () {
       final bytes = _zip(
@@ -120,7 +181,7 @@ void main() {
         },
       );
       final s = BackupService.inspect(bytes);
-      expect(s.hasServer, isFalse);
+      expect(s.hasPushService, isFalse);
       expect(s.hasAppearance, isTrue);
       expect(s.hasMessageDisplay, isTrue);
       expect(s.hasChatBackground, isTrue);
