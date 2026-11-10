@@ -211,7 +211,7 @@ void main() {
     expect(opened, 2);
   }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
 
-  Future<void> openSettings(WidgetTester tester) async {
+  Future<AppController> openSettings(WidgetTester tester) async {
     final store = _SettingsStore();
     final app = AppController(store: store);
     final theme = ThemeController(store: store);
@@ -235,7 +235,50 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    return app;
   }
+
+  testWidgets('Linux tray is opt-in and persists only successful changes', (
+    tester,
+  ) async {
+    const desktop = MethodChannel('micago/linux_desktop');
+    final calls = <MethodCall>[];
+    var fail = false;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(desktop, (
+      call,
+    ) async {
+      if (fail) throw PlatformException(code: 'tray_failed');
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        desktop,
+        null,
+      ),
+    );
+    final app = await openSettings(tester);
+    final store = app.store as _SettingsStore;
+    final toggle = find.text('Keep micaGO in the system tray');
+    expect(app.linuxTrayEnabled, isFalse);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(app.linuxTrayEnabled, isTrue);
+    expect(store.values['micago.linux.trayEnabled'], '1');
+    expect(calls.last.method, 'setTrayEnabled');
+    expect(calls.last.arguments['enabled'], isTrue);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(app.linuxTrayEnabled, isFalse);
+    expect(store.values['micago.linux.trayEnabled'], '0');
+    fail = true;
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(app.linuxTrayEnabled, isFalse);
+    expect(store.values['micago.linux.trayEnabled'], '0');
+    expect(app.linuxTrayBusy, isFalse);
+    await tester.pump(const Duration(seconds: 5));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
 
   testWidgets('settings window groups existing controls into categories', (
     tester,

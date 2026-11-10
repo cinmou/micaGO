@@ -54,10 +54,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       if (mounted) {
         setState(
           () => _pasteError = MicaLocalizations.of(context).t(
-            error is CompatibilityStorageRequired
-                ? 'pair.compatibilityRequired'
-                : error is CredentialStorageException
-                ? 'pair.secureStorageFailed'
+            error is CredentialStorageException
+                ? error.messageKey
                 : 'connection.cannotReachTitle',
           ),
         );

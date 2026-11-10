@@ -157,6 +157,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _GeneralSettingsCard(app: app, push: _push),
                   if (isLinuxDesktop) ...[
                     const SizedBox(height: 12),
+                    Card(child: _LinuxTrayTile(app: app)),
+                    const SizedBox(height: 12),
                     Card(
                       child: ListTile(
                         leading: _leadingIcon(Icons.exit_to_app),
@@ -407,6 +409,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   )
                 : const SizedBox.shrink(),
           ),
+          const SizedBox(height: 16),
+          Card(child: _LinuxTrayTile(app: app)),
           const SizedBox(height: 16),
           Card(
             child: ListTile(
@@ -978,6 +982,35 @@ class _NotificationDiagnosticsTile extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _LinuxTrayTile extends StatelessWidget {
+  const _LinuxTrayTile({required this.app});
+
+  final AppController app;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = MicaLocalizations.of(context);
+    return SwitchListTile(
+      secondary: const Icon(Icons.notifications_active_outlined),
+      title: Text(strings.t('desktop.tray')),
+      subtitle: Text(strings.t('desktop.trayHint')),
+      value: app.linuxTrayEnabled,
+      onChanged: app.linuxTrayBusy
+          ? null
+          : (enabled) async {
+              final success = await app.setLinuxTrayEnabled(enabled);
+              if (!success && context.mounted) {
+                TopBanner.show(
+                  context,
+                  strings.t('desktop.trayFailed'),
+                  kind: TopBannerKind.error,
+                );
+              }
+            },
     );
   }
 }

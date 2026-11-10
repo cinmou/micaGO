@@ -22,6 +22,7 @@ import 'network/notification_contact_cache.dart';
 import 'network/notification_display.dart'
     show clearSystemNotificationState, clearSuppressedLinuxNotifications;
 import 'platform/linux_desktop.dart';
+import 'l10n/app_localizations.dart';
 import 'network/push_logic.dart';
 import 'network/refresh_coordinator.dart';
 import 'network/websocket_client.dart';
@@ -369,6 +370,35 @@ class AppController extends ChangeNotifier {
   }
 
   bool _inAppNotificationsEnabled = false;
+  bool _linuxTrayEnabled = false;
+  bool get linuxTrayEnabled => _linuxTrayEnabled;
+  bool _linuxTrayBusy = false;
+  bool get linuxTrayBusy => _linuxTrayBusy;
+
+  Future<bool> setLinuxTrayEnabled(bool enabled, {bool save = true}) async {
+    if (!isLinuxDesktop || linuxTrayBusy) return false;
+    _linuxTrayBusy = true;
+    notifyListeners();
+    try {
+      final strings = MicaLocalizations.current;
+      await LinuxDesktop.setTrayEnabled(
+        enabled,
+        openLabel: strings.t('desktop.open'),
+        quitLabel: strings.t('desktop.quit'),
+      );
+      _linuxTrayEnabled = enabled;
+      if (save) {
+        await store.writeValue('micago.linux.trayEnabled', enabled ? '1' : '0');
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _linuxTrayBusy = false;
+      notifyListeners();
+    }
+  }
+
   bool get inAppNotificationsEnabled => _inAppNotificationsEnabled;
 
   Future<void> setInAppNotificationsEnabled(bool enabled) async {
@@ -665,6 +695,10 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _loadNotificationPreferences() async {
+    if (isLinuxDesktop) {
+      _linuxTrayEnabled =
+          await store.readValue('micago.linux.trayEnabled') == '1';
+    }
     _inAppNotificationsEnabled =
         await store.readValue(inAppNotificationsStorageKey) == '1';
     // Piggybacks on this small-prefs load step (bootstrap + restore-reload).

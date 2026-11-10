@@ -1,6 +1,6 @@
 # 开发、测试与发布
 
-下面命令从仓库根目录开始。CI 与发布元数据阶段使用 `scripts/check-versions.py` 核对 Go、Flutter、设备版本标签、Xcode、DMG 脚本和 Windows 的版本一致性，并核对 Flutter/Xcode build number。版本以各组件版本文件为准；目前为 0.93.0，Flutter build number 为 93。改版本时保留历史版本比较测试中的旧样本。
+下面命令从仓库根目录开始。CI 与发布元数据阶段使用 `scripts/check-versions.py` 核对 Go、Flutter、设备版本标签、Xcode、DMG 脚本和 Windows 的版本一致性，并核对 Flutter/Xcode build number。版本以各组件版本文件为准；目前为 0.94.0，Flutter build number 为 94。改版本时保留历史版本比较测试中的旧样本。
 
 ## 本地开发
 
@@ -66,7 +66,7 @@ cd MicaGoServer/micago-mac-companion
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPLE_TEAM_ID="TEAMID" \
 NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE="micaGO-notary" \
-VERSION=0.93.0 scripts/package-dmg.sh
+VERSION=0.94.0 scripts/package-dmg.sh
 ```
 
 公证凭据预先由 `notarytool store-credentials` 放入钥匙串；不要把密码和私钥写进文档或 shell 历史。Sparkle EdDSA 私钥也由发布环境安全提供。

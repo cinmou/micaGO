@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
 import 'package:micago_credential_storage/micago_credential_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
@@ -14,6 +17,8 @@ class _SlowSecurePlatform extends TestFlutterSecureStoragePlatform {
   bool failWrite = false;
   bool failRsa = false;
   bool corruptReads = false;
+  PlatformException? platformError;
+  int writes = 0;
   final aesData = <String, String>{};
   bool _aes(Map<String, String> options) =>
       options['storageNamespace'] == 'micago_credentials_aes_v1';
@@ -22,6 +27,7 @@ class _SlowSecurePlatform extends TestFlutterSecureStoragePlatform {
     required String key,
     required Map<String, String> options,
   }) async {
+    if (platformError != null) throw platformError!;
     if (corruptReads) return null;
     return (_aes(options) ? aesData : data)[key];
   }
@@ -40,6 +46,8 @@ class _SlowSecurePlatform extends TestFlutterSecureStoragePlatform {
     required String value,
     required Map<String, String> options,
   }) async {
+    writes++;
+    if (platformError != null) throw platformError!;
     if (failWrite || (failRsa && !_aes(options))) {
       throw StateError('Keystore unavailable');
     }
@@ -104,6 +112,88 @@ void main() {
     token: 'test-secret',
     deviceId: 'test-device',
   );
+
+  test(
+    'Linux activates Secret Service before probing and loading credentials',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      const channel = MethodChannel('micago/linux_desktop');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      secure.data['micago.connection_profile.v1'] = jsonEncode(
+        profile.toJson(),
+      );
+      await store.prepareCredentialStorage();
+      expect(calls.single.method, 'ensureCredentialStorage');
+      expect(secure.writes, 1);
+      expect(secure.data.keys, ['micago.connection_profile.v1']);
+      final restored = await store.loadProfile();
+      expect(restored!.deviceId, profile.deviceId);
+      expect(calls, hasLength(2));
+      expect(
+        await prefs.getBool('micago.credential_software_backend.v1'),
+        isNot(true),
+      );
+    },
+  );
+
+  test(
+    'Linux unavailable service fails preflight without touching credentials',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      const channel = MethodChannel('micago/linux_desktop');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(code: 'SecretServiceUnavailable');
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      secure.data['micago.connection_profile.v1'] = jsonEncode(
+        profile.toJson(),
+      );
+      await expectLater(
+        store.prepareCredentialStorage(),
+        throwsA(isA<LinuxKeyringUnavailable>()),
+      );
+      expect(secure.writes, 0);
+      expect(
+        secure.data['micago.connection_profile.v1'],
+        jsonEncode(profile.toJson()),
+      );
+      expect(await prefs.getKeys(), isEmpty);
+    },
+  );
+
+  test('Linux locked keyring gives a distinct retryable failure', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    const channel = MethodChannel('micago/linux_desktop');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async => null);
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    secure.platformError = PlatformException(code: 'KeyringLocked');
+    await expectLater(
+      store.prepareCredentialStorage(),
+      throwsA(isA<LinuxKeyringLocked>()),
+    );
+    expect(await prefs.getKeys(), isEmpty);
+    secure.platformError = null;
+    await store.prepareCredentialStorage();
+    await store.saveProfile(profile);
+    expect((await store.loadProfile())!.deviceId, profile.deviceId);
+  });
   test(
     'preflight failure requires consent and cancellation stores no credential',
     () async {

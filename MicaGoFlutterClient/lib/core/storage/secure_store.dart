@@ -3,23 +3,40 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:micago_credential_storage/micago_credential_storage.dart';
 
 import '../models/connection_profile.dart';
+import '../platform/linux_desktop.dart';
 
 /// Persists the connection profile. The bearer token is stored with
 /// [FlutterSecureStorage], or explicitly opted-in Android software encryption.
 /// Profiles are never written to plain SharedPreferences or logged.
 class CredentialStorageException implements Exception {
   const CredentialStorageException();
+  String get messageKey => 'pair.secureStorageFailed';
   @override
   String toString() => 'Could not save the device credential securely.';
 }
 
 class CompatibilityStorageRequired extends CredentialStorageException {
   const CompatibilityStorageRequired();
+  @override
+  String get messageKey => 'pair.compatibilityRequired';
+}
+
+class LinuxKeyringUnavailable extends CredentialStorageException {
+  const LinuxKeyringUnavailable();
+  @override
+  String get messageKey => 'pair.keyringUnavailable';
+}
+
+class LinuxKeyringLocked extends CredentialStorageException {
+  const LinuxKeyringLocked();
+  @override
+  String get messageKey => 'pair.keyringLocked';
 }
 
 class SecureStore {
@@ -74,6 +91,15 @@ class SecureStore {
   Future<void> prepareCredentialStorage({
     Future<bool> Function()? confirmCompatibility,
   }) async {
+    if (isLinuxDesktop) {
+      try {
+        await LinuxDesktop.ensureCredentialStorage().timeout(_secureTimeout);
+        await _probeCredentialStorage(_storage);
+        return;
+      } catch (error) {
+        throw _linuxStorageFailure(error);
+      }
+    }
     if (!_isAndroid || _prepared) return;
     if (await compatibilityStorageEnabled()) {
       await _software.probe().timeout(_secureTimeout);
@@ -85,14 +111,8 @@ class SecureStore {
         ? [_androidCompatibility]
         : [_storage, _androidCompatibility];
     for (final candidate in candidates) {
-      final nonce = List.generate(16, (_) => Random.secure().nextInt(256));
-      final key = 'micago.credential_probe.${base64UrlEncode(nonce)}';
-      final value = base64UrlEncode(nonce);
       try {
-        await candidate.write(key: key, value: value).timeout(_secureTimeout);
-        if (await candidate.read(key: key).timeout(_secureTimeout) != value) {
-          throw const CredentialStorageException();
-        }
+        await _probeCredentialStorage(candidate);
         await _fallback.setBool(
           _credentialBackendKey,
           identical(candidate, _androidCompatibility),
@@ -103,8 +123,6 @@ class SecureStore {
         throw const CredentialStorageException();
       } catch (_) {
         // A separate AES Keystore namespace can recover from RSA-only failures.
-      } finally {
-        unawaited(candidate.delete(key: key).catchError((_) {}));
       }
     }
     if (confirmCompatibility == null || !await confirmCompatibility()) {
@@ -115,9 +133,36 @@ class SecureStore {
     _prepared = true;
   }
 
+  Future<void> _probeCredentialStorage(FlutterSecureStorage storage) async {
+    final nonce = List.generate(16, (_) => Random.secure().nextInt(256));
+    final key = 'micago.credential_probe.${base64UrlEncode(nonce)}';
+    final value = base64UrlEncode(nonce);
+    try {
+      await storage.write(key: key, value: value).timeout(_secureTimeout);
+      if (await storage.read(key: key).timeout(_secureTimeout) != value) {
+        throw const CredentialStorageException();
+      }
+    } finally {
+      unawaited(storage.delete(key: key).catchError((_) {}));
+    }
+  }
+
+  CredentialStorageException _linuxStorageFailure(Object error) {
+    if (error is PlatformException) {
+      if (error.code == 'KeyringLocked') return const LinuxKeyringLocked();
+      if (error.code == 'SecretServiceUnavailable') {
+        return const LinuxKeyringUnavailable();
+      }
+    }
+    return const CredentialStorageException();
+  }
+
   /// Loads the saved profile, or null if none / unreadable.
   Future<ConnectionProfile?> loadProfile() async {
     try {
+      if (isLinuxDesktop) {
+        await LinuxDesktop.ensureCredentialStorage().timeout(_secureTimeout);
+      }
       if (await readValue('micago.credential_rejected.v1') == '1') return null;
       if (await compatibilityStorageEnabled()) {
         final raw = await _software.read().timeout(_secureTimeout);
@@ -201,7 +246,8 @@ class SecureStore {
         // A timed-out platform write is still running; do not race it with
         // another backend on the same plugin worker thread.
         throw const CredentialStorageException();
-      } catch (_) {
+      } catch (error) {
+        if (isLinuxDesktop) throw _linuxStorageFailure(error);
         // Try the plugin's independent AES Keystore implementation on Android.
       }
     }

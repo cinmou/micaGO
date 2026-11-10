@@ -43,6 +43,19 @@ class LinuxDesktop {
 
   static Future<void> quit() => _channel.invokeMethod<void>('quit');
 
+  static Future<void> ensureCredentialStorage() =>
+      _channel.invokeMethod<void>('ensureCredentialStorage');
+
+  static Future<void> setTrayEnabled(
+    bool enabled, {
+    required String openLabel,
+    required String quitLabel,
+  }) => _channel.invokeMethod<void>('setTrayEnabled', {
+    'enabled': enabled,
+    'openLabel': openLabel,
+    'quitLabel': quitLabel,
+  });
+
   static Future<void> openSettings(String title) =>
       _channel.invokeMethod<void>('openSettings', {'title': title});
 

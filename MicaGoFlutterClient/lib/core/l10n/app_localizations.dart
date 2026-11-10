@@ -73,7 +73,11 @@ const _strings = {
     'desktop.open': 'Open',
     'desktop.quit': "Quit micaGO",
     'desktop.closeHint':
-        "Closing the window minimizes to the taskbar. Ctrl+Q quits.",
+        "Ctrl+Q quits, including when the system tray is enabled.",
+    'desktop.tray': 'Keep micaGO in the system tray',
+    'desktop.trayHint':
+        'Keep receiving messages after you close the window. Off by default.',
+    'desktop.trayFailed': 'Could not change the system tray setting.',
     'desktop.textSize': "Text size",
     'desktop.openMedia': "Open in system player",
     'settings.appIcon': 'App icon',
@@ -263,6 +267,10 @@ const _strings = {
     'pair.failed': 'Pairing failed.',
     'pair.secureStorageFailed':
         'The device credential could not be saved securely. Retry to finish pairing.',
+    'pair.keyringUnavailable':
+        'System secure storage is unavailable. Start KDE Wallet or GNOME Keyring, then retry pairing.',
+    'pair.keyringLocked':
+        'The system keyring is locked. Unlock your wallet or keyring, then retry pairing.',
     'pair.paired': 'Paired',
     'pair.cameraUnavailable': 'Camera unavailable',
     'pair.cameraHelp':
@@ -520,7 +528,10 @@ const _strings = {
     'desktop.contactsImportFailed': "导入失败，请选择包含有效电话或邮箱的 UTF-8 .vcf 文件。",
     'desktop.open': '打开',
     'desktop.quit': "退出 micaGO",
-    'desktop.closeHint': "关闭窗口会最小化到任务栏，Ctrl+Q 退出。",
+    'desktop.closeHint': "Ctrl+Q 退出，包括开启托盘常驻时。",
+    'desktop.tray': '关闭窗口后常驻系统托盘',
+    'desktop.trayHint': '关闭窗口后继续接收消息，默认关闭。',
+    'desktop.trayFailed': '无法更改系统托盘设置。',
     'desktop.textSize': "字体大小",
     'desktop.openMedia': "用系统播放器打开",
     'settings.appIcon': '应用图标',
@@ -694,6 +705,9 @@ const _strings = {
     'pair.connecting': '正在连接服务器…',
     'pair.failed': '配对失败。',
     'pair.secureStorageFailed': '无法安全保存设备凭据，请重试以完成配对。',
+    'pair.keyringUnavailable':
+        '系统安全存储服务不可用，请启动 KDE Wallet 或 GNOME Keyring 后重试配对。',
+    'pair.keyringLocked': '系统密钥环已锁定，请解锁钱包或密钥环后重试配对。',
     'pair.paired': '已配对',
     'pair.cameraUnavailable': '相机不可用',
     'pair.cameraHelp': '请在 Android 设置中允许相机访问，然后重试。也可粘贴连接 JSON 配对。',
@@ -943,7 +957,10 @@ const _strings = {
     'desktop.contactsImportFailed': "匯入失敗，請選擇包含有效電話或電子郵件的 UTF-8 .vcf 檔案。",
     'desktop.open': '開啟',
     'desktop.quit': "結束 micaGO",
-    'desktop.closeHint': "關閉視窗會最小化至工作列，Ctrl+Q 結束。",
+    'desktop.closeHint': "Ctrl+Q 結束，包括啟用系統匣常駐時。",
+    'desktop.tray': '關閉視窗後常駐系統匣',
+    'desktop.trayHint': '關閉視窗後繼續接收訊息，預設關閉。',
+    'desktop.trayFailed': '無法變更系統匣設定。',
     'desktop.textSize': "字體大小",
     'desktop.openMedia': "使用系統播放器開啟",
     'settings.appIcon': '應用程式圖示',
@@ -1117,6 +1134,9 @@ const _strings = {
     'pair.connecting': '正在連線到伺服器…',
     'pair.failed': '配對失敗。',
     'pair.secureStorageFailed': '無法安全儲存裝置憑證，請重試以完成配對。',
+    'pair.keyringUnavailable':
+        '系統安全儲存服務無法使用，請啟動 KDE Wallet 或 GNOME Keyring 後重試配對。',
+    'pair.keyringLocked': '系統鑰匙圈已鎖定，請解鎖錢包或鑰匙圈後重試配對。',
     'pair.paired': '已配對',
     'pair.cameraUnavailable': '相機無法使用',
     'pair.cameraHelp': '請在 Android 設定中允許相機存取，然後重試。也可貼上連線 JSON 配對。',

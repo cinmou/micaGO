@@ -1,6 +1,11 @@
 #include "my_application.h"
 
 #include <flutter_linux/flutter_linux.h>
+#ifdef USE_AYATANA_APPINDICATOR
+#include <libayatana-appindicator/app-indicator.h>
+#else
+#include <libappindicator/app-indicator.h>
+#endif
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
 #endif
@@ -13,11 +18,47 @@ struct _MyApplication {
   FlMethodChannel* desktop_channel;
   GtkWindow* main_window;
   GtkWindow* settings_window;
+  AppIndicator* tray;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 static void open_settings_window(MyApplication* self, const gchar* title);
+
+struct SecretServiceRequest {
+  FlMethodCall* call;
+  gboolean tried_kde;
+};
+
+static void secret_service_started(GObject* source, GAsyncResult* result,
+                                   gpointer user_data) {
+  auto* request = static_cast<SecretServiceRequest*>(user_data);
+  auto* connection = G_DBUS_CONNECTION(source);
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GVariant) reply =
+      g_dbus_connection_call_finish(connection, result, &error);
+  if (reply == nullptr && !request->tried_kde &&
+      g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN)) {
+    // Newer KDE installs activate KSecretD through this compatibility name.
+    request->tried_kde = TRUE;
+    g_dbus_connection_call(
+        connection, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+        "org.freedesktop.DBus", "StartServiceByName",
+        g_variant_new("(su)", "org.kde.secretservicecompat", 0),
+        G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, 25000, nullptr,
+        secret_service_started, request);
+    return;
+  }
+  if (reply != nullptr) {
+    fl_method_call_respond_success(request->call, nullptr, nullptr);
+  } else {
+    fl_method_call_respond_error(request->call, "SecretServiceUnavailable",
+                                 "System credential storage is unavailable",
+                                 nullptr, nullptr);
+  }
+  g_object_unref(request->call);
+  delete request;
+}
 
 static gchar* pick_contact_file(GtkWindow* parent, const gchar* title) {
   g_autoptr(GtkFileChooserNative) dialog = gtk_file_chooser_native_new(
@@ -58,13 +99,80 @@ static FlValue* pick_files(GtkWindow* parent, const gchar* title) {
   return g_steal_pointer(&result);
 }
 
-static gboolean minimize_on_close(GtkWidget* window, GdkEvent*, gpointer) {
-  gtk_window_iconify(GTK_WINDOW(window));
-  return TRUE;
+static void show_main_window(MyApplication* self) {
+  if (self->main_window == nullptr) return;
+  gtk_widget_show(GTK_WIDGET(self->main_window));
+  gtk_window_deiconify(self->main_window);
+  gtk_window_present(self->main_window);
 }
 
 static void quit_action(GSimpleAction*, GVariant*, gpointer application) {
   g_application_quit(G_APPLICATION(application));
+}
+
+static void tray_open(GtkMenuItem*, gpointer user_data) {
+  show_main_window(MY_APPLICATION(user_data));
+}
+
+static void tray_connection_changed(AppIndicator*, gboolean connected,
+                                    gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  if (!connected) show_main_window(self);
+}
+
+static void set_tray_enabled(MyApplication* self, gboolean enabled,
+                             const gchar* open_label, const gchar* quit_label) {
+  if (self->tray != nullptr) {
+    app_indicator_set_status(self->tray, APP_INDICATOR_STATUS_PASSIVE);
+    g_clear_object(&self->tray);
+  }
+  if (!enabled) {
+    show_main_window(self);
+    return;
+  }
+  self->tray = app_indicator_new(APPLICATION_ID, APPLICATION_ID,
+                                 APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
+  g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
+  if (executable != nullptr) {
+    g_autofree gchar* bundle_dir = g_path_get_dirname(executable);
+    g_autofree gchar* icons = g_build_filename(
+        bundle_dir, "data", "icons", "hicolor", "256x256", "apps", nullptr);
+    app_indicator_set_icon_theme_path(self->tray, icons);
+  }
+  GtkWidget* menu = gtk_menu_new();
+  GtkWidget* open = gtk_menu_item_new_with_label(open_label);
+  GtkWidget* quit = gtk_menu_item_new_with_label(quit_label);
+  g_signal_connect_object(open, "activate", G_CALLBACK(tray_open), self,
+                          static_cast<GConnectFlags>(0));
+  g_signal_connect_swapped(quit, "activate", G_CALLBACK(g_application_quit),
+                           self);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), open);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit);
+  gtk_widget_show_all(menu);
+  app_indicator_set_menu(self->tray, GTK_MENU(menu));
+  app_indicator_set_secondary_activate_target(self->tray, open);
+  g_signal_connect_object(self->tray, "connection-changed",
+                          G_CALLBACK(tray_connection_changed), self,
+                          static_cast<GConnectFlags>(0));
+  app_indicator_set_status(self->tray, APP_INDICATOR_STATUS_ACTIVE);
+}
+
+static gboolean close_main_window(GtkWidget* window, GdkEvent*,
+                                  gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  gboolean connected = FALSE;
+  if (self->tray != nullptr) {
+    g_object_get(self->tray, "connected", &connected, nullptr);
+  }
+  if (connected) {
+    if (self->settings_window != nullptr) {
+      gtk_widget_destroy(GTK_WIDGET(self->settings_window));
+    }
+    gtk_widget_hide(window);
+  } else {
+    g_application_quit(G_APPLICATION(self));
+  }
+  return TRUE;
 }
 
 static void desktop_method_call(FlMethodChannel*, FlMethodCall* call,
@@ -72,10 +180,49 @@ static void desktop_method_call(FlMethodChannel*, FlMethodCall* call,
   MyApplication* self = MY_APPLICATION(user_data);
   const gchar* method = fl_method_call_get_name(call);
   if (g_strcmp0(method, "show") == 0) {
-    if (self->main_window != nullptr) {
-      gtk_window_deiconify(self->main_window);
-      gtk_window_present(self->main_window);
+    show_main_window(self);
+    fl_method_call_respond_success(call, nullptr, nullptr);
+  } else if (g_strcmp0(method, "ensureCredentialStorage") == 0) {
+    GDBusConnection* connection =
+        g_application_get_dbus_connection(G_APPLICATION(self));
+    if (connection == nullptr) {
+      fl_method_call_respond_error(call, "SecretServiceUnavailable",
+                                   "Desktop session bus is unavailable",
+                                   nullptr, nullptr);
+      return;
     }
+    auto* request =
+        new SecretServiceRequest{FL_METHOD_CALL(g_object_ref(call)), FALSE};
+    g_dbus_connection_call(connection, "org.freedesktop.DBus",
+                           "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                           "StartServiceByName",
+                           g_variant_new("(su)", "org.freedesktop.secrets", 0),
+                           G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, 25000,
+                           nullptr, secret_service_started, request);
+  } else if (g_strcmp0(method, "setTrayEnabled") == 0) {
+    FlValue* arguments = fl_method_call_get_args(call);
+    if (arguments == nullptr ||
+        fl_value_get_type(arguments) != FL_VALUE_TYPE_MAP) {
+      fl_method_call_respond_error(call, "invalid_arguments",
+                                   "Invalid tray settings", nullptr, nullptr);
+      return;
+    }
+    FlValue* enabled = fl_value_lookup_string(arguments, "enabled");
+    FlValue* open_label = fl_value_lookup_string(arguments, "openLabel");
+    FlValue* quit_label = fl_value_lookup_string(arguments, "quitLabel");
+    if (enabled == nullptr ||
+        fl_value_get_type(enabled) != FL_VALUE_TYPE_BOOL ||
+        open_label == nullptr ||
+        fl_value_get_type(open_label) != FL_VALUE_TYPE_STRING ||
+        quit_label == nullptr ||
+        fl_value_get_type(quit_label) != FL_VALUE_TYPE_STRING) {
+      fl_method_call_respond_error(call, "invalid_arguments",
+                                   "Invalid tray settings", nullptr, nullptr);
+      return;
+    }
+    set_tray_enabled(self, fl_value_get_bool(enabled),
+                     fl_value_get_string(open_label),
+                     fl_value_get_string(quit_label));
     fl_method_call_respond_success(call, nullptr, nullptr);
   } else if (g_strcmp0(method, "openSettings") == 0) {
     if (self->main_window == nullptr) {
@@ -210,8 +357,7 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   // Reopening from the launcher should return to the existing conversation.
   if (self->main_window != nullptr) {
-    gtk_window_deiconify(self->main_window);
-    gtk_window_present(self->main_window);
+    show_main_window(self);
     return;
   }
   GtkWindow* window =
@@ -219,8 +365,7 @@ static void my_application_activate(GApplication* application) {
 
   self->main_window = window;
   g_signal_connect(window, "destroy", G_CALLBACK(main_window_destroyed), self);
-  g_signal_connect(window, "delete-event", G_CALLBACK(minimize_on_close),
-                   nullptr);
+  g_signal_connect(window, "delete-event", G_CALLBACK(close_main_window), self);
   configure_window(window, "micaGO", 1280, 720);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
@@ -329,6 +474,10 @@ static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   g_clear_object(&self->desktop_channel);
+  if (self->tray != nullptr) {
+    app_indicator_set_status(self->tray, APP_INDICATOR_STATUS_PASSIVE);
+    g_clear_object(&self->tray);
+  }
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

@@ -23,4 +23,12 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 
+pkg_check_modules(APPINDICATOR QUIET IMPORTED_TARGET ayatana-appindicator3-0.1)
+if(APPINDICATOR_FOUND)
+  target_compile_definitions(${BINARY_NAME} PRIVATE USE_AYATANA_APPINDICATOR)
+else()
+  pkg_check_modules(APPINDICATOR REQUIRED IMPORTED_TARGET appindicator3-0.1)
+endif()
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::APPINDICATOR)
+
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
