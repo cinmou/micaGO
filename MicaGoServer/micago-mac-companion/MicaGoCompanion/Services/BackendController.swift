@@ -109,7 +109,7 @@ final class BackendController: ObservableObject {
         }
 
         // 优先使用与 Companion 一起构建的后端，避免旧缓存覆盖内嵌版本。
-        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("micago").path,
+        if let bundled = Self.bundledBackendPath,
            fm.isExecutableFile(atPath: bundled) {
             return ResolvedBinary(path: bundled, source: "bundled")
         }
@@ -118,6 +118,11 @@ final class BackendController: ObservableObject {
             return ResolvedBinary(path: def, source: "default")
         }
         return nil
+    }
+
+    private static var bundledBackendPath: String? {
+        Bundle.main.url(forAuxiliaryExecutable: "micago-server")?.path
+            ?? Bundle.main.resourceURL?.appendingPathComponent("micago").path
     }
 
     private static func modificationDate(_ path: String) -> Date {
@@ -173,7 +178,7 @@ final class BackendController: ObservableObject {
             let overrideDate = Self.modificationDate(resolved.path)
             let def = (NSHomeDirectory() as NSString).appendingPathComponent(".micago/bin/micago")
             let newerCached = FileManager.default.isExecutableFile(atPath: def) && Self.modificationDate(def) > overrideDate
-            let bundled = Bundle.main.resourceURL?.appendingPathComponent("micago").path
+            let bundled = Self.bundledBackendPath
             let newerBundled = bundled.map { FileManager.default.isExecutableFile(atPath: $0) && Self.modificationDate($0) > overrideDate } ?? false
             staleBinaryWarning = (newerCached || newerBundled)
                 ? L10n.localized( "A newer backend build exists, but the override path points to an older one. Clear the override or update it.")

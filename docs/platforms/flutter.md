@@ -35,7 +35,7 @@ Linux 附件入口使用文件或照片。不要请求移动图库权限或提�
 
 Linux 连接页只提供粘贴连接 JSON，不显示当前插件未实现的摄像头扫码入口。通知设置隐藏 FCM 状态，通知诊断保留设备注册结果，隐藏 Android 专属的 FCM、保活、通知权限与通知操作字段；应用内提醒和服务器通知正文设置仍保留。
 
-Linux 应用图标复用默认蓝紫笑脸 SVG，使用透明背景和桌面留白。`tool/generate_linux_icons.py` 使用开发工具 `rsvg-convert` 生成 `linux/icons/hicolor/` 的 SVG 与 16–512px PNG，不增加运行时依赖。构建将图标放入 bundle 的 `data/icons/hicolor/`，窗口直接读取 bundle 图标；菜单与 Wayland 任务栏使用 `com.micago.message.mica_go` 图标名和同名 desktop 文件。desktop 模板随包放在 `share/applications/`，安装时将 Exec 指向实际可执行文件（或将 mica_go 加入 PATH），并将图标复制到用户或系统的 hicolor 主题目录。
+Linux 应用图标复用默认蓝紫笑脸 SVG，使用透明背景和桌面留白。`tool/generate_linux_icons.py` 使用开发工具 `rsvg-convert` 生成 `linux/icons/hicolor/` 的 SVG 与 16–512px PNG，不增加运行时依赖。构建将图标放入 bundle 的 `data/icons/hicolor/`，窗口直接读取 bundle 图标；菜单与 Wayland 任务栏使用 `com.micago.message.mica_go` 图标名和同名 desktop 文件。Linux 包解压后可运行 `./micaGO`。desktop 模板随包放在 `share/applications/`，安装时将 Exec 指向实际可执行文件（或将 `micaGO` 加入 PATH），并将图标复制到用户或系统的 hicolor 主题目录。
 
 Linux 输入框固定显示表情按钮，录音入口放在加号弹出菜单中。加号提供“选择文件”和“录音”两项，文件使用 GTK 原生多选窗口。Linux 主题下加号使用高对比文字色，普通文字优先使用系统 `sans-serif`，缺失字形再回退到 Noto Color Emoji，避免数字和标点使用 emoji 字体。输入框使用 Enter（含数字键盘 Enter）发送，Ctrl+Enter 在光标或选区处换行；按住快捷键不重复发送，输入法仍在组合文字时不发送。快捷键与发送按钮共用可发送状态。Linux 应用窗口显示 micaGO，GNOME 使用 GTK header bar，KDE 等其他桌面使用窗口管理器装饰（包括 Wayland）。重复从启动器打开时激活已有窗口；单实例依赖桌面会话的 D-Bus，Wayland 下窗口前置仍由桌面环境决定。默认关闭主窗口即退出应用。通用设置提供“关闭窗口后常驻系统托盘”开关，默认关闭，偏好保存在本机 `micago.linux.trayEnabled`。开启后通过 AppIndicator / Ayatana 显示托盘图标，关闭主窗口时隐藏到托盘，托盘菜单提供打开与退出。Ctrl+Q 和设置中的退出始终结束应用。系统托盘不可用时关闭窗口会退出，托盘服务消失时恢复已隐藏的窗口。Linux 构建需要 `appindicator3-0.1` 或 `ayatana-appindicator3-0.1` 开发库，Ubuntu CI 安装 `libayatana-appindicator3-dev`。
 

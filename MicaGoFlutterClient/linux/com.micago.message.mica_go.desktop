@@ -2,7 +2,7 @@
 Type=Application
 Name=micaGO
 Comment=iMessages everywhere
-Exec=mica_go
+Exec=micaGO
 Icon=com.micago.message.mica_go
 Terminal=false
 Categories=Network;InstantMessaging;

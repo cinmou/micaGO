@@ -144,7 +144,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Build the Go relay binary into the app bundle's Resources so the\n# companion can launch a bundled backend (no runtime download).\nSERVER_DIR=\"$SRCROOT/../micago-server\"\nDEST_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nDEST=\"${DEST_DIR}/micago\"\nif command -v go >/dev/null 2>&1 && [ -d \"$SERVER_DIR\" ]; then\n  mkdir -p \"$DEST_DIR\"\n  rm -f \"$DEST\"\n  COMMIT=$(cd \"$SERVER_DIR\" && git rev-parse --short HEAD 2>/dev/null || echo unknown)\nBUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)\nif ( cd \"$SERVER_DIR\" && GOCACHE=\"$SERVER_DIR/.gocache\" go build -ldflags \"-X micagoserver/internal/version.Commit=$COMMIT -X micagoserver/internal/version.BuildTime=$BUILD_TIME\" -o \"$DEST\" ./cmd/micago ); then\n    chmod +x \"$DEST\"\n    echo \"bundled micago backend -> $DEST\"\n  else\n    echo \"warning: go build failed; companion will use a user or default backend path\"\n  fi\nelse\n  echo \"warning: go or micago-server not found; companion will use a user or default backend path\"\nfi\n\n# Bundle the MicaGo IMCore helper (edit / unsend / delete) into Resources so the\n# Companion's Install button has a real binary to install. dlopen's IMCore at\n# runtime, so only Foundation needs linking.\nHELPER_SRC=\"$SRCROOT/helper/micago-imcore-helper.m\"\nHELPER_DEST=\"${DEST_DIR}/micago-imcore-helper\"\nif [ -f \"$HELPER_SRC\" ]; then\n  mkdir -p \"$DEST_DIR\"\n  if clang -fobjc-arc -mmacosx-version-min=12.0 -framework Foundation -o \"$HELPER_DEST\" \"$HELPER_SRC\"; then\n    chmod +x \"$HELPER_DEST\"\n    echo \"bundled imcore helper -> $HELPER_DEST\"\n  else\n    echo \"warning: imcore helper build failed; Edit/Unsend/Delete will be unavailable\"\n  fi\nelse\n  echo \"warning: imcore helper source not found at $HELPER_SRC\"\nfi\nexit 0\n";
+			shellScript = "# Build the Go relay binary into the app bundle's executable directory so the\n# companion can launch a bundled backend (no runtime download).\nSERVER_DIR=\"$SRCROOT/../micago-server\"\nDEST_DIR=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}\"\nDEST=\"${DEST_DIR}/micago-server\"\nLEGACY_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nrm -f \"$LEGACY_DIR/micago\" \"$LEGACY_DIR/micago-imcore-helper\"\nif command -v go >/dev/null 2>&1 && [ -d \"$SERVER_DIR\" ]; then\n  mkdir -p \"$DEST_DIR\"\n  rm -f \"$DEST\"\n  COMMIT=$(cd \"$SERVER_DIR\" && git rev-parse --short HEAD 2>/dev/null || echo unknown)\nBUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)\nif ( cd \"$SERVER_DIR\" && GOCACHE=\"$SERVER_DIR/.gocache\" go build -ldflags \"-X micagoserver/internal/version.Commit=$COMMIT -X micagoserver/internal/version.BuildTime=$BUILD_TIME\" -o \"$DEST\" ./cmd/micago ); then\n    chmod +x \"$DEST\"\n    echo \"bundled micago backend -> $DEST\"\n  else\n    echo \"warning: go build failed; companion will use a user or default backend path\"\n  fi\nelse\n  echo \"warning: go or micago-server not found; companion will use a user or default backend path\"\nfi\n\n# Bundle the MicaGo IMCore helper (edit / unsend / delete) alongside the main executable so the\n# Companion's Install button has a real binary to install. dlopen's IMCore at\n# runtime, so only Foundation needs linking.\nHELPER_SRC=\"$SRCROOT/helper/micago-imcore-helper.m\"\nHELPER_DEST=\"${DEST_DIR}/micago-imcore-helper\"\nif [ -f \"$HELPER_SRC\" ]; then\n  mkdir -p \"$DEST_DIR\"\n  if clang -fobjc-arc -mmacosx-version-min=12.0 -framework Foundation -o \"$HELPER_DEST\" \"$HELPER_SRC\"; then\n    chmod +x \"$HELPER_DEST\"\n    echo \"bundled imcore helper -> $HELPER_DEST\"\n  else\n    echo \"warning: imcore helper build failed; Edit/Unsend/Delete will be unavailable\"\n  fi\nelse\n  echo \"warning: imcore helper source not found at $HELPER_SRC\"\nfi\nexit 0\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -292,7 +292,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CODE_SIGN_ENTITLEMENTS = MicaGoCompanion/Automation.entitlements;
-				CURRENT_PROJECT_VERSION = 94;
+				CURRENT_PROJECT_VERSION = 95;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -304,7 +304,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.94.0;
+				MARKETING_VERSION = 0.94.1;
+				EXECUTABLE_NAME = "micago-server-ui";
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -321,7 +322,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CODE_SIGN_ENTITLEMENTS = MicaGoCompanion/Automation.entitlements;
-				CURRENT_PROJECT_VERSION = 94;
+				CURRENT_PROJECT_VERSION = 95;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -333,7 +334,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.94.0;
+				MARKETING_VERSION = 0.94.1;
+				EXECUTABLE_NAME = "micago-server-ui";
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

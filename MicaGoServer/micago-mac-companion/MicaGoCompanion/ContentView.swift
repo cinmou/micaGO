@@ -168,7 +168,7 @@ private struct FullDiskAccessBanner: View {
                 Image(systemName: "externaldrive.badge.exclamationmark").foregroundStyle(.red)
                 Text("Full Disk Access required").fontWeight(.semibold)
             }
-            Text("micaGO can't read the Messages database. Give micaGO Companion Full Disk Access, then start the server again.")
+            Text("micaGO can't read the Messages database. Give micaGO Server Full Disk Access, then start the server again.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Open Full Disk Access Settings") { openFullDiskAccessSettings() }
@@ -608,7 +608,7 @@ private struct AboutPage: View {
         SectionCard(title: "") {
             VStack(spacing: 16) {
                 ClickableAppIcon()
-                Text("micaGO Companion")
+                Text("micaGO Server")
                     .font(.largeTitle)
                     .fontWeight(.bold)
             }

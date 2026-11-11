@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.micago.message" "\0"
-            VALUE "FileDescription", "mica_go" "\0"
+            VALUE "FileDescription", "micaGO" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "mica_go" "\0"
+            VALUE "InternalName", "micaGO" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.micago.message. All rights reserved." "\0"
-            VALUE "OriginalFilename", "mica_go.exe" "\0"
-            VALUE "ProductName", "mica_go" "\0"
+            VALUE "OriginalFilename", "micaGO.exe" "\0"
+            VALUE "ProductName", "micaGO" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

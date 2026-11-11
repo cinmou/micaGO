@@ -85,11 +85,12 @@ enum IMCoreHelperInstaller {
         return FileManager.default.isExecutableFile(atPath: dest.path)
     }
 
-    /// Resolve either supported helper name through the bundle resource lookup.
+    /// Resolve the bundled executable, including older resource layouts.
     private static func bundledHelperURL() -> URL? {
         let fm = FileManager.default
         for name in candidateNames {
-            if let url = Bundle.main.url(forResource: name, withExtension: nil),
+            if let url = Bundle.main.url(forAuxiliaryExecutable: name)
+                ?? Bundle.main.url(forResource: name, withExtension: nil),
                fm.isReadableFile(atPath: url.path) {
                 return url
             }

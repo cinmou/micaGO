@@ -1,6 +1,6 @@
 {
-    "name": "mica_go",
-    "short_name": "mica_go",
+    "name": "micaGO",
+    "short_name": "micaGO",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

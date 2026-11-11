@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build micaGO Companion.app with a bundled universal Go backend, then create a DMG.
+# Build micaGO Server.app with a bundled universal Go backend, then create a DMG.
 #
 # Unsigned local build:
 #   ./scripts/package-dmg.sh
@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.94.0}"
+VERSION="${VERSION:-0.94.1}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 GENERATE_APPCAST="${GENERATE_APPCAST:-${NOTARIZE:-0}}"
 if [ "$GENERATE_APPCAST" = "1" ] && { [ -z "${SIGN_IDENTITY:-}" ] || [ "${NOTARIZE:-0}" != "1" ]; }; then
@@ -25,14 +25,14 @@ DERIVED_DATA="${DERIVED_DATA:-$COMPANION_DIR/build/DerivedData}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$COMPANION_DIR/build/release}"
 BACKEND_DIR="$ARTIFACT_DIR/backend"
 APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/MicaGoCompanion.app"
-DMG_PATH="$ARTIFACT_DIR/micaGO-Companion-$VERSION-mac.dmg"
+DMG_PATH="$ARTIFACT_DIR/micaGO-$VERSION-Mac.dmg"
 APPCAST_PATH="$ARTIFACT_DIR/appcast.xml"
 APPCAST_STAGING_DIR="$ARTIFACT_DIR/appcast-staging"
 DMG_STAGING_DIR="$ARTIFACT_DIR/dmg-staging"
 DMG_BACKGROUND_PATH="$ARTIFACT_DIR/dmg-background.png"
 SWIFT_MODULE_CACHE_DIR="$ARTIFACT_DIR/swift-module-cache"
 DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-micaGO}"
-DMG_APP_NAME="${DMG_APP_NAME:-micaGO Companion.app}"
+DMG_APP_NAME="${DMG_APP_NAME:-micaGO Server.app}"
 DMG_WINDOW_WIDTH="${DMG_WINDOW_WIDTH:-}"
 DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-}"
 
@@ -81,7 +81,7 @@ chmod +x "$BACKEND_DIR/micago"
 "$BACKEND_DIR/micago" --version
 echo "Backend minimum macOS (per arch): $(vtool -show-build "$BACKEND_DIR/micago" | awk '/minos/ {printf "%s ", $2}')"
 
-echo "==> Building micaGO Companion.app"
+echo "==> Building micaGO Server.app"
 XCODE_SIGNING_ARGS=()
 if [ -z "${SIGN_IDENTITY:-}" ]; then
   XCODE_SIGNING_ARGS=(
@@ -113,12 +113,13 @@ if [ ! -d "$APP_PATH" ]; then
   echo "error: app not found at $APP_PATH" >&2
   exit 1
 fi
-echo "Companion architectures: $(lipo -archs "$APP_PATH/Contents/MacOS/MicaGoCompanion")"
+APP_EXECUTABLE="$(plutil -extract CFBundleExecutable raw -o - "$APP_PATH/Contents/Info.plist")"
+echo "Server UI architectures: $(lipo -archs "$APP_PATH/Contents/MacOS/$APP_EXECUTABLE")"
 
 echo "==> Installing bundled backend"
-mkdir -p "$APP_PATH/Contents/Resources"
-cp "$BACKEND_DIR/micago" "$APP_PATH/Contents/Resources/micago"
-chmod +x "$APP_PATH/Contents/Resources/micago"
+mkdir -p "$APP_PATH/Contents/MacOS"
+cp "$BACKEND_DIR/micago" "$APP_PATH/Contents/MacOS/micago-server"
+chmod +x "$APP_PATH/Contents/MacOS/micago-server"
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
   echo "==> Signing bundled executables and app"
@@ -126,9 +127,9 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   if [ "${SIGN_TIMESTAMP:-1}" = "0" ]; then
     CODESIGN_TIMESTAMP_ARGS=(--timestamp=none)
   fi
-  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --entitlements "$COMPANION_DIR/MicaGoCompanion/Automation.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago"
-  if [ -f "$APP_PATH/Contents/Resources/micago-imcore-helper" ]; then
-    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/Resources/micago-imcore-helper"
+  codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --entitlements "$COMPANION_DIR/MicaGoCompanion/Automation.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/MacOS/micago-server"
+  if [ -f "$APP_PATH/Contents/MacOS/micago-imcore-helper" ]; then
+    codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_PATH/Contents/MacOS/micago-imcore-helper"
   fi
   SPARKLE_FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
   if [ -d "$SPARKLE_FRAMEWORK" ]; then

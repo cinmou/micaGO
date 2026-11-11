@@ -11,7 +11,7 @@ import (
 )
 
 // Version is the semantic version of the backend. Bumped per milestone.
-var Version = "v0.94.0"
+var Version = "v0.94.1"
 
 // Commit and BuildTime are injected at build time via:
 //

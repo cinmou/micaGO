@@ -7,14 +7,14 @@
 #                                        without publishing a release.
 #
 # Release artifacts:
-#   micaGO-<version>-android-release.apk
-#   micaGO-<version>-Windows-release.exe        (native WinUI client)
-#   micaGO-<version>-Linux-release.tar.gz
+#   micaGO-<version>-Android.apk
+#   micaGO-<version>-Windows.exe        (native WinUI client)
+#   micaGO-<version>-Linux.tar.gz
 #
 # The macOS Companion is NOT built here: it is signed, notarized and given its
 # Sparkle appcast on a local Mac (docs/DEVELOPMENT.md), so the
 # Developer ID certificate and Sparkle key never live in GitHub. Attach
-# micaGO-Companion-<version>-mac.dmg and appcast.xml to the release yourself —
+# micaGO-<version>-Mac.dmg and appcast.xml to the release yourself —
 # the Companion's updater reads releases/latest/download/appcast.xml.
 #
 # Android release signing needs these repository secrets (tag builds fail
@@ -145,7 +145,7 @@ jobs:
         run: |
           mkdir -p out
           cp MicaGoFlutterClient/build/app/outputs/flutter-apk/app-release.apk \
-            "out/micaGO-${{ needs.meta.outputs.version }}-android-release.apk"
+            "out/micaGO-${{ needs.meta.outputs.version }}-Android.apk"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: steps.signing.outputs.enabled == 'true'
         with:
@@ -205,7 +205,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Copy-Item MicaGoWindowsClient/artifacts/micaGO-Setup-x64.exe `
-            "out/micaGO-${{ needs.meta.outputs.version }}-Windows-release.exe"
+            "out/micaGO-${{ needs.meta.outputs.version }}-Windows.exe"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-installer
@@ -239,7 +239,7 @@ jobs:
         run: |
           mkdir -p out staging
           cp -r MicaGoFlutterClient/build/linux/x64/release/bundle staging/micaGO
-          tar -C staging -czf "out/micaGO-${{ needs.meta.outputs.version }}-Linux-release.tar.gz" micaGO
+          tar -C staging -czf "out/micaGO-${{ needs.meta.outputs.version }}-Linux.tar.gz" micaGO
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-tarball
@@ -276,7 +276,7 @@ jobs:
             gh release create "$GITHUB_REF_NAME" dist/* \
               --draft \
               --generate-notes \
-              --title "$GITHUB_REF_NAME" \
+              --title "micaGO $GITHUB_REF_NAME Muscovite" \
               --verify-tag \
               --repo "$GITHUB_REPOSITORY"
           fi

@@ -235,7 +235,7 @@ private struct ContactsCard: View {
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !contacts.isAuthorized {
-                Text("macOS manages Contacts access. Open System Settings → Privacy & Security → Contacts and turn on micaGO Companion. Without it, contact names may not show, but chats still work with phone numbers or email addresses.")
+                Text("macOS manages Contacts access. Open System Settings → Privacy & Security → Contacts and turn on micaGO Server. Without it, contact names may not show, but chats still work with phone numbers or email addresses.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let error = contacts.lastError {
