@@ -79,6 +79,14 @@ FCM 預覽可能包含名字與內容，公開代理可能終止 TLS；這不是
 
 ## 安裝與開發
 
+在 macOS 上用 Homebrew 安裝 micaGO Companion：
+
+```sh
+brew tap cinmou/micago https://github.com/cinmou/micaGO.git
+brew trust --cask cinmou/micago/micago
+brew install --cask cinmou/micago/micago
+```
+
 下載 Mac 與對應用戶端，把 Companion 放進應用程式，授權並啟動後端，再產生邀請供用戶端掃碼或貼上 JSON。[快速上手](docs/getting-started.zh-Hant.md)有完整步驟。
 
 開發從[架構](docs/ARCHITECTURE.md)、[建置測試發布](docs/DEVELOPMENT.md)進入，再依任務閱讀功能與平台說明，不必先讀全部文件。

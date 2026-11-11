@@ -6,6 +6,16 @@ micaGO 把其他设备连接到自己的 Mac Messages。Android 和 Linux 使用
 
 ## 安装 Mac 应用
 
+如果你用 Homebrew，可以这样安装 micaGO Companion：
+
+```sh
+brew tap cinmou/micago https://github.com/cinmou/micaGO.git
+brew trust --cask cinmou/micago/micago
+brew install --cask cinmou/micago/micago
+```
+
+安装后打开 micaGO Companion，从第 3 步继续。其他设备的客户端仍可从 [Releases](https://github.com/cinmou/micaGO/releases) 下载。
+
 1. 从 [Releases](https://github.com/cinmou/micaGO/releases) 下载 micaGO Companion 和设备对应的客户端。
 2. 把 micaGO Companion 移到“应用程序”后打开。Mac 需要 macOS 13 或更新版本。
 3. 在系统设置授予完全磁盘访问权限，让后端读取 Messages。改完权限后必要时重启后端。

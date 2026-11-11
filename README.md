@@ -79,6 +79,14 @@ FCM previews can contain sender names and message text. A public proxy may termi
 
 ## Install and develop
 
+Install micaGO Companion on macOS with Homebrew:
+
+```sh
+brew tap cinmou/micago https://github.com/cinmou/micaGO.git
+brew trust --cask cinmou/micago/micago
+brew install --cask cinmou/micago/micago
+```
+
 Download the matching Mac and client packages, launch Companion from Applications, grant access, start the server and create an invitation. Scan or paste the JSON on the client. Detailed steps: [Getting Started](docs/getting-started.md).
 
 For code changes, start with [architecture](docs/ARCHITECTURE.md), [build/test/release instructions](docs/DEVELOPMENT.md), then the relevant feature or platform document. Engineering references are maintained in Chinese with code and API identifiers unchanged.

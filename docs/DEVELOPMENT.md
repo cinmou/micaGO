@@ -102,6 +102,8 @@ ZIP 在 `MicaGoWindowsClient/artifacts/micaGO-release-x64.zip`；安装器需要
 
 Mac 包在本地签名公证，上传同一轮生成的 DMG 和 `appcast.xml` 后再发布 draft。当前 feed 指向 latest release 的 appcast，缺少该附件会导致已安装的 micaGO Companion 检查更新失败。不要用另一份 DMG 搭配旧 appcast。
 
+Mac 正式 Release 公开后，更新 [Homebrew cask](../Casks/micago.rb) 的版本和公开 DMG 的 SHA-256，再用 `brew fetch --cask cinmou/micago/micago` 检查下载和校验。先按安装文档添加 tap 和信任该 cask。tap 直接使用本仓库的默认分支。
+
 Release 标题沿用 `micaGO v<version> Muscovite`，Git 标签使用 `v<version>`。附件统一使用 `micaGO-<version>-<平台>.<扩展名>`，平台名为 Mac、Android、Windows 或 Linux。Release note 用英文，按上版的平台结构描述实际变化，重点写用户可见功能、修复和限制。不要照搬历史 beta 文案或把自动检查写成实机验收。
 
 ## 维护文档

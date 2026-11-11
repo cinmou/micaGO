@@ -6,6 +6,16 @@ micaGO connects your devices to Messages on your own Mac. Android and Linux use 
 
 ## Install and authorize the Mac
 
+To install micaGO Companion with Homebrew, run:
+
+```sh
+brew tap cinmou/micago https://github.com/cinmou/micaGO.git
+brew trust --cask cinmou/micago/micago
+brew install --cask cinmou/micago/micago
+```
+
+Then open micaGO Companion and continue from step 3. Download your device's client from [Releases](https://github.com/cinmou/micaGO/releases).
+
 1. Download micaGO Companion and the client for your device from [Releases](https://github.com/cinmou/micaGO/releases).
 2. Move micaGO Companion to Applications and launch it. macOS 13 or newer is required.
 3. Grant Full Disk Access in System Settings so the backend can read Messages. Restart the backend after changing the permission if needed.

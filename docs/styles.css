@@ -510,6 +510,21 @@ h3 {
   min-height: 72px;
 }
 
+.download-homebrew {
+  margin-top: 16px;
+}
+
+.download-homebrew summary {
+  cursor: pointer;
+}
+
+.download-homebrew pre {
+  overflow-x: auto;
+  padding: 12px;
+  border-radius: var(--radius-soft);
+  background: var(--surface);
+}
+
 .platform-note {
   margin-top: 16px;
   padding: 28px;
