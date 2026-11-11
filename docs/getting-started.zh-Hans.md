@@ -6,19 +6,17 @@ micaGO 把其他设备连接到自己的 Mac Messages。Android 和 Linux 使用
 
 ## 安装 Mac 应用
 
-1. 从 [Releases](https://github.com/cinmou/micaGO/releases) 下载 micaGO Server 和设备对应的客户端。
-2. 把 micaGO Server 移到“应用程序”后打开。Mac 需要 macOS 13 或更新版本。
+1. 从 [Releases](https://github.com/cinmou/micaGO/releases) 下载 micaGO Companion 和设备对应的客户端。
+2. 把 micaGO Companion 移到“应用程序”后打开。Mac 需要 macOS 13 或更新版本。
 3. 在系统设置授予完全磁盘访问权限，让后端读取 Messages。改完权限后必要时重启后端。
 4. 在 Mac Messages 登录账号。发送时 Messages 需要运行，系统请求 Automation 权限时按实际需要授权。
 
-在 micaGO Server 启动服务器并确认可达。默认 `http://127.0.0.1:3000` 只用于本机控制；设备连接 HTTPS 端口 3001。
-
-如果通过 DMG 手动升级，先退出并把旧的 `micaGO Companion.app` 移出“应用程序”，再安装 `micaGO Server.app`。
+在 micaGO Companion 启动服务器并确认可达。默认 `http://127.0.0.1:3000` 只用于本机控制；设备连接 HTTPS 端口 3001。
 
 ## 连接第一台设备
 
 1. 第一次连接先让设备和 Mac 使用同一 Wi-Fi。
-2. 在 micaGO Server 的“创建连接”卡片生成配对码。
+2. 在 micaGO Companion 的“创建连接”卡片生成配对码。
 3. 在客户端扫描二维码或粘贴连接 JSON。Windows 和 Linux 可以不使用摄像头，直接粘贴 JSON。
 4. 完成连接。如果码已过期或使用过，在 Mac 重新生成。
 
@@ -32,4 +30,4 @@ micaGO 把其他设备连接到自己的 Mac Messages。Android 和 Linux 使用
 - [Firebase 推送](setup/firebase/README.md)：Android 可选功能。保活也是可选路径，首次配对不依赖它们。
 - [手动检查](manual-test-flow.md)：附件、跨设备已读和后台通知。
 
-丢失设备时在 micaGO Server 撤销配对。清缓存不能直接删除整个 relay 数据库。[文档入口](index.md)提供当前功能规则与开发说明。
+丢失设备时在 micaGO Companion 撤销配对。清缓存不能直接删除整个 relay 数据库。[文档入口](index.md)提供当前功能规则与开发说明。

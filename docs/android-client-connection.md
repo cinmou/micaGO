@@ -1,6 +1,6 @@
 # 客户端连接
 
-Android 和 Linux 使用 Flutter 客户端；Windows 使用原生客户端。配对前在 Mac 启动 Companion 和后端。
+Android 和 Linux 使用 Flutter 客户端；Windows 使用原生客户端。配对前在 Mac 启动 micaGO Companion 和后端。
 
 ## 扫码或粘贴 JSON
 
@@ -28,4 +28,4 @@ Android 和 Linux 使用 Flutter 客户端；Windows 使用原生客户端。配
 | Android 配对后无法保存 | 先查 Keystore；软件存储需明确选择，不自动回退明文 |
 | 没有后台通知 | 连接与 FCM 是两条检查链，见[推送设置](setup/firebase/README.md) |
 
-发送显示等待确认时不要连续重发。设备丢失时在 Companion 撤销它。当前协议与安全边界见[连接规则](features/connection.md)。
+发送显示等待确认时不要连续重发。设备丢失时在 micaGO Companion 撤销它。当前协议与安全边界见[连接规则](features/connection.md)。

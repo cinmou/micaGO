@@ -41,7 +41,7 @@ See [Cloudflare's locally managed tunnel guide](https://developers.cloudflare.co
 
 ## Configure micaGO
 
-In Companion → Connections, enter only the public origin, such as `https://micago.example.com`, save it and validate reachability. Do not append `/api` or `/ws`.
+In micaGO Companion → Connections, enter only the public origin, such as `https://micago.example.com`, save it and validate reachability. Do not append `/api` or `/ws`.
 
 Generate a new pairing invitation for a new device. Existing clients refresh advertised candidates through the server when reachable. If every saved address becomes unreachable, an updated configuration or re-pairing may be needed; Firestore does not currently provide a complete automatic rediscovery flow in the clients.
 
@@ -49,7 +49,7 @@ Test away from your home Wi-Fi. Check both authenticated REST access and WSS; a 
 
 ## Who runs cloudflared
 
-You can run it separately or configure Companion's existing tunnel controls. Companion only supervises a process it starts; it must not take over or stop an external tunnel. Do not accidentally run both paths for the same test.
+You can run it separately or configure micaGO Companion's existing tunnel controls. micaGO Companion only supervises a process it starts; it must not take over or stop an external tunnel. Do not accidentally run both paths for the same test.
 
 Mac sleep, stopped Messages, network loss and proxy rules can still affect service. FCM is a separate optional notification path and does not keep the chat API reachable by itself.
 

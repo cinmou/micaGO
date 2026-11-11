@@ -168,7 +168,7 @@ private struct FullDiskAccessBanner: View {
                 Image(systemName: "externaldrive.badge.exclamationmark").foregroundStyle(.red)
                 Text("Full Disk Access required").fontWeight(.semibold)
             }
-            Text("micaGO can't read the Messages database. Give micaGO Server Full Disk Access, then start the server again.")
+            Text("micaGO can't read the Messages database. Give micaGO Companion Full Disk Access, then start the server again.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Open Full Disk Access Settings") { openFullDiskAccessSettings() }
@@ -267,7 +267,7 @@ private struct ServerPrimaryToolbarButton: View {
 
     private func startHelp(_ state: ServerDisplayState) -> String {
         if state == .externalUnmanaged {
-            return L10n.localized( "An external server is running, so Companion can't control it")
+            return L10n.localized( "An external server is running, so this app can't control it")
         }
         if !backend.binaryExists { return L10n.localized( "No backend binary installed") }
         return L10n.localized( "Start server")
@@ -608,7 +608,7 @@ private struct AboutPage: View {
         SectionCard(title: "") {
             VStack(spacing: 16) {
                 ClickableAppIcon()
-                Text("micaGO Server")
+                Text("micaGO Companion")
                     .font(.largeTitle)
                     .fontWeight(.bold)
             }
@@ -647,10 +647,10 @@ private struct AboutPage: View {
             Toggle("Automatically check for updates", isOn: $updates.automaticallyChecksForUpdates)
             Toggle("Automatically download updates", isOn: $updates.automaticallyDownloadsUpdates)
                 .disabled(!updates.automaticallyChecksForUpdates)
-            Text("Updates are verified before installation. Installing an update briefly restarts Companion and its managed server.")
+            Text("Updates are verified before installation. Installing an update briefly restarts micaGO Companion and its managed backend.")
                 .font(.caption).foregroundStyle(.secondary)
             if !BackendController.shared.userBinaryPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("A custom backend path is selected. Updating Companion does not update that external backend.")
+                Text("A custom backend path is selected. That external backend is updated separately from micaGO Companion.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -1085,7 +1085,7 @@ private struct ServerBindAddressCard: View {
 
     var body: some View {
         SectionCard(title: "Server Bind Address") {
-            Text("micaGO listens on your local network so devices on the same Wi‑Fi can connect. This applies to the server Companion starts.")
+            Text("micaGO listens on your local network so devices on the same Wi‑Fi can connect. This applies to the server started by this app.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -1145,7 +1145,7 @@ private struct ServerBindAddressCard: View {
             }
 
             if displayState(backend, model) == .externalUnmanaged {
-                Text("Companion didn't start this server, so it can't change the bind address.")
+                Text("Change the bind address in the external server's configuration.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1251,7 +1251,7 @@ private struct LogsPage: View {
     var body: some View {
         SectionCard(title: "Server Log") {
             if backend.logLines.isEmpty {
-                Text("No output yet. The log shows output from a server Companion started. Tokens are hidden.")
+                Text("No output yet. The log shows output from the server started by this app. Tokens are hidden.")
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView {

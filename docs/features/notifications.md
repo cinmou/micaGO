@@ -16,6 +16,8 @@ Linux 在进程仍运行且窗口不在前台时，通过现有 WebSocket 和桌
 
 `unifiedpush` 渠道发送标准 Web Push：载荷与 FCM data 相同的扁平字段，按 RFC 8291 加密到设备公钥，用 VAPID 签名。VAPID 私钥首次加载时生成于 `~/.micago/vapid_private_key.pem`，文件损坏时报错而不是静默重建。客户端通过 `GET /api/push/unifiedpush` 取 VAPID 公钥，注册时 pushToken 为 `{endpoint,p256dh,auth}` JSON；服务端只接受 https endpoint，不跟随重定向，404/410 时清除该设备令牌，设备列表只返回 `pushEndpointHost`。
 
+Web Push 在连接前检查所有 DNS 解析结果。公网 IPv6 目标须位于 `2000::/3`，并排除 IETF 专用分配、文档和旧隧道网段。IPv4 映射地址按 IPv4 检查。管理员显式允许的本地推送主机仍可使用私网或回环地址。
+
 Android 设置 → 通知 → 推送服务列出已安装的 distributor 和内置的 “FCM (Google Play)”，另可选旧 Firebase 路径或关闭。用户需明确选择 distributor，未选择时沿用已有 Firebase 配置。选定的 distributor 失败时保持该选择，不自动切换推送服务。进程存活时，可见状态下由 WebSocket / delta 处理，后台则与 FCM 后台处理器一样显示本地通知并按消息去重。
 
 Mac 默认只向公网 HTTPS 推送地址投递，每次建立连接时校验全部 DNS 结果并直连已核验的 IP，不经过环境代理，不跟随重定向。局域网自建分发器需由 Mac 管理员在 config.yaml 的 `unifiedpush.private_hosts` 列出准确主机名或 IP，例如 `private_hosts: [ntfy.home.example]`。该允许列表不能由配对设备修改，不支持通配符；允许私有主机仍校验 TLS 证书。链路本地、组播和保留地址不接受。

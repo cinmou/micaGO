@@ -360,9 +360,13 @@ var webPushReservedNetworks = []netip.Prefix{
 	netip.MustParsePrefix("198.51.100.0/24"),
 	netip.MustParsePrefix("203.0.113.0/24"),
 	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("2001::/32"),
+	// Exclude the IETF protocol assignment block, including Teredo,
+	// even where individual special-purpose allocations are reachable.
+	netip.MustParsePrefix("2001::/23"),
 	netip.MustParsePrefix("2001:db8::/32"),
 	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("3ffe::/16"), // Former 6bone and legacy Teredo.
+	netip.MustParsePrefix("3fff::/20"), // Documentation (RFC 9637).
 }
 
 func webPushIPAllowed(ip netip.Addr, privateAllowed bool) bool {

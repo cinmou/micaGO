@@ -13,7 +13,7 @@ go vet ./...
 go run ./cmd/micago
 ```
 
-Companion 使用 Xcode。其构建阶段会带上 Go 后端和 IMCore helper。
+micaGO Companion 使用 Xcode。其构建阶段会带上 Go 后端和 IMCore helper。
 
 ```sh
 cd MicaGoServer/micago-mac-companion
@@ -47,12 +47,12 @@ macOS 上的 Core 测试不等于 WinUI 构建通过。XAML、Composition、通�
 | 改动 | 检查 |
 | --- | --- |
 | Go 行为或 API | `go test ./...`、`go vet ./...`；并发修改另跑相关 `go test -race` |
-| Companion | Xcode 构建和对应的脚本回归；窗口改动还需实际打开检查 |
+| micaGO Companion | Xcode 构建和对应的脚本回归；窗口改动还需实际打开检查 |
 | Flutter | analyze、相关测试；涉及原生插件时构建对应平台 |
 | Windows | Core 契约测试、Windows 构建；原生界面改动做实机检查 |
 | 文档 | 本地链接、锚点、代码路径、命令和三语言入口；纯文档修改不重打应用 |
 
-Companion 的针对性检查在 [scripts](../MicaGoServer/micago-mac-companion/scripts)：`test-api-client.sh`、`test-connection-payload.sh`、`test-dashboard-window.sh`、`test-dashboard-lifecycle.sh`、`test-backend-restart.sh`、`test-startup-ownership.sh`、`test-tunnel-recovery.sh`、`test-update-validation.sh` 等。脚本通过只证明它覆盖的行为。`test-dashboard-lifecycle.sh` 需要 macOS 15+ 的桌面会话，使用隔离的 SwiftUI 测试应用验证无窗口启动、隐藏窗口恢复、最小化和关闭后重开，不启动后端或读取联系人。
+micaGO Companion 的针对性检查在 [scripts](../MicaGoServer/micago-mac-companion/scripts)：`test-api-client.sh`、`test-connection-payload.sh`、`test-dashboard-window.sh`、`test-dashboard-lifecycle.sh`、`test-backend-restart.sh`、`test-startup-ownership.sh`、`test-tunnel-recovery.sh`、`test-update-validation.sh` 等。脚本通过只证明它覆盖的行为。`test-dashboard-lifecycle.sh` 需要 macOS 15+ 的桌面会话，使用隔离的 SwiftUI 测试应用验证无窗口启动、隐藏窗口恢复、最小化和关闭后重开，不启动后端或读取联系人。
 
 旧 smoke 脚本有些早于独立设备凭据和 TLS。运行前先读脚本，不把旧脚本的协议假设当成当前要求。跨设备验收使用[手动检查](manual-test-flow.md)。
 
@@ -71,7 +71,7 @@ VERSION=0.94.1 scripts/package-dmg.sh
 
 公证凭据预先由 `notarytool store-credentials` 放入钥匙串；不要把密码和私钥写进文档或 shell 历史。Sparkle EdDSA 私钥也由发布环境安全提供。
 
-默认输出在 `MicaGoServer/micago-mac-companion/build/release/`，包含 `micaGO-<version>-Mac.dmg` 和匹配的 `appcast.xml`。DMG 内包含 `micaGO Server.app`。主界面、后端和 IMCore helper 分别是 `Contents/MacOS/micago-server-ui`、`micago-server` 和 `micago-imcore-helper`。公证包默认生成 appcast；它的 URL、版本、字节大小和 Ed25519 签名会由 `validate-update.swift` 对照内嵌公钥检查。
+默认输出在 `MicaGoServer/micago-mac-companion/build/release/`，包含 `micaGO-<version>-Mac.dmg` 和匹配的 `appcast.xml`。DMG 内包含 `micaGO Companion.app`。主界面、后端和 IMCore helper 分别是 `Contents/MacOS/micago-server-ui`、`micago-server` 和 `micago-imcore-helper`。公证包默认生成 appcast；它的 URL、版本、字节大小和 Ed25519 签名会由 `validate-update.swift` 对照内嵌公钥检查。
 
 DMG 包含 universal App 和后端，最低 macOS 13。链接器与 SDK 不匹配时，核对 `GO_DEVELOPER_DIR`，不要降低目标系统兼容性掩盖构建问题。
 
@@ -96,11 +96,11 @@ ZIP 在 `MicaGoWindowsClient/artifacts/micaGO-release-x64.zip`；安装器需要
 
 ## GitHub Release
 
-[release.yml](../.github/workflows/release.yml) 在版本标签触发时构建产物并创建 draft；手动运行可只生成 artifacts。逐个查看 job 和实际附件，不以 workflow 名字推断发布完成。发布工作流只生成 Android、Windows 和 Linux 产物，已移除不受支持的 iOS 未签名 IPA。Windows 发布 EXE 安装器，安装器脚本内部生成 ZIP 后封装，上传文件名为 `micaGO-<version>-Windows.exe`。SHA256SUMS 从本次最终上传附件生成并核验；它不包含后续手工添加的 Mac 签名产物。已有 Release 会使发布步骤失败，自动流程不覆盖既有资产。
+[release.yml](../.github/workflows/release.yml) 在版本标签触发时构建产物并创建 draft；手动运行可只生成 artifacts。逐个查看 job 和实际附件，不以 workflow 名字推断发布完成。发布工作流只生成 Android、Windows 和 Linux 产物，已移除不受支持的 iOS 未签名 IPA。Windows 发布 EXE 安装器，安装器脚本内部生成 ZIP 后封装，上传文件名为 `micaGO-<version>-Windows.exe`。SHA256SUMS 从本次最终上传附件生成并核验；它不包含后续手工添加的 Mac 签名产物。已有草稿时保留现有附件，新构建从 Actions 下载后手动核验和替换。已有正式 Release 时发布步骤失败。
 
-独立的 [ci.yml](../.github/workflows/ci.yml) 在分支 push 和 PR 上执行 Go vet/test、Companion API/配对脚本检查及 Flutter analyze/test/Linux 构建。Mac 和后端不在 release.yml 中打包，公开 Mac 产物继续本地签名、公证。Action 使用固定提交 SHA，Android 签名 secrets 仅在配置签名的步骤注入，构建后清理签名文件。分支保护是否要求这些检查通过由仓库规则配置决定。
+独立的 [ci.yml](../.github/workflows/ci.yml) 在分支 push 和 PR 上执行 Go vet/test、micaGO Companion API/配对脚本检查及 Flutter analyze/test/Linux 构建。Mac 和后端不在 release.yml 中打包，公开 Mac 产物继续本地签名、公证。Action 使用固定提交 SHA，Android 签名 secrets 仅在配置签名的步骤注入，构建后清理签名文件。分支保护是否要求这些检查通过由仓库规则配置决定。
 
-Mac 包在本地签名公证，上传同一轮生成的 DMG 和 `appcast.xml` 后再发布 draft。当前 feed 指向 latest release 的 appcast，缺少该附件会导致已安装的 Companion 检查更新失败。不要用另一份 DMG 搭配旧 appcast。
+Mac 包在本地签名公证，上传同一轮生成的 DMG 和 `appcast.xml` 后再发布 draft。当前 feed 指向 latest release 的 appcast，缺少该附件会导致已安装的 micaGO Companion 检查更新失败。不要用另一份 DMG 搭配旧 appcast。
 
 Release 标题沿用 `micaGO v<version> Muscovite`，Git 标签使用 `v<version>`。附件统一使用 `micaGO-<version>-<平台>.<扩展名>`，平台名为 Mac、Android、Windows 或 Linux。Release note 用英文，按上版的平台结构描述实际变化，重点写用户可见功能、修复和限制。不要照搬历史 beta 文案或把自动检查写成实机验收。
 

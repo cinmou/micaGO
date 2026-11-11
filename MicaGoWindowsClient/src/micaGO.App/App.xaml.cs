@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.Windows.AppLifecycle;
 using MicaGo.App.Services;
 using System.Runtime.InteropServices;
 
@@ -16,6 +17,8 @@ public partial class App : Application
     private static bool _isExiting;
     private static bool _servicesDisposed;
     private static TrayIconService? _tray;
+    // Keep the Inno Setup AppMutex marker open for the primary process lifetime.
+    private static Mutex? _installerMutex;
 
     public App()
     {
@@ -37,14 +40,41 @@ public partial class App : Application
 
     internal static void ReportStartupFailure(Exception exception) => WriteStartupFailure(exception);
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _dispatcher = dispatcher;
 #if MICAGO_VISUAL_CHECK
         VisualCheck.Run();
-        return;
 #else
-        _ = LaunchAsync();
+        var current = AppInstance.GetCurrent();
+        current.Activated += (_, _) => dispatcher.TryEnqueue(() =>
+        {
+            if (!_isExiting && (MainWindow is not null || _connectionWindow is not null))
+                ShowCurrentWindow();
+        });
+
+        var primary = AppInstance.FindOrRegisterForKey("micaGO");
+        if (!primary.IsCurrent)
+        {
+            try
+            {
+                AllowSetForegroundWindow(primary.ProcessId);
+                await primary.RedirectActivationToAsync(current.GetActivatedEventArgs());
+            }
+            catch (Exception exception)
+            {
+                WriteStartupFailure(exception);
+            }
+            finally
+            {
+                Exit();
+            }
+            return;
+        }
+
+        _installerMutex = new Mutex(false, "micaGO.App.Running");
+        await LaunchAsync();
 #endif
     }
 
@@ -178,8 +208,10 @@ public partial class App : Application
     {
         var window = MainWindow ?? (Window?)_connectionWindow;
         if (window is null) { ShowConnectionWindow(); return; }
-        ShowWindow(WinRT.Interop.WindowNative.GetWindowHandle(window), 9);
+        var handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        ShowWindow(handle, 9);
         window.Activate();
+        SetForegroundWindow(handle);
     }
 
     private static void ExitFromTray()
@@ -247,5 +279,7 @@ public partial class App : Application
 
     private static void DisposeServices(){if(_servicesDisposed)return;_servicesDisposed=true;AppServices.Current.Dispose();}
 
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint processId);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
 }

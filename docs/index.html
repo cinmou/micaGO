@@ -41,16 +41,16 @@
             <a class="button button-ghost" href="https://github.com/cinmou/MicaGo" data-i18n="hero.source">GitHub</a>
           </div>
         </div>
-        <div class="hero-visual logo-hero" aria-label="micaGO client and Mac Companion apps">
+        <div class="hero-visual logo-hero" aria-label="micaGO client and micaGO Companion apps">
           <img class="hero-logo hero-logo-client" src="assets/Client.png" alt="micaGO client app logo" />
-          <img class="hero-logo hero-logo-server" src="assets/Server.png" alt="micaGO Mac Companion logo" />
+          <img class="hero-logo hero-logo-server" src="assets/Server.png" alt="micaGO Companion logo" />
         </div>
       </section>
 
       <section class="showcase section" aria-labelledby="showcase-title">
         <div class="section-copy centered showcase-intro">
           <h2 id="showcase-title" data-i18n="showcase.title">The apps</h2>
-          <p data-i18n="showcase.intro">Chat on your phone, tablet or computer. Manage the server and paired devices from the Mac Companion.</p>
+          <p data-i18n="showcase.intro">Chat on your phone, tablet or computer. Manage the server and paired devices in micaGO Companion.</p>
         </div>
 
         <div class="showcase-group">
@@ -101,14 +101,14 @@
           <div class="showcase-heading">
             <span class="platform">macOS</span>
             <div>
-              <h3 data-i18n="showcase.mac.title">Mac Companion</h3>
+              <h3 data-i18n="showcase.mac.title">micaGO Companion</h3>
               <p data-i18n="showcase.mac.body">Server status, pairing and settings.</p>
             </div>
           </div>
           <div class="screenshot-grid screenshot-grid-landscape">
-            <img src="assets/Companion1.png" alt="micaGO Mac Companion dashboard" loading="lazy" />
-            <img src="assets/Companion2.png" alt="micaGO Mac Companion pairing screen" loading="lazy" />
-            <img src="assets/Companion3.png" alt="micaGO Mac Companion settings" loading="lazy" />
+            <img src="assets/Companion1.png" alt="micaGO Companion dashboard" loading="lazy" />
+            <img src="assets/Companion2.png" alt="micaGO Companion pairing screen" loading="lazy" />
+            <img src="assets/Companion3.png" alt="micaGO Companion settings" loading="lazy" />
           </div>
         </div>
       </section>
@@ -153,12 +153,12 @@
           <article>
             <span>1</span>
             <h3 data-i18n="how.1.title">Set up your Mac</h3>
-            <p data-i18n="how.1.body">Install Mac Companion on the Mac you use for Messages and allow Full Disk Access.</p>
+            <p data-i18n="how.1.body">Install micaGO Companion on the Mac you use for Messages and allow Full Disk Access.</p>
           </article>
           <article>
             <span>2</span>
             <h3 data-i18n="how.2.title">Pair your device</h3>
-            <p data-i18n="how.2.body">Install micaGO on your other device, then scan the QR code or import connection JSON from Companion. Start on the same local network.</p>
+            <p data-i18n="how.2.body">Install micaGO on your other device, then scan the QR code or import connection JSON from micaGO Companion. Start on the same local network.</p>
           </article>
           <article>
             <span>3</span>
@@ -171,7 +171,7 @@
       <section id="downloads" class="section downloads-section">
         <div class="section-copy centered">
           <h2 data-i18n="downloads.title">Get micaGO</h2>
-          <p data-i18n="downloads.intro">Install Mac Companion first, then choose a client for your other device.</p>
+          <p data-i18n="downloads.intro">Install micaGO Companion first, then choose a client for your other device.</p>
         </div>
         <div class="download-grid">
           <article class="download-card">
@@ -179,7 +179,7 @@
               <img class="download-icon" src="assets/Server.png" alt="" />
               <span class="platform">macOS</span>
             </div>
-            <h3>Mac Companion</h3>
+            <h3>micaGO Companion</h3>
             <p data-i18n="downloads.mac.body">Required. macOS 13 or later. Runs on the Mac you use for Messages.</p>
             <a id="download-dmg" class="button button-buy" href="https://github.com/cinmou/MicaGo/releases/latest" data-i18n="downloads.mac.button">Download for Mac</a>
           </article>
@@ -228,11 +228,11 @@
           </details>
           <details>
             <summary data-i18n="faq.2.q">Does my Mac have to stay on? What permissions does it need?</summary>
-            <p data-i18n="faq.2.a">The Mac must be awake, connected to the network, and running the relay. Sleep or shutdown pauses syncing and sending; Companion has an optional Keep Awake setting. Reading the Messages database needs Full Disk Access, and sending through Messages needs Automation permission. After the connection returns, clients catch up on messages that reached the Mac.</p>
+            <p data-i18n="faq.2.a">The Mac must be awake, connected to the network, and running the relay. Sleep or shutdown pauses syncing and sending; micaGO Companion has an optional Keep Awake setting. Reading the Messages database needs Full Disk Access, and sending through Messages needs Automation permission. After the connection returns, clients catch up on messages that reached the Mac.</p>
           </details>
           <details>
             <summary data-i18n="faq.network.q">Which ports and protocols does it use?</summary>
-            <p data-i18n="faq.network.a">With the default configuration, devices connect to <code>https://&lt;Mac LAN IP&gt;:3001</code>; live updates use <code>wss://</code>. The local control API listens on <code>127.0.0.1:3000</code> and is reserved for Companion and local proxies. If you change the base port, the device TLS port is that port plus one. A public reverse proxy needs to forward the API and support WebSocket connections.</p>
+            <p data-i18n="faq.network.a">With the default configuration, devices connect to <code>https://&lt;Mac LAN IP&gt;:3001</code>; live updates use <code>wss://</code>. The local control API listens on <code>127.0.0.1:3000</code> and is reserved for micaGO Companion and local proxies. If you change the base port, the device TLS port is that port plus one. A public reverse proxy needs to forward the API and support WebSocket connections.</p>
           </details>
           <details>
             <summary data-i18n="faq.security.q">How do pairing and connection security work?</summary>
@@ -297,20 +297,20 @@
             "features.title": "功能",
             "features.intro": "支持个人和群组聊天、图片、视频、语音消息和消息回应。开启 iPhone 的短信转发后，也能收发短信。",
             "showcase.title": "界面",
-            "showcase.intro": "在手机、平板或电脑上聊天，在 Mac Companion 中管理服务端和配对设备。",
+            "showcase.intro": "在手机、平板或电脑上聊天，在 micaGO Companion 中管理服务端和配对设备。",
             "showcase.android.title": "手机",
             "showcase.android.body": "聊天列表、对话、设置。",
             "showcase.tablet.platform": "平板",
             "showcase.tablet.title": "平板",
             "showcase.tablet.body": "聊天列表会一直留在对话旁边。",
             "showcase.windows.title": "Windows 客户端",
-            "showcase.mac.title": "Mac Companion",
+            "showcase.mac.title": "micaGO Companion",
             "showcase.mac.body": "服务端状态、配对和设置。",
             "how.title": "安装",
             "how.1.title": "设置 Mac",
-            "how.1.body": "在已登录「信息」的 Mac 上安装 Companion，并允许完全磁盘访问。",
+            "how.1.body": "在已登录「信息」的 Mac 上安装 micaGO Companion，并允许完全磁盘访问。",
             "how.2.title": "配对设备",
-            "how.2.body": "在其他设备上安装 micaGO，扫描 Companion 的二维码或导入连接 JSON。首次配对建议使用同一网络。",
+            "how.2.body": "在其他设备上安装 micaGO，扫描 micaGO Companion 的二维码或导入连接 JSON。首次配对建议使用同一网络。",
             "how.3.title": "开始聊天",
             "how.3.body": "对话会同步到 micaGO。保持 Mac 唤醒和联网，就能收发消息。",
             "privacy.title": "配对与安全",
@@ -318,7 +318,7 @@
             "privacy.2": "每台设备单独授权，可以随时在 Mac 上移除；连接使用加密传输。",
             "privacy.3": "聊天记录保存在你的 Mac 和客户端本地。远程访问和 Firebase 推送都可以自行选择是否开启。启用推送后，通知预览会按你的设置通过 Google 送达。",
             "downloads.title": "下载 micaGO",
-            "downloads.intro": "先安装 Mac Companion，再选择你要使用的客户端。",
+            "downloads.intro": "先安装 micaGO Companion，再选择你要使用的客户端。",
             "downloads.mac.body": "必装。适用于 macOS 13 或更新版本，运行在你使用「信息」的 Mac 上。",
             "downloads.mac.button": "下载 Mac 版",
             "downloads.android.title": "安卓 App",
@@ -342,9 +342,9 @@
             "faq.1.q": "运行 micaGO 需要什么？",
             "faq.1.a": "服务端需要一台运行 <strong>macOS 13 或更高版本</strong>的 Mac，并在「信息」App 中登录账号。Android 客户端要求 <strong>Android 7.0 / API 24 或更高版本</strong>。Windows 原生客户端目前提供 <strong>x64</strong> 版本，配置的最低系统版本是 <strong>Windows 10 1809</strong>，推荐 Windows 11。Linux 提供基于 Flutter 和 GTK 3 的 <strong>x64 桌面程序包</strong>。Android 和 Linux 已经过测试；Linux 各发行版的依赖有所不同，解压后请保留程序旁的 <code>lib/</code> 文件夹。",
             "faq.2.q": "Mac 要一直开着吗？需要哪些权限？",
-            "faq.2.a": "Mac 需要保持唤醒、连接网络，并运行服务端。休眠或关机时，同步和发送会暂停；Companion 提供可选的「保持唤醒」设置。读取「信息」数据库需要完整磁盘访问权限，通过「信息」发送消息需要自动化权限。恢复连接后，客户端会补齐已经到达 Mac 的消息。",
+            "faq.2.a": "Mac 需要保持唤醒、连接网络，并运行服务端。休眠或关机时，同步和发送会暂停；micaGO Companion 提供可选的「保持唤醒」设置。读取「信息」数据库需要完整磁盘访问权限，通过「信息」发送消息需要自动化权限。恢复连接后，客户端会补齐已经到达 Mac 的消息。",
             "faq.network.q": "连接用什么协议和端口？",
-            "faq.network.a": "默认配置下，设备连接 <code>https://&lt;Mac 局域网 IP&gt;:3001</code>，实时更新使用 <code>wss://</code>。本地控制接口监听 <code>127.0.0.1:3000</code>，供 Companion 和本机代理使用。修改基础端口后，设备的 TLS 端口为基础端口加一。使用公网反向代理时，需要转发 API，并支持 WebSocket 连接。",
+            "faq.network.a": "默认配置下，设备连接 <code>https://&lt;Mac 局域网 IP&gt;:3001</code>，实时更新使用 <code>wss://</code>。本地控制接口监听 <code>127.0.0.1:3000</code>，供 micaGO Companion 和本机代理使用。修改基础端口后，设备的 TLS 端口为基础端口加一。使用公网反向代理时，需要转发 API，并支持 WebSocket 连接。",
             "faq.security.q": "配对和连接安全是怎么做的？",
             "faq.security.a": "二维码和连接 JSON 使用 <code>v4</code> 配对格式，包含 <strong>5 分钟有效、只能使用一次</strong>的邀请和服务端证书指纹。生成新邀请后，旧邀请会失效。局域网连接通过 <strong>SHA-256 证书指纹</strong>校验证书，公网 HTTPS 使用系统证书信任。直连服务端支持 <strong>TLS 1.2 及以上版本</strong>。每台配对设备获得独立随机生成的 <strong>256 位凭据</strong>，服务端只保存其 SHA-256 哈希。移除设备会撤销凭据，并关闭其已认证的连接。这是传输加密；经过终止 TLS 的代理时，代理仍能接触转发的内容。",
             "faq.data.q": "消息存在哪里？Firebase 会收到什么？",
@@ -376,20 +376,20 @@
             "features.title": "功能",
             "features.intro": "支援個人與群組聊天、照片、影片、語音訊息與訊息回應。開啟 iPhone 的簡訊轉寄後，也能收發簡訊。",
             "showcase.title": "介面",
-            "showcase.intro": "在手機、平板或電腦上聊天，在 Mac Companion 中管理伺服器與配對裝置。",
+            "showcase.intro": "在手機、平板或電腦上聊天，在 micaGO Companion 中管理伺服器與配對裝置。",
             "showcase.android.title": "手機",
             "showcase.android.body": "聊天列表、對話、設定。",
             "showcase.tablet.platform": "平板",
             "showcase.tablet.title": "平板",
             "showcase.tablet.body": "聊天列表會一直留在對話旁邊。",
             "showcase.windows.title": "Windows 用戶端",
-            "showcase.mac.title": "Mac Companion",
+            "showcase.mac.title": "micaGO Companion",
             "showcase.mac.body": "伺服器狀態、配對與設定。",
             "how.title": "安裝",
             "how.1.title": "設定 Mac",
-            "how.1.body": "在已登入「訊息」的 Mac 上安裝 Companion，並允許完整磁碟取用。",
+            "how.1.body": "在已登入「訊息」的 Mac 上安裝 micaGO Companion，並允許完整磁碟取用。",
             "how.2.title": "配對裝置",
-            "how.2.body": "在其他裝置上安裝 micaGO，掃描 Companion 的 QR Code 或匯入連線 JSON。首次配對建議使用同一網路。",
+            "how.2.body": "在其他裝置上安裝 micaGO，掃描 micaGO Companion 的 QR Code 或匯入連線 JSON。首次配對建議使用同一網路。",
             "how.3.title": "開始聊天",
             "how.3.body": "對話會同步到 micaGO。保持 Mac 喚醒與連網，就能收發訊息。",
             "privacy.title": "配對與安全",
@@ -397,7 +397,7 @@
             "privacy.2": "每台裝置單獨授權，可以隨時在 Mac 上移除；連線使用加密傳輸。",
             "privacy.3": "聊天記錄保存在你的 Mac 與用戶端本機。遠端存取與 Firebase 推播都可以自行選擇是否開啟。啟用推播後，通知預覽會依你的設定透過 Google 送達。",
             "downloads.title": "下載 micaGO",
-            "downloads.intro": "先安裝 Mac Companion，再選擇你要使用的用戶端。",
+            "downloads.intro": "先安裝 micaGO Companion，再選擇你要使用的用戶端。",
             "downloads.mac.body": "必裝。適用於 macOS 13 或更新版本，執行於你使用「訊息」的 Mac 上。",
             "downloads.mac.button": "下載 Mac 版",
             "downloads.android.title": "Android App",
@@ -421,9 +421,9 @@
             "faq.1.q": "執行 micaGO 需要什麼？",
             "faq.1.a": "伺服器需要一台執行 <strong>macOS 13 或更新版本</strong>的 Mac，並在「訊息」App 中登入帳號。Android 用戶端要求 <strong>Android 7.0 / API 24 或更新版本</strong>。Windows 原生用戶端目前提供 <strong>x64</strong> 版本，設定的最低系統版本是 <strong>Windows 10 1809</strong>，建議使用 Windows 11。Linux 提供以 Flutter 與 GTK 3 建置的 <strong>x64 桌面程式包</strong>。Android 與 Linux 已經過測試；Linux 各發行版的相依套件有所不同，解壓縮後請保留程式旁的 <code>lib/</code> 資料夾。",
             "faq.2.q": "Mac 要一直開著嗎？需要哪些權限？",
-            "faq.2.a": "Mac 需要保持喚醒、連接網路，並執行伺服器。睡眠或關機時，同步與傳送會暫停；Companion 提供選用的「保持喚醒」設定。讀取「訊息」資料庫需要完整磁碟存取權限，透過「訊息」傳送訊息需要自動化權限。恢復連線後，用戶端會補齊已經到達 Mac 的訊息。",
+            "faq.2.a": "Mac 需要保持喚醒、連接網路，並執行伺服器。睡眠或關機時，同步與傳送會暫停；micaGO Companion 提供選用的「保持喚醒」設定。讀取「訊息」資料庫需要完整磁碟存取權限，透過「訊息」傳送訊息需要自動化權限。恢復連線後，用戶端會補齊已經到達 Mac 的訊息。",
             "faq.network.q": "連線使用什麼協定和連接埠？",
-            "faq.network.a": "預設設定下，裝置連接 <code>https://&lt;Mac 區域網路 IP&gt;:3001</code>，即時更新使用 <code>wss://</code>。本機控制介面監聽 <code>127.0.0.1:3000</code>，供 Companion 與本機代理使用。修改基礎連接埠後，裝置的 TLS 連接埠為基礎連接埠加一。使用公開反向代理時，需要轉送 API，並支援 WebSocket 連線。",
+            "faq.network.a": "預設設定下，裝置連接 <code>https://&lt;Mac 區域網路 IP&gt;:3001</code>，即時更新使用 <code>wss://</code>。本機控制介面監聽 <code>127.0.0.1:3000</code>，供 micaGO Companion 與本機代理使用。修改基礎連接埠後，裝置的 TLS 連接埠為基礎連接埠加一。使用公開反向代理時，需要轉送 API，並支援 WebSocket 連線。",
             "faq.security.q": "配對與連線安全怎麼運作？",
             "faq.security.a": "QR Code 與連線 JSON 使用 <code>v4</code> 配對格式，包含 <strong>5 分鐘有效、只能使用一次</strong>的邀請與伺服器憑證指紋。產生新邀請後，舊邀請會失效。區域網路連線透過 <strong>SHA-256 憑證指紋</strong>驗證憑證，公開 HTTPS 使用系統憑證信任。直連伺服器支援 <strong>TLS 1.2 及更新版本</strong>。每台配對裝置取得獨立隨機產生的 <strong>256 位元憑據</strong>，伺服器只儲存其 SHA-256 雜湊。移除裝置會撤銷憑據，並關閉其已驗證的連線。這是傳輸加密；經過終止 TLS 的代理時，代理仍能接觸轉送的內容。",
             "faq.data.q": "訊息存在哪裡？Firebase 會收到什麼？",

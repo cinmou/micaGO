@@ -23,7 +23,7 @@
 
 ## 概览
 
-micaGO 把 Android、Linux 和 Windows 客户端连接到 Mac Messages。Go 后端读取消息，原生 Mac Companion 管理配对与设置，Windows 使用独立 WinUI 应用。
+micaGO 把 Android、Linux 和 Windows 客户端连接到 Mac Messages。Go 后端读取消息，原生 micaGO Companion 管理配对与设置，Windows 使用独立 WinUI 应用。
 
 ## 应用截图
 
@@ -49,19 +49,19 @@ micaGO 把 Android、Linux 和 Windows 客户端连接到 Mac Messages。Go 后�
   <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows 客户端外观设置" width="260" /></a>
 </p>
 
-### Mac 伴侣应用
+### micaGO Companion
 
 <p align="center">
-  <a href="docs/assets/Companion1.png"><img src="docs/assets/Companion1.png" alt="Mac 伴侣应用仪表盘" width="260" /></a>
-  <a href="docs/assets/Companion2.png"><img src="docs/assets/Companion2.png" alt="Mac 伴侣应用配对界面" width="260" /></a>
-  <a href="docs/assets/Companion3.png"><img src="docs/assets/Companion3.png" alt="Mac 伴侣应用设置界面" width="260" /></a>
+  <a href="docs/assets/Companion1.png"><img src="docs/assets/Companion1.png" alt="micaGO Companion仪表盘" width="260" /></a>
+  <a href="docs/assets/Companion2.png"><img src="docs/assets/Companion2.png" alt="micaGO Companion配对界面" width="260" /></a>
+  <a href="docs/assets/Companion3.png"><img src="docs/assets/Companion3.png" alt="micaGO Companion设置界面" width="260" /></a>
 </p>
 
 ---
 
 ## 系统要求
 
-Mac Companion 需要 macOS 13 或更新版本，以及 Messages 数据的完全磁盘访问权限。发送时 Messages 需运行，并获得相应 Automation 权限。Android 最低 Android 7.0 / API 24。Linux 使用 Flutter 客户端；Windows 使用原生客户端，界面主要在 Windows 11 环境验收。
+micaGO Companion 需要 macOS 13 或更新版本，以及 Messages 数据的完全磁盘访问权限。发送时 Messages 需运行，并获得相应 Automation 权限。Android 最低 Android 7.0 / API 24。Linux 使用 Flutter 客户端；Windows 使用原生客户端，界面主要在 Windows 11 环境验收。
 
 首次配对建议同一 Wi-Fi。公网 HTTPS 为可选功能，使用自己的代理或隧道。仓库里有某个平台工程不代表它具有相同支持程度。
 

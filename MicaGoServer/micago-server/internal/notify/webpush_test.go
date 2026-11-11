@@ -373,13 +373,25 @@ func TestWebPushAddressPolicy(t *testing.T) {
 			t.Errorf("accepted non-public address %s", raw)
 		}
 	}
-	for _, raw := range []string{"8.8.8.8", "2606:4700:4700::1111"} {
+	for _, raw := range []string{"8.8.8.8", "::ffff:8.8.8.8", "2001:4860:4860::8888", "2606:4700:4700::1111"} {
 		if !webPushIPAllowed(netip.MustParseAddr(raw), false) {
 			t.Errorf("rejected public address %s", raw)
 		}
 	}
-	if !webPushIPAllowed(netip.MustParseAddr("192.168.1.2"), true) {
-		t.Fatal("administrator-approved private host rejected")
+	for _, raw := range []string{
+		"2001:2::1", "2001:10::1", "2001:20::1", "3ffe::1", "3fff:fff::1",
+		"64:ff9b::1", "64:ff9b:1::1", "100::1", "100:0:0:1::1", "5f00::1",
+	} {
+		ip := netip.MustParseAddr(raw)
+		if webPushIPAllowed(ip, false) || webPushIPAllowed(ip, true) {
+			t.Errorf("accepted special-purpose IPv6 address %s", raw)
+		}
+	}
+
+	for _, raw := range []string{"192.168.1.2", "fd00::1"} {
+		if !webPushIPAllowed(netip.MustParseAddr(raw), true) {
+			t.Errorf("administrator-approved private address %s rejected", raw)
+		}
 	}
 }
 

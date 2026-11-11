@@ -23,7 +23,7 @@
 
 ## Overview
 
-micaGO connects Android, Linux and Windows clients to Messages on your Mac. A Go backend reads Messages, and a native Mac Companion manages pairing and server settings. Windows uses an independent WinUI app.
+micaGO connects Android, Linux and Windows clients to Messages on your Mac. A Go backend reads Messages, and the native micaGO Companion app manages pairing and server settings. Windows uses an independent WinUI app.
 
 ## Screenshots
 
@@ -49,19 +49,19 @@ micaGO connects Android, Linux and Windows clients to Messages on your Mac. A Go
   <a href="docs/assets/windows-appearance.png"><img src="docs/assets/windows-appearance.png" alt="Windows appearance settings" width="260" /></a>
 </p>
 
-### Mac Companion App
+### micaGO Companion for Mac
 
 <p align="center">
-  <a href="docs/assets/Companion1.png"><img src="docs/assets/Companion1.png" alt="Mac Companion dashboard" width="260" /></a>
-  <a href="docs/assets/Companion2.png"><img src="docs/assets/Companion2.png" alt="Mac Companion pairing" width="260" /></a>
-  <a href="docs/assets/Companion3.png"><img src="docs/assets/Companion3.png" alt="Mac Companion settings" width="260" /></a>
+  <a href="docs/assets/Companion1.png"><img src="docs/assets/Companion1.png" alt="micaGO Companion dashboard" width="260" /></a>
+  <a href="docs/assets/Companion2.png"><img src="docs/assets/Companion2.png" alt="micaGO Companion pairing" width="260" /></a>
+  <a href="docs/assets/Companion3.png"><img src="docs/assets/Companion3.png" alt="micaGO Companion settings" width="260" /></a>
 </p>
 
 ---
 
 ## Requirements
 
-Mac Companion requires macOS 13 or newer and Full Disk Access for Messages data. Sending requires Messages to be running and the appropriate Automation permission. Android requires Android 7.0 / API 24 or newer. Linux runs the Flutter client; Windows runs the native client, with Windows 11 as the primary UI validation environment.
+micaGO Companion requires macOS 13 or newer and Full Disk Access for Messages data. Sending requires Messages to be running and the appropriate Automation permission. Android requires Android 7.0 / API 24 or newer. Linux runs the Flutter client; Windows runs the native client, with Windows 11 as the primary UI validation environment.
 
 Use the same Wi-Fi for initial setup. Public HTTPS access is optional and requires your own proxy or tunnel. Platform engineering folders do not establish equal support on every OS.
 

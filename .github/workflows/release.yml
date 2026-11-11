@@ -1,8 +1,8 @@
 # micaGO build and release pipeline.
 #
 # Triggers:
-#   * Push a version tag like v0.87.0 -> builds every artifact and publishes a
-#                                        GitHub Release for that version.
+#   * Push a version tag like v0.87.0 -> builds every artifact and prepares a
+#                                        draft GitHub Release for that version.
 #   * Manual "Run workflow"            -> builds downloadable workflow artifacts
 #                                        without publishing a release.
 #
@@ -247,8 +247,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish GitHub Release
-    if: github.ref_type == 'tag'
+    name: Prepare GitHub Release draft
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: [meta, android, windows, linux]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -269,8 +269,12 @@ jobs:
           sha256sum --check SHA256SUMS
       - name: Prepare release assets (new releases stay draft until Mac updates are attached)
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::error::Release already exists. Review its assets manually; automatic replacement is disabled."
+          if existing_draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [[ "$existing_draft" == "true" ]]; then
+              echo "::notice::Draft already exists. Build artifacts are available for manual review and attachment."
+              exit 0
+            fi
+            echo "::error::Published release already exists. Automatic replacement is disabled."
             exit 1
           else
             gh release create "$GITHUB_REF_NAME" dist/* \

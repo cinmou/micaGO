@@ -1,6 +1,6 @@
-# micaGO Mac Companion
+# micaGO Companion
 
-SwiftUI 菜单栏应用，管理 Go 后端、配对、设备、同步规则、可选 Firebase 和隧道。它不是聊天客户端。
+SwiftUI 菜单栏应用，管理 Go 后端、配对、设备、同步规则、可选 Firebase 和隧道。
 
 在 Xcode 打开 `MicaGoCompanion.xcodeproj`，或从仓库根目录执行：
 
@@ -8,7 +8,7 @@ SwiftUI 菜单栏应用，管理 Go 后端、配对、设备、同步规则、�
 xcodebuild -project MicaGoServer/micago-mac-companion/MicaGoCompanion.xcodeproj -scheme MicaGoCompanion -configuration Debug build
 ```
 
-构建阶段将后端和 IMCore helper 放进 App Resources。后端读取 Messages 需要完全磁盘访问，发送需要 Messages 运行和 Automation 权限。
+App 内的后端和 IMCore helper 位于 `Contents/MacOS`。后端读取 Messages 需要完全磁盘访问，发送需要 Messages 运行和 Automation 权限。
 
 - [Mac 平台规则](../../docs/platforms/macos.md)：窗口、进程、隧道、权限、更新。
 - [开发与发布](../../docs/DEVELOPMENT.md)：DMG、签名、公证和 appcast。

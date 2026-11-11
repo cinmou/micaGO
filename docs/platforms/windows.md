@@ -4,6 +4,8 @@ Windows 是独立 WinUI 3 / .NET 应用，不是 Flutter 桌面构建。Core 处
 
 ## 启动与配对
 
+重复启动会把激活请求转给现有实例，恢复主窗口或配对窗口。启用托盘后也适用。
+
 当前 [App.xaml.cs](../../MicaGoWindowsClient/src/micaGO.App/App.xaml.cs) 会先检查本地已保存配对，有配对则直接显示主窗口并在后台恢复连接；没有配对或恢复失败才显示连接窗口。旧文档中“永不自动恢复”和更早的“配对页 Loaded 阻塞恢复”都不能直接套回当前实现。
 
 ConnectionWindow、MainWindow 和连接页使用代码构建的原生 WinUI 宿主。早期 compiled Window / 启动页 XBF 在 Release 下发生过原生崩溃，不恢复这些 XAML 宿主，除非有隔离的发布与启动验证。
@@ -60,6 +62,6 @@ Ctrl+F 搜索，F6 / Shift+F6 切区域，Shift+F10 / 菜单键打开消息菜�
 
 ## 打包与验证
 
-使用 [package-release-x64.ps1](../../MicaGoWindowsClient/scripts/package-release-x64.ps1) 的正常 x64 Release build 输出，再由安装器脚本包装。不要换成旧的 RID-specific self-contained publish 路径；它曾在激活 Page XBF 时崩溃。
+使用 [package-release-x64.ps1](../../MicaGoWindowsClient/scripts/package-release-x64.ps1) 的正常 x64 Release build 输出，再由安装器脚本包装。升级时，Inno Setup 用 `AppMutex` 在解包前提示退出仍在运行的 micaGO（包括托盘状态）。旧版本没有这个标记，点击安装时检查旧进程并提示退出。进程路径不可读时，检查同名进程及安装目录中已有的 EXE，避免 Restart Manager 无权限关闭进程时直接开始解包。Restart Manager 仍检查待替换的 EXE 和 DLL。验收时分别用前台和托盘状态运行旧版再启动安装器，确认退出后能继续升级。不要换成旧的 RID-specific self-contained publish 路径；它曾在激活 Page XBF 时崩溃。
 
 [Core 契约测试](../../MicaGoWindowsClient/tests/micaGO.Core.ContractTests) 覆盖语义与协议；原生构建、Release 启动、DPI、主题、IME、辅助功能、通知和摄像头要在 Windows 上检查。不要把文档中的历史测试数量当作当前覆盖数量。

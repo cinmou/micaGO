@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build micaGO Server.app with a bundled universal Go backend, then create a DMG.
+# Build micaGO Companion.app with a bundled universal Go backend, then create a DMG.
 #
 # Unsigned local build:
 #   ./scripts/package-dmg.sh
@@ -32,7 +32,7 @@ DMG_STAGING_DIR="$ARTIFACT_DIR/dmg-staging"
 DMG_BACKGROUND_PATH="$ARTIFACT_DIR/dmg-background.png"
 SWIFT_MODULE_CACHE_DIR="$ARTIFACT_DIR/swift-module-cache"
 DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-micaGO}"
-DMG_APP_NAME="${DMG_APP_NAME:-micaGO Server.app}"
+DMG_APP_NAME="${DMG_APP_NAME:-micaGO Companion.app}"
 DMG_WINDOW_WIDTH="${DMG_WINDOW_WIDTH:-}"
 DMG_WINDOW_HEIGHT="${DMG_WINDOW_HEIGHT:-}"
 
@@ -81,7 +81,7 @@ chmod +x "$BACKEND_DIR/micago"
 "$BACKEND_DIR/micago" --version
 echo "Backend minimum macOS (per arch): $(vtool -show-build "$BACKEND_DIR/micago" | awk '/minos/ {printf "%s ", $2}')"
 
-echo "==> Building micaGO Server.app"
+echo "==> Building micaGO Companion.app"
 XCODE_SIGNING_ARGS=()
 if [ -z "${SIGN_IDENTITY:-}" ]; then
   XCODE_SIGNING_ARGS=(

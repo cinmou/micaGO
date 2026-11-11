@@ -7,7 +7,7 @@ micaGO 把 Mac 上的 Messages 提供给自己的其他设备。没有 micaGO �
 | 组件 | 负责什么 | 代码入口 |
 | --- | --- | --- |
 | Go 服务端 | 读取 Messages、同步缓存、提供 API、执行发送 | [app.go](../MicaGoServer/micago-server/internal/app/app.go) |
-| Mac Companion | 管理自有后端进程、配对、隧道和设置 | [MicaGoCompanionApp.swift](../MicaGoServer/micago-mac-companion/MicaGoCompanion/MicaGoCompanionApp.swift) |
+| micaGO Companion | 管理自有后端进程、配对、隧道和设置 | [MicaGoCompanionApp.swift](../MicaGoServer/micago-mac-companion/MicaGoCompanion/MicaGoCompanionApp.swift) |
 | Flutter 客户端 | Android / Linux 上的聊天、缓存和交互 | [app_controller.dart](../MicaGoFlutterClient/lib/core/app_controller.dart) |
 | Windows 客户端 | 独立的 WinUI 应用，与 Flutter 共用服务端协议 | [App.xaml.cs](../MicaGoWindowsClient/src/micaGO.App/App.xaml.cs) |
 
@@ -23,7 +23,7 @@ flowchart LR
     Client --> Send[发送接口]
     Send --> AppleScript[AppleScript / 可选 IMCore]
     AppleScript --> Messages
-    Companion[Mac Companion] --> Control[本机控制接口]
+    Companion[micaGO Companion] --> Control[本机控制接口]
     Control --> Sync
     Sync -. 可选推送 .-> FCM[用户的 Firebase 项目]
     FCM -. 通知预览 .-> Client
