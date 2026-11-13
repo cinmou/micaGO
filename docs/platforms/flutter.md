@@ -71,7 +71,7 @@ Android 的“设置 → 外观 → 应用图标”提供默认（浅底蓝紫�
 
 ## 备份与检查
 
-`.micagobak` 是设置 ZIP，包含允许导出的外观、偏好和自定义图片，不包含设备凭据、聊天历史、推送令牌或待同步操作队列。恢复设置不能替代配对。
+`.micagobak` 是设置 ZIP，包含允许导出的外观、偏好、推送服务选择和自定义图片，不包含设备凭据、聊天历史、推送令牌或待同步操作队列。恢复设置不能替代配对：未配对时恢复会提示仍需配对；已配对时若推送服务选择改变，会按新选择为本机重新注册推送。`BackupService` 中每个 SecureStore 键都要列入 `backedUpKeys` 或 `localOnlyKeys`，新增键未归类时测试失败。
 
 [backup_service.dart](../../MicaGoFlutterClient/lib/core/backup/backup_service.dart) 是导出范围的依据；[测试目录](../../MicaGoFlutterClient/test) 覆盖配对、线路、发送确认、通知、布局和状态同步。构建与命令见[开发](../DEVELOPMENT.md)。
 
