@@ -61,26 +61,20 @@ const (
 )
 
 // IsControlLikeText reports whether text is a control/typedstream artifact that
-// must not be shown as a normal message — e.g. the "+!"/"+$" attributedBody
-// leak, or a string with no letters/digits at all. Conservative: any letter or
-// digit (incl. CJK) means it is real content.
+// must not be shown as a normal message: empty/placeholder-only text, or the
+// "+!"/"+$" attributedBody leak (the 0x2b marker plus a printable length byte).
+// Anything else — including punctuation-only messages such as "?" or "..." —
+// is real content.
 func IsControlLikeText(text string) bool {
 	t := strings.TrimSpace(strings.ReplaceAll(text, "￼", ""))
 	if t == "" {
 		return true
 	}
-	if t == "+" {
+	if len(t) != 2 || t[0] != '+' {
 		return false
 	}
-	for _, r := range t {
-		// Letters/digits (incl. CJK, accented) are content; so is any non-ASCII
-		// rune (emoji, symbols, other scripts). Real artifacts ("+!", "+$") are
-		// pure ASCII punctuation — never strip a real emoji-only message.
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r > unicode.MaxASCII {
-			return false
-		}
-	}
-	return true
+	r := rune(t[1])
+	return r <= unicode.MaxASCII && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
 func attachmentKindOf(m DebugMessageJSON) string {

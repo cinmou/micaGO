@@ -196,25 +196,20 @@ String? sanitizeMessageText(String? raw) {
 
 /// True when [text] is a control-like payload that must NOT render as normal
 /// chat text — e.g. the server-side typedstream "+!"/"+$" leak (fixed in the
-/// v0.11.5 server) or a string with no letters/digits/CJK at all.
+/// v0.11.5 server) or a string that is empty after stripping placeholders.
 ///
-/// Conservative on purpose: real messages contain at least one alphanumeric or
-/// CJK rune, so this never hides genuine text. The mixed case ("+!Hello") can't
-/// be safely repaired client-side and needs the server fix — documented.
+/// Conservative on purpose: the leak is the 0x2b marker plus one printable
+/// ASCII length byte, so only that exact two-character shape is hidden.
+/// Punctuation-only messages such as "?" or "..." are genuine text. The mixed
+/// case ("+!Hello") can't be safely repaired client-side and needs the server
+/// fix — documented.
 bool isControlLikeText(String text) {
   final t = text
       .replaceAll(_objectReplacement, '')
       .replaceAll(_unicodeReplacement, '')
       .trim();
   if (t.isEmpty) return true;
-  // Any letter, digit, or CJK ideograph means it's real content.
-  final hasAlnum = RegExp(r'[A-Za-z0-9À-ɏЀ-ӿ぀-ヿ一-鿿가-힯]').hasMatch(t);
-  if (hasAlnum) return false;
-  // Real protocol artifacts ("+!", "+$") are pure ASCII punctuation. Any
-  // non-ASCII rune (emoji, symbols, other scripts) is genuine content — never
-  // strip a real emoji-only message.
-  final hasNonAscii = t.runes.any((r) => r > 0x7F);
-  return !hasNonAscii;
+  return RegExp(r'^\+[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]$').hasMatch(t);
 }
 
 /// The text to display for a message, or null if there is none to show.
