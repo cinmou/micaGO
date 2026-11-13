@@ -264,7 +264,7 @@ void main() {
         MessageDeliveryState.sending,
       );
     });
-    test('sent_unconfirmed renders as sent unless later state arrives', () {
+    test('sent_unconfirmed still waits for a server message', () {
       expect(
         deliveryStateFor(
           _msg(
@@ -273,7 +273,7 @@ void main() {
             localState: LocalSendState.sentUnconfirmed,
           ),
         ),
-        MessageDeliveryState.sent,
+        MessageDeliveryState.awaitingConfirmation,
       );
     });
     test('failed from local state or error code', () {

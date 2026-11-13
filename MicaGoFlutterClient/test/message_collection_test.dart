@@ -29,6 +29,25 @@ MessageModel _optimistic(String tempId, String text, int at) =>
     MessageModel.optimistic(tempId: tempId, text: text, dateCreated: at);
 
 void main() {
+  test('discarded send stays removed when a stale cache snapshot arrives', () {
+    final pending = _optimistic(
+      'temp',
+      'hello',
+      100,
+    ).copyWith(localState: LocalSendState.pending);
+    final collection = MessageCollection()..addPending(pending);
+
+    expect(collection.discardPending('temp'), isTrue);
+    collection.mergeServerPage([pending]);
+    expect(collection.ordered, isEmpty);
+
+    collection.confirmPending(
+      'temp',
+      _server(guid: 'server', text: 'hello', isFromMe: true, dateCreated: 101),
+    );
+    expect(collection.ordered.single.guid, 'server');
+  });
+
   test('merged routes keep identical GUIDs, updates and unsends distinct', () {
     final c = MessageCollection();
     final a = _server(

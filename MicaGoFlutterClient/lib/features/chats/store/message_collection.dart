@@ -16,6 +16,7 @@ import '../models/message_model.dart';
 class MessageCollection {
   final Map<String, MessageModel> _server = {}; // by route + guid
   final Map<String, MessageModel> _pending = {}; // by tempId
+  final Set<String> _discardedTempIds = {};
 
   /// A confirmed row keeps the optimistic row's presentation identity. This is
   /// deliberately separate from message identity: the server GUID is still
@@ -72,6 +73,7 @@ class MessageCollection {
   void clear() {
     _server.clear();
     _pending.clear();
+    _discardedTempIds.clear();
     _presentationKeysByServerGuid.clear();
     _invalidate();
   }
@@ -102,7 +104,8 @@ class MessageCollection {
           _pending.remove(message.tempId);
         }
       } else if (message.tempId != null) {
-        if (!_presentationKeysByServerGuid.containsValue(message.tempId)) {
+        if (!_discardedTempIds.contains(message.tempId) &&
+            !_presentationKeysByServerGuid.containsValue(message.tempId)) {
           _pending.putIfAbsent(message.tempId!, () => message);
         }
       }
@@ -180,6 +183,13 @@ class MessageCollection {
     final removed = _pending.remove(tempId);
     _invalidate();
     return removed;
+  }
+
+  /// Ignores older cache snapshots of a bubble the user removed.
+  bool discardPending(String tempId) {
+    if (removePending(tempId) == null) return false;
+    _discardedTempIds.add(tempId);
+    return true;
   }
 
   // --- Reconciliation -------------------------------------------------------

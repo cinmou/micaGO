@@ -359,8 +359,7 @@ class ThreadController extends ChangeNotifier {
   }
 
   Future<void> deletePending(String tempId) async {
-    final removed = _col.removePending(tempId);
-    if (removed == null) return;
+    if (!_col.discardPending(tempId)) return;
     _cleanupAttachmentSend(tempId);
     await app.cache.deletePending(tempId);
     state = _col.isEmpty ? ThreadState.empty : ThreadState.loaded;

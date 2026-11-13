@@ -102,6 +102,7 @@ const _strings = {
         "Local software encryption; root access can expose credentials.",
 
     'chat.awaitingConfirmation': 'Waiting for confirmation',
+    'chat.removeLocalSend': 'Remove from this device',
     'prefs.failed': 'Hidden preferences could not be synced. Try again.',
     'prefs.offline':
         'Hidden chat preferences have not synced. Sync resumes when connected.',
@@ -559,6 +560,7 @@ const _strings = {
     "settings.credentialCompatibilityDetail": "使用本机软件加密，root 权限可读取凭据。",
 
     'chat.awaitingConfirmation': '等待发送确认',
+    'chat.removeLocalSend': '从本机移除',
     'prefs.failed': '隐藏状态同步失败，请重试。',
     'prefs.offline': '隐藏状态尚未同步，连接后将自动重试。',
     'prefs.conflict': '其他设备已修改隐藏状态，请选择要保留的设置。',
@@ -994,6 +996,7 @@ const _strings = {
     "settings.credentialCompatibilityDetail": "使用本機軟體加密，root 權限可讀取憑證。",
 
     'chat.awaitingConfirmation': '等待傳送確認',
+    'chat.removeLocalSend': '從此裝置移除',
     'prefs.failed': '隱藏狀態同步失敗，請重試。',
     'prefs.offline': '隱藏狀態尚未同步，連線後將自動重試。',
     'prefs.conflict': '其他裝置已修改隱藏狀態，請選擇要保留的設定。',

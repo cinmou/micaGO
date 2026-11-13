@@ -567,7 +567,8 @@ MessageDeliveryState deliveryStateFor(MessageModel m) {
   if (m.localState == LocalSendState.failed || m.errorCode > 0) {
     return MessageDeliveryState.failed;
   }
-  if (m.localState == LocalSendState.pending) {
+  if (m.localState == LocalSendState.pending ||
+      m.localState == LocalSendState.sentUnconfirmed) {
     return MessageDeliveryState.awaitingConfirmation;
   }
   if (m.localState == LocalSendState.sending) {

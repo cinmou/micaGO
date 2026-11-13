@@ -2178,7 +2178,7 @@ Future<void> showMessageActionMenu(
   final text = displayText(message);
   if (!isLinuxDesktop) unawaited(HapticFeedback.mediumImpact());
   var caps = const MessageActionCapabilities();
-  if (api != null) {
+  if (api != null && message.guid.isNotEmpty) {
     caps = await _fetchMessageActionCapabilities(api).timeout(
       const Duration(milliseconds: 300),
       onTimeout: () => _messageActionCaps,
@@ -2209,8 +2209,13 @@ Future<void> showMessageActionMenu(
       message.guid.isNotEmpty &&
       !message.guid.startsWith('tmp-') &&
       !message.isRetracted;
-  final failedPending =
-      message.localState == LocalSendState.failed && message.tempId != null;
+  final canRemoveLocal =
+      onDeletePending != null &&
+      message.guid.isEmpty &&
+      message.tempId != null &&
+      (message.localState == LocalSendState.failed ||
+          deliveryStateFor(message) ==
+              MessageDeliveryState.awaitingConfirmation);
   final items = <PopupMenuEntry<MessageAction>>[
     if (text != null)
       PopupMenuItem<MessageAction>(
@@ -2301,13 +2306,13 @@ Future<void> showMessageActionMenu(
           title: Text(MicaLocalizations.of(context).t('common.delete')),
         ),
       ),
-    if (failedPending)
+    if (canRemoveLocal)
       PopupMenuItem<MessageAction>(
         value: MessageAction.deletePending,
         child: ListTile(
           dense: true,
           leading: const Icon(Icons.delete_outline),
-          title: Text(MicaLocalizations.of(context).t('common.delete')),
+          title: Text(strings.t('chat.removeLocalSend')),
         ),
       ),
   ];
@@ -4164,8 +4169,8 @@ class _Footer extends StatelessWidget {
       }
     }
     if (editedMarker(message) != null) parts.add(strings.t('chat.edited'));
-    // Status word is outgoing-only, shown only on the latest outgoing message.
-    if (showStatus) {
+    // A local send that still needs confirmation stays visible in every mode.
+    if (showStatus || state == MessageDeliveryState.awaitingConfirmation) {
       switch (state) {
         case MessageDeliveryState.sending:
           parts.add(strings.t('chat.sending'));
