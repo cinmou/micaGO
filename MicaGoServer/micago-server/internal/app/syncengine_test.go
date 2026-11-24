@@ -130,6 +130,56 @@ func TestSyncEngineBurst(t *testing.T) {
 	})
 }
 
+func TestSyncEngineTriggerBurstCancelsPreviousAndExitsOnContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var mu sync.Mutex
+	reasons := map[string]int{}
+	e := NewSyncEngine(func(ctx context.Context, reason string) error {
+		mu.Lock()
+		reasons[reason]++
+		mu.Unlock()
+		return nil
+	})
+	e.Start(ctx)
+
+	// Start a long burst, then immediately replace it with a newer burst.
+	e.TriggerBurst(ctx, "old_burst", 20, 20*time.Millisecond)
+	e.TriggerBurst(ctx, "new_burst", 3, 5*time.Millisecond)
+
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return reasons["new_burst"] >= 1
+	})
+	time.Sleep(60 * time.Millisecond)
+
+	mu.Lock()
+	oldCountAfterReplace := reasons["old_burst"]
+	mu.Unlock()
+	if oldCountAfterReplace > 1 {
+		t.Fatalf("old burst was not cancelled on replacement: old_burst ran %d times", oldCountAfterReplace)
+	}
+
+	// Start another long burst and cancel parent ctx; triggers must stop promptly.
+	burstCtx, burstCancel := context.WithCancel(ctx)
+	e.TriggerBurst(burstCtx, "cancel_burst", 50, 10*time.Millisecond)
+	burstCancel()
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	afterCancel1 := reasons["cancel_burst"]
+	mu.Unlock()
+	time.Sleep(40 * time.Millisecond)
+	mu.Lock()
+	afterCancel2 := reasons["cancel_burst"]
+	mu.Unlock()
+	if afterCancel2 != afterCancel1 {
+		t.Fatalf("burst kept firing after ctx cancel: %d -> %d", afterCancel1, afterCancel2)
+	}
+}
+
 func TestIsDBLockedError(t *testing.T) {
 	if !isDBLockedError(errors.New("database is locked")) {
 		t.Fatal("should detect locked")

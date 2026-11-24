@@ -2,8 +2,10 @@ package relaydb
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"micagoserver/internal/send"
 	"micagoserver/internal/store"
 )
 
@@ -349,5 +351,138 @@ INSERT INTO attachments (
 
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFindOutgoingMessageMatchOrdersEarliestFirst(t *testing.T) {
+	db := openTestDB(t)
+	if _, err := db.sqlDB.Exec(`
+INSERT INTO chats (guid, chat_identifier, service_name, display_name, is_archived, updated_at) VALUES
+('chat-dup', 'c1', 'iMessage', 'Dup', 0, 100);
+INSERT INTO messages (
+	guid, chat_guid, source_rowid, text, service, date_created, is_from_me, is_read, is_delivered, cache_has_attachments, created_at
+) VALUES
+('msg-early', 'chat-dup', 101, 'same text', 'iMessage', 1020, 1, 1, 1, 0, 1020),
+('msg-late', 'chat-dup', 102, 'same text', 'iMessage', 1060, 1, 1, 1, 0, 1060);
+`); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	normalized := send.NormalizeText("same text")
+	excluded := map[string]struct{}{}
+
+	matchA, err := db.FindOutgoingMessageMatch(ctx, "chat-dup", normalized, 1000, excluded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matchA == nil || matchA.GUID != "msg-early" {
+		t.Fatalf("Send A should match earliest msg-early, got %+v", matchA)
+	}
+
+	excluded[matchA.GUID] = struct{}{}
+	matchB, err := db.FindOutgoingMessageMatch(ctx, "chat-dup", normalized, 1050, excluded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matchB == nil || matchB.GUID != "msg-late" {
+		t.Fatalf("Send B should match msg-late, got %+v", matchB)
+	}
+}
+
+func TestGetMessagesByGUIDsChunksLargeBatchesAndPreservesOrder(t *testing.T) {
+	db := openTestDB(t)
+	tx, err := db.sqlDB.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO chats (guid, chat_identifier, service_name, display_name, is_archived, updated_at) VALUES ('chat-bulk', 'bulk', 'iMessage', 'Bulk', 0, 100)`); err != nil {
+		t.Fatal(err)
+	}
+	// Include one message with NULL source_rowid to verify NULL sorts first under ASC.
+	if _, err := tx.Exec(`INSERT INTO messages (guid, chat_guid, source_rowid, text, service, date_created, is_from_me, is_read, is_delivered, cache_has_attachments, created_at) VALUES ('msg-null-rowid', 'chat-bulk', NULL, 'null rowid', 'iMessage', 50, 0, 1, 1, 0, 50)`); err != nil {
+		t.Fatal(err)
+	}
+	const total = 1205
+	guids := make([]string, 0, total+5)
+	guids = append(guids, "msg-null-rowid")
+	for i := total; i >= 1; i-- {
+		guid := fmt.Sprintf("msg-%04d", i)
+		if _, err := tx.Exec(`INSERT INTO messages (guid, chat_guid, source_rowid, text, service, date_created, is_from_me, is_read, is_delivered, cache_has_attachments, created_at) VALUES (?, 'chat-bulk', ?, 'hello', 'iMessage', ?, 0, 1, 1, 1, ?)`, guid, i, i*10, i*10); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 || i == 600 || i == total {
+			if _, err := tx.Exec(`INSERT INTO attachments (guid, message_guid, filename, mime_type, transfer_name, total_bytes, local_path, is_outgoing, hide_attachment, created_at) VALUES (?, ?, 'pic.jpg', 'image/jpeg', 'pic.jpg', 100, '/tmp/pic.jpg', 0, 0, 10)`, fmt.Sprintf("att-%d-a", i), guid); err != nil {
+				t.Fatal(err)
+			}
+			// Duplicate file identity on the same message must still dedupe across chunks.
+			if _, err := tx.Exec(`INSERT INTO attachments (guid, message_guid, filename, mime_type, transfer_name, total_bytes, local_path, is_outgoing, hide_attachment, created_at) VALUES (?, ?, 'pic.jpg', 'image/jpeg', 'pic.jpg', 100, '/tmp/pic.jpg', 0, 0, 11)`, fmt.Sprintf("att-%d-b", i), guid); err != nil {
+				t.Fatal(err)
+			}
+		}
+		guids = append(guids, guid)
+	}
+	// Add duplicate GUIDs in input to ensure deduping works.
+	guids = append(guids, "msg-0001", "msg-0600")
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := db.GetMessagesByGUIDs(context.Background(), guids)
+	if err != nil {
+		t.Fatalf("GetMessagesByGUIDs failed on %d GUIDs: %v", len(guids), err)
+	}
+	if len(got) != total+1 {
+		t.Fatalf("expected %d messages, got %d", total+1, len(got))
+	}
+	if got[0].GUID != "msg-null-rowid" {
+		t.Fatalf("expected NULL source_rowid first, got %q", got[0].GUID)
+	}
+	if got[1].GUID != "msg-0001" || got[len(got)-1].GUID != fmt.Sprintf("msg-%04d", total) {
+		t.Fatalf("unexpected ordering: first=%q last=%q", got[1].GUID, got[len(got)-1].GUID)
+	}
+	for _, idx := range []int{1, 600, total} {
+		if len(got[idx].Attachments) != 1 {
+			t.Fatalf("expected 1 deduped attachment for %s, got %d", got[idx].GUID, len(got[idx].Attachments))
+		}
+	}
+}
+
+func TestListChatsAndAttachmentsTolerateNullColumns(t *testing.T) {
+	db := openTestDB(t)
+	if _, err := db.sqlDB.Exec(`
+INSERT INTO chats (guid, chat_identifier, service_name, display_name, is_archived, updated_at) VALUES
+('chat-null-archived', 'c-null', 'iMessage', 'Null Archived', NULL, 100);
+INSERT INTO messages (guid, chat_guid, source_rowid, text, service, date_created, is_from_me, is_read, is_delivered, cache_has_attachments, created_at) VALUES
+('msg-null-att', 'chat-null-archived', 1, 'with att', 'iMessage', 1000, 0, 1, 1, 1, 1000);
+INSERT INTO attachments (guid, message_guid, filename, mime_type, transfer_name, total_bytes, local_path, is_outgoing, hide_attachment, created_at, is_sticker) VALUES
+('att-nulls', 'msg-null-att', 'file.bin', 'application/octet-stream', 'file.bin', NULL, '/tmp/file.bin', NULL, NULL, 1000, NULL);
+`); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	chats, err := db.ListChats(ctx, 10, 0, false, "all", false)
+	if err != nil {
+		t.Fatalf("ListChats with NULL is_archived: %v", err)
+	}
+	if len(chats) != 1 || chats[0].GUID != "chat-null-archived" || chats[0].IsArchived {
+		t.Fatalf("unexpected chats: %+v", chats)
+	}
+
+	meta, err := db.GetAttachmentByGUID(ctx, "att-nulls")
+	if err != nil {
+		t.Fatalf("GetAttachmentByGUID with NULL columns: %v", err)
+	}
+	if meta == nil || meta.TotalBytes != 0 || meta.IsOutgoing || meta.HideAttachment || meta.IsSticker {
+		t.Fatalf("unexpected attachment meta: %+v", meta)
+	}
+
+	msgs, err := db.GetMessagesByGUIDs(ctx, []string{"msg-null-att"})
+	if err != nil {
+		t.Fatalf("GetMessagesByGUIDs with NULL attachment total_bytes: %v", err)
+	}
+	if len(msgs) != 1 || len(msgs[0].Attachments) != 1 || msgs[0].Attachments[0].TotalBytes != 0 {
+		t.Fatalf("unexpected message attachments: %+v", msgs)
 	}
 }

@@ -11,6 +11,7 @@ internal static class ChatPreferenceSyncTests
         public string ServerId = new('a', 32);
         public bool Offline;
         public bool LoseReply;
+        public ChatPreference? ExtraReplyRow;
         public long Revision;
         public readonly Dictionary<string,ChatPreference> Rows = [];
         private readonly Dictionary<string,ChatPreferences> _replies = [];
@@ -25,9 +26,10 @@ internal static class ChatPreferenceSyncTests
             if(_replies.TryGetValue(request.MutationId,out var replay))return Task.FromResult(replay);
             if(request.ServerId!=ServerId||request.Changes.Any(change=>change.BaseRevision!=(Rows.GetValueOrDefault(change.ChatGuid)?.Revision??0)))throw new MicaGoApiException("conflict",409);
             Revision++;
-            var data=request.Changes.Select(change=>new ChatPreference(change.ChatGuid,change.Hidden,Revision)).ToArray();
+            var data=request.Changes.Select(change=>new ChatPreference(change.ChatGuid,change.Hidden,Revision)).ToList();
             foreach(var row in data)Rows[row.ChatGuid]=row;
-            var reply=new ChatPreferences(ServerId,Revision,data);_replies[request.MutationId]=reply;
+            if(ExtraReplyRow is {} extra){data.Add(extra);Rows[extra.ChatGuid]=extra;ExtraReplyRow=null;}
+            var reply=new ChatPreferences(ServerId,Revision,data.ToArray());_replies[request.MutationId]=reply;
             if(LoseReply){LoseReply=false;throw new HttpRequestException("lost acknowledgement");}
             return Task.FromResult(reply);
         }
@@ -66,6 +68,32 @@ internal static class ChatPreferenceSyncTests
             await a.SyncAsync();True(!a.Pending&&!server.Rows.ContainsKey("private-route"),"outbox crossed server identity");
             server.ServerId=new('a',32);await a.SyncAsync();True(server.Rows["private-route"].Hidden,"archived outbox lost");
             await cacheA.ClearContentCacheAsync();True(await cacheA.GetSettingAsync("chat.preferences.v1") is not null,"cache clear erased preferences");
+            server.ExtraReplyRow=new ChatPreference("extra-server-row",true,server.Revision+10);
+            await a.SetHiddenAsync(["extra-trigger"],true);
+            True(a.ErrorKey is null&&a.Hidden.Contains("extra-trigger")&&a.Hidden.Contains("extra-server-row"),"extra response row broke chat preference sync");
+
+            // SettingsBackupService excludes server-scoped sync queues, watermarks, auth rejection and mute migration flags.
+            await cacheA.SetSettingAsync("appearance.theme","dark");
+            await cacheA.SetSettingAsync("sync.cursor","99");
+            await cacheA.SetSettingAsync("auth.rejected","1");
+            await cacheA.SetSettingAsync("chat.mute.serverMigrated","1");
+            await cacheA.SetSettingAsync("read.watermark.route-a","500");
+            await cacheA.SetSettingAsync("message.preferences.v1","{}");
+            await cacheA.SetSettingAsync("read.state.v1","{}");
+            var backupPath=Path.Combine(directory.FullName,"settings.micagobak");
+            await new SettingsBackupService(cacheA).ExportAsync(backupPath,"0.94.1");
+            using var cacheC=new LocalCacheStore(Path.Combine(directory.FullName,"c.db"));
+            await cacheC.InitializeAsync();
+            await new SettingsBackupService(cacheC).ImportAsync(backupPath);
+            True(await cacheC.GetSettingAsync("appearance.theme")=="dark","backup lost user setting");
+            True(await cacheC.GetSettingAsync("sync.cursor") is null
+                && await cacheC.GetSettingAsync("auth.rejected") is null
+                && await cacheC.GetSettingAsync("chat.mute.serverMigrated") is null
+                && await cacheC.GetSettingAsync("read.watermark.route-a") is null
+                && await cacheC.GetSettingAsync("chat.preferences.v1") is null
+                && await cacheC.GetSettingAsync("message.preferences.v1") is null
+                && await cacheC.GetSettingAsync("read.state.v1") is null,
+                "backup leaked server-scoped state or sync queue");
         }
         finally
         {

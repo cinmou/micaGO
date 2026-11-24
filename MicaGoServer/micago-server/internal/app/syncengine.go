@@ -32,6 +32,7 @@ type SyncEngine struct {
 	pending       bool
 	pendingReason string
 	pendingCount  int // total triggers coalesced (diagnostic)
+	burstCancel   context.CancelFunc
 }
 
 func NewSyncEngine(run func(ctx context.Context, reason string) error) *SyncEngine {
@@ -74,13 +75,43 @@ func (e *SyncEngine) Trigger(reason string) {
 // short-poll burst after a send so a delayed outgoing DB row is caught quickly).
 // The engine coalesces, so this never causes overlapping syncs.
 func (e *SyncEngine) TriggerBurst(ctx context.Context, reason string, n int, interval time.Duration) {
+	if n <= 0 {
+		return
+	}
+	burstCtx, cancel := context.WithCancel(ctx)
+	e.mu.Lock()
+	if e.burstCancel != nil {
+		e.burstCancel()
+	}
+	e.burstCancel = cancel
+	e.mu.Unlock()
+
 	go func() {
-		for i := 0; i < n; i++ {
-			e.Trigger(reason)
+		defer cancel()
+		if burstCtx.Err() != nil {
+			return
+		}
+		e.Trigger(reason)
+		if n == 1 {
+			return
+		}
+		if interval <= 0 {
+			for i := 1; i < n; i++ {
+				if burstCtx.Err() != nil {
+					return
+				}
+				e.Trigger(reason)
+			}
+			return
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for i := 1; i < n; i++ {
 			select {
-			case <-ctx.Done():
+			case <-burstCtx.Done():
 				return
-			case <-time.After(interval):
+			case <-ticker.C:
+				e.Trigger(reason)
 			}
 		}
 	}()

@@ -336,18 +336,18 @@ func Run(options Options) error {
 			interval = 5 * time.Second
 		}
 		go runSyncLoop(ctx, interval, engine.Trigger)
-		go runDBMtimeSyncLoop(ctx, cfg.DBPath, 750*time.Millisecond, diagnostics, engine.Trigger)
+		go runDBWatchLoop(ctx, cfg.DBPath, diagnostics, engine.Trigger)
 	}
 
 	sendDeps := &httpapi.SendDependencies{
 		Pending: pendingSends,
 		Sender:  micasend.AppleScriptSender{},
-		SyncNow: func(ctx context.Context) error {
+		SyncNow: func(sendCtx context.Context) error {
 			// Immediate sync so the send handler can poll fresh chat.db state,
 			// plus a short coalesced burst so a delayed outgoing DB row (chat.db
 			// write lag) is picked up within a few seconds.
-			_, err := syncAndBroadcast(ctx, "send")
-			engine.TriggerBurst(context.WithoutCancel(ctx), "send_burst", 12, 1500*time.Millisecond)
+			_, err := syncAndBroadcast(sendCtx, "send")
+			engine.TriggerBurst(ctx, "send_burst", 12, 1500*time.Millisecond)
 			return err
 		},
 		Events: hub,
@@ -474,8 +474,11 @@ func Run(options Options) error {
 	}
 
 	publicServer := &http.Server{Addr: net.JoinHostPort(host, tlsPort), Handler: handler, ReadHeaderTimeout: 5 * time.Second, TLSConfig: tlsConfig}
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
+		hub.Close()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
@@ -507,6 +510,10 @@ func Run(options Options) error {
 	go func() { errorsCh <- publicServer.Serve(tls.NewListener(listener, tlsConfig)) }()
 	go func() { errorsCh <- srv.ListenAndServe() }()
 	err = <-errorsCh
+	if err == http.ErrServerClosed && ctx.Err() != nil {
+		<-shutdownDone
+		return nil
+	}
 	_ = publicServer.Close()
 	_ = srv.Close()
 	if err != nil && err != http.ErrServerClosed {

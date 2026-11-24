@@ -89,6 +89,34 @@ internal static class OutgoingSendTests
             await f.Cache.InitializeAsync();
             Check((await f.Cache.GetPendingSendsAsync("route")).Single().TempId=="legacy","legacy migration");
         }
+        using(var f=new Fixture()) {
+            var source=Path.Combine(f.Root,"inflight.png");await File.WriteAllTextAsync(source,"bytes");
+            var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            f.Api.File=async(_,_,_,_,_)=>{started.SetResult();await release.Task;return new("inflight.png");};
+            var send=f.Sender.SendFilesAsync("route",[source]);
+            await started.Task;
+            var row=(await f.Cache.GetPendingSendsAsync("route")).Single();
+            Check(f.Sender.IsInFlight(row.TempId),"in-flight upload must report IsInFlight=true");
+            release.SetResult();
+            await send;
+            Check(!f.Sender.IsInFlight(row.TempId),"completed upload must clear IsInFlight");
+        }
+        using(var f=new Fixture()) {
+            await f.Cache.InitializeAsync();
+            var updates=new List<OutgoingSendUpdate>();
+            f.Sender.Changed+=(_,value)=>updates.Add(value);
+            await using(var db=new SqliteConnection($"Data Source={f.Database}")) {
+                await db.OpenAsync();await using var command=db.CreateCommand();
+                command.CommandText="CREATE TRIGGER fail_upsert BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'disk full'); END;";
+                await command.ExecuteNonQueryAsync();
+            }
+            var result=await f.Sender.SendTextAsync("route","accepted-but-disk-error");
+            Check(result==MessageDeliveryState.Sent,"accepted send remains Sent on local upsert failure");
+            var row=(await f.Cache.GetPendingSendsAsync("route")).Single();
+            Check(row.State=="sent_unconfirmed","upsert failure keeps sent_unconfirmed pending row");
+            Check(updates.Last().Message.IsPending,"upsert failure must not emit confirmed non-pending message");
+        }
     }
     private static void Check(bool condition,string reason){if(!condition)throw new InvalidOperationException(reason);}
     private sealed class Fixture:IDisposable

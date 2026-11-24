@@ -282,8 +282,10 @@ ON CONFLICT(guid) DO UPDATE SET
     );
   }
 
-  Future<int> hiddenChatCount() async =>
-      (await effectiveHiddenChatGuids()).length;
+  Future<int> hiddenChatCount() async {
+    if (!accessAllowed) return 0;
+    return (await effectiveHiddenChatGuids()).length;
+  }
 
   Future<List<ChatSummary>> hiddenChats() async {
     if (!accessAllowed) return [];

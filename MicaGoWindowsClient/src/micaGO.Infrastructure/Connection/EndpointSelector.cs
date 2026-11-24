@@ -15,6 +15,14 @@ public sealed record EndpointProbeResult(
 public sealed class EndpointSelector
 {
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(6);
+    private readonly Func<ConnectionEndpoint, string, CancellationToken, Task<EndpointProbeResult>>? _probeOverride;
+
+    public EndpointSelector() : this(null) { }
+
+    public EndpointSelector(Func<ConnectionEndpoint, string, CancellationToken, Task<EndpointProbeResult>>? probeOverride)
+    {
+        _probeOverride = probeOverride;
+    }
 
     /// <param name="excludeBaseUrl">A route already tried (the chosen route) to skip.</param>
     /// <param name="observe">Receives every probe result (Settings route card).</param>
@@ -34,29 +42,37 @@ public sealed class EndpointSelector
         }
         var lan = endpoints.Where(endpoint => endpoint.Kind == EndpointKind.Lan).ToArray();
         var publicEndpoints = endpoints.Where(endpoint => endpoint.Kind == EndpointKind.Public).ToArray();
+        var anyRejected = false;
 
         if (mode != ConnectionMode.PublicOnly)
         {
-            var selectedLan = await SelectFastestAsync(lan, token, cancellationToken, observe);
+            var (selectedLan, lanRejected) = await SelectFastestAsync(lan, token, cancellationToken, observe);
             if (selectedLan is not null)
             {
                 return selectedLan;
             }
+            anyRejected |= lanRejected;
         }
 
         if (mode != ConnectionMode.LanOnly)
         {
-            var selectedPublic = await SelectFastestAsync(publicEndpoints, token, cancellationToken, observe);
+            var (selectedPublic, publicRejected) = await SelectFastestAsync(publicEndpoints, token, cancellationToken, observe);
             if (selectedPublic is not null)
             {
                 return selectedPublic;
             }
+            anyRejected |= publicRejected;
+        }
+
+        if (anyRejected)
+        {
+            throw new CredentialRejectedException();
         }
 
         throw new ConnectionException("No advertised endpoint passed both the health and authentication checks.");
     }
 
-    private static async Task<EndpointProbeResult?> SelectFastestAsync(
+    private async Task<(EndpointProbeResult? Selected, bool AnyRejected)> SelectFastestAsync(
         IReadOnlyList<ConnectionEndpoint> endpoints,
         string token,
         CancellationToken cancellationToken,
@@ -64,16 +80,16 @@ public sealed class EndpointSelector
     {
         if (endpoints.Count == 0)
         {
-            return null;
+            return (null, false);
         }
 
-        var results = await Task.WhenAll(endpoints.Select(endpoint => ProbeCoreAsync(endpoint, token, cancellationToken)));
+        var results = await Task.WhenAll(endpoints.Select(endpoint => ProbeAsync(endpoint, token, cancellationToken)));
         foreach (var result in results) observe?.Invoke(result);
-        if (results.Any(result => result.CredentialRejected)) throw new CredentialRejectedException();
-        return results
+        var selected = results
             .Where(result => result.IsAvailable)
             .OrderBy(result => result.Latency)
             .FirstOrDefault();
+        return (selected, selected is null && results.Any(result => result.CredentialRejected));
     }
 
     /// <summary>Health + auth check of one route; never throws for network errors.</summary>
@@ -81,7 +97,7 @@ public sealed class EndpointSelector
         ConnectionEndpoint endpoint,
         string token,
         CancellationToken cancellationToken = default) =>
-        ProbeCoreAsync(endpoint, token, cancellationToken);
+        _probeOverride is not null ? _probeOverride(endpoint, token, cancellationToken) : ProbeCoreAsync(endpoint, token, cancellationToken);
 
     private static async Task<EndpointProbeResult> ProbeCoreAsync(
         ConnectionEndpoint endpoint,
@@ -116,11 +132,11 @@ public sealed class EndpointSelector
             using var authResponse = await client.SendAsync(authRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             if (!authResponse.IsSuccessStatusCode)
             {
-                var reason = authResponse.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                var rejected = await CredentialSession.IsStructuredUnauthorizedAsync(authResponse, timeout.Token);
+                var reason = rejected
                     ? "The token was rejected."
                     : $"Authentication returned HTTP {(int)authResponse.StatusCode}.";
-                return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, reason,
-                    authResponse.StatusCode == System.Net.HttpStatusCode.Unauthorized);
+                return new EndpointProbeResult(endpoint, false, stopwatch.Elapsed, reason, rejected);
             }
 
             return new EndpointProbeResult(endpoint, true, stopwatch.Elapsed);

@@ -70,3 +70,33 @@ func TestOpenReadOnlyReadsWALDatabase(t *testing.T) {
 
 	_ = rw.Close()
 }
+
+func TestOpenReadOnlyPoolAndCacheSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chat.db")
+	rw, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_busy_timeout=5000", path))
+	if err != nil {
+		t.Fatalf("open rw: %v", err)
+	}
+	if _, err := rw.Exec("CREATE TABLE t (id INTEGER PRIMARY KEY);"); err != nil {
+		_ = rw.Close()
+		t.Fatalf("create: %v", err)
+	}
+	_ = rw.Close()
+
+	ro, err := OpenReadOnly(path)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	defer ro.Close()
+
+	if got := ro.Stats().MaxOpenConnections; got != 2 {
+		t.Fatalf("expected MaxOpenConnections=2, got %d", got)
+	}
+	var cacheSize int
+	if err := ro.QueryRowContext(context.Background(), "PRAGMA cache_size;").Scan(&cacheSize); err != nil {
+		t.Fatalf("query PRAGMA cache_size: %v", err)
+	}
+	if cacheSize != -512 {
+		t.Fatalf("expected PRAGMA cache_size=-512, got %d", cacheSize)
+	}
+}

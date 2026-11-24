@@ -51,6 +51,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     // Open the realtime socket + load endpoints once the shell appears.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final app = context.read<AppController>();
       _app = app;
       unawaited(app.connectForeground(reason: 'startup'));
@@ -63,6 +64,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         final push = _push;
         if (push == null ||
             push.available ||
+            push.transportInUse == 'off' ||
             (isLinuxDesktop && push.localReady)) {
           _pushRetryTimer?.cancel();
           _pushRetryTimer = null;
@@ -217,17 +219,19 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final theme = context.watch<ThemeController>();
     final glass = theme.useLiquidGlass;
     final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
-    final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
-        ? glassBg
+        ? liquidGlassHeaderColor(context)
         : neutralSurfaces
         ? scheme.surface
         : _homeAccent1_100(scheme);
     final pageBg = glass
-        ? glassBg
+        ? liquidGlassPageColor(context)
         : neutralSurfaces
         ? scheme.surface
         : _homeAccent1_50(scheme);
+    final pageDecoration = glass
+        ? liquidGlassPageDecoration(context)
+        : BoxDecoration(color: pageBg);
     final chats = ChatsPane(
       searchRequests: _searchRequests,
       onSearchRequested: () => _searchRequests.value++,
@@ -266,7 +270,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                     top: Radius.circular(24),
                   ),
                   child: DecoratedBox(
-                    decoration: BoxDecoration(color: pageBg),
+                    decoration: pageDecoration,
                     child: SafeArea(top: false, bottom: false, child: chats),
                   ),
                 ),

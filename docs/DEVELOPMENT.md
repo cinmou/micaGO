@@ -1,6 +1,6 @@
 # 开发、测试与发布
 
-下面命令从仓库根目录开始。CI 与发布元数据阶段使用 `scripts/check-versions.py` 核对 Go、Flutter、设备版本标签、Xcode、DMG 脚本和 Windows 的版本一致性，并核对 Flutter/Xcode build number。版本以各组件版本文件为准；目前为 0.94.1，Flutter build number 为 95。改版本时保留历史版本比较测试中的旧样本。
+下面命令从仓库根目录开始。CI 与发布元数据阶段使用 `scripts/check-versions.py` 核对 Go、Flutter、设备版本标签、Xcode、DMG 脚本和 Windows 的版本一致性，并核对 Flutter/Xcode build number。版本以各组件版本文件为准；目前为 0.96.0，Flutter build number 为 96。改版本时保留历史版本比较测试中的旧样本。
 
 ## 本地开发
 
@@ -58,7 +58,7 @@ micaGO Companion 的针对性检查在 [scripts](../MicaGoServer/micago-mac-comp
 
 ## Mac 发布
 
-使用现有 [package-dmg.sh](../MicaGoServer/micago-mac-companion/scripts/package-dmg.sh) 与 `create-dmg`。本地未签名包用于开发；公开包需 Developer ID 签名、公证、staple 和 Sparkle 签名。
+使用现有 [package-dmg.sh](../MicaGoServer/micago-mac-companion/scripts/package-dmg.sh) 与 `create-dmg`。本地包默认使用 ad-hoc 签名并注入 Automation entitlements；公开包需 Developer ID 签名、公证、staple 和 Sparkle 签名。
 
 ```sh
 brew install create-dmg
@@ -66,7 +66,7 @@ cd MicaGoServer/micago-mac-companion
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPLE_TEAM_ID="TEAMID" \
 NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE="micaGO-notary" \
-VERSION=0.94.1 scripts/package-dmg.sh
+VERSION=0.96.0 scripts/package-dmg.sh
 ```
 
 公证凭据预先由 `notarytool store-credentials` 放入钥匙串；不要把密码和私钥写进文档或 shell 历史。Sparkle EdDSA 私钥也由发布环境安全提供。

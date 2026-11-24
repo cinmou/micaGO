@@ -357,6 +357,9 @@ class PushService {
     UnifiedPushBridge.onEndpoint = null;
     UnifiedPushBridge.onUnregistered = null;
     UnifiedPushBridge.onForegroundMessage = null;
+    if (UnifiedPushBridge.restart == restart) {
+      UnifiedPushBridge.restart = null;
+    }
     unawaited(_tokenSubscription?.cancel());
     unawaited(_messageSubscription?.cancel());
     unawaited(_tapSubscription?.cancel());

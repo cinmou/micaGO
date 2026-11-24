@@ -1,7 +1,9 @@
 package send
 
 import (
+	"cmp"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 )
@@ -173,6 +175,29 @@ func (m *PendingSendManager) ReconcileMessages(messages []ReconcileCandidate, no
 	defer m.mu.Unlock()
 
 	m.pruneLocked(now)
+	candidates := make([]PendingSend, 0, len(m.pending))
+	for _, pending := range m.pending {
+		if pending.Status != StatusSentUnconfirmed {
+			continue
+		}
+		if !pending.RecoverUntil.IsZero() && now.After(pending.RecoverUntil) {
+			continue
+		}
+		candidates = append(candidates, pending)
+	}
+	slices.SortStableFunc(candidates, func(a, b PendingSend) int {
+		if c := cmp.Compare(a.SentAtUnixMilli, b.SentAtUnixMilli); c != 0 {
+			return c
+		}
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		if a.CreatedAt.After(b.CreatedAt) {
+			return 1
+		}
+		return cmp.Compare(a.TempGUID, b.TempGUID)
+	})
+
 	var matched []PendingSend
 	for _, message := range messages {
 		if !message.IsFromMe || message.GUID == "" {
@@ -183,11 +208,10 @@ func (m *PendingSendManager) ReconcileMessages(messages []ReconcileCandidate, no
 		}
 		chatGUID := message.ChatGUID
 		text := NormalizeText(message.Text)
-		for tempGUID, pending := range m.pending {
-			if pending.Status != StatusSentUnconfirmed {
-				continue
-			}
-			if !pending.RecoverUntil.IsZero() && now.After(pending.RecoverUntil) {
+		for i := range candidates {
+			tempGUID := candidates[i].TempGUID
+			pending, ok := m.pending[tempGUID]
+			if !ok || pending.Status != StatusSentUnconfirmed {
 				continue
 			}
 			if chatGUID == "" || pending.ChatGUID != chatGUID {

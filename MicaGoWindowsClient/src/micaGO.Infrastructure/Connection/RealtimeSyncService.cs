@@ -101,7 +101,7 @@ public sealed class RealtimeSyncService(
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
-            catch (MicaGo.Infrastructure.Api.MicaGoApiException error) when (error.StatusCode == 401) { break; }
+            catch (MicaGo.Infrastructure.Api.MicaGoApiException error) when (error.StatusCode == 401 && (error.Code == "unauthorized" || credentialRejected?.Invoke() == true)) { break; }
             catch (CredentialRejectedException) { break; }
             catch
             {

@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"micagoserver/internal/config"
@@ -204,6 +205,7 @@ type Handlers struct {
 	devices                 deviceService
 	notify                  notificationDispatcher
 	serverInfo              store.ServerInfoResponse
+	cfgMu                   sync.RWMutex
 	cfg                     config.Config
 	status                  StatusDeps
 	startedAt               int64
@@ -294,9 +296,16 @@ func (h *Handlers) CheckAuth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, store.HealthResponse{OK: true})
 }
 
+func (h *Handlers) configSnapshot() config.Config {
+	h.cfgMu.RLock()
+	defer h.cfgMu.RUnlock()
+	return h.cfg
+}
+
 // GetServerStatus reports runtime status for the native macOS companion app.
 // It is read-only and never returns the bearer token or any push token.
 func (h *Handlers) GetServerStatus(w http.ResponseWriter, r *http.Request) {
+	cfg := h.configSnapshot()
 	now := time.Now().UnixMilli()
 	status := store.ServerStatusResponse{
 		OK:            true,
@@ -304,16 +313,16 @@ func (h *Handlers) GetServerStatus(w http.ResponseWriter, r *http.Request) {
 		StartedAt:     h.startedAt,
 		UptimeSeconds: (now - h.startedAt) / 1000,
 		Address: store.ServerAddressStatus{
-			Listen:       h.cfg.HTTPAddr,
+			Listen:       cfg.HTTPAddr,
 			BaseURL:      h.serverInfo.BaseURL,
 			WebSocketURL: h.serverInfo.WebSocketURL,
-			LAN:          lanAddresses(h.cfg.HTTPAddr),
+			LAN:          lanAddresses(cfg.HTTPAddr),
 		},
 		Store: h.status.APIStore,
 		Auth:  store.ServerAuthStatus{Enabled: true},
 		Sync: store.ServerSyncStatus{
-			LoopEnabled:     !h.cfg.DisableSyncLoop,
-			IntervalSeconds: int64(h.cfg.SyncInterval / time.Second),
+			LoopEnabled:     !cfg.DisableSyncLoop,
+			IntervalSeconds: int64(cfg.SyncInterval / time.Second),
 		},
 		Notifications:  h.notificationStatus(),
 		Devices:        store.ServerDevicesStatus{Count: h.deviceCount(r.Context())},
@@ -432,13 +441,14 @@ func (h *Handlers) deviceCount(ctx context.Context) int {
 }
 
 func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
+	cfg := h.configSnapshot()
 	providers := h.serverInfo.NotificationProviders
 
 	// Prefer the live dispatcher (reflects runtime config reloads); fall back to
 	// static config when no dispatcher is wired (e.g. in tests).
-	enabled := h.cfg.NotificationsEnabled
-	provider := h.cfg.NotificationProvider
-	preview := h.cfg.NotificationPreview
+	enabled := cfg.NotificationsEnabled
+	provider := cfg.NotificationProvider
+	preview := cfg.NotificationPreview
 	implementedSet := implementedNotificationProviders
 	if h.notify != nil {
 		enabled = h.notify.Enabled()
@@ -456,8 +466,8 @@ func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
 			stub = append(stub, p)
 		}
 	}
-	clientConfig, clientConfigErr := notify.LoadFirebaseClientConfig(h.cfg.FCM.GoogleServicesPath)
-	_, serviceAccountErr := notify.LoadServiceAccount(h.cfg.FCM.ServiceAccountPath)
+	clientConfig, clientConfigErr := notify.LoadFirebaseClientConfig(cfg.FCM.GoogleServicesPath)
+	_, serviceAccountErr := notify.LoadServiceAccount(cfg.FCM.ServiceAccountPath)
 	vapidPublicKey := h.unifiedPushVAPIDPublicKey()
 	return store.ServerNotificationStatus{
 		Enabled:                     enabled,
@@ -468,9 +478,9 @@ func (h *Handlers) notificationStatus() store.ServerNotificationStatus {
 		Stub:                        stub,
 		FCMServiceAccountConfigured: serviceAccountErr == nil,
 		FCMClientConfigured:         clientConfigErr == nil && clientConfig.Configured,
-		FCMEnabled:                  h.cfg.FCM.Enabled,
-		FCMProjectID:                h.cfg.FCM.ProjectID,
-		PublicURLSync:               h.cfg.Firebase.PublicURLSync,
+		FCMEnabled:                  cfg.FCM.Enabled,
+		FCMProjectID:                cfg.FCM.ProjectID,
+		PublicURLSync:               cfg.Firebase.PublicURLSync,
 		UnifiedPushAvailable:        vapidPublicKey != "",
 		UnifiedPushVAPIDPublicKey:   vapidPublicKey,
 	}
@@ -484,8 +494,9 @@ func (h *Handlers) unifiedPushVAPIDPublicKey() string {
 }
 
 func (h *Handlers) permissionStatus() store.ServerPermissionStatus {
+	cfg := h.configSnapshot()
 	return store.ServerPermissionStatus{
-		FullDiskAccess: probeReadable(h.cfg.DBPath,
+		FullDiskAccess: probeReadable(cfg.DBPath,
 			"reads ~/Library/Messages/chat.db; grant Full Disk Access to the server (or its launcher) in System Settings > Privacy & Security"),
 		Attachments: probeReadable(h.attachmentsRoot,
 			"reads ~/Library/Messages/Attachments for attachment downloads"),
@@ -871,6 +882,9 @@ func (h *Handlers) SendText(w http.ResponseWriter, r *http.Request) {
 				h.logInternal("sync during send confirmation", err)
 			}
 		}
+		for claimedGUID := range h.send.Pending.ClaimedSnapshot() {
+			excluded[claimedGUID] = struct{}{}
+		}
 		match, err := h.queries.FindOutgoingMessageMatch(r.Context(), guid, pending.NormalizedMessage, pending.SentAtUnixMilli, excluded)
 		if err != nil {
 			h.logInternal("find outgoing message match", err)
@@ -1028,6 +1042,7 @@ func (h *Handlers) SendAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.send.Sender.SendAttachment(r.Context(), guid, sendPath); err != nil {
 		_ = os.Remove(sendPath)
+		_ = os.Remove(filepath.Dir(sendPath))
 		h.logSend(tempGUID, "attachment send failed", err.Error())
 		if tempGUID != "" {
 			h.broadcastSendError(r.Context(), tempGUID, guid, "send_failed", "failed to send attachment")
@@ -1170,6 +1185,7 @@ func (h *Handlers) SendAttachments(w http.ResponseWriter, r *http.Request) {
 func cleanupFiles(paths []string) {
 	for _, path := range paths {
 		_ = os.Remove(path)
+		_ = os.Remove(filepath.Dir(path))
 	}
 }
 
@@ -1230,11 +1246,13 @@ func (h *Handlers) writeOutgoingTempFile(filename string, src io.Reader) (string
 	path := filepath.Join(dir, base)
 	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		_ = os.Remove(dir)
 		return "", err
 	}
 	defer dst.Close()
 	if _, err := io.Copy(dst, io.LimitReader(src, maxOutgoingAttachmentBytes)); err != nil {
 		_ = os.Remove(path)
+		_ = os.Remove(dir)
 		return "", err
 	}
 	return path, nil
@@ -1548,7 +1566,7 @@ func (h *Handlers) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 // app degrades cleanly to WebSocket + delta sync. No secrets: these are public
 // client identifiers, never the service account.
 func (h *Handlers) GetFCMClientConfig(w http.ResponseWriter, r *http.Request) {
-	cfg, err := notify.LoadFirebaseClientConfig(h.cfg.FCM.GoogleServicesPath)
+	cfg, err := notify.LoadFirebaseClientConfig(h.configSnapshot().FCM.GoogleServicesPath)
 	if err != nil {
 		// Misconfigured path → treat as not-configured rather than erroring, so
 		// the client falls back to WS/delta instead of breaking.
@@ -1626,14 +1644,18 @@ func (h *Handlers) PatchDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.PushToken != nil {
 		token := strings.TrimSpace(*req.PushToken)
-		current.PushToken = &token
+		if token == "" {
+			current.PushToken = nil
+		} else {
+			current.PushToken = &token
+		}
 	}
 	if req.PushEnabled != nil {
 		current.PushEnabled = *req.PushEnabled
 	}
 	current.UpdatedAt = time.Now().UnixMilli()
 
-	if err := validateDeviceRecord(*current, h.serverInfo.NotificationProviders, strings.TrimSpace(h.cfg.WebhookURL) != ""); err != nil {
+	if err := validateDeviceRecord(*current, h.serverInfo.NotificationProviders, strings.TrimSpace(h.configSnapshot().WebhookURL) != ""); err != nil {
 		writeBadRequest(w, err.Error())
 		return
 	}
@@ -1909,7 +1931,7 @@ func (h *Handlers) buildDeviceRecord(req deviceRegisterRequest) (store.DeviceRec
 		device.CreatedAt = existing.CreatedAt
 	}
 
-	if err := validateDeviceRecord(device, h.serverInfo.NotificationProviders, strings.TrimSpace(h.cfg.WebhookURL) != ""); err != nil {
+	if err := validateDeviceRecord(device, h.serverInfo.NotificationProviders, strings.TrimSpace(h.configSnapshot().WebhookURL) != ""); err != nil {
 		return store.DeviceRecord{}, err
 	}
 	return device, nil

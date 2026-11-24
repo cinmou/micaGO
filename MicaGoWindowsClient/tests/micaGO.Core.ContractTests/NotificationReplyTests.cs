@@ -26,5 +26,7 @@ internal static class NotificationReplyTests
         if (await sender.SendAsync("route-a", "current-device", "hello") != NotificationReplyResult.Pending || api.Calls != 2) throw new Exception("Unconfirmed reply retried or became failed.");
         api.Failure = new MicaGoApiException("rejected", 401);
         if (await sender.SendAsync("route-a", "current-device", "hello") != NotificationReplyResult.Rejected) throw new Exception("Reply ignored revoked credential.");
+        api.Failure = new MicaGoApiException("proxy 401", 401, code: "http_401");
+        if (await sender.SendAsync("route-a", "current-device", "hello") != NotificationReplyResult.Failed) throw new Exception("Gateway HTML 401 was treated as revoked credential.");
     }
 }

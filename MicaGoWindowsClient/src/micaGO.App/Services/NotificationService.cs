@@ -16,7 +16,7 @@ public sealed class NotificationService : IDisposable
     public string? RegistrationError { get; private set; }
 
     /// <summary>Raised (on a background thread) when the user clicks a message notification.</summary>
-    public event EventHandler<(string ChatId, long Through)>? ChatActivated;
+    public event EventHandler<(string ChatId, string? DeviceId, long Through)>? ChatActivated;
     public event EventHandler<(string ChatId, string DeviceId, string Text, long Through)>? ReplyRequested;
 
     public bool Register()
@@ -67,12 +67,11 @@ public sealed class NotificationService : IDisposable
                 }
                 return;
             }
-            if (args.Arguments.TryGetValue("device", out var owner) &&
-                owner != AppServices.Current.Connection.Profile?.DeviceId) return;
+            args.Arguments.TryGetValue("device", out var owner);
             args.Arguments.TryGetValue("through", out var throughValue);
             long.TryParse(throughValue, out var through);
             if (string.IsNullOrEmpty(owner)) through = 0;
-            ChatActivated?.Invoke(this, (chatId, through));
+            ChatActivated?.Invoke(this, (chatId, string.IsNullOrEmpty(owner) ? null : owner, through));
         }
     }
 

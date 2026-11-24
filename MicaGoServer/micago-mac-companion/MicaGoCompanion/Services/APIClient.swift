@@ -6,14 +6,30 @@ struct APIClient {
     var token: String
     var session: URLSession = Self.sharedSession
 
+    private static let pathSegmentAllowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+
+    private static func encodePathSegment(_ segment: String) -> String {
+        if segment == "." { return "%2E" }
+        if segment == ".." { return "%2E%2E" }
+        return segment.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? segment
+    }
+
     private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) -> URLRequest {
+        request(segments: path.split(separator: "/").map(String.init), method: method, query: query, body: body)
+    }
+
+    private func request(segments: [String], method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) -> URLRequest {
         var url = baseURL
-        for component in path.split(separator: "/") {
-            url.appendPathComponent(String(component)) // percent-encodes each segment
-        }
-        if !query.isEmpty, var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-            comps.queryItems = query
-            if let withQuery = comps.url { url = withQuery }
+        if var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) {
+            let basePath = comps.percentEncodedPath.hasSuffix("/")
+                ? String(comps.percentEncodedPath.dropLast())
+                : comps.percentEncodedPath
+            let encoded = segments.map(Self.encodePathSegment).joined(separator: "/")
+            comps.percentEncodedPath = encoded.isEmpty ? (basePath.isEmpty ? "/" : basePath) : "\(basePath)/\(encoded)"
+            if !query.isEmpty {
+                comps.queryItems = query
+            }
+            if let built = comps.url { url = built }
         }
         var req = URLRequest(url: url)
         req.httpMethod = method
@@ -152,7 +168,7 @@ struct APIClient {
 
     @discardableResult
     func deleteSyncRule(targetKind: String, targetValue: String) async throws -> SyncRulesResponse {
-        return try await decode(request("api/sync/rules/\(targetKind)/\(targetValue)", method: "DELETE"), as: SyncRulesResponse.self)
+        return try await decode(request(segments: ["api", "sync", "rules", targetKind, targetValue], method: "DELETE"), as: SyncRulesResponse.self)
     }
 
     @discardableResult
@@ -266,7 +282,7 @@ struct APIClient {
     }
 
     func deleteDevice(deviceID: String) async throws {
-        let req = request("api/devices/\(deviceID)", method: "DELETE")
+        let req = request(segments: ["api", "devices", deviceID], method: "DELETE")
         _ = try await data(for: req)
     }
 
@@ -294,7 +310,7 @@ struct APIClient {
 
     /// GET /api/chats/{guid}/messages — the conversation, newest first.
     func chatMessages(guid: String, limit: Int = 200) async throws -> [RecentMessage] {
-        let req = request("api/chats/\(guid)/messages", query: [URLQueryItem(name: "limit", value: "\(limit)")])
+        let req = request(segments: ["api", "chats", guid, "messages"], query: [URLQueryItem(name: "limit", value: "\(limit)")])
         return try await decode(req, as: RecentMessagesResponse.self).data
     }
 }

@@ -20,7 +20,7 @@ public sealed class NotificationReplySender(Func<IMicaGoApi?> api, Func<string?>
             await client.SendTextAsync(chatGuid, body, "reply-" + Guid.NewGuid().ToString("N"), ct);
             return ReferenceEquals(client, api()) ? NotificationReplyResult.Sent : NotificationReplyResult.Pending;
         }
-        catch (MicaGoApiException error) when (error.StatusCode == 401) { return NotificationReplyResult.Rejected; }
+        catch (MicaGoApiException error) when (error.StatusCode == 401 && error.Code != "http_401") { return NotificationReplyResult.Rejected; }
         catch (MicaGoApiException error) when (error.StatusCode == 202 || error.Code == "send_confirmation_timeout") { return NotificationReplyResult.Pending; }
         catch (HttpRequestException) { return NotificationReplyResult.Pending; }
         catch (OperationCanceledException) { return NotificationReplyResult.Pending; }

@@ -180,3 +180,38 @@ func TestReconcileLeavesPendingForHandler(t *testing.T) {
 		t.Fatal("handler could not confirm send")
 	}
 }
+
+func TestPendingManagerReconcileMessagesDeterministicEarliestOrder(t *testing.T) {
+	base := time.Now().Add(-10 * time.Second)
+	for run := 0; run < 20; run++ {
+		m := NewPendingSendManager()
+		entries := []PendingSend{
+			{TempGUID: "tmp-3", ChatGUID: "chat-1", NormalizedMessage: NormalizeText("same"), SentAtUnixMilli: 1030, CreatedAt: base.Add(3 * time.Millisecond), Status: StatusSentUnconfirmed},
+			{TempGUID: "tmp-1", ChatGUID: "chat-1", NormalizedMessage: NormalizeText("same"), SentAtUnixMilli: 1010, CreatedAt: base.Add(1 * time.Millisecond), Status: StatusSentUnconfirmed},
+			{TempGUID: "tmp-2b", ChatGUID: "chat-1", NormalizedMessage: NormalizeText("same"), SentAtUnixMilli: 1020, CreatedAt: base.Add(2 * time.Millisecond), Status: StatusSentUnconfirmed},
+			{TempGUID: "tmp-2a", ChatGUID: "chat-1", NormalizedMessage: NormalizeText("same"), SentAtUnixMilli: 1020, CreatedAt: base.Add(2 * time.Millisecond), Status: StatusSentUnconfirmed},
+		}
+		for _, p := range entries {
+			if err := m.Add(p); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		matches := m.ReconcileMessages([]ReconcileCandidate{
+			{GUID: "real-1", ChatGUID: "chat-1", Text: "same", DateCreated: ptrInt64(1015), IsFromMe: true},
+			{GUID: "real-2", ChatGUID: "chat-1", Text: "same", DateCreated: ptrInt64(1025), IsFromMe: true},
+			{GUID: "real-3", ChatGUID: "chat-1", Text: "same", DateCreated: ptrInt64(1035), IsFromMe: true},
+			{GUID: "real-4", ChatGUID: "chat-1", Text: "same", DateCreated: ptrInt64(1045), IsFromMe: true},
+		}, time.Now())
+
+		if len(matches) != 4 {
+			t.Fatalf("run %d: expected 4 matches, got %d", run, len(matches))
+		}
+		wantOrder := []string{"tmp-1", "tmp-2a", "tmp-2b", "tmp-3"}
+		for i, want := range wantOrder {
+			if matches[i].TempGUID != want {
+				t.Fatalf("run %d: match[%d] = %q, want %q", run, i, matches[i].TempGUID, want)
+			}
+		}
+	}
+}

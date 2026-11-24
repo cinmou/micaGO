@@ -19,6 +19,8 @@ public partial class App : Application
     private static TrayIconService? _tray;
     // Keep the Inno Setup AppMutex marker open for the primary process lifetime.
     private static Mutex? _installerMutex;
+    private static readonly object _pendingNotificationGate = new();
+    private static (string ChatId, string? DeviceId, long Through)? _pendingNotificationActivation;
 
     public App()
     {
@@ -109,6 +111,7 @@ public partial class App : Application
     private static void OnCredentialRejected(object? sender, EventArgs args)
     {
         var window = MainWindow ?? (Window?)_connectionWindow;
+        lock (_pendingNotificationGate) _pendingNotificationActivation = null;
         window?.DispatcherQueue.TryEnqueue(async () =>
         {
             if (!AppServices.Current.Connection.TokenRejected) return;
@@ -158,14 +161,44 @@ public partial class App : Application
         });
     }
 
-    private static void OnNotificationChatActivated(object? sender, (string ChatId, long Through) notification)
+    private static void OnNotificationChatActivated(object? sender, (string ChatId, string? DeviceId, long Through) notification)
     {
-        var window = MainWindow ?? (Window?)_connectionWindow;
-        window?.DispatcherQueue.TryEnqueue(async () =>
+        lock (_pendingNotificationGate) _pendingNotificationActivation = notification;
+        var dispatcher = MainWindow?.DispatcherQueue ?? _connectionWindow?.DispatcherQueue ?? _dispatcher;
+        dispatcher?.TryEnqueue(async () =>
         {
-            ShowCurrentWindow();
-            if (MainWindow is MainWindow main) await main.OpenChatAsync(notification.ChatId, notification.Through);
+            if (MainWindow is MainWindow main)
+            {
+                ShowCurrentWindow();
+                if (main.IsShellReady) await TryConsumePendingNotificationActivationAsync(main.ShellPage);
+            }
+            else if (_connectionWindow is not null)
+            {
+                ShowCurrentWindow();
+            }
         });
+    }
+
+    internal static async Task<bool> TryConsumePendingNotificationActivationAsync(MicaGo.App.Views.ShellPage shellPage)
+    {
+        (string ChatId, string? DeviceId, long Through)? pending;
+        lock (_pendingNotificationGate)
+        {
+            pending = _pendingNotificationActivation;
+            _pendingNotificationActivation = null;
+        }
+        if (pending is not { } notification) return false;
+        var currentDeviceId = AppServices.Current.Connection.Profile?.DeviceId;
+        if (!string.IsNullOrEmpty(notification.DeviceId) &&
+            !string.Equals(notification.DeviceId, currentDeviceId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        long? through = !string.IsNullOrEmpty(notification.DeviceId) && notification.Through > 0
+            ? notification.Through
+            : null;
+        await shellPage.OpenChatAsync(notification.ChatId, through);
+        return true;
     }
 
     public static bool ShouldHideWindowOnClose => !_switchingWindows && !_isExiting && _tray is not null;
@@ -202,7 +235,11 @@ public partial class App : Application
 
     public static void UpdateTrayContacts(IEnumerable<TrayContact> contacts) => _tray?.UpdateRecentContacts(contacts);
 
-    public static void HideWindow(Window window) => ShowWindow(WinRT.Interop.WindowNative.GetWindowHandle(window), 0);
+    public static void HideWindow(Window window)
+    {
+        if (window is MainWindow main) main.NotifyHiddenToTray();
+        ShowWindow(WinRT.Interop.WindowNative.GetWindowHandle(window), 0);
+    }
 
     private static void ShowCurrentWindow()
     {
@@ -212,6 +249,7 @@ public partial class App : Application
         ShowWindow(handle, 9);
         window.Activate();
         SetForegroundWindow(handle);
+        if (window is MainWindow main) main.NotifyShownFromTray();
     }
 
     private static void ExitFromTray()
@@ -249,6 +287,7 @@ public partial class App : Application
     /// <summary>Opens the pairing window and closes the chat window, if any.</summary>
     public static void ShowConnectionWindow()
     {
+        lock (_pendingNotificationGate) _pendingNotificationActivation = null;
         _switchingWindows = true;
         try
         {

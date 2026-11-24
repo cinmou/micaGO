@@ -20,13 +20,19 @@ public sealed class SettingsBackupService(LocalCacheStore cache)
     private const string BackgroundEntryPrefix = "assets/chat-background";
     private const string FormatId = "micagobak-win";
     private const int FormatVersion = 1;
-    private static readonly string[] ExcludedKeys = ["sync.cursor"];
     private const string BackgroundKey = "appearance.chatBackground";
+
+    private static bool IsExcludedKey(string key) =>
+        key is "sync.cursor" or "auth.rejected" or "chat.mute.serverMigrated"
+        || key.StartsWith("chat.preferences.", StringComparison.Ordinal)
+        || key.StartsWith("message.preferences.", StringComparison.Ordinal)
+        || key.StartsWith("read.state.", StringComparison.Ordinal)
+        || key.StartsWith("read.watermark.", StringComparison.Ordinal);
 
     public async Task<BackupSummary> ExportAsync(string destinationPath, string appVersion, CancellationToken cancellationToken = default)
     {
         var settings = (await cache.GetAllSettingsAsync(cancellationToken))
-            .Where(pair => !ExcludedKeys.Contains(pair.Key) && !pair.Key.StartsWith("chat.preferences.", StringComparison.Ordinal) && !pair.Key.StartsWith("message.preferences.", StringComparison.Ordinal) && !pair.Key.StartsWith("read.state.", StringComparison.Ordinal))
+            .Where(pair => !IsExcludedKey(pair.Key))
             .ToDictionary(pair => pair.Key, pair => pair.Value);
 
         var backgroundPath = settings.GetValueOrDefault(BackgroundKey);
@@ -98,8 +104,7 @@ public sealed class SettingsBackupService(LocalCacheStore cache)
             settings.Remove(BackgroundKey);
         }
 
-        foreach (var key in ExcludedKeys) settings.Remove(key);
-        foreach (var key in settings.Keys.Where(key => key.StartsWith("chat.preferences.", StringComparison.Ordinal)).ToArray()) settings.Remove(key);
+        foreach (var key in settings.Keys.Where(IsExcludedKey).ToArray()) settings.Remove(key);
         foreach (var (key, value) in settings)
         {
             await cache.SetSettingAsync(key, value, cancellationToken);

@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mica_go/core/backup/backup_service.dart';
+import 'package:mica_go/core/theme_controller.dart';
 
 Uint8List _zip(Map<String, dynamic> manifest, Map<String, dynamic> settings) {
   final archive = Archive();
@@ -153,6 +154,87 @@ void main() {
         () => BackupService.inspect(Uint8List.fromList([1, 2, 3, 4])),
         throwsA(isA<BackupException>()),
       );
+    });
+  });
+
+  group('BackupService liquid glass compatibility', () {
+    test('exports and restores micago.theme.liquidGlass alongside color',
+        () async {
+      final source = _Store()
+        ..values.addAll({
+          'micago.theme.color': 'bicao',
+          'micago.theme.liquidGlass': 'true',
+        });
+      final bytes = await BackupService(
+        store: source,
+        cache: _Cache(),
+      ).exportBackup();
+      final summary = BackupService.inspect(bytes);
+      expect(summary.hasAppearance, isTrue);
+
+      final target = _Store();
+      await BackupService(store: target, cache: _Cache()).applyBackup(bytes);
+      expect(target.values['micago.theme.liquidGlass'], 'true');
+      expect(target.values['micago.theme.color'], 'bicao');
+
+      final theme = ThemeController(store: target);
+      await theme.bootstrap();
+      expect(theme.useLiquidGlass, isTrue);
+      expect(theme.colorChoice, ThemeColorChoice.bicao);
+    });
+
+    test('legacy liquidGlass color backup migrates cleanly even if local glass was off',
+        () async {
+      final legacyBytes = _zip(
+        {
+          'app': 'micaGO',
+          'type': 'settings-backup',
+          'version': 1,
+          'appVersion': '0.55.0',
+          'createdAt': '2026-07-01T00:00:00Z',
+        },
+        {
+          'secure': {'micago.theme.color': 'liquidGlass'},
+        },
+      );
+      final target = _Store()..values['micago.theme.liquidGlass'] = 'false';
+      await BackupService(
+        store: target,
+        cache: _Cache(),
+      ).applyBackup(legacyBytes);
+      expect(target.values.containsKey('micago.theme.liquidGlass'), isFalse);
+
+      final theme = ThemeController(store: target);
+      await theme.bootstrap();
+      expect(theme.useLiquidGlass, isTrue);
+      expect(theme.colorChoice, ThemeColorChoice.micago);
+    });
+
+    test('legacy non-glass backup clears stale local liquidGlass switch',
+        () async {
+      final legacyBytes = _zip(
+        {
+          'app': 'micaGO',
+          'type': 'settings-backup',
+          'version': 1,
+          'appVersion': '0.55.0',
+          'createdAt': '2026-07-01T00:00:00Z',
+        },
+        {
+          'secure': {'micago.theme.color': 'bicao'},
+        },
+      );
+      final target = _Store()..values['micago.theme.liquidGlass'] = 'true';
+      await BackupService(
+        store: target,
+        cache: _Cache(),
+      ).applyBackup(legacyBytes);
+      expect(target.values.containsKey('micago.theme.liquidGlass'), isFalse);
+
+      final theme = ThemeController(store: target);
+      await theme.bootstrap();
+      expect(theme.useLiquidGlass, isFalse);
+      expect(theme.colorChoice, ThemeColorChoice.bicao);
     });
   });
 }

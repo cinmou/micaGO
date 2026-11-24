@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -19,7 +20,7 @@ import (
 // the -wal/-shm and returns a consistent committed snapshot, waiting out a busy
 // writer for up to _busy_timeout. See docs/c15-imsg-db-open-and-error-handling.md.
 func readOnlyDSN(path string) string {
-	return fmt.Sprintf("file:%s?mode=ro&_busy_timeout=5000", path)
+	return fmt.Sprintf("file:%s?mode=ro&_busy_timeout=5000&_cache_size=-512", path)
 }
 
 // ChatDBOpenOptions returns the SQLite URI options used to open chat.db (the
@@ -43,6 +44,10 @@ func OpenReadOnly(path string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
+
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxIdleTime(2 * time.Minute)
 
 	return db, nil
 }

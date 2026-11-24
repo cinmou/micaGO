@@ -93,10 +93,14 @@ public sealed class ChatPreferenceSync(LocalCacheStore cache, Func<IMicaGoApi?> 
                     foreach (var row in reply.Data)
                     {
                         if (!_state.Rows.TryGetValue(row.ChatGuid, out var current) || current.Revision <= row.Revision) _state.Rows[row.ChatGuid] = row;
-                        var before = request.Changes.First(change => change.ChatGuid == row.ChatGuid).BaseRevision;
-                        for (var i = 0; i < _state.Queue.Count; i++)
-                            _state.Queue[i] = _state.Queue[i] with { Changes = _state.Queue[i].Changes.Select(change =>
-                                change.ChatGuid == row.ChatGuid && change.BaseRevision == before ? change with { BaseRevision = row.Revision } : change).ToArray() };
+                        var matched = request.Changes.FirstOrDefault(change => change.ChatGuid == row.ChatGuid);
+                        if (matched is not null)
+                        {
+                            var before = matched.BaseRevision;
+                            for (var i = 0; i < _state.Queue.Count; i++)
+                                _state.Queue[i] = _state.Queue[i] with { Changes = _state.Queue[i].Changes.Select(change =>
+                                    change.ChatGuid == row.ChatGuid && change.BaseRevision == before ? change with { BaseRevision = row.Revision } : change).ToArray() };
+                        }
                     }
                 }
                 catch (MicaGoApiException ex) when (ex.StatusCode == 409)

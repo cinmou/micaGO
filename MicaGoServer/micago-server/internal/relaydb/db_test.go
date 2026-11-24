@@ -3,7 +3,9 @@ package relaydb
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -366,3 +368,61 @@ func assertCount(t *testing.T, db *sql.DB, query string, want int) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestRelayDBPoolAndConcurrentReadWrite(t *testing.T) {
+	db := openTestDB(t)
+	if got := db.sqlDB.Stats().MaxOpenConnections; got != 4 {
+		t.Fatalf("expected MaxOpenConnections=4, got %d", got)
+	}
+	var cacheSize int
+	if err := db.sqlDB.QueryRow(`PRAGMA cache_size;`).Scan(&cacheSize); err != nil {
+		t.Fatalf("query PRAGMA cache_size: %v", err)
+	}
+	if cacheSize != -1024 {
+		t.Fatalf("expected PRAGMA cache_size=-1024, got %d", cacheSize)
+	}
+
+	ctx := context.Background()
+	source := &fakeSyncSource{
+		chats: []store.SyncChatRow{{GUID: "chat-pool"}},
+		initialMessages: []store.SyncMessageRow{
+			{GUID: "msg-pool-1", ChatGUID: "chat-pool", SourceRowID: 1, Text: ptr("hello")},
+		},
+		attachments: map[string][]store.SyncAttachmentRow{
+			"msg-pool-1": {{GUID: "att-pool-1", MessageGUID: "msg-pool-1"}},
+		},
+	}
+	if _, err := SyncOnce(ctx, source, db, 100, 0); err != nil {
+		t.Fatalf("seed sync: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 32)
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				if err := db.SetSyncState("pool_key", fmt.Sprintf("%d-%d", id, j)); err != nil {
+					errCh <- fmt.Errorf("writer %d-%d: %w", id, j, err)
+					return
+				}
+			}
+		}(i)
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				if _, err := db.ListChatMessages(ctx, "chat-pool", 20, 0, false); err != nil {
+					errCh <- fmt.Errorf("reader %d-%d: %w", id, j, err)
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatal(err)
+	}
+}

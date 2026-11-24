@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -387,5 +388,36 @@ func TestNonePreviewOmitsIdentityFromFCM(t *testing.T) {
 	}
 	if n.Title != "New message" {
 		t.Fatalf("unexpected title %q", n.Title)
+	}
+}
+
+func TestDispatchNewMessagesSkipsErrPushNotConfigured(t *testing.T) {
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prevWriter) })
+
+	// WebhookURL is empty, so WebhookProvider.Send returns ErrPushNotConfigured.
+	d := NewDispatcher(config.Config{
+		NotificationsEnabled: true,
+		NotificationProvider: "webhook",
+		NotificationPreview:  "sender",
+	})
+	devices := []store.DeviceRecord{
+		{ID: "dev-1", Name: "Phone", PushEnabled: true, PushProvider: "webhook"},
+	}
+	text := "hello"
+	events := []relaydb.NotificationEvent{
+		{
+			ChatGUID: "chat-1",
+			Message:  store.MessageJSON{GUID: "msg-1", Text: &text, IsFromMe: false},
+		},
+	}
+	if err := d.DispatchNewMessages(context.Background(), devices, events); err != nil {
+		t.Fatal(err)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "sent=0") || !strings.Contains(logged, "skipped_no_device=1") || !strings.Contains(logged, "errors=0") {
+		t.Fatalf("unexpected dispatch summary log: %q", logged)
 	}
 }

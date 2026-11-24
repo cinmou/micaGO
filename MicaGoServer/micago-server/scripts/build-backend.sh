@@ -27,13 +27,14 @@ fi
 # the binary refuses to launch on older systems.
 BACKEND_MIN_MACOS="${BACKEND_MIN_MACOS:-13.0}"
 export MACOSX_DEPLOYMENT_TARGET="$BACKEND_MIN_MACOS"
-export CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -mmacosx-version-min=$BACKEND_MIN_MACOS"
-export CGO_LDFLAGS="${CGO_LDFLAGS:--O2 -g} -mmacosx-version-min=$BACKEND_MIN_MACOS"
+export CGO_CFLAGS="${CGO_CFLAGS:--O2} -mmacosx-version-min=$BACKEND_MIN_MACOS"
+export CGO_LDFLAGS="${CGO_LDFLAGS:--O2} -mmacosx-version-min=$BACKEND_MIN_MACOS"
 
 mkdir -p "$(dirname "$OUT")"
 export GOCACHE="${GOCACHE:-$PWD/.gocache}"
 go build \
-  -ldflags "-X micagoserver/internal/version.Commit=$COMMIT -X micagoserver/internal/version.BuildTime=$BUILD_TIME" \
+  -trimpath \
+  -ldflags "-s -w -X micagoserver/internal/version.Commit=$COMMIT -X micagoserver/internal/version.BuildTime=$BUILD_TIME" \
   -o "$OUT" ./cmd/micago
 
 echo "built: $OUT"

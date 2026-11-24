@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
@@ -126,4 +127,38 @@ void main() {
     expect(await stale.exists(), isFalse);
     expect(await active.exists(), isTrue);
   });
+
+  test(
+    'clear removes memory and disk cache and locked inflight fetch never persists',
+    () async {
+      final cache = MediaCache();
+      await cache.init(directory: directory);
+      await cache.load('existing', () async => Uint8List.fromList([1, 2, 3]));
+      await cache.prune();
+      expect(cache.memoryHit('existing'), isNotNull);
+      expect(await file('existing').exists(), isTrue);
+
+      final inflight = Completer<Uint8List>();
+      final loading = cache.load('inflight', () => inflight.future);
+      cache.accessAllowed = false;
+      await cache.clear();
+      expect(await file('existing').exists(), isFalse);
+      expect(await directory.list().toList(), isEmpty);
+
+      final rejection = expectLater(
+        loading,
+        throwsA(
+          isA<ApiException>().having((e) => e.code, 'code', 'unauthorized'),
+        ),
+      );
+      inflight.complete(Uint8List.fromList([9, 8, 7]));
+      await rejection;
+      await cache.prune();
+
+      cache.accessAllowed = true;
+      expect(cache.memoryHit('existing'), isNull);
+      expect(cache.memoryHit('inflight'), isNull);
+      expect(await file('inflight').exists(), isFalse);
+    },
+  );
 }

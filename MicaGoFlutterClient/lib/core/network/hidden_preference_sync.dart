@@ -207,15 +207,19 @@ class HiddenPreferenceSync extends ChangeNotifier {
                 (row['revision'] as num).toInt()) {
               _rows[guid] = row;
             }
-            final old = previous.firstWhere(
-              (p) => p[_identity] == guid,
-            )['baseRevision'];
-            for (final queued in _queue) {
-              for (final change
-                  in (queued['changes'] as List).cast<Map<String, dynamic>>()) {
-                if (change[_identity] == guid &&
-                    change['baseRevision'] == old) {
-                  change['baseRevision'] = row['revision'];
+            final matched = previous
+                .where((p) => p[_identity] == guid)
+                .firstOrNull;
+            if (matched != null) {
+              final old = matched['baseRevision'];
+              for (final queued in _queue) {
+                for (final change
+                    in (queued['changes'] as List)
+                        .cast<Map<String, dynamic>>()) {
+                  if (change[_identity] == guid &&
+                      change['baseRevision'] == old) {
+                    change['baseRevision'] = row['revision'];
+                  }
                 }
               }
             }

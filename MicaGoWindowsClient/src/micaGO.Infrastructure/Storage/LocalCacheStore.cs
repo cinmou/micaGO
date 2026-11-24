@@ -452,7 +452,7 @@ public sealed class LocalCacheStore : IDisposable
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken); await _gate.WaitAsync(cancellationToken);
-        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await ExecuteAsync(db, "DELETE FROM messages; DELETE FROM chats; DELETE FROM settings; DELETE FROM contacts; DELETE FROM contact_links; DELETE FROM hidden_messages; DELETE FROM hidden_chats; DELETE FROM pending_sends;", cancellationToken); }
+        try { await using var db = new SqliteConnection(_connectionString); await db.OpenAsync(cancellationToken); await ExecuteAsync(db, "DELETE FROM messages; DELETE FROM chats; DELETE FROM settings; DELETE FROM contacts; DELETE FROM contact_links; DELETE FROM hidden_messages; DELETE FROM hidden_chats; DELETE FROM pending_sends; DELETE FROM send_confirmations;", cancellationToken); }
         finally { _gate.Release(); }
     }
 
@@ -465,7 +465,7 @@ public sealed class LocalCacheStore : IDisposable
             // Preferences, imported contacts, and hidden-item tombstones are
             // user data. Clearing the cache only removes reproducible rows and
             // resets the delta cursor so the next sync can rebuild them.
-            await ExecuteAsync(db,"DELETE FROM messages; DELETE FROM chats; DELETE FROM settings WHERE key='sync.cursor';"+(discardPending?"DELETE FROM pending_sends;":""),cancellationToken);
+            await ExecuteAsync(db,"DELETE FROM messages; DELETE FROM chats; DELETE FROM settings WHERE key='sync.cursor';"+(discardPending?"DELETE FROM pending_sends; DELETE FROM send_confirmations;":""),cancellationToken);
         }
         finally { _gate.Release(); }
     }

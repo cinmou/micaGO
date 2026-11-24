@@ -31,6 +31,7 @@ class BackupService {
   static const _formatVersion = 1;
   static const _avatarPrefix = 'custom_avatar:';
   static const _chatBackgroundKey = 'micago.theme.chatBackgroundPath';
+  static const _liquidGlassKey = 'micago.theme.liquidGlass';
   static const _legacyMutedChatsKey = 'micago.muted_chats.v1';
   static const _sidebarWidthKey = 'tablet_sidebar_width';
 
@@ -40,6 +41,7 @@ class BackupService {
     'micago.contacts_matching_enabled.v1',
     'micago.theme.mode',
     'micago.theme.color',
+    'micago.theme.liquidGlass',
     'micago.theme.lang',
     'micago.theme.chatBackgroundPath',
     'micago.in_app_notifications_enabled.v1',
@@ -181,6 +183,9 @@ class BackupService {
       if (entry.value is String) {
         await store.writeValue(entry.key, entry.value as String);
       }
+    }
+    if (!secure.containsKey(_liquidGlassKey)) {
+      await store.deleteValue(_liquidGlassKey);
     }
 
     if (settings['sidebarWidth'] is String) {

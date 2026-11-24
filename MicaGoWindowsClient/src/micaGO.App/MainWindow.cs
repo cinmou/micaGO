@@ -21,6 +21,8 @@ public sealed class MainWindow : Window
     private readonly RowDefinition _titleBarRow = new() { Height = new GridLength(32) };
     private readonly Grid _appTitleBar = new() { Background = null };
     private readonly ShellPage _shellPage;
+    private bool _hiddenToTray;
+    private bool _isActive = true;
 
     public MainWindow()
     {
@@ -32,7 +34,15 @@ public sealed class MainWindow : Window
         AppServices.Current.Localization.ApplyTypography(_shellPage);
         Content = BuildContent();
         AppServices.Current.Localization.LanguageChanged += Localization_LanguageChanged;
-        Closed += (_, _) => AppServices.Current.Localization.LanguageChanged -= Localization_LanguageChanged;
+        Closed += (_, _) =>
+        {
+            AppServices.Current.Localization.LanguageChanged -= Localization_LanguageChanged;
+            Activated -= MainWindow_Activated;
+            AppWindow.Changed -= AppWindow_Changed;
+            AppWindow.Closing -= AppWindow_Closing;
+        };
+        Activated += MainWindow_Activated;
+        AppWindow.Changed += AppWindow_Changed;
         AppWindow.Closing += AppWindow_Closing;
         if (AppWindowTitleBar.IsCustomizationSupported())
         {
@@ -67,10 +77,45 @@ public sealed class MainWindow : Window
         AppServices.Current.Localization.ApplyTypography(_shellPage);
     }
 
+    internal bool IsShellReady => _shellPage.IsShellReady;
+    internal ShellPage ShellPage => _shellPage;
+
+    internal void NotifyHiddenToTray()
+    {
+        _hiddenToTray = true;
+        UpdateWindowViewedState();
+    }
+
+    internal void NotifyShownFromTray()
+    {
+        _hiddenToTray = false;
+        UpdateWindowViewedState();
+    }
+
+    private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        _isActive = args.WindowActivationState != Microsoft.UI.Xaml.WindowActivationState.Deactivated;
+        if (_isActive) _hiddenToTray = false;
+        UpdateWindowViewedState();
+    }
+
+    private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (args.DidPresenterChange || args.DidVisibilityChange) UpdateWindowViewedState();
+    }
+
+    private void UpdateWindowViewedState()
+    {
+        var minimized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized };
+        _shellPage.SetWindowActive(!_hiddenToTray && _isActive && !minimized && AppWindow.IsVisible);
+    }
+
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (!App.ShouldHideWindowOnClose) return;
         args.Cancel = true;
+        _hiddenToTray = true;
+        UpdateWindowViewedState();
         App.HideWindow(this);
     }
 

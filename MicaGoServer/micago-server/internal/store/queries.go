@@ -116,20 +116,24 @@ func scanSyncRowSemantic(rows *sql.Rows, present []string) (MessageRow, semantic
 	// chat.db stores these flags as NULL for many rows (e.g. is_read on outgoing
 	// or older messages). Scanning NULL into a plain int64 fails and would abort
 	// the entire sync, so use NullInt64 and treat NULL as 0/false.
-	var isFromMe, isRead, isDelivered, hasAttachments sql.NullInt64
+	var dateRaw, isFromMe, isRead, isDelivered, hasAttachments sql.NullInt64
 	base := []any{
 		&row.ChatGUID, &row.SourceRowID, &row.GUID, &row.Text, &row.AttributedBody,
-		&row.Subject, &row.Service, &row.Account, &row.DateRaw, &row.DateReadRaw, &row.DateDeliveredRaw,
+		&row.Subject, &row.Service, &row.Account, &dateRaw, &row.DateReadRaw, &row.DateDeliveredRaw,
 		&isFromMe, &isRead, &isDelivered, &hasAttachments, &row.HandleValue, &row.HandleService,
 	}
 	semTargets, finalize := semanticScanTargets(present)
 	if err := rows.Scan(append(base, semTargets...)...); err != nil {
 		return MessageRow{}, semanticValues{}, fmt.Errorf("scan sync message row: %w", err)
 	}
-	row.IsFromMe = isFromMe.Int64 != 0
-	row.IsRead = isRead.Int64 != 0
-	row.IsDelivered = isDelivered.Int64 != 0
-	row.CacheHasAttachments = hasAttachments.Int64 != 0
+	if dateRaw.Valid {
+		v := dateRaw.Int64
+		row.DateRaw = &v
+	}
+	row.IsFromMe = isFromMe.Valid && isFromMe.Int64 != 0
+	row.IsRead = isRead.Valid && isRead.Int64 != 0
+	row.IsDelivered = isDelivered.Valid && isDelivered.Int64 != 0
+	row.CacheHasAttachments = hasAttachments.Valid && hasAttachments.Int64 != 0
 	return row, finalize(), nil
 }
 
@@ -160,7 +164,7 @@ func syncMessageFromRow(row MessageRow, sem semanticValues) (SyncMessageRow, boo
 		Subject:             row.Subject,
 		Service:             row.Service,
 		Account:             row.Account,
-		DateCreated:         timeutil.AppleMicrosToUnixMilli(row.DateRaw),
+		DateCreated:         timeutil.AppleMicrosToUnixMilliPtr(row.DateRaw),
 		DateRead:            timeutil.AppleMicrosToUnixMilliPtr(row.DateReadRaw),
 		DateDelivered:       timeutil.AppleMicrosToUnixMilliPtr(row.DateDeliveredRaw),
 		IsFromMe:            row.IsFromMe,
@@ -337,19 +341,22 @@ LIMIT 100;
 		var (
 			text           *string
 			attributedBody []byte
-			dateRaw        int64
-			errorCode      int64
+			dateRaw        sql.NullInt64
+			errorCode      sql.NullInt64
 		)
 		if err := rows.Scan(&text, &attributedBody, &dateRaw, &errorCode); err != nil {
 			return 0, false, err
 		}
-		created := timeutil.AppleMicrosToUnixMilli(dateRaw)
+		if !dateRaw.Valid || !errorCode.Valid {
+			continue
+		}
+		created := timeutil.AppleMicrosToUnixMilli(dateRaw.Int64)
 		if created == nil || *created < sentAtUnixMilli {
 			continue
 		}
 		resolved := ExtractMessageText(text, attributedBody)
 		if send.NormalizeText(stringValue(resolved)) == normalizedText {
-			return errorCode, true, nil
+			return errorCode.Int64, true, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -368,19 +375,21 @@ func (q *Queries) ListSyncChats(ctx context.Context) ([]SyncChatRow, error) {
 	var chats []SyncChatRow
 	for rows.Next() {
 		var row SyncChatRow
+		var isArchived sql.NullInt64
 		var participants string
 		if err := rows.Scan(
 			&row.GUID,
 			&row.ChatIdentifier,
 			&row.ServiceName,
 			&row.DisplayName,
-			&row.IsArchived,
+			&isArchived,
 			&row.Style,
 			&row.ParticipantCount,
 			&participants,
 		); err != nil {
 			return nil, err
 		}
+		row.IsArchived = isArchived.Valid && isArchived.Int64 != 0
 		row.Participants = splitParticipantHandles(participants)
 		chats = append(chats, row)
 	}
@@ -585,7 +594,7 @@ LIMIT ?;`
 			text                          *string
 			attributedBody                []byte
 			subject, service              *string
-			dateRaw                       int64
+			dateRaw                       sql.NullInt64
 			dateReadRaw, dateDeliveredRaw *int64
 			// NULL-safe: chat.db stores these flags as NULL on many rows.
 			isFromMe, isRead, isDelivered   sql.NullInt64
@@ -615,6 +624,11 @@ LIMIT ?;`
 			continue
 		}
 
+		var dateCreated *int64
+		if dateRaw.Valid {
+			dateCreated = timeutil.AppleMicrosToUnixMilli(dateRaw.Int64)
+		}
+
 		updates = append(updates, MessageUpdateRow{
 			SourceRowID:         sourceRowID,
 			GUID:                guid,
@@ -622,18 +636,18 @@ LIMIT ?;`
 			Text:                ExtractMessageText(text, attributedBody),
 			Subject:             subject,
 			Service:             service,
-			DateCreated:         timeutil.AppleMicrosToUnixMilli(dateRaw),
+			DateCreated:         dateCreated,
 			DateRead:            timeutil.AppleMicrosToUnixMilliPtr(dateReadRaw),
 			DateDelivered:       timeutil.AppleMicrosToUnixMilliPtr(dateDeliveredRaw),
 			DateEdited:          timeutil.AppleMicrosToUnixMilliPtr(dateEditedRaw),
 			DateRetracted:       timeutil.AppleMicrosToUnixMilliPtr(dateRetractedRaw),
 			ErrorCode:           errorCode.Int64,
-			IsFromMe:            isFromMe.Int64 != 0,
-			IsRead:              isRead.Int64 != 0,
-			IsDelivered:         isDelivered.Int64 != 0,
+			IsFromMe:            isFromMe.Valid && isFromMe.Int64 != 0,
+			IsRead:              isRead.Valid && isRead.Int64 != 0,
+			IsDelivered:         isDelivered.Valid && isDelivered.Int64 != 0,
 			HandleID:            handleValue,
 			HandleService:       handleService,
-			CacheHasAttachments: hasAttachments.Int64 != 0,
+			CacheHasAttachments: hasAttachments.Valid && hasAttachments.Int64 != 0,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -642,41 +656,71 @@ LIMIT ?;`
 	return updates, nil
 }
 
+const sqlVariableChunkSize = 500
+
+func dedupeStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
 func (q *Queries) ListSyncAttachmentsForMessages(ctx context.Context, messageGUIDs []string) ([]SyncAttachmentRow, error) {
-	if len(messageGUIDs) == 0 {
+	uniqueGUIDs := dedupeStrings(messageGUIDs)
+	if len(uniqueGUIDs) == 0 {
 		return nil, nil
 	}
 
-	sqlText, args := buildMessageAttachmentsQuery(messageGUIDs)
-	rows, err := q.db.QueryContext(ctx, sqlText, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var attachments []SyncAttachmentRow
-	for rows.Next() {
-		row, err := scanAttachmentRow(rows)
+	for start := 0; start < len(uniqueGUIDs); start += sqlVariableChunkSize {
+		end := start + sqlVariableChunkSize
+		if end > len(uniqueGUIDs) {
+			end = len(uniqueGUIDs)
+		}
+		sqlText, args := buildMessageAttachmentsQuery(uniqueGUIDs[start:end])
+		rows, err := q.db.QueryContext(ctx, sqlText, args...)
 		if err != nil {
 			return nil, err
 		}
-		attachments = append(attachments, SyncAttachmentRow{
-			GUID:           row.GUID,
-			MessageGUID:    row.MessageGUID,
-			Filename:       row.Filename,
-			MimeType:       row.MimeType,
-			TransferName:   row.TransferName,
-			TotalBytes:     row.TotalBytes,
-			LocalPath:      row.LocalPath,
-			IsOutgoing:     row.IsOutgoing,
-			HideAttachment: row.HideAttachment,
-			CreatedAt:      timeutil.AppleMicrosToUnixMilliPtr(row.CreatedRaw),
-			Uti:            row.Uti,
-			IsSticker:      row.IsSticker,
-		})
+
+		for rows.Next() {
+			row, err := scanAttachmentRow(rows)
+			if err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			attachments = append(attachments, SyncAttachmentRow{
+				GUID:           row.GUID,
+				MessageGUID:    row.MessageGUID,
+				Filename:       row.Filename,
+				MimeType:       row.MimeType,
+				TransferName:   row.TransferName,
+				TotalBytes:     row.TotalBytes,
+				LocalPath:      row.LocalPath,
+				IsOutgoing:     row.IsOutgoing,
+				HideAttachment: row.HideAttachment,
+				CreatedAt:      timeutil.AppleMicrosToUnixMilliPtr(row.CreatedRaw),
+				Uti:            row.Uti,
+				IsSticker:      row.IsSticker,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
 	}
 
-	return attachments, rows.Err()
+	return attachments, nil
 }
 
 func derefInt64(v *int64) int64 {
@@ -718,15 +762,14 @@ type attachmentRow struct {
 
 func scanAttachmentRow(rows *sql.Rows) (attachmentRow, error) {
 	var row attachmentRow
-	var isOutgoing, hideAttachment int64
-	var isSticker sql.NullInt64
+	var totalBytes, isOutgoing, hideAttachment, isSticker sql.NullInt64
 	err := rows.Scan(
 		&row.GUID,
 		&row.MessageGUID,
 		&row.Filename,
 		&row.MimeType,
 		&row.TransferName,
-		&row.TotalBytes,
+		&totalBytes,
 		&row.LocalPath,
 		&isOutgoing,
 		&hideAttachment,
@@ -737,8 +780,9 @@ func scanAttachmentRow(rows *sql.Rows) (attachmentRow, error) {
 	if err != nil {
 		return attachmentRow{}, fmt.Errorf("scan attachment row: %w", err)
 	}
-	row.IsOutgoing = isOutgoing != 0
-	row.HideAttachment = hideAttachment != 0
+	row.TotalBytes = totalBytes.Int64
+	row.IsOutgoing = isOutgoing.Valid && isOutgoing.Int64 != 0
+	row.HideAttachment = hideAttachment.Valid && hideAttachment.Int64 != 0
 	row.IsSticker = isSticker.Valid && isSticker.Int64 != 0
 	return row, nil
 }

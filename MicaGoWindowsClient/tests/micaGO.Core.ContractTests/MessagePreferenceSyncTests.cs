@@ -11,6 +11,7 @@ internal static class MessagePreferenceSyncTests
         public string ServerId = new('a', 32);
         public bool Offline;
         public bool LoseReply;
+        public MessagePreference? ExtraReplyRow;
         public long Revision;
         public readonly Dictionary<string,MessagePreference> Rows = [];
         private readonly Dictionary<string,MessagePreferences> _replies = [];
@@ -25,9 +26,10 @@ internal static class MessagePreferenceSyncTests
             if(_replies.TryGetValue(request.MutationId,out var replay))return Task.FromResult(replay);
             if(request.ServerId!=ServerId||request.Changes.Any(change=>change.BaseRevision!=(Rows.GetValueOrDefault(change.MessageKey)?.Revision??0)))throw new MicaGoApiException("conflict\u001fm",409);
             Revision++;
-            var data=request.Changes.Select(change=>new MessagePreference(change.MessageKey,change.Hidden,Revision)).ToArray();
+            var data=request.Changes.Select(change=>new MessagePreference(change.MessageKey,change.Hidden,Revision)).ToList();
             foreach(var row in data)Rows[row.MessageKey]=row;
-            var reply=new MessagePreferences(ServerId,Revision,data);_replies[request.MutationId]=reply;
+            if(ExtraReplyRow is {} extra){data.Add(extra);Rows[extra.MessageKey]=extra;ExtraReplyRow=null;}
+            var reply=new MessagePreferences(ServerId,Revision,data.ToArray());_replies[request.MutationId]=reply;
             if(LoseReply){LoseReply=false;throw new HttpRequestException("lost acknowledgement");}
             return Task.FromResult(reply);
         }
@@ -80,6 +82,9 @@ internal static class MessagePreferenceSyncTests
             await a.SetHiddenAsync(["route-a\u001fsame-guid"],false);
             True(a.ErrorKey is null&&!a.Pending&&!server.Rows["route-a\u001fsame-guid"].Hidden,"successful restore was reported offline after a display exception");
             await cacheA.ClearContentCacheAsync();True(await cacheA.GetSettingAsync("message.preferences.v1") is not null,"cache clear erased preferences");
+            server.ExtraReplyRow=new MessagePreference("extra-route\u001fm",true,server.Revision+10);
+            await a.SetHiddenAsync(["extra-trigger\u001fm"],true);
+            True(a.ErrorKey is null&&a.Hidden.Contains("extra-trigger\u001fm")&&a.Hidden.Contains("extra-route\u001fm"),"extra response row broke message preference sync");
         }
         finally
         {

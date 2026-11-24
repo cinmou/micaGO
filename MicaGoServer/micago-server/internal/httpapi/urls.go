@@ -269,9 +269,10 @@ func (h *Handlers) GetServerURLs(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handlers) buildServerURLs() ServerURLsResponse {
+	cfg := h.configSnapshot()
 	resp := ServerURLsResponse{
-		LAN:                      lanEndpoints(h.cfg.HTTPAddr),
-		PreferredPairingEndpoint: h.cfg.PreferredPairingEndpoint,
+		LAN:                      lanEndpoints(cfg.HTTPAddr),
+		PreferredPairingEndpoint: cfg.PreferredPairingEndpoint,
 	}
 	if resp.PreferredPairingEndpoint == "" {
 		resp.PreferredPairingEndpoint = "auto"
@@ -286,7 +287,10 @@ func (h *Handlers) buildServerURLs() ServerURLsResponse {
 		resp.TLSFingerprint = h.tlsFingerprint
 		for i := range resp.LAN {
 			e := &resp.LAN[i]
-			u, _ := url.Parse(e.BaseURL)
+			u, err := url.Parse(e.BaseURL)
+			if err != nil || u == nil {
+				continue
+			}
 			u.Scheme = "https"
 			u.Host = net.JoinHostPort(u.Hostname(), h.tlsPort)
 			e.BaseURL = u.String()

@@ -249,45 +249,83 @@ class MicaGoTheme {
         );
   }
 
-  static ColorScheme liquidGlassScheme(Brightness brightness) {
+  static ColorScheme liquidGlassScheme(
+    Brightness brightness, {
+    ColorScheme? base,
+    bool isBrandDefault = false,
+  }) {
     final dark = brightness == Brightness.dark;
-    final surface = dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
-    final surfaceHigh = dark
-        ? const Color(0xFF1C1C1E)
-        : const Color(0xFFFFFFFF);
+    final resolvedBase =
+        base ??
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFF007AFF),
+          brightness: brightness,
+        );
+    final useBrandBlue = base == null || isBrandDefault;
+    final primary = useBrandBlue
+        ? (dark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF))
+        : resolvedBase.primary;
+    final onPrimary = useBrandBlue ? Colors.white : resolvedBase.onPrimary;
+    final primaryContainer = useBrandBlue
+        ? (dark ? const Color(0xFF0B3D77) : const Color(0xFFD7EAFF))
+        : resolvedBase.primaryContainer;
+    final onPrimaryContainer = useBrandBlue
+        ? (dark ? const Color(0xFFEAF4FF) : const Color(0xFF002D5C))
+        : resolvedBase.onPrimaryContainer;
+    final tertiary = useBrandBlue ? primary : resolvedBase.tertiary;
+    final onTertiary = useBrandBlue ? Colors.white : resolvedBase.onTertiary;
+    final neutral =
+        (brightness == Brightness.light &&
+            primary == const Color(0xFF111111)) ||
+        (brightness == Brightness.dark && primary == const Color(0xFFFFFFFF));
+    final surface = Color.alphaBlend(
+      primary.withValues(
+        alpha: dark ? (neutral ? 0.015 : 0.07) : (neutral ? 0.01 : 0.045),
+      ),
+      dark ? const Color(0xFF080A0F) : const Color(0xFFFAFBFD),
+    );
+    final surfaceLow = Color.alphaBlend(
+      primary.withValues(
+        alpha: dark ? (neutral ? 0.02 : 0.09) : (neutral ? 0.015 : 0.06),
+      ),
+      dark ? const Color(0xFF10131A) : const Color(0xFFF5F7FB),
+    );
+    final surfaceHigh = Color.alphaBlend(
+      primary.withValues(
+        alpha: dark ? (neutral ? 0.03 : 0.11) : (neutral ? 0.015 : 0.055),
+      ),
+      dark ? const Color(0xFF1A1D24) : const Color(0xFFFFFFFF),
+    );
     final onSurface = dark ? const Color(0xFFF5F5F7) : const Color(0xFF111827);
     final onSurfaceVariant = dark
         ? const Color(0xFFC7C7CC)
         : const Color(0xFF4B5563);
     final incoming = dark ? const Color(0xEE1C1C1E) : const Color(0xEFFFFFFF);
     final onIncoming = dark ? const Color(0xFFF5F5F7) : const Color(0xFF111827);
-    return ColorScheme.fromSeed(
-      seedColor: const Color(0xFF007AFF),
-      brightness: brightness,
-    ).copyWith(
-      primary: const Color(0xFF007AFF),
-      onPrimary: Colors.white,
-      primaryContainer: dark
-          ? const Color(0xFF0B3D77)
-          : const Color(0xFFD7EAFF),
-      onPrimaryContainer: dark
-          ? const Color(0xFFEAF4FF)
-          : const Color(0xFF002D5C),
+    final outlineVariant = Color.alphaBlend(
+      primary.withValues(alpha: neutral ? 0.08 : 0.18),
+      dark ? const Color(0x665A5A5F) : const Color(0x66B7C7DA),
+    );
+    return resolvedBase.copyWith(
+      primary: primary,
+      onPrimary: onPrimary,
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: onPrimaryContainer,
       secondary: incoming,
       onSecondary: onIncoming,
       secondaryContainer: incoming,
       onSecondaryContainer: onIncoming,
-      tertiary: const Color(0xFF007AFF),
-      onTertiary: Colors.white,
+      tertiary: tertiary,
+      onTertiary: onTertiary,
       surface: surface,
       surfaceContainerLowest: surface,
-      surfaceContainerLow: surface,
-      surfaceContainer: surface,
+      surfaceContainerLow: surfaceLow,
+      surfaceContainer: surfaceLow,
       surfaceContainerHigh: surfaceHigh,
       surfaceContainerHighest: surfaceHigh,
       onSurface: onSurface,
       onSurfaceVariant: onSurfaceVariant,
-      outlineVariant: dark ? const Color(0x665A5A5F) : const Color(0x66B7C7DA),
+      outlineVariant: outlineVariant,
       surfaceTint: Colors.transparent,
     );
   }

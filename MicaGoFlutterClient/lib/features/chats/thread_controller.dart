@@ -326,9 +326,11 @@ class ThreadController extends ChangeNotifier {
         tempGuid: tempId,
         message: trimmed,
       );
+      if (app.tokenRejected.value || app.api == null) return;
       _col.confirmPending(tempId, confirmed);
       await app.cache.confirmPending(chatGuid, tempId, confirmed);
     } on ApiException catch (e) {
+      if (app.tokenRejected.value || app.api == null) return;
       _col.setPendingState(tempId, e.sendState);
       await app.cache.setPendingState(tempId, e.sendState);
       _scheduleReload();

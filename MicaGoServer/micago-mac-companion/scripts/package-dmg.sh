@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Build micaGO Companion.app with a bundled universal Go backend, then create a DMG.
 #
-# Unsigned local build:
+# Local ad-hoc signed build:
 #   ./scripts/package-dmg.sh
 #
 # Signed + notarized build:
@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPANION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_DIR="$(cd "$COMPANION_DIR/../micago-server" && pwd)"
-VERSION="${VERSION:-0.94.1}"
+VERSION="${VERSION:-0.96.0}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 GENERATE_APPCAST="${GENERATE_APPCAST:-${NOTARIZE:-0}}"
 if [ "$GENERATE_APPCAST" = "1" ] && { [ -z "${SIGN_IDENTITY:-}" ] || [ "${NOTARIZE:-0}" != "1" ]; }; then
@@ -48,7 +48,7 @@ if [ -n "$(cd "$SERVER_DIR" && git status --porcelain -- . 2>/dev/null)" ]; then
   COMMIT="${COMMIT}-dirty"
 fi
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-LDFLAGS="-X micagoserver/internal/version.Commit=$COMMIT -X micagoserver/internal/version.BuildTime=$BUILD_TIME"
+LDFLAGS="-s -w -X micagoserver/internal/version.Commit=$COMMIT -X micagoserver/internal/version.BuildTime=$BUILD_TIME"
 
 # The backend links through cgo (go-sqlite3). When macOS is newer than the
 # selected Xcode, xcrun pairs Xcode's older linker with the Command Line Tools'
@@ -71,10 +71,10 @@ echo "==> Building universal Go backend ($VERSION)"
   # the Companion's deployment target.
   BACKEND_MIN_MACOS="${BACKEND_MIN_MACOS:-13.0}"
   export MACOSX_DEPLOYMENT_TARGET="$BACKEND_MIN_MACOS"
-  export CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -mmacosx-version-min=$BACKEND_MIN_MACOS"
-  export CGO_LDFLAGS="${CGO_LDFLAGS:--O2 -g} -mmacosx-version-min=$BACKEND_MIN_MACOS"
-  GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o "$BACKEND_DIR/micago-arm64" ./cmd/micago
-  GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o "$BACKEND_DIR/micago-amd64" ./cmd/micago
+  export CGO_CFLAGS="${CGO_CFLAGS:--O2} -mmacosx-version-min=$BACKEND_MIN_MACOS"
+  export CGO_LDFLAGS="${CGO_LDFLAGS:--O2} -mmacosx-version-min=$BACKEND_MIN_MACOS"
+  GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o "$BACKEND_DIR/micago-arm64" ./cmd/micago
+  GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o "$BACKEND_DIR/micago-amd64" ./cmd/micago
 )
 lipo -create -output "$BACKEND_DIR/micago" "$BACKEND_DIR/micago-arm64" "$BACKEND_DIR/micago-amd64"
 chmod +x "$BACKEND_DIR/micago"
@@ -154,7 +154,22 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   codesign --force --options runtime "${CODESIGN_TIMESTAMP_ARGS[@]}" --entitlements "$COMPANION_DIR/MicaGoCompanion/Automation.entitlements" --sign "$SIGN_IDENTITY" "$APP_PATH"
   codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 else
-  echo "==> SIGN_IDENTITY not set; leaving app unsigned for local testing"
+  echo "==> SIGN_IDENTITY not set; ad-hoc signing bundled executables and app for local testing"
+  codesign --force --entitlements "$COMPANION_DIR/MicaGoCompanion/Automation.entitlements" --sign - "$APP_PATH/Contents/MacOS/micago-server"
+  if [ -f "$APP_PATH/Contents/MacOS/micago-imcore-helper" ]; then
+    codesign --force --sign - "$APP_PATH/Contents/MacOS/micago-imcore-helper"
+  fi
+  SPARKLE_FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+  if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/Current"
+    codesign --force --preserve-metadata=identifier,entitlements --sign - "$SPARKLE_VERSION/XPCServices/Downloader.xpc"
+    codesign --force --preserve-metadata=identifier,entitlements --sign - "$SPARKLE_VERSION/XPCServices/Installer.xpc"
+    codesign --force --preserve-metadata=identifier,entitlements --sign - "$SPARKLE_VERSION/Updater.app"
+    codesign --force --preserve-metadata=identifier,entitlements --sign - "$SPARKLE_VERSION/Autoupdate"
+    codesign --force --preserve-metadata=identifier,entitlements --sign - "$SPARKLE_FRAMEWORK"
+  fi
+  codesign --force --entitlements "$COMPANION_DIR/MicaGoCompanion/Automation.entitlements" --sign - "$APP_PATH"
+  codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 fi
 
 echo "==> Creating DMG"

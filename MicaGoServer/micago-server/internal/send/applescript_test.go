@@ -83,3 +83,24 @@ func TestBuildSendToParticipantScript(t *testing.T) {
 		t.Fatalf("attachment path missing: %s", att)
 	}
 }
+
+func TestBuildSendAttachmentsToParticipantScript(t *testing.T) {
+	script := BuildSendAttachmentsToParticipantScript("iMessage", `user_name@example.com`, []string{
+		`/tmp/one.jpg`,
+		`/tmp/two "quoted".mov`,
+	})
+	if !strings.Contains(script, "service type = iMessage") {
+		t.Fatalf("iMessage service type missing: %s", script)
+	}
+	if !strings.Contains(script, `{POSIX file "/tmp/one.jpg", POSIX file "/tmp/two \"quoted\".mov"}`) {
+		t.Fatalf("expected escaped POSIX file list: %s", script)
+	}
+	if !strings.Contains(script, `to participant "user_name@example.com" of targetAccount`) {
+		t.Fatalf("participant target missing: %s", script)
+	}
+
+	sms := BuildSendAttachmentsToParticipantScript("SMS", "+15551234567", []string{"/tmp/a.jpg", "/tmp/b.jpg"})
+	if !strings.Contains(sms, "service type = SMS") {
+		t.Fatalf("SMS service type missing: %s", sms)
+	}
+}

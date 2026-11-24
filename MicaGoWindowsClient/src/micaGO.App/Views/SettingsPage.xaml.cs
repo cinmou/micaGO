@@ -453,7 +453,9 @@ public sealed partial class SettingsPage : Page
         var dialog=new ContentDialog{XamlRoot=XamlRoot,Title=l["unpairTitle"],Content=new TextBlock{Text=l["unpairBody"],TextWrapping=TextWrapping.Wrap},PrimaryButtonText=l["unpairConfirm"],CloseButtonText=l["cancel"],DefaultButton=ContentDialogButton.Close};
         if(await dialog.ShowAsync()!=ContentDialogResult.Primary)return;
         await services.Connection.DisconnectAsync();
-        try{await services.Cache.ClearContentCacheAsync(discardPending:true);MicaGo.Infrastructure.Connection.OutgoingSendService.ClearOwnedFiles();await services.Media.ClearAsync();}catch{}
+        App.UpdateTrayContacts([]);
+        MicaGo.App.Controls.MessageBubble.ClearPrivateMedia();
+        try{await services.Notifications.DismissAllAsync();await services.Cache.ClearContentCacheAsync(discardPending:true);MicaGo.Infrastructure.Connection.OutgoingSendService.ClearOwnedFiles();await services.Media.ClearAsync();}catch{}
         _context?.Host.NavigateToConnection();
     }
 }

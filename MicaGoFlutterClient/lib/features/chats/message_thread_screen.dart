@@ -16,6 +16,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../app/router.dart' show appRouteObserver;
 import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/api_client.dart';
@@ -64,6 +65,8 @@ import 'thread_controller.dart';
 /// active route's real GUID with its server-authoritative send capabilities.
 class MessageThreadScreen extends StatefulWidget {
   final MergedChat merged;
+  final String? initialRouteGuid;
+  final int openRequestId;
 
   /// When true, render as a detail pane (slim header, no Scaffold/back button)
   /// for the two-pane tablet layout.
@@ -74,6 +77,8 @@ class MessageThreadScreen extends StatefulWidget {
   const MessageThreadScreen({
     super.key,
     required this.merged,
+    this.initialRouteGuid,
+    this.openRequestId = 0,
     this.embedded = false,
     this.flatSplitView = false,
     this.embeddedHeaderHeight,
@@ -84,7 +89,9 @@ class MessageThreadScreen extends StatefulWidget {
 }
 
 class _MessageThreadScreenState extends State<MessageThreadScreen>
-    with WidgetsBindingObserver, TickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin, RouteAware {
+  PageRoute<dynamic>? _subscribedRoute;
+  bool _coveredByPageRoute = false;
   late ThreadController _controller;
   Object? _presentationSignature;
   List<ThreadViewItem> _presentationItems = const [];
@@ -167,7 +174,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         )..addListener(() {
           if (mounted) setState(() {});
         });
-    _active = widget.merged.primary;
+    _active = _resolveInitialRoute(widget.merged, widget.initialRouteGuid);
     _routeGuids = widget.merged.routes.map((r) => r.guid).toSet();
     final app = context.read<AppController>();
     // C64: warm the action-capabilities cache so the first long-press menu is
@@ -175,7 +182,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     final api = app.api;
     if (api != null) prefetchMessageActionCapabilities(api, force: true);
     _controller = _createController(app, _active)..start();
-    app.setActiveChatGuids(_controller.threadGuids);
+    app.setActiveChatGuids(_controller.threadGuids, owner: this);
     WidgetsBinding.instance.addObserver(this);
     // C43/C47: opening a thread is the authoritative read event — advance the
     // read watermark for every route so the unread dot clears, and keep it
@@ -216,11 +223,80 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     });
   }
 
+  ChatSummary _resolveInitialRoute(
+    MergedChat merged,
+    String? initialRouteGuid,
+  ) {
+    final target = initialRouteGuid?.trim();
+    if (target != null && target.isNotEmpty) {
+      for (final route in merged.routes) {
+        if (route.guid == target) return route;
+      }
+    }
+    return merged.primary;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && !identical(route, _subscribedRoute)) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MessageThreadScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _routeGuids = widget.merged.routes.map((r) => r.guid).toSet();
+    final requested = widget.initialRouteGuid?.trim();
+    if (widget.openRequestId != oldWidget.openRequestId &&
+        requested != null &&
+        requested.isNotEmpty) {
+      final matched = widget.merged.routes
+          .where((r) => r.guid == requested)
+          .firstOrNull;
+      if (matched != null) {
+        if (matched.guid != _active.guid) {
+          _switchRoute(matched);
+        } else {
+          _active = matched;
+        }
+        return;
+      }
+    }
+    final current = widget.merged.routes
+        .where((r) => r.guid == _active.guid)
+        .firstOrNull;
+    if (current != null) {
+      _active = current;
+    } else {
+      _switchRoute(_resolveInitialRoute(widget.merged, widget.initialRouteGuid));
+    }
+  }
+
+  @override
+  void didPushNext() {
+    _coveredByPageRoute = true;
+    _controller.app.clearActiveChatGuids(owner: this);
+  }
+
+  @override
+  void didPopNext() {
+    _coveredByPageRoute = false;
+    _controller.app.setActiveChatGuids(_controller.threadGuids, owner: this);
+    _markViewedIfForeground();
+  }
+
   /// Advance the read watermark for this contact's routes, but only while the
   /// app is actually in the foreground — a message landing while backgrounded
   /// (even with this thread mounted) must still light the dot (C45/C47).
   void _markViewedIfForeground({String? route, int? upTo}) {
-    if (!mounted) return;
+    if (!mounted || _coveredByPageRoute) return;
     final app = context.read<AppController>();
     if (!app.isForeground) return;
     unawaited(
@@ -289,7 +365,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     setState(() {
       _active = route;
       _controller = _createController(app, route)..start();
-      app.setActiveChatGuids(_controller.threadGuids);
+      app.setActiveChatGuids(_controller.threadGuids, owner: this);
       unawaited(app.markChatsViewed(_controller.threadGuids));
     });
   }
@@ -318,13 +394,17 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     final app = context.read<AppController>();
     setState(() {
       _controller = _createController(app, _active)..start();
-      app.setActiveChatGuids(_controller.threadGuids);
+      app.setActiveChatGuids(_controller.threadGuids, owner: this);
       unawaited(app.markChatsViewed(_controller.threadGuids));
     });
   }
 
   @override
   void dispose() {
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _seenWsSub?.cancel();
     _seenDeltaSub?.cancel();
@@ -339,10 +419,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     _selectModeController.dispose();
     _sendEffects.dispose();
     _recorder.dispose();
-    final app = _controller.app;
-    if (_routeGuids.any(app.isChatActive)) {
-      app.setActiveChatGuid(null);
-    }
+    _controller.app.clearActiveChatGuids(owner: this);
     super.dispose();
   }
 
@@ -1049,9 +1126,8 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     final glass = _isLiquidGlassTheme(context);
     final theme = context.watch<ThemeController>();
     final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
-    final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
-        ? glassBg
+        ? liquidGlassHeaderColor(context)
         : neutralSurfaces
         ? Theme.of(context).colorScheme.surface
         : _accent1_100(Theme.of(context).colorScheme);
@@ -1806,7 +1882,47 @@ class _SelectionActionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final glass = _isLiquidGlassTheme(context);
     String withCount(String label) => count > 0 ? '$label ($count)' : label;
+    final row = Row(
+      children: [
+        Expanded(
+          child: FilledButton.tonalIcon(
+            onPressed: onForward,
+            icon: const Icon(Icons.forward_outlined, size: 18),
+            label: Text(withCount(strings.t('chat.forward'))),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: FilledButton.tonalIcon(
+            onPressed: onHide,
+            icon: const Icon(Icons.visibility_off_outlined, size: 18),
+            label: Text(withCount(strings.t('chat.hideMessage'))),
+          ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          tooltip: strings.t('settings.cancel'),
+          onPressed: onClose,
+          icon: const Icon(Icons.close),
+        ),
+      ],
+    );
+    if (glass) {
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+          child: MicaGlassSurface(
+            borderRadius: 28,
+            color: scheme.surface.withValues(alpha: 0.72),
+            padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+            child: row,
+          ),
+        ),
+      );
+    }
     return Material(
       color: scheme.surface,
       elevation: 8,
@@ -1814,31 +1930,7 @@ class _SelectionActionBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: onForward,
-                  icon: const Icon(Icons.forward_outlined, size: 18),
-                  label: Text(withCount(strings.t('chat.forward'))),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: onHide,
-                  icon: const Icon(Icons.visibility_off_outlined, size: 18),
-                  label: Text(withCount(strings.t('chat.hideMessage'))),
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                tooltip: strings.t('settings.cancel'),
-                onPressed: onClose,
-                icon: const Icon(Icons.close),
-              ),
-            ],
-          ),
+          child: row,
         ),
       ),
     );
@@ -1897,11 +1989,24 @@ class _JumpToBottomButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final glass = _isLiquidGlassTheme(context);
     return Material(
-      color: scheme.surface.withValues(alpha: 0.92),
-      borderRadius: BorderRadius.circular(18),
-      elevation: 4,
-      shadowColor: Colors.black.withValues(alpha: 0.20),
+      color: glass
+          ? liquidGlassSurfaceColor(context, alpha: dark ? 0.78 : 0.86)
+          : scheme.surface.withValues(alpha: 0.92),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: glass
+            ? BorderSide(
+                color: dark
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : Colors.white.withValues(alpha: 0.80),
+              )
+            : BorderSide.none,
+      ),
+      elevation: glass ? 2 : 4,
+      shadowColor: Colors.black.withValues(alpha: glass ? 0.14 : 0.20),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
@@ -1984,7 +2089,7 @@ class _ChatBackground extends StatelessWidget {
     if (path == null || path.isEmpty) {
       if (theme.useLiquidGlass) {
         return DecoratedBox(
-          decoration: BoxDecoration(color: liquidGlassPageColor(context)),
+          decoration: liquidGlassPageDecoration(context),
           child: child,
         );
       }
@@ -2002,6 +2107,12 @@ class _ChatBackground extends StatelessWidget {
 
     final file = File(path);
     if (!file.existsSync()) {
+      if (theme.useLiquidGlass) {
+        return DecoratedBox(
+          decoration: liquidGlassPageDecoration(context),
+          child: child,
+        );
+      }
       if (theme.useBlackWhite || theme.useLinuxTheme) {
         return DecoratedBox(
           decoration: BoxDecoration(color: scheme.surface),
@@ -2064,8 +2175,6 @@ Color _accent3_600(ColorScheme scheme) => scheme.tertiary;
 bool _isLiquidGlassTheme(BuildContext context) =>
     context.watch<ThemeController>().useLiquidGlass;
 
-Color _glassBlue(ColorScheme scheme) => const Color(0xFF007AFF);
-
 bool _isInkWashScheme(ColorScheme scheme) =>
     (scheme.brightness == Brightness.light &&
         scheme.primary == const Color(0xFF111111)) ||
@@ -2078,19 +2187,6 @@ Color _glassIncomingBubble(BuildContext context) {
       ? const Color(0xFF1C1C1E).withValues(alpha: 0.84)
       : Colors.white.withValues(alpha: 0.88);
 }
-
-LiquidGlassSettings _glassSettings(Color color, {double blur = 7}) =>
-    LiquidGlassSettings(
-      glassColor: color,
-      backerColor: color.withValues(alpha: 0.42),
-      blur: blur,
-      thickness: 28,
-      refractiveIndex: 1.18,
-      chromaticAberration: 0.012,
-      saturation: 1.35,
-      lightIntensity: 0.58,
-      standardOpacityMultiplier: 1.0,
-    );
 
 enum MessageAction {
   copy,
@@ -3156,11 +3252,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final bubbleColor = stripBubble
         ? Colors.transparent
         : liquidGlass
-        ? (fromMe ? _glassBlue(scheme) : _glassIncomingBubble(context))
+        ? (fromMe ? scheme.primary : _glassIncomingBubble(context))
         : (fromMe ? _accent1_600(scheme) : _accent2_600(scheme));
     final textColor = liquidGlass
         ? (fromMe
-              ? Colors.white
+              ? scheme.onPrimary
               : Theme.of(context).brightness == Brightness.dark
               ? const Color(0xFFF5F5F7)
               : const Color(0xFF111827))
@@ -3265,16 +3361,6 @@ class _MessageBubbleState extends State<_MessageBubble> {
     // Wraps [child] in the painted iMessage bubble (or nothing, when stripped).
     Widget paint(Widget child, {required bool mediaTopPad}) {
       if (stripBubble) return child;
-      if (liquidGlass) {
-        return GlassContainer(
-          useOwnLayer: true,
-          quality: GlassQuality.minimal,
-          settings: _glassSettings(bubbleColor, blur: fromMe ? 5 : 9),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 19),
-          padding: EdgeInsets.fromLTRB(16, mediaTopPad ? 6 : 8, 16, 8),
-          child: child,
-        );
-      }
       return CustomPaint(
         painter: _IosBubblePainter(
           color: bubbleColor,
@@ -3283,6 +3369,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
               widget.showBubbleTail ||
               reactionEmojis.isNotEmpty ||
               stickers.isNotEmpty,
+          liquidGlass: liquidGlass,
+          dark: Theme.of(context).brightness == Brightness.dark,
         ),
         child: Padding(
           padding: EdgeInsets.fromLTRB(16, mediaTopPad ? 6 : 8, 16, 8),
@@ -3640,40 +3728,89 @@ class _IosBubblePainter extends CustomPainter {
   final Color color;
   final bool fromMe;
   final bool showTail;
+  final bool liquidGlass;
+  final bool dark;
 
   const _IosBubblePainter({
     required this.color,
     required this.fromMe,
     required this.showTail,
+    this.liquidGlass = false,
+    this.dark = false,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
     final bodyRect = Offset.zero & size;
     final radius = Radius.circular(math.min(18, size.height / 2));
+    final RRect body;
     if (!showTail) {
-      canvas.drawRRect(RRect.fromRectAndRadius(bodyRect, radius), paint);
+      body = RRect.fromRectAndRadius(bodyRect, radius);
+    } else {
+      final softBottom = Radius.circular(math.min(18, size.height / 2));
+      final pointedBottom = Radius.circular(math.min(8, size.height / 4));
+      body = RRect.fromRectAndCorners(
+        bodyRect,
+        topLeft: radius,
+        topRight: radius,
+        bottomLeft: fromMe ? softBottom : pointedBottom,
+        bottomRight: fromMe ? pointedBottom : softBottom,
+      );
+    }
+
+    if (!liquidGlass) {
+      canvas.drawRRect(body, Paint()..color = color);
       return;
     }
 
-    final softBottom = Radius.circular(math.min(18, size.height / 2));
-    final pointedBottom = Radius.circular(math.min(8, size.height / 4));
-    final body = RRect.fromRectAndCorners(
-      bodyRect,
-      topLeft: radius,
-      topRight: radius,
-      bottomLeft: fromMe ? softBottom : pointedBottom,
-      bottomRight: fromMe ? pointedBottom : softBottom,
+    final fillGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: fromMe
+          ? [color.withValues(alpha: 0.86), color.withValues(alpha: 0.94)]
+          : dark
+          ? [
+              const Color(0xFF2C2C2E).withValues(alpha: 0.74),
+              const Color(0xFF1C1C1E).withValues(alpha: 0.86),
+            ]
+          : [
+              Colors.white.withValues(alpha: 0.90),
+              const Color(0xFFF2F5FA).withValues(alpha: 0.78),
+            ],
     );
-    canvas.drawRRect(body, paint);
+    canvas.drawRRect(
+      body,
+      Paint()..shader = fillGradient.createShader(bodyRect),
+    );
+
+    final strokeGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Colors.white.withValues(
+          alpha: fromMe ? (dark ? 0.34 : 0.44) : (dark ? 0.24 : 0.88),
+        ),
+        Colors.white.withValues(
+          alpha: fromMe ? 0.08 : (dark ? 0.05 : 0.24),
+        ),
+      ],
+    );
+    canvas.drawRRect(
+      body.deflate(0.5),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0
+        ..shader = strokeGradient.createShader(bodyRect),
+    );
   }
 
   @override
   bool shouldRepaint(covariant _IosBubblePainter oldDelegate) =>
       oldDelegate.color != color ||
       oldDelegate.fromMe != fromMe ||
-      oldDelegate.showTail != showTail;
+      oldDelegate.showTail != showTail ||
+      oldDelegate.liquidGlass != liquidGlass ||
+      oldDelegate.dark != dark;
 }
 
 /// C63: centered progress ring + percentage over an uploading attachment.
@@ -4501,6 +4638,80 @@ class _VoiceRecordingBarState extends State<_VoiceRecordingBar> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (_isLiquidGlassTheme(context)) {
+      final bar = Container(
+        margin: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            MicaGlassCircleButton(
+              tooltip: MaterialLocalizations.of(context).cancelButtonLabel,
+              onPressed: widget.busy ? null : widget.onCancel,
+              iconColor: scheme.onSurface,
+              icon: const Icon(Icons.delete_outline),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: MicaGlassSurface(
+                borderRadius: 28,
+                color: scheme.surface.withValues(alpha: 0.70),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: SizedBox(
+                  height: 52,
+                  child: Row(
+                    children: [
+                      _RecordingDot(color: scheme.error),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ValueListenableBuilder<List<double>>(
+                          valueListenable: widget.levels,
+                          builder: (context, levels, _) => _VoiceWaveform(
+                            levels: levels,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ValueListenableBuilder<Duration>(
+                        valueListenable: widget.elapsed,
+                        builder: (context, d, _) => Text(
+                          _fmt(d),
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            widget.busy
+                ? const SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : MicaGlassCircleButton(
+                    tooltip: MicaLocalizations.of(context).t('chat.stop'),
+                    onPressed: widget.onStop,
+                    color: scheme.primary,
+                    iconColor: scheme.onPrimary,
+                    icon: const Icon(Icons.stop),
+                  ),
+          ],
+        ),
+      );
+      return SafeArea(top: false, child: RepaintBoundary(child: bar));
+    }
     final dark = Theme.of(context).brightness == Brightness.dark;
     final outerColor = dark ? _accent2_800(scheme) : _accent1_500(scheme);
     final inputColor = _accent1_10(scheme);
@@ -4627,6 +4838,74 @@ class _VoiceReviewBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (_isLiquidGlassTheme(context)) {
+      final bar = Container(
+        margin: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            MicaGlassCircleButton(
+              tooltip: MaterialLocalizations.of(context).cancelButtonLabel,
+              onPressed: busy ? null : onCancel,
+              iconColor: scheme.onSurface,
+              icon: const Icon(Icons.delete_outline),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: MicaGlassSurface(
+                borderRadius: 28,
+                color: scheme.surface.withValues(alpha: 0.70),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: SizedBox(
+                  height: 52,
+                  child: Row(
+                    children: [
+                      Icon(Icons.graphic_eq, color: scheme.primary, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _VoiceWaveform(
+                          levels: levels,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _fmt(duration),
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            busy
+                ? const SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : MicaGlassCircleButton(
+                    tooltip: MicaLocalizations.of(context).t('chat.send'),
+                    onPressed: onSend,
+                    color: scheme.primary,
+                    iconColor: scheme.onPrimary,
+                    icon: const Icon(Icons.send_rounded),
+                  ),
+          ],
+        ),
+      );
+      return SafeArea(top: false, child: RepaintBoundary(child: bar));
+    }
     final dark = Theme.of(context).brightness == Brightness.dark;
     final outerColor = dark ? _accent2_800(scheme) : _accent1_500(scheme);
     final inputColor = _accent1_10(scheme);
@@ -5137,128 +5416,112 @@ class _ComposerState extends State<_Composer> {
     final hintColor = scheme.onSurface.withValues(alpha: 0.58);
     final inputIconColor = scheme.onSurfaceVariant;
     final showEmoji = isLinuxDesktop || _focus.hasFocus || widget.emojiOpen;
-
-    Widget glassCircle({
-      Key? key,
-      required Widget icon,
-      required VoidCallback? onPressed,
-      Color? color,
-      Color? iconColor,
-      String? tooltip,
-    }) {
-      final effectiveColor =
-          color ?? scheme.surfaceContainerHighest.withValues(alpha: 0.50);
-      return SizedBox(
-        key: key,
-        width: 52,
-        height: 52,
-        child: GlassContainer(
-          useOwnLayer: true,
-          quality: GlassQuality.standard,
-          settings: _glassSettings(effectiveColor, blur: 9),
-          shape: const LiquidOval(),
-          child: IconButton(
-            tooltip: tooltip,
-            onPressed: onPressed,
-            color: iconColor ?? scheme.onSurface,
-            icon: icon,
-          ),
-        ),
-      );
-    }
+    final sharedGlass = canUseShaderGlass;
 
     final panelOpen = widget.attachOpen || widget.emojiOpen;
+    final attachAndInput = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        widget.attachmentSending
+            ? const SizedBox(
+                width: 52,
+                height: 52,
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            : MicaGlassCircleButton(
+                key: _attachButtonKey,
+                useOwnLayer: !sharedGlass,
+                tooltip: MicaLocalizations.of(context).t('chat.attachments'),
+                onPressed: _openAttachmentMenu,
+                color: scheme.surface.withValues(alpha: 0.68),
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 150),
+                  transitionBuilder: (child, anim) =>
+                      ScaleTransition(scale: anim, child: child),
+                  child: Icon(
+                    widget.attachOpen ? Icons.close : Icons.add,
+                    key: ValueKey(widget.attachOpen),
+                  ),
+                ),
+              ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: MicaGlassSurface(
+            useOwnLayer: !sharedGlass,
+            borderRadius: 28,
+            color: scheme.surface.withValues(alpha: 0.70),
+            padding: const EdgeInsets.only(left: 18, right: 4),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 52),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: _inputField(onInput, hintColor, scheme.primary),
+                  ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    transitionBuilder: (child, anim) => ScaleTransition(
+                      scale: anim,
+                      child: FadeTransition(opacity: anim, child: child),
+                    ),
+                    child: showEmoji
+                        ? IconButton(
+                            key: const ValueKey('emoji-liquid'),
+                            tooltip: MicaLocalizations.of(
+                              context,
+                            ).t('chat.emoji'),
+                            visualDensity: VisualDensity.compact,
+                            color: widget.emojiOpen
+                                ? scheme.primary
+                                : inputIconColor,
+                            icon: const Icon(
+                              Icons.emoji_emotions_outlined,
+                              size: 22,
+                            ),
+                            onPressed: widget.onEmoji,
+                          )
+                        : IconButton(
+                            key: const ValueKey('voice-liquid'),
+                            tooltip: MicaLocalizations.of(
+                              context,
+                            ).t('chat.voiceMessage'),
+                            visualDensity: VisualDensity.compact,
+                            color: inputIconColor,
+                            icon: const Icon(Icons.mic_none, size: 22),
+                            onPressed: widget.onVoice,
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
     final bar = Container(
       margin: EdgeInsets.fromLTRB(10, 6, 10, panelOpen ? 4 : 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          widget.attachmentSending
-              ? const SizedBox(
-                  width: 52,
-                  height: 52,
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                )
-              : glassCircle(
-                  key: _attachButtonKey,
-                  tooltip: MicaLocalizations.of(context).t('chat.attachments'),
-                  onPressed: _openAttachmentMenu,
-                  icon: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 150),
-                    transitionBuilder: (child, anim) =>
-                        ScaleTransition(scale: anim, child: child),
-                    child: Icon(
-                      widget.attachOpen ? Icons.close : Icons.add,
-                      key: ValueKey(widget.attachOpen),
-                    ),
-                  ),
-                ),
-          const SizedBox(width: 8),
           Expanded(
-            child: GlassContainer(
-              useOwnLayer: true,
-              quality: GlassQuality.standard,
-              settings: _glassSettings(
-                scheme.surface.withValues(alpha: 0.70),
-                blur: 10,
-              ),
-              shape: const LiquidRoundedSuperellipse(borderRadius: 28),
-              padding: const EdgeInsets.only(left: 18, right: 4),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 52),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: _inputField(
-                        onInput,
-                        hintColor,
-                        _glassBlue(scheme),
-                      ),
+            child: sharedGlass
+                ? AdaptiveLiquidGlassLayer(
+                    quality: GlassQuality.standard,
+                    settings: micaGlassSettings(
+                      scheme.surface.withValues(alpha: 0.70),
+                      blur: 10,
                     ),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      transitionBuilder: (child, anim) => ScaleTransition(
-                        scale: anim,
-                        child: FadeTransition(opacity: anim, child: child),
-                      ),
-                      child: showEmoji
-                          ? IconButton(
-                              key: const ValueKey('emoji-liquid'),
-                              tooltip: MicaLocalizations.of(
-                                context,
-                              ).t('chat.emoji'),
-                              visualDensity: VisualDensity.compact,
-                              color: widget.emojiOpen
-                                  ? _glassBlue(scheme)
-                                  : inputIconColor,
-                              icon: const Icon(
-                                Icons.emoji_emotions_outlined,
-                                size: 22,
-                              ),
-                              onPressed: widget.onEmoji,
-                            )
-                          : IconButton(
-                              key: const ValueKey('voice-liquid'),
-                              tooltip: MicaLocalizations.of(
-                                context,
-                              ).t('chat.voiceMessage'),
-                              visualDensity: VisualDensity.compact,
-                              color: inputIconColor,
-                              icon: const Icon(Icons.mic_none, size: 22),
-                              onPressed: widget.onVoice,
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                    child: attachAndInput,
+                  )
+                : attachAndInput,
           ),
           const SizedBox(width: 8),
           AnimatedScale(
@@ -5268,14 +5531,14 @@ class _ComposerState extends State<_Composer> {
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 150),
               opacity: widget.canSend ? 1.0 : 0.62,
-              child: glassCircle(
+              child: MicaGlassCircleButton(
                 tooltip: MicaLocalizations.of(context).t('chat.send'),
                 onPressed: widget.canSend ? widget.onSend : null,
                 color: widget.canSend
-                    ? _glassBlue(scheme)
+                    ? scheme.primary
                     : scheme.surfaceContainerHighest.withValues(alpha: 0.45),
                 iconColor: widget.canSend
-                    ? Colors.white
+                    ? scheme.onPrimary
                     : scheme.onSurfaceVariant,
                 icon: const Icon(Icons.send_rounded),
               ),
@@ -5846,17 +6109,16 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
     final theme = context.watch<ThemeController>();
     final glass = theme.useLiquidGlass;
     final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
-    final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
-        ? glassBg
+        ? liquidGlassHeaderColor(context)
         : neutralSurfaces
         ? scheme.surface
         : _accent1_100(scheme);
-    final pageBg = glass
-        ? glassBg
-        : neutralSurfaces
-        ? scheme.surface
-        : _accent1_50(scheme);
+    final pageDecoration = glass
+        ? liquidGlassPageDecoration(context)
+        : BoxDecoration(
+            color: neutralSurfaces ? scheme.surface : _accent1_50(scheme),
+          );
     final strings = MicaLocalizations.of(context);
     final isGroup = widget.active.isGroup;
     final detailSubtitle = isGroup
@@ -5890,7 +6152,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           child: DecoratedBox(
-            decoration: BoxDecoration(color: pageBg),
+            decoration: pageDecoration,
             child: SafeArea(
               top: false,
               child: ListView(

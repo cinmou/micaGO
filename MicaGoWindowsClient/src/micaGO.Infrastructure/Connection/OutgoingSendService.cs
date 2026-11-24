@@ -14,48 +14,71 @@ public sealed class OutgoingSendService(IMicaGoApi api, LocalCacheStore cache, M
     private static string DefaultFileRoot=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"micaGO","pending_files");
     private readonly string _fileRoot=Path.GetFullPath(fileRoot??DefaultFileRoot);
     private readonly ConcurrentDictionary<string,CancellationTokenSource> _active=new();
+    private readonly ConcurrentDictionary<string,byte> _inFlight=new();
     private readonly ConcurrentDictionary<string,byte> _removed=new();
     private readonly ConcurrentDictionary<string,string> _tracked=new();
     private readonly ConcurrentDictionary<string,string> _owned=new();
     private readonly SemaphoreSlim _attachments=new(1,1);
+    private readonly object _lifetimeGate=new();
     private readonly CancellationTokenSource _lifetime=new();
+    private bool _disposed;
     public event EventHandler<OutgoingSendUpdate>? Changed;
     public event EventHandler<string>? Removed;
+    public bool IsInFlight(string tempId)=>_inFlight.ContainsKey(tempId);
 
     public async Task<MessageDeliveryState> SendTextAsync(string route,string text,CancellationToken ct=default)
     {
         var send=new PendingSend(NewId(),route,"","","text/plain",0,Now(),Text:text.Trim());
-        await cache.UpsertPendingSendAsync(send,ct);
-        Publish(send,true);
-        return await TransmitAsync(send,ct);
+        _inFlight[send.TempId]=0;
+        try
+        {
+            await cache.UpsertPendingSendAsync(send,ct);
+            Publish(send,true);
+            return await TransmitAsync(send,ct);
+        }
+        finally { _inFlight.TryRemove(send.TempId,out _); }
     }
 
     public async Task<IReadOnlyList<MessageDeliveryState>> SendFilesAsync(string route,IEnumerable<string> paths,bool voice=false,CancellationToken ct=default)
     {
         var queue=paths.Select((path,index)=>new PendingSend(NewId(),route,path,Path.GetFileName(path),MimeFor(path),0,Now()+index,IsAudioMessage:voice)).ToArray();
+        foreach(var send in queue)_inFlight[send.TempId]=0;
         // Every accepted item gets a durable row before the first upload starts.
         var accepted=new List<PendingSend>();
         try {foreach(var send in queue){await cache.UpsertPendingSendAsync(send,ct);accepted.Add(send);Publish(send,true);}}
-        catch(Exception error){foreach(var send in accepted)await FailBeforeDispatchAsync(send,error);throw;}
+        catch(Exception error){foreach(var send in accepted)await FailBeforeDispatchAsync(send,error);foreach(var send in queue)_inFlight.TryRemove(send.TempId,out _);throw;}
         var results=new List<MessageDeliveryState>();
-        foreach(var initial in queue)
+        try
         {
-            if(_removed.ContainsKey(initial.TempId))continue;
-            var send=initial;
-            try { send=await SnapshotAsync(send,ct); await cache.UpdatePendingSendAsync(send,ct); }
-            catch(Exception error) { await FailBeforeDispatchAsync(send,error);results.Add(MessageDeliveryState.Failed);continue; }
-            results.Add(await TransmitAsync(send,ct));
+            foreach(var initial in queue)
+            {
+                try
+                {
+                    if(_removed.ContainsKey(initial.TempId))continue;
+                    var send=initial;
+                    try { send=await SnapshotAsync(send,ct); await cache.UpdatePendingSendAsync(send,ct); }
+                    catch(Exception error) { await FailBeforeDispatchAsync(send,error);results.Add(MessageDeliveryState.Failed);continue; }
+                    results.Add(await TransmitAsync(send,ct));
+                }
+                finally { _inFlight.TryRemove(initial.TempId,out _); }
+            }
         }
+        finally { foreach(var send in queue)_inFlight.TryRemove(send.TempId,out _); }
         return results;
     }
 
     public async Task<MessageDeliveryState> SendForwardFileAsync(string route,string source,string? name,bool voice,CancellationToken ct=default)
     {
         var send=new PendingSend(NewId(),route,source,SafeFileName(name??Path.GetFileName(source)),MimeFor(name??source),0,Now(),IsAudioMessage:voice);
-        await cache.UpsertPendingSendAsync(send,ct);Publish(send,true);
-        try {send=await SnapshotAsync(send,ct);await cache.UpdatePendingSendAsync(send,ct);}
-        catch(Exception error){await FailBeforeDispatchAsync(send,error);return MessageDeliveryState.Failed;}
-        return await TransmitAsync(send,ct);
+        _inFlight[send.TempId]=0;
+        try
+        {
+            await cache.UpsertPendingSendAsync(send,ct);Publish(send,true);
+            try {send=await SnapshotAsync(send,ct);await cache.UpdatePendingSendAsync(send,ct);}
+            catch(Exception error){await FailBeforeDispatchAsync(send,error);return MessageDeliveryState.Failed;}
+            return await TransmitAsync(send,ct);
+        }
+        finally { _inFlight.TryRemove(send.TempId,out _); }
     }
     public void Acknowledge(string id)
     {
@@ -91,16 +114,21 @@ public sealed class OutgoingSendService(IMicaGoApi api, LocalCacheStore cache, M
         if(previous is null||previous.State!="failed")return false;
         var next=previous with{TempId=NewId(),DateCreated=Now(),State="queued",Error=null};
         if(!await cache.ReplaceFailedPendingSendAsync(previous,next,ct))return false;
-        _removed.TryAdd(previous.TempId,0);Removed?.Invoke(this,previous.TempId);
-        Publish(next,true);
-        if(!next.IsText)
+        _inFlight[next.TempId]=0;
+        try
         {
-            try { next=await SnapshotAsync(next,ct);await cache.UpdatePendingSendAsync(next,ct); }
-            catch(Exception error){await FailBeforeDispatchAsync(next,error);return true;}
+            _removed.TryAdd(previous.TempId,0);Removed?.Invoke(this,previous.TempId);
+            Publish(next,true);
+            if(!next.IsText)
+            {
+                try { next=await SnapshotAsync(next,ct);await cache.UpdatePendingSendAsync(next,ct); }
+                catch(Exception error){await FailBeforeDispatchAsync(next,error);return true;}
+            }
+            CleanupOwned(previous.FilePath,except:next.FilePath);
+            await TransmitAsync(next,ct);
+            return true;
         }
-        CleanupOwned(previous.FilePath,except:next.FilePath);
-        await TransmitAsync(next,ct);
-        return true;
+        finally { _inFlight.TryRemove(next.TempId,out _); }
     }
 
     public void Cancel(Message message)
@@ -139,7 +167,13 @@ public sealed class OutgoingSendService(IMicaGoApi api, LocalCacheStore cache, M
 
     private async Task<MessageDeliveryState> TransmitAsync(PendingSend send,CancellationToken ct)
     {
-        using var transfer=CancellationTokenSource.CreateLinkedTokenSource(ct,_lifetime.Token);
+        CancellationTokenSource transfer;
+        lock(_lifetimeGate)
+        {
+            if(_disposed)return MessageDeliveryState.Failed;
+            transfer=CancellationTokenSource.CreateLinkedTokenSource(ct,_lifetime.Token);
+        }
+        using var _=transfer;
         if(!_active.TryAdd(send.TempId,transfer))return MessageDeliveryState.Sending;
         var entered=false;var dispatched=false;Message? confirmed=null;
         var delivery=MessageDeliveryState.Sent;string? error=null;
@@ -166,7 +200,7 @@ public sealed class OutgoingSendService(IMicaGoApi api, LocalCacheStore cache, M
             confirmed=confirmed with{PresentationId=send.TempId};
             // A disk error after acceptance must never turn a successful send into a retryable rejection.
             try {await cache.UpsertMessagesAsync([confirmed],CancellationToken.None);}
-            catch {await SetStateAsync(send,"sent_unconfirmed",null);}
+            catch {await SetStateAsync(send,"sent_unconfirmed",null);return MessageDeliveryState.Sent;}
             Changed?.Invoke(this,new(confirmed));CleanupOwned(send.FilePath);
             return MessageDeliveryState.Sent;
         }
@@ -208,5 +242,19 @@ public sealed class OutgoingSendService(IMicaGoApi api, LocalCacheStore cache, M
     private static string NewId()=>"local-"+Guid.NewGuid().ToString("N");
     private static long Now()=>DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     private sealed class InlineProgress(Action<double> report):IProgress<double>{public void Report(double value)=>report(value);}
-    public void Dispose(){_lifetime.Cancel();foreach(var transfer in _active.Values)transfer.Cancel();}
+    public void Dispose()
+    {
+        lock(_lifetimeGate)
+        {
+            if(_disposed)return;
+            _disposed=true;
+            _lifetime.Cancel();
+            _lifetime.Dispose();
+        }
+        foreach(var transfer in _active.Values)
+        {
+            try{transfer.Cancel();}
+            catch(ObjectDisposedException){}
+        }
+    }
 }

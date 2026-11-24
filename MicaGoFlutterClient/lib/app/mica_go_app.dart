@@ -11,6 +11,7 @@ import '../core/app_controller.dart';
 import '../core/l10n/app_localizations.dart';
 import '../core/theme_controller.dart';
 import '../core/platform/linux_desktop.dart';
+import '../core/ui/glass_theme_widgets.dart';
 import '../features/contacts/contacts_service.dart';
 import '../features/settings/message_display_controller.dart';
 import 'router.dart';
@@ -103,24 +104,89 @@ class _MicaGoAppState extends State<MicaGoApp> {
               final useDynamic = theme.useSystemColors && dynamicAvailable;
               final useBlackWhite = theme.useBlackWhite;
               final useLiquidGlass = theme.useLiquidGlass;
-              final lightScheme = useBlackWhite
+              final isBrandDefault =
+                  !useDynamic &&
+                  !useBlackWhite &&
+                  theme.colorChoice == ThemeColorChoice.micago;
+              final baseLight = useBlackWhite
                   ? MicaGoTheme.blackWhiteScheme(Brightness.light)
-                  : useLiquidGlass
-                  ? MicaGoTheme.liquidGlassScheme(Brightness.light)
                   : useDynamic
                   ? lightDynamic.harmonized()
                   : ColorScheme.fromSeed(seedColor: theme.seedColor);
-              final darkScheme = useBlackWhite
+              final baseDark = useBlackWhite
                   ? MicaGoTheme.blackWhiteScheme(Brightness.dark)
-                  : useLiquidGlass
-                  ? MicaGoTheme.liquidGlassScheme(Brightness.dark)
                   : (useDynamic && darkDynamic != null)
                   ? darkDynamic.harmonized()
                   : ColorScheme.fromSeed(
                       seedColor: theme.seedColor,
                       brightness: Brightness.dark,
                     );
+              final lightScheme = useLiquidGlass
+                  ? MicaGoTheme.liquidGlassScheme(
+                      Brightness.light,
+                      base: baseLight,
+                      isBrandDefault: isBrandDefault,
+                    )
+                  : baseLight;
+              final darkScheme = useLiquidGlass
+                  ? MicaGoTheme.liquidGlassScheme(
+                      Brightness.dark,
+                      base: baseDark,
+                      isBrandDefault: isBrandDefault,
+                    )
+                  : baseDark;
 
+              final materialApp = MaterialApp.router(
+                builder: (context, child) {
+                  if (!isLinuxDesktop) {
+                    return child ?? const SizedBox.shrink();
+                  }
+                  final media = MediaQuery.of(context);
+                  return MediaQuery(
+                    data: media.copyWith(
+                      textScaler: DesktopTextScaler(
+                        media.textScaler,
+                        theme.desktopTextScale,
+                      ),
+                    ),
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        visualDensity: const VisualDensity(
+                          horizontal: -1,
+                          vertical: -1,
+                        ),
+                      ),
+                      child: child ?? const SizedBox.shrink(),
+                    ),
+                  );
+                },
+                title: 'micaGO',
+                debugShowCheckedModeBanner: false,
+                theme: theme.useLinuxTheme
+                    ? MicaGoTheme.linux(Brightness.light)
+                    : MicaGoTheme.fromScheme(lightScheme),
+                darkTheme: theme.useLinuxTheme
+                    ? MicaGoTheme.linux(Brightness.dark)
+                    : MicaGoTheme.fromScheme(darkScheme),
+                themeMode: theme.themeMode,
+                locale: theme.locale,
+                supportedLocales: const [
+                  Locale('en'),
+                  Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+                  Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
+                ],
+                localizationsDelegates: const [
+                  MicaLocalizations.delegate,
+                  GlobalMaterialLocalizations.delegate,
+                  GlobalWidgetsLocalizations.delegate,
+                  GlobalCupertinoLocalizations.delegate,
+                ],
+                routerConfig: _router,
+              );
+
+              if (!useLiquidGlass || !canUseShaderGlass) {
+                return materialApp;
+              }
               return LiquidGlassWidgets.wrap(
                 adaptiveQuality: true,
                 theme: GlassThemeData.simple(
@@ -132,53 +198,7 @@ class _MicaGoAppState extends State<MicaGoApp> {
                   borderRadius: 28,
                   quality: GlassQuality.standard,
                 ),
-                child: MaterialApp.router(
-                  builder: (context, child) {
-                    if (!isLinuxDesktop) {
-                      return child ?? const SizedBox.shrink();
-                    }
-                    final media = MediaQuery.of(context);
-                    return MediaQuery(
-                      data: media.copyWith(
-                        textScaler: DesktopTextScaler(
-                          media.textScaler,
-                          theme.desktopTextScale,
-                        ),
-                      ),
-                      child: Theme(
-                        data: Theme.of(context).copyWith(
-                          visualDensity: const VisualDensity(
-                            horizontal: -1,
-                            vertical: -1,
-                          ),
-                        ),
-                        child: child ?? const SizedBox.shrink(),
-                      ),
-                    );
-                  },
-                  title: 'micaGO',
-                  debugShowCheckedModeBanner: false,
-                  theme: theme.useLinuxTheme
-                      ? MicaGoTheme.linux(Brightness.light)
-                      : MicaGoTheme.fromScheme(lightScheme),
-                  darkTheme: theme.useLinuxTheme
-                      ? MicaGoTheme.linux(Brightness.dark)
-                      : MicaGoTheme.fromScheme(darkScheme),
-                  themeMode: theme.themeMode,
-                  locale: theme.locale,
-                  supportedLocales: const [
-                    Locale('en'),
-                    Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
-                    Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
-                  ],
-                  localizationsDelegates: const [
-                    MicaLocalizations.delegate,
-                    GlobalMaterialLocalizations.delegate,
-                    GlobalWidgetsLocalizations.delegate,
-                    GlobalCupertinoLocalizations.delegate,
-                  ],
-                  routerConfig: _router,
-                ),
+                child: materialApp,
               );
             },
           );

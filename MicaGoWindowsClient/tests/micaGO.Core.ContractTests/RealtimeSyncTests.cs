@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Data.Sqlite;
 using MicaGo.Core.Models;
+using MicaGo.Infrastructure.Api;
 using MicaGo.Infrastructure.Connection;
 using MicaGo.Infrastructure.Contracts;
 using MicaGo.Infrastructure.Storage;
@@ -55,6 +56,21 @@ internal static class RealtimeSyncTests
                 var first=await initial.Task.WaitAsync(TimeSpan.FromSeconds(2));True(!first.AllowNotifications,"initial history catch-up was notification eligible");
             }
             finally{SqliteConnection.ClearAllPools();foreach(var suffix in new[]{"","-wal","-shm"})if(File.Exists(freshPath+suffix))File.Delete(freshPath+suffix);}
+
+            var proxyPath=Path.Combine(Path.GetTempPath(),"micago-sync-proxy401-"+Guid.NewGuid().ToString("N")+".db");
+            try
+            {
+                using var proxyCache=new LocalCacheStore(proxyPath);var proxyApi=new FakeApi();
+                proxyApi.NextDeltaFailure=new MicaGoApiException("The connection endpoint returned HTTP 401.",401,code:"http_401");
+                proxyApi.Deltas.Enqueue(new MessageDelta([Message("recovered",600)],[],6,false));
+                var reselected=0;var recovered=new TaskCompletionSource<RealtimeMessageBatch>(TaskCreationOptions.RunContinuationsAsynchronously);
+                await using var proxySync=new RealtimeSyncService(proxyApi,proxyCache,reselectRoute:_=>{reselected++;return Task.CompletedTask;});
+                proxySync.MessagesChanged+=(_,batch)=>{if(batch.Messages.Any(m=>m.Id=="recovered"))recovered.TrySetResult(batch);};
+                proxySync.Start();
+                await recovered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                True(reselected>=1,"gateway http_401 did not trigger route reselection and recovery");
+            }
+            finally{SqliteConnection.ClearAllPools();foreach(var suffix in new[]{"","-wal","-shm"})if(File.Exists(proxyPath+suffix))File.Delete(proxyPath+suffix);}
         }
         finally{cache?.Dispose();SqliteConnection.ClearAllPools();foreach(var suffix in new[]{"","-wal","-shm"})if(File.Exists(path+suffix))File.Delete(path+suffix);}
     }
@@ -72,8 +88,8 @@ internal static class RealtimeSyncTests
         public virtual Task<ChatPreferences> GetChatPreferencesAsync(CancellationToken cancellationToken=default)=>Task.FromResult(new ChatPreferences("test",0,[]));
         public virtual Task<ChatPreferences> PatchChatPreferencesAsync(ChatPreferenceMutation mutation,CancellationToken cancellationToken=default)=>throw new NotSupportedException();
         private readonly System.Threading.Channels.Channel<RealtimeEvent> _events=System.Threading.Channels.Channel.CreateUnbounded<RealtimeEvent>();
-        public Queue<MessageDelta> Deltas{get;}=[];public string BaseUrl=>"http://fake";public void EmitRealtime(string type="message:new")=>_events.Writer.TryWrite(new(type,"chat",null));
-        public Task<MessageDelta> GetMessagesDeltaAsync(long? since,int limit=200,CancellationToken cancellationToken=default)=>Task.FromResult(Deltas.Count>0?Deltas.Dequeue():new MessageDelta([],[],since??0,false));
+        public Queue<MessageDelta> Deltas{get;}=[];public Exception? NextDeltaFailure{get;set;}public string BaseUrl=>"http://fake";public void EmitRealtime(string type="message:new")=>_events.Writer.TryWrite(new(type,"chat",null));
+        public Task<MessageDelta> GetMessagesDeltaAsync(long? since,int limit=200,CancellationToken cancellationToken=default){if(NextDeltaFailure is {} failure){NextDeltaFailure=null;return Task.FromException<MessageDelta>(failure);}return Task.FromResult(Deltas.Count>0?Deltas.Dequeue():new MessageDelta([],[],since??0,false));}
         public async IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync([EnumeratorCancellation] CancellationToken cancellationToken=default){await foreach(var item in _events.Reader.ReadAllAsync(cancellationToken))yield return item;}
         public Task<IReadOnlyList<ChatSummary>> GetChatsAsync(CancellationToken cancellationToken=default)=>Task.FromResult<IReadOnlyList<ChatSummary>>([]);
         public Task<MessageHistoryPage> GetMessageHistoryAsync(IReadOnlyList<string> chatIds,int limit=50,string? before=null,CancellationToken cancellationToken=default)=>Task.FromResult(new MessageHistoryPage([],null,false));

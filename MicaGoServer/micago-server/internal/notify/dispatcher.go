@@ -221,7 +221,11 @@ func (d *Dispatcher) DispatchNewMessages(ctx context.Context, devices []store.De
 				skippedNoDevice++
 				continue
 			}
-			if err := provider.Send(ctx, device, notification); err != nil && !errors.Is(err, ErrPushNotConfigured) {
+			if err := provider.Send(ctx, device, notification); err != nil {
+				if errors.Is(err, ErrPushNotConfigured) {
+					skippedNoDevice++
+					continue
+				}
 				errorsLogged++
 				log.Printf("push dispatch (%s): %v", device.PushProvider, err)
 				continue

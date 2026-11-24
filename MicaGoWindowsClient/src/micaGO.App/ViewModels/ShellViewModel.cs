@@ -54,13 +54,14 @@ public sealed class ShellViewModel : IAsyncDisposable
     public ChatListCollection Chats { get; } = [];
     public ObservableCollection<MessageRow> Messages { get; } = [];
     public ChatSummary? SelectedChat { get; private set; }
+    public bool IsConversationViewed { get; private set; }
     public string SyncStatus { get; private set; } = "Cached";
     public bool IsLoadingOlder { get; private set; }
     public bool HasMoreMessages { get; private set; }
     public int HiddenChatCount => HiddenChats.Count;
     public int HiddenMessageCount => _hiddenMessageKeys.Count;
     public IReadOnlyList<ChatSummary> HiddenChats => _allChats.Where(IsChatHidden).Concat(
-        _hiddenChatGuids.Where(guid=>!_allChats.Any(chat=>MatchesRoute(chat,guid)))
+        _hiddenChatGuids.Where(guid=>!_allChats.Any(chat=>IsChatHidden(chat)&&MatchesRoute(chat,guid)))
             .Select(guid=>new ChatSummary(guid,guid,"","",0,"#",RouteIds:[guid]))
     ).OrderByDescending(chat=>chat.UpdatedAt).ToArray();
     public MessageActionCapabilities ActionCapabilities { get; private set; }=new(false,false,false);
@@ -263,9 +264,29 @@ public sealed class ShellViewModel : IAsyncDisposable
         }
         catch (OperationCanceledException){return;}
         catch when (cached.Length > 0) { HasMoreMessages=cached.Length==MessagePageSize; }
-        try { await MarkSelectedChatReadAsync(chat,token,notificationRoute,notificationThrough); }
-        catch (OperationCanceledException){return;}
+        if (IsConversationViewed || notificationRoute is not null)
+        {
+            try { await MarkSelectedChatReadAsync(chat,token,notificationRoute,notificationThrough); }
+            catch (OperationCanceledException){return;}
+        }
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void SetConversationViewed(bool viewed)
+    {
+        if (IsConversationViewed == viewed) return;
+        IsConversationViewed = viewed;
+        if (viewed && SelectedChat is { } selected && !_services.Connection.TokenRejected)
+        {
+            _ = MarkSelectedChatReadAsync(selected, _selectionCts?.Token ?? CancellationToken.None);
+        }
+    }
+
+    public Task MarkCurrentChatReadAsync(string? notificationRoute = null, long? notificationThrough = null, CancellationToken cancellationToken = default)
+    {
+        if (_services.Connection.TokenRejected || SelectedChat is not { } selected) return Task.CompletedTask;
+        if (!IsConversationViewed && notificationRoute is null) return Task.CompletedTask;
+        return MarkSelectedChatReadAsync(selected, cancellationToken, notificationRoute, notificationThrough);
     }
 
     public async Task LoadOlderMessagesAsync(CancellationToken cancellationToken=default)
@@ -291,10 +312,10 @@ public sealed class ShellViewModel : IAsyncDisposable
         var positions=new Dictionary<string,long>();
         foreach(var route in chat.RouteIds is{Count:>0} routes?routes:[chat.Id])
         {
-            var latest=_rawMessages.Where(row=>row.ChatId.Equals(route,StringComparison.OrdinalIgnoreCase)).Select(row=>row.DateCreated).DefaultIfEmpty(0).Max();
+            var latest=_rawMessages.Where(row=>!row.IsPending&&row.ChatId.Equals(route,StringComparison.OrdinalIgnoreCase)).Select(row=>row.DateCreated).DefaultIfEmpty(0).Max();
             if (notificationRoute is not null)
             {
-                if (route != notificationRoute || notificationThrough is not > 0) continue;
+                if (!string.Equals(route, notificationRoute, StringComparison.OrdinalIgnoreCase) || notificationThrough is not > 0) continue;
                 latest = Math.Min(latest, notificationThrough.Value);
             }
             if (latest <= 0) continue;
@@ -403,13 +424,10 @@ public sealed class ShellViewModel : IAsyncDisposable
                 var isSelected=SelectedChat is{} selected&&(selected.Id==message.ChatId||(selected.RouteIds?.Contains(message.ChatId)??false));
                 if(isSelected)
                 {
-                    // C74: the open conversation is the authority on "seen". The
-                    // watermark used to advance only at selection time, so a
-                    // message arriving while you read it left the watermark
-                    // behind — and the next chat-list rebuild (which derives
-                    // HasUnread from the watermark) relit the dot on the chat
-                    // you were looking at.
-                    AdvanceReadWatermark(message);
+                    // C74: the open conversation is the authority on "seen". Only
+                    // advance when the conversation pane is actually visible in
+                    // an active, non-minimized window.
+                    if (IsConversationViewed) AdvanceReadWatermark(message);
                     var existing = raw.FirstOrDefault(item => item.ChatId.Equals(message.ChatId,StringComparison.OrdinalIgnoreCase) && item.Id == message.Id);
                     if (existing is not null)
                     {
@@ -464,18 +482,19 @@ public sealed class ShellViewModel : IAsyncDisposable
             }
             var chat=updates.GetValueOrDefault(canonical.ListKey,canonical);
             var isSelected=SelectedChat is{} selected&&MatchesRoute(selected,message.ChatId);
+            var isViewed=isSelected&&IsConversationViewed;
             var firstObservation = RememberRealtimeMessage(message.ChatId,message.Id);
             var alreadyRead=message.DateCreated>0&&message.DateCreated<=_services.ReadState.Positions.GetValueOrDefault(message.ChatId);
             var routeChat = _routeChats.GetValueOrDefault(message.ChatId, chat);
             var advancesChat = message.DateCreated >= routeChat.UpdatedAt;
-            var advancedRoute = ChatUnreadSemantics.Advance(routeChat, message.DateCreated, message.IsOutgoing, isSelected||alreadyRead, firstObservation);
-            if (_services.ReadState.UnreadMarks.GetValueOrDefault(message.ChatId) && !isSelected)
+            var advancedRoute = ChatUnreadSemantics.Advance(routeChat, message.DateCreated, message.IsOutgoing, isViewed||alreadyRead, firstObservation);
+            if (_services.ReadState.UnreadMarks.GetValueOrDefault(message.ChatId) && !isViewed)
                 advancedRoute = advancedRoute with { HasUnread = true, UnreadCount = 0 };
             _routeChats[message.ChatId] = advancesChat?advancedRoute with{Preview=MessageSemantics.PreviewText(message),Time=ChatTimestamp(message.DateCreated)}:advancedRoute;
             var routeRows = (chat.RouteIds is { Count: > 0 } chatRoutes ? chatRoutes : [chat.Id])
                 .Select(route => _routeChats.GetValueOrDefault(route)).OfType<ChatSummary>().ToArray();
             var updatesLatest = message.DateCreated >= chat.UpdatedAt;
-            var incomingUnseen=firstObservation&&advancesChat&&!message.IsOutgoing&&!isSelected&&!alreadyRead;
+            var incomingUnseen=firstObservation&&advancesChat&&!message.IsOutgoing&&!isViewed&&!alreadyRead;
             var preview=MessageSemantics.PreviewText(message);
             updates[canonical.ListKey]=chat with
             {
@@ -508,7 +527,7 @@ public sealed class ShellViewModel : IAsyncDisposable
     private void AdvanceReadWatermark(Message message)
     {
         if (SelectedChat is not { } selected) return;
-        if(!MatchesRoute(selected,message.ChatId)||message.DateCreated<=0)return;
+        if (message.IsPending || !MatchesRoute(selected, message.ChatId) || message.DateCreated <= 0) return;
         _ = MarkRouteReadAsync(message);
     }
 
@@ -571,8 +590,8 @@ public sealed class ShellViewModel : IAsyncDisposable
 
     private bool IsChatHidden(ChatSummary chat)
     {
-        if(_hiddenChatGuids.Contains(chat.Id))return true;
-        return chat.RouteIds?.Any(_hiddenChatGuids.Contains)==true;
+        if (chat.RouteIds is { Count: > 0 } routes) return routes.All(_hiddenChatGuids.Contains);
+        return _hiddenChatGuids.Contains(chat.Id);
     }
 
     private bool IsChatVisible(ChatSummary chat) => !IsChatHidden(chat)
@@ -790,6 +809,12 @@ public sealed class ShellViewModel : IAsyncDisposable
         foreach(var upload in await _services.Cache.GetPendingSendsAsync(chatId,token))
         {
             if(raw.Any(row=>row.PresentationKey==upload.TempId))continue;
+            if(_outgoing.IsInFlight(upload.TempId))
+            {
+                if(!upload.IsText&&File.Exists(upload.FilePath))try{await _services.Media.SeedAsync(upload.TempId,upload.FilePath,token);}catch(IOException){}catch(UnauthorizedAccessException){}
+                raw.Add(upload.ToMessage(active:true));changed=true;
+                continue;
+            }
             var restored=upload.State=="queued"?upload with{State="failed"}:upload;
             if(restored!=upload)await _services.Cache.UpdatePendingSendAsync(restored,token);
             if(!restored.IsText&&File.Exists(restored.FilePath))try{await _services.Media.SeedAsync(restored.TempId,restored.FilePath,token);}catch(IOException){}catch(UnauthorizedAccessException){}

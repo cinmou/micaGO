@@ -94,3 +94,43 @@ func TestManualUnreadCASAndReplay(t *testing.T) {
 		t.Fatal("stale override advanced read position")
 	}
 }
+
+func TestAdvanceReadStateDuplicateChatGUIDInSingleBatch(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	initial, err := db.ReadState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	yes := true
+	rev1 := int64(1)
+	state, err := db.AdvanceReadState(ctx, store.ReadStateMutation{
+		ServerID: initial.ServerID,
+		Changes: []store.ReadPosition{
+			{ChatGUID: "a", ReadThrough: 300},
+			{ChatGUID: "a", ReadThrough: 100},
+			{ChatGUID: "a", MarkedUnread: &yes, BaseUnreadRevision: &rev1},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Data) != 1 {
+		t.Fatalf("expected 1 read position, got %+v", state.Data)
+	}
+	row := state.Data[0]
+	if row.ReadThrough != 300 {
+		t.Fatalf("read_through regressed in same batch: got %d, want 300", row.ReadThrough)
+	}
+	if row.MarkedUnread == nil || !*row.MarkedUnread {
+		t.Fatalf("expected marked_unread=true after chained CAS in same batch, got %+v", row)
+	}
+	if row.UnreadRevision != 2 {
+		t.Fatalf("expected unread_revision=2, got %d", row.UnreadRevision)
+	}
+}

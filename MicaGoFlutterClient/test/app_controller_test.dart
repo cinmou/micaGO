@@ -5,11 +5,16 @@ import 'package:crypto/crypto.dart';
 import 'package:mica_go/core/network/api_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:mica_go/core/theme_controller.dart';
 import 'package:mica_go/core/ui/top_banner.dart';
 import 'package:mica_go/core/storage/media_cache.dart';
 import 'package:mica_go/core/storage/local_cache_store.dart';
 import 'package:mica_go/features/chats/chat_list_screen.dart';
+import 'package:mica_go/features/chats/message_thread_screen.dart';
+import 'package:mica_go/features/chats/models/merged_chat.dart';
+import 'package:mica_go/features/chats/models/message_model.dart';
 import 'package:mica_go/features/contacts/contacts_service.dart';
 import 'package:mica_go/features/settings/message_display_controller.dart';
 import 'package:mica_go/core/l10n/app_localizations.dart';
@@ -706,6 +711,216 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'merged chat tap only marks opened route read and notification tap opens target sub-route',
+    (tester) async {
+      final store = _MemoryStore();
+      final fixture = _ChatFixtureCache()
+        ..rows = const [
+          ChatSummary(
+            guid: 'iMessage;-;+15550001',
+            chatIdentifier: '+15550001',
+            displayName: 'Alice',
+            effectiveService: 'imessage',
+            lastMessageAt: 100,
+            lastMessagePreview: 'hi imsg',
+            hasUnread: true,
+          ),
+          ChatSummary(
+            guid: 'SMS;-;+15550001',
+            chatIdentifier: '+15550001',
+            displayName: 'Alice',
+            effectiveService: 'sms',
+            lastMessageAt: 200,
+            lastMessagePreview: 'hi sms',
+            hasUnread: true,
+          ),
+        ];
+      final app = _CachedApp(store: store, fixture: fixture);
+      final contacts = _FixedContacts(store: store, id: 'contact-alice');
+      final display = MessageDisplayController(store: store);
+      addTearDown(app.dispose);
+      addTearDown(contacts.dispose);
+      addTearDown(display.dispose);
+
+      final opened = <(MergedChat, String?)>[];
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AppController>.value(value: app),
+            ChangeNotifierProvider<ContactsService>.value(value: contacts),
+            ChangeNotifierProvider<MessageDisplayController>.value(
+              value: display,
+            ),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: const [MicaLocalizations.delegate],
+            home: Scaffold(
+              body: ChatListScreen(
+                onOpenRoute: (merged, routeGuid) =>
+                    opened.add((merged, routeGuid)),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Alice').first);
+      await tester.pumpAndSettle();
+
+      expect(opened, hasLength(1));
+      expect(opened.single.$2, isNull);
+      expect(
+        fixture.rows
+            .firstWhere((r) => r.guid == 'iMessage;-;+15550001')
+            .hasUnread,
+        isFalse,
+      );
+      expect(
+        fixture.rows.firstWhere((r) => r.guid == 'SMS;-;+15550001').hasUnread,
+        isTrue,
+      );
+
+      // Notification tap targeting the SMS sub-route must pass initialRouteGuid
+      // and mark that sub-route read.
+      app.requestOpenChat('SMS;-;+15550001');
+      await tester.pumpAndSettle();
+
+      expect(opened, hasLength(2));
+      expect(opened.last.$2, 'SMS;-;+15550001');
+      expect(
+        fixture.rows.firstWhere((r) => r.guid == 'SMS;-;+15550001').hasUnread,
+        isFalse,
+      );
+    },
+  );
+
+  testWidgets(
+    'MessageThreadScreen covered by PageRoute pauses read marking and restores activeChatGuids on pop',
+    (tester) async {
+      const recorder = MethodChannel('com.llfbandit.record/messages');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        recorder,
+        (_) async => null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          recorder,
+          null,
+        ),
+      );
+      final store = _MemoryStore();
+      final fixture = _ChatFixtureCache();
+      final app = _ThreadRouteTestApp(store: store, fixture: fixture);
+      final theme = ThemeController(store: store);
+      final contacts = ContactsService(store: store);
+      final display = MessageDisplayController(store: store);
+      addTearDown(app.dispose);
+      addTearDown(theme.dispose);
+      addTearDown(contacts.dispose);
+      addTearDown(display.dispose);
+
+      const routeGuid = 'iMessage;-;+15550009';
+      final navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AppController>.value(value: app),
+            ChangeNotifierProvider<ThemeController>.value(value: theme),
+            ChangeNotifierProvider<ContactsService>.value(value: contacts),
+            ChangeNotifierProvider<MessageDisplayController>.value(
+              value: display,
+            ),
+          ],
+          child: MaterialApp(
+            navigatorKey: navKey,
+            navigatorObservers: [appRouteObserver],
+            localizationsDelegates: const [MicaLocalizations.delegate],
+            home: const MessageThreadScreen(
+              merged: MergedChat(
+                key: routeGuid,
+                routes: [
+                  ChatSummary(
+                    guid: routeGuid,
+                    effectiveService: 'imessage',
+                    canSendTextRaw: true,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(app.isChatActive(routeGuid), isTrue);
+      final viewedBeforeCover = app.viewedCalls.length;
+
+      // Push a covering PageRoute.
+      navKey.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('top')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(app.isChatActive(routeGuid), isFalse);
+
+      // Incoming delta message while covered must NOT mark the thread viewed.
+      app.emitDelta(
+        MessageModel.fromJson({
+          'guid': 'm-covered',
+          'chatGuid': routeGuid,
+          'text': 'hidden behind page',
+          'dateCreated': 500,
+        }),
+      );
+      await tester.pump();
+      expect(app.viewedCalls.length, viewedBeforeCover);
+
+      // Pop covering PageRoute: activeChatGuids and read marking resume.
+      navKey.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(app.isChatActive(routeGuid), isTrue);
+      expect(app.viewedCalls.length, greaterThan(viewedBeforeCover));
+    },
+  );
+}
+
+class _FixedContacts extends ContactsService {
+  _FixedContacts({required super.store, required this.id});
+  final String id;
+  @override
+  String? contactIdFor(String? handle) =>
+      (handle?.isNotEmpty ?? false) ? id : null;
+  @override
+  String? displayNameFor(String? handle) => 'Alice';
+}
+
+class _ThreadRouteTestApp extends _CachedApp {
+  _ThreadRouteTestApp({required super.store, required super.fixture});
+  final _delta = StreamController<MessageModel>.broadcast();
+  final List<List<String>> viewedCalls = [];
+
+  @override
+  Stream<MessageModel> get deltaMessages => _delta.stream;
+
+  void emitDelta(MessageModel msg) => _delta.add(msg);
+
+  @override
+  Future<void> markChatsViewed(Iterable<String> guids, {int? upTo}) async {
+    viewedCalls.add(guids.toList());
+    await super.markChatsViewed(guids, upTo: upTo);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_delta.close());
+    super.dispose();
+  }
 }
 
 class _FailOnceStore extends _MemoryStore {

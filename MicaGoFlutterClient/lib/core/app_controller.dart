@@ -121,7 +121,7 @@ class AppController extends ChangeNotifier {
   final LocalCacheStore cache = LocalCacheStore();
   late final ChatPreferenceSync chatPreferences = ChatPreferenceSync(
     cache: cache,
-    api: () => _api,
+    api: () => api,
     onChanged: () {
       if (!_chatReloadController.isClosed) _chatReloadController.add(null);
       _clearSuppressedDesktopNotifications();
@@ -186,8 +186,20 @@ class AppController extends ChangeNotifier {
     _profile = null;
     _activeCandidate = null;
     _serverReachable = false;
+    _syncCursor = null;
+    _mutedChats.clear();
+    _syncSettings = null;
+    _testContactEnabled = null;
+    _routeProbes.clear();
+    _probingRoutes.clear();
+    _switchingRoute = null;
+    _foregroundAlertGuids.clear();
+    _foregroundAlertGuidOrder.clear();
+    pendingOpenChat.value = null;
+    _customAvatarPaths.clear();
     cache.accessAllowed = false;
     MediaCache.instance.accessAllowed = false;
+    final clearMedia = MediaCache.instance.clear();
     TopBanner.blocked = true;
     TopBanner.dismiss();
     _clearConnectionProblem();
@@ -210,6 +222,9 @@ class AppController extends ChangeNotifier {
       } catch (_) {}
       try {
         await cache.clearAll();
+      } catch (_) {}
+      try {
+        await clearMedia;
       } catch (_) {}
     }();
   }
@@ -349,18 +364,36 @@ class AppController extends ChangeNotifier {
   }
 
   final Set<String> _activeChatGuids = <String>{};
+  Object? _activeChatOwner;
   bool isChatActive(String chatGuid) => _activeChatGuids.contains(chatGuid);
 
-  void setActiveChatGuid(String? chatGuid) {
+  void setActiveChatGuid(String? chatGuid, {Object? owner}) {
+    if (chatGuid == null || chatGuid.trim().isEmpty) {
+      clearActiveChatGuids(owner: owner);
+      return;
+    }
+    _activeChatOwner = owner;
     _activeChatGuids
       ..clear()
-      ..addAll([if (chatGuid != null && chatGuid.trim().isNotEmpty) chatGuid]);
+      ..add(chatGuid);
   }
 
-  void setActiveChatGuids(Iterable<String> chatGuids) {
+  void setActiveChatGuids(Iterable<String> chatGuids, {Object? owner}) {
+    final guids = chatGuids.where((g) => g.trim().isNotEmpty).toList();
+    if (guids.isEmpty) {
+      clearActiveChatGuids(owner: owner);
+      return;
+    }
+    _activeChatOwner = owner;
     _activeChatGuids
       ..clear()
-      ..addAll(chatGuids.where((g) => g.trim().isNotEmpty));
+      ..addAll(guids);
+  }
+
+  void clearActiveChatGuids({Object? owner}) {
+    if (owner != null && !identical(_activeChatOwner, owner)) return;
+    _activeChatOwner = null;
+    _activeChatGuids.clear();
   }
 
   final Set<String> _mutedChats = <String>{};
@@ -644,6 +677,9 @@ class AppController extends ChangeNotifier {
 
   /// Reload storage-backed settings and the server-issued device credential.
   Future<void> reloadAfterRestore() async {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _syncCursor = null;
     _mutedChats.clear();
     await _loadNotificationPreferences();
     await _loadCustomAvatars();
@@ -680,10 +716,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _refreshMutedChatsFromServer() async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return;
     try {
       final muted = await api.getMutedChatGuids();
+      if (tokenRejected.value || !identical(api, this.api)) return;
       _mutedChats
         ..clear()
         ..addAll(muted);
@@ -758,6 +795,9 @@ class AppController extends ChangeNotifier {
     _rejectionCleanup = null;
     _redeemedInvitationCode = null;
     _redeemedProfile = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _syncCursor = null;
     _profile = profile;
     _serverReachable = false;
     _activeCandidate = null;
@@ -824,17 +864,36 @@ class AppController extends ChangeNotifier {
 
   /// Fetches `GET /api/server/urls` using the active client.
   Future<void> refreshServerUrls() async {
-    final api = _api;
-    if (api == null) return;
+    final api = this.api;
+    final expectedProfile = _profile;
+    if (api == null || expectedProfile == null) return;
     final urls = await api.getServerUrls();
-    await _persistEndpointCandidates(urls);
+    if (tokenRejected.value ||
+        !identical(api, this.api) ||
+        _profile == null ||
+        _profile!.token != expectedProfile.token) {
+      return;
+    }
+    await _persistEndpointCandidates(urls, expectedToken: expectedProfile.token);
+    if (tokenRejected.value ||
+        _profile == null ||
+        _profile!.token != expectedProfile.token) {
+      return;
+    }
     notifyListeners();
     unawaited(_registerDeviceIfPossible());
   }
 
-  Future<void> _persistEndpointCandidates(ServerUrls urls) async {
+  Future<void> _persistEndpointCandidates(
+    ServerUrls urls, {
+    String? expectedToken,
+  }) async {
     final profile = _profile;
-    if (profile == null) return;
+    if (tokenRejected.value ||
+        profile == null ||
+        (expectedToken != null && profile.token != expectedToken)) {
+      return;
+    }
     // C23: skip the rebuild churn when the server's connection config is
     // unchanged (same revision) and we already have candidates stored.
     if (urls.connectionRevision.isNotEmpty &&
@@ -911,7 +970,17 @@ class AppController extends ChangeNotifier {
         !usableUrls.contains(normalizeBaseUrl(active.baseUrl))) {
       _activeCandidate = null;
     }
+    if (tokenRejected.value ||
+        _profile == null ||
+        _profile!.token != profile.token) {
+      return;
+    }
     await store.saveProfile(next);
+    if (tokenRejected.value ||
+        _profile == null ||
+        _profile!.token != profile.token) {
+      return;
+    }
     _rebuildApi();
   }
 
@@ -1080,10 +1149,14 @@ class AppController extends ChangeNotifier {
         result = await _probeCandidate(profile, candidate);
         i++;
       }
-      if (epoch != _selectionEpoch) return false;
+      if (epoch != _selectionEpoch ||
+          tokenRejected.value ||
+          _profile?.token != profile.token) {
+        return false;
+      }
       failures.add(result);
       if (result.ok) {
-        _dropChosenRoute(chosen);
+        _dropChosenRoute(chosen, expectedToken: profile.token);
         _activateReachableCandidate(result.candidate, reason);
         return true;
       }
@@ -1103,10 +1176,19 @@ class AppController extends ChangeNotifier {
 
   /// C85: the route the user switched to could not be reached and another
   /// route connected, so selection goes back to automatic.
-  void _dropChosenRoute(ConnectionCandidate? chosen) {
+  void _dropChosenRoute(
+    ConnectionCandidate? chosen, {
+    String? expectedToken,
+  }) {
     final profile = _profile;
     final selected = profile?.selectedBaseUrl;
-    if (chosen == null || profile == null || selected == null) return;
+    if (chosen == null ||
+        profile == null ||
+        selected == null ||
+        tokenRejected.value ||
+        (expectedToken != null && profile.token != expectedToken)) {
+      return;
+    }
     if (normalizeBaseUrl(selected) != chosen.baseUrl) return;
     final next = profile.copyWith(selectedBaseUrl: null);
     _profile = next;
@@ -1347,22 +1429,31 @@ class AppController extends ChangeNotifier {
   /// cache + open views, paging until caught up. Idempotent and safe to call on
   /// reconnect, resume, startup, and the fallback poll.
   Future<void> runDeltaSync({required String reason}) async {
-    final api = _api;
+    final api = this.api;
+    final expectedToken = profile?.token;
     if (api == null || _deltaInFlight) return;
     _deltaInFlight = true;
     final freshForegroundAlerts = <(MessageModel, String)>[];
+    bool sessionValid() =>
+        !tokenRejected.value &&
+        this.api != null &&
+        profile?.token == expectedToken;
     try {
       _syncCursor ??= int.tryParse(
         await cache.readMetadata('sync_cursor') ?? '',
       );
+      if (!sessionValid()) return;
       var guard = 0;
       while (guard++ < 20) {
         final delta = await api.fetchDelta(since: _syncCursor);
+        if (!sessionValid()) return;
         for (final msg in delta.messages) {
+          if (!sessionValid()) return;
           final chatGuid = msg.chatGuid;
           if (chatGuid != null && chatGuid.isNotEmpty) {
             final isNew =
                 msg.guid.isEmpty || !await cache.hasMessage(chatGuid, msg.guid);
+            if (!sessionValid()) return;
             await cache.upsertMessage(chatGuid, msg);
             // C47: ingestion only ever lights (or leaves) the unread dot — it
             // never advances another party's read watermark. Marking a chat read
@@ -1388,6 +1479,7 @@ class AppController extends ChangeNotifier {
           }
           _deltaController.add(msg);
         }
+        if (!sessionValid()) return;
         final advanced = delta.cursor != _syncCursor;
         _syncCursor = delta.cursor;
         await cache.writeMetadata('sync_cursor', '${delta.cursor}');
@@ -1403,7 +1495,7 @@ class AppController extends ChangeNotifier {
     // C75: one in-app banner for the whole sync — the newest message. A
     // backlog (resume, reconnect, first sync) previously raised a banner per
     // row, which scrolled the alert stack wildly.
-    if (freshForegroundAlerts.isNotEmpty) {
+    if (freshForegroundAlerts.isNotEmpty && sessionValid()) {
       freshForegroundAlerts.sort(
         (a, b) => (a.$1.dateCreated ?? 0).compareTo(b.$1.dateCreated ?? 0),
       );
@@ -1468,7 +1560,10 @@ class AppController extends ChangeNotifier {
   void _onWebSocketStatusChanged() {
     if (_lastObservedWsStatus == ws.status) return;
     _lastObservedWsStatus = ws.status;
-    if (tokenRejected.value) return;
+    if (tokenRejected.value || _profile == null) {
+      _updateConnectionHealth();
+      return;
+    }
     if (ws.status == WsStatus.connected) {
       _serverReachable = true;
       _clearConnectionProblem();
@@ -1519,12 +1614,13 @@ class AppController extends ChangeNotifier {
 
   /// Fetches the server's sync settings (server-authoritative SMS sendability).
   Future<void> refreshSyncSettings() async {
+    final api = this.api;
+    if (api == null) return;
     try {
-      final settings = await _api?.getSyncSettings();
-      if (settings != null) {
-        _syncSettings = settings;
-        notifyListeners();
-      }
+      final settings = await api.getSyncSettings();
+      if (tokenRejected.value || !identical(api, this.api)) return;
+      _syncSettings = settings;
+      notifyListeners();
     } on ApiException catch (error) {
       debugPrint(
         'MicaGo sync settings refresh failed: ${error.code} (${error.statusCode})',
@@ -1561,9 +1657,12 @@ class AppController extends ChangeNotifier {
 
   /// Fetches the current test-contact state from the server. Best-effort.
   Future<void> refreshTestContact() async {
+    final api = this.api;
+    if (api == null) return;
     try {
-      final config = await _api?.getTestContactConfig();
-      if (config != null && config.enabled != _testContactEnabled) {
+      final config = await api.getTestContactConfig();
+      if (tokenRejected.value || !identical(api, this.api)) return;
+      if (config.enabled != _testContactEnabled) {
         _testContactEnabled = config.enabled;
         notifyListeners();
       }
@@ -1676,7 +1775,7 @@ class AppController extends ChangeNotifier {
           return _recordRegister('registration superseded');
         }
         if (result.status == 200) {
-          _startDeviceHeartbeat(profile.deviceId);
+          _startDeviceHeartbeat();
           return _recordRegister('OK ${candidate.label} ${candidate.baseUrl}');
         }
         if (result.status != 0 || attempt == 2) {
@@ -1778,10 +1877,11 @@ class AppController extends ChangeNotifier {
       _notificationPreview == 'sender_and_text';
 
   Future<void> refreshNotificationConfig() async {
-    final api = _api;
+    final api = this.api;
     if (api == null) return;
     try {
       final config = await api.getNotificationConfig();
+      if (tokenRejected.value || !identical(api, this.api)) return;
       final preview = config?.preview.trim();
       if (preview == null || preview.isEmpty) return;
       if (_notificationPreview == preview) return;
@@ -1968,17 +2068,16 @@ class AppController extends ChangeNotifier {
       senderName: senderName,
       isGroup: isGroup,
     );
-    if (isLinuxDesktop &&
-        (_foreground ||
-            tokenRejected.value ||
-            !hasProfile ||
-            notificationDevice != _profile?.deviceId ||
-            (chatGuid != null &&
-                (isChatMuted(chatGuid) ||
-                    chatPreferences.isHidden(chatGuid) ||
-                    messagePreferences.isHidden('$chatGuid\u001f${msg.guid}') ||
-                    messagePreferences.isHidden(msg.guid) ||
-                    await _alreadyRead(chatGuid, msg))))) {
+    if (_foreground ||
+        tokenRejected.value ||
+        !hasProfile ||
+        notificationDevice != _profile?.deviceId ||
+        (chatGuid != null &&
+            (isChatMuted(chatGuid) ||
+                chatPreferences.isHidden(chatGuid) ||
+                messagePreferences.isHidden('$chatGuid\u001f${msg.guid}') ||
+                messagePreferences.isHidden(msg.guid) ||
+                await _alreadyRead(chatGuid, msg)))) {
       return;
     }
     final privateDesktop = isLinuxDesktop && _notificationPreview == 'none';
@@ -2310,15 +2409,20 @@ class AppController extends ChangeNotifier {
   // last-seen time every 30s. When the app/network goes away the ticks stop and
   // the device naturally falls out of the server's connected window.
   Timer? _heartbeatTimer;
-  void _startDeviceHeartbeat(String id) {
+  void _startDeviceHeartbeat() {
     _heartbeatTimer ??= Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_sendDeviceHeartbeat(id));
+      unawaited(_sendDeviceHeartbeat());
     });
   }
 
-  Future<void> _sendDeviceHeartbeat(String id) async {
+  Future<void> _sendDeviceHeartbeat() async {
+    final id = profile?.deviceId;
+    final client = api;
+    if (tokenRejected.value || client == null || id == null || id.isEmpty) {
+      return;
+    }
     try {
-      await _api?.deviceHeartbeat(id);
+      await client.deviceHeartbeat(id);
     } on ApiException catch (error) {
       debugPrint(
         'MicaGo heartbeat failed: ${error.code} (${error.statusCode})',
@@ -2461,18 +2565,38 @@ class AppController extends ChangeNotifier {
 
   /// Clears the saved profile and tears down clients.
   Future<void> signOut() async {
-    ws.disconnect();
+    ++_selectionEpoch;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _profile = null;
+    _activeCandidate = null;
+    _serverReachable = false;
+    _syncCursor = null;
+    _mutedChats.clear();
+    _syncSettings = null;
+    _testContactEnabled = null;
+    _routeProbes.clear();
+    _probingRoutes.clear();
+    _switchingRoute = null;
+    _foregroundAlertGuids.clear();
+    _foregroundAlertGuidOrder.clear();
+    pendingOpenChat.value = null;
+    _customAvatarPaths.clear();
     _redeemedInvitationCode = null;
     _redeemedProfile = null;
+    _clearConnectionProblem();
+    connectionHealthy.value = false;
+    _refresh.dispose();
+    unawaited(_applyKeepAlive(false));
+    _api?.close();
+    _api = null;
+    ws.disconnect();
+    notifyListeners();
+    final clearMedia = MediaCache.instance.clear();
     await store.clearProfile();
     await clearSystemNotificationState();
     await cache.clearAll();
-    _api?.close();
-    _api = null;
-    _profile = null;
-    _activeCandidate = null;
-    _customAvatarPaths.clear();
-    notifyListeners();
+    await clearMedia;
   }
 
   Future<void> setCustomAvatarBytes(String key, Uint8List bytes) async {

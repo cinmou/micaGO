@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../app/theme.dart';
 import 'storage/secure_store.dart';
 import 'platform/linux_desktop.dart';
+import 'ui/glass_theme_widgets.dart';
 
 /// Theme color choice. `system` = use Android 12+ dynamic (Material You) colors
 /// when available; the rest are fixed seed colors.
@@ -40,6 +41,7 @@ class ThemeController extends ChangeNotifier {
 
   ThemeMode themeMode = ThemeMode.system;
   ThemeColorChoice colorChoice = ThemeColorChoice.micago;
+  bool liquidGlassEnabled = false;
   LanguageChoice language = LanguageChoice.system;
   String? chatBackgroundPath;
   bool systemColorsAvailable = false;
@@ -61,13 +63,16 @@ class ThemeController extends ChangeNotifier {
       systemColorsAvailable &&
       colorChoice == ThemeColorChoice.system;
   bool get useBlackWhite => colorChoice == ThemeColorChoice.blackWhite;
-  bool get useLiquidGlass => colorChoice == ThemeColorChoice.liquidGlass;
+  bool get useLiquidGlass => liquidGlassEnabled;
   bool get useLinuxTheme =>
-      isLinuxDesktop && colorChoice == ThemeColorChoice.linuxDesktop;
+      isLinuxDesktop &&
+      !liquidGlassEnabled &&
+      colorChoice == ThemeColorChoice.linuxDesktop;
   List<ThemeColorChoice> get availableColorChoices => [
     if (!isLinuxDesktop && systemColorsAvailable) ThemeColorChoice.system,
     for (final choice in ThemeColorChoice.values)
       if (choice != ThemeColorChoice.system &&
+          choice != ThemeColorChoice.liquidGlass &&
           (isLinuxDesktop || choice != ThemeColorChoice.linuxDesktop))
         choice,
   ];
@@ -123,6 +128,7 @@ class ThemeController extends ChangeNotifier {
 
   static const _kMode = 'micago.theme.mode';
   static const _kColor = 'micago.theme.color';
+  static const _kLiquidGlass = 'micago.theme.liquidGlass';
   static const _kLang = 'micago.theme.lang';
   static const _kChatBackground = 'micago.theme.chatBackgroundPath';
 
@@ -136,7 +142,17 @@ class ThemeController extends ChangeNotifier {
       }
     }
     themeMode = _parseMode(await store.readValue(_kMode));
-    colorChoice = _parseColor(await store.readValue(_kColor));
+    final rawColor = await store.readValue(_kColor);
+    final rawGlass = await store.readValue(_kLiquidGlass);
+    if (rawColor == ThemeColorChoice.liquidGlass.name) {
+      liquidGlassEnabled = rawGlass == null ? true : rawGlass == 'true';
+      colorChoice = ThemeColorChoice.micago;
+      await store.writeValue(_kLiquidGlass, liquidGlassEnabled ? 'true' : 'false');
+      await store.writeValue(_kColor, colorChoice.name);
+    } else {
+      liquidGlassEnabled = rawGlass == 'true';
+      colorChoice = _parseColor(rawColor);
+    }
     language = _parseLang(await store.readValue(_kLang));
     chatBackgroundPath = await store.readValue(_kChatBackground);
     notifyListeners();
@@ -148,7 +164,25 @@ class ThemeController extends ChangeNotifier {
     await store.writeValue(_kMode, mode.name);
   }
 
+  Future<void> setLiquidGlassEnabled(bool enabled) async {
+    liquidGlassEnabled = enabled;
+    if (enabled) {
+      unawaited(ensureLiquidGlassInitialized());
+    }
+    notifyListeners();
+    await store.writeValue(_kLiquidGlass, enabled ? 'true' : 'false');
+  }
+
   Future<void> setColorChoice(ThemeColorChoice choice) async {
+    if (choice == ThemeColorChoice.liquidGlass) {
+      liquidGlassEnabled = true;
+      unawaited(ensureLiquidGlassInitialized());
+      colorChoice = ThemeColorChoice.micago;
+      notifyListeners();
+      await store.writeValue(_kLiquidGlass, 'true');
+      await store.writeValue(_kColor, colorChoice.name);
+      return;
+    }
     if (!isLinuxDesktop && choice == ThemeColorChoice.linuxDesktop) {
       choice = ThemeColorChoice.micago;
     }

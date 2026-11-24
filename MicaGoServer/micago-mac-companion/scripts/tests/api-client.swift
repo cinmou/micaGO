@@ -71,6 +71,38 @@ func requestBody(_ request: URLRequest) -> Data {
         }
         try await client.deleteDevice(deviceID: "device-1")
 
+        ReplyProtocol.reply = { request in
+            precondition(request.httpMethod == "DELETE")
+            let encodedPath = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath
+            precondition(encodedPath == "/api/devices/%2E%2E")
+            return (204, "")
+        }
+        try await client.deleteDevice(deviceID: "..")
+
+        ReplyProtocol.reply = { request in
+            precondition(request.httpMethod == "DELETE")
+            let encodedPath = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath
+            precondition(encodedPath == "/api/sync/rules/chat/iMessage;-;a%2Fb%20%25%20%E4%B8%AD%E6%96%87")
+            return (200, #"{"defaultSyncPolicy":"all","defaultPushPolicy":"all","rules":[]}"#)
+        }
+        _ = try await client.deleteSyncRule(targetKind: "chat", targetValue: "iMessage;-;a/b % 中文")
+
+        ReplyProtocol.reply = { request in
+            precondition(request.httpMethod == "GET")
+            let encodedPath = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath
+            precondition(encodedPath == "/api/chats/a%2Fb%20%25%20%E4%B8%AD%E6%96%87/messages")
+            return (200, #"{"data":[]}"#)
+        }
+        _ = try await client.chatMessages(guid: "a/b % 中文")
+
+        ReplyProtocol.reply = { request in
+            precondition(request.httpMethod == "GET")
+            let encodedPath = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath
+            precondition(encodedPath == "/api/chats/%2E%2E/messages")
+            return (200, #"{"data":[]}"#)
+        }
+        _ = try await client.chatMessages(guid: "..")
+
         ReplyProtocol.reply = { _ in (503, "<html>unavailable</html>") }
         do {
             _ = try await client.devices()

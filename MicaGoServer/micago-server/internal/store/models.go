@@ -137,7 +137,7 @@ type MessageRow struct {
 	Subject             *string
 	Service             *string
 	Account             *string
-	DateRaw             int64
+	DateRaw             *int64
 	DateReadRaw         *int64
 	DateDeliveredRaw    *int64
 	IsFromMe            bool

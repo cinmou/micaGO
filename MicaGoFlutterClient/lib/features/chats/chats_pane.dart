@@ -35,6 +35,8 @@ class ChatsPane extends StatefulWidget {
 
 class _ChatsPaneState extends State<ChatsPane> {
   MergedChat? _selected;
+  String? _selectedInitialRouteGuid;
+  int _selectedOpenRequestId = 0;
   double _sidebarWidth = isLinuxDesktop ? 320 : _defaultSidebarWidth;
   bool _loadedSidebarWidth = false;
   bool _draggingSplitter = false;
@@ -106,11 +108,15 @@ class _ChatsPaneState extends State<ChatsPane> {
         if (!tablet) {
           return ChatListScreen(
             searchRequests: widget.searchRequests,
-            onOpen: (merged) => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => MessageThreadScreen(merged: merged),
-              ),
-            ),
+            onOpenRoute: (merged, initialRouteGuid) =>
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => MessageThreadScreen(
+                      merged: merged,
+                      initialRouteGuid: initialRouteGuid,
+                    ),
+                  ),
+                ),
           );
         }
 
@@ -118,17 +124,18 @@ class _ChatsPaneState extends State<ChatsPane> {
         final theme = context.watch<ThemeController>();
         final glass = theme.useLiquidGlass;
         final neutralSurfaces = theme.useBlackWhite || theme.useLinuxTheme;
-        final glassBg = liquidGlassPageColor(context);
         final headerBg = glass
-            ? glassBg
+            ? liquidGlassHeaderColor(context)
             : neutralSurfaces
             ? scheme.surface
             : _chatsAccent1_100(scheme);
-        final pageBg = glass
-            ? glassBg
-            : neutralSurfaces
-            ? scheme.surface
-            : _chatsAccent1_50(scheme);
+        final pageDecoration = glass
+            ? liquidGlassPageDecoration(context)
+            : BoxDecoration(
+                color: neutralSurfaces
+                    ? scheme.surface
+                    : _chatsAccent1_50(scheme),
+              );
         final compact = _compactSidebar;
         return Row(
           children: [
@@ -152,16 +159,19 @@ class _ChatsPaneState extends State<ChatsPane> {
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(24),
                       ),
-                      child: ColoredBox(
-                        color: pageBg,
+                      child: DecoratedBox(
+                        decoration: pageDecoration,
                         child: ChatListScreen(
                           searchRequests: compact
                               ? null
                               : widget.searchRequests,
                           compact: compact,
                           sidebar: true,
-                          onOpen: (merged) =>
-                              setState(() => _selected = merged),
+                          onOpenRoute: (merged, initialRouteGuid) => setState(() {
+                            _selected = merged;
+                            _selectedInitialRouteGuid = initialRouteGuid;
+                            _selectedOpenRequestId++;
+                          }),
                         ),
                       ),
                     ),
@@ -181,6 +191,8 @@ class _ChatsPaneState extends State<ChatsPane> {
                   : MessageThreadScreen(
                       key: ValueKey(_selected!.key),
                       merged: _selected!,
+                      initialRouteGuid: _selectedInitialRouteGuid,
+                      openRequestId: _selectedOpenRequestId,
                       embedded: true,
                       flatSplitView: true,
                       embeddedHeaderHeight: _tabletHeaderHeight,
@@ -210,7 +222,10 @@ class _TabletSidebarHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final headerColor = context.watch<ThemeController>().useLinuxTheme
+    final theme = context.watch<ThemeController>();
+    final headerColor = theme.useLiquidGlass
+        ? liquidGlassHeaderColor(context)
+        : (theme.useBlackWhite || theme.useLinuxTheme)
         ? scheme.surface
         : _chatsAccent1_100(scheme);
     if (compact) {
@@ -287,8 +302,11 @@ class _SplitHandleState extends State<_SplitHandle> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final theme = context.watch<ThemeController>();
     final active = _hovering || widget.dragging;
-    final idleColor = context.watch<ThemeController>().useLinuxTheme
+    final idleColor = theme.useLiquidGlass
+        ? liquidGlassHeaderColor(context)
+        : (theme.useBlackWhite || theme.useLinuxTheme)
         ? scheme.surface
         : _chatsAccent1_100(scheme);
     final activeColor = Color.alphaBlend(

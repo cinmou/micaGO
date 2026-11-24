@@ -32,9 +32,15 @@ public sealed class MicaGoApi : IMicaGoApi
     private string? _fingerprint;
     private readonly object _routeGate = new();
     private readonly List<HttpClient> _retiredClients = [];
+    private readonly List<CancellationTokenSource> _retiredRouteTokens = [];
     private HttpClient _http;
     private Uri _webSocketUri;
     private CancellationTokenSource _routeChanged = new();
+
+    private HttpClient Client
+    {
+        get { lock (_routeGate) return _http; }
+    }
 
     public MicaGoApi(string baseUrl, string webSocketUrl, string token, string? tlsFingerprint = null)
     {
@@ -66,16 +72,20 @@ public sealed class MicaGoApi : IMicaGoApi
     public void Rebase(string baseUrl, string webSocketUrl, string? tlsFingerprint = null)
     {
         var normalized = baseUrl.TrimEnd('/');
+        var nextWsUri = new Uri(webSocketUrl);
         CancellationTokenSource previous;
         lock (_routeGate)
         {
-            if (string.Equals(normalized, BaseUrl, StringComparison.OrdinalIgnoreCase) && _webSocketUri == new Uri(webSocketUrl)) return;
+            if (string.Equals(normalized, BaseUrl, StringComparison.OrdinalIgnoreCase)
+                && _webSocketUri == nextWsUri
+                && string.Equals(_fingerprint, tlsFingerprint, StringComparison.OrdinalIgnoreCase)) return;
             _retiredClients.Add(_http);
             _http = CreateClient(normalized, _token, tlsFingerprint);
             _fingerprint = tlsFingerprint;
             BaseUrl = normalized;
-            _webSocketUri = new Uri(webSocketUrl);
+            _webSocketUri = nextWsUri;
             previous = _routeChanged;
+            _retiredRouteTokens.Add(previous);
             _routeChanged = new CancellationTokenSource();
         }
         previous.Cancel();
@@ -90,7 +100,7 @@ public sealed class MicaGoApi : IMicaGoApi
 
     public async Task<ChatPreferences> PatchChatPreferencesAsync(ChatPreferenceMutation mutation, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.PatchAsJsonAsync("api/chat-preferences", mutation, cancellationToken);
+        using var response = await Client.PatchAsJsonAsync("api/chat-preferences", mutation, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
         return document.RootElement.Deserialize<ChatPreferences>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new MicaGoApiException("Invalid chat preferences.");
@@ -105,7 +115,7 @@ public sealed class MicaGoApi : IMicaGoApi
 
     public async Task<ReadState> PatchReadStateAsync(ReadStateMutation mutation, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.PatchAsJsonAsync("api/read-state", mutation, cancellationToken);
+        using var response = await Client.PatchAsJsonAsync("api/read-state", mutation, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
         return document.RootElement.Deserialize<ReadState>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new MicaGoApiException("Invalid read state.");
@@ -120,7 +130,7 @@ public sealed class MicaGoApi : IMicaGoApi
 
     public async Task<MessagePreferences> PatchMessagePreferencesAsync(MessagePreferenceMutation mutation, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.PatchAsJsonAsync("api/message-preferences", mutation, cancellationToken);
+        using var response = await Client.PatchAsJsonAsync("api/message-preferences", mutation, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
         return document.RootElement.Deserialize<MessagePreferences>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new MicaGoApiException("Invalid message preferences.");
@@ -174,7 +184,7 @@ public sealed class MicaGoApi : IMicaGoApi
     {
         var encoded = Uri.EscapeDataString(chatId);
         var payload = new { tempGuid = tempId ?? Guid.NewGuid().ToString("N"), message = text };
-        using var response = await _http.PostAsJsonAsync($"api/chats/{encoded}/send", payload, cancellationToken);
+        using var response = await Client.PostAsJsonAsync($"api/chats/{encoded}/send", payload, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
         // Flutter parity: 202 means AppleScript accepted the send but chat.db
         // confirmation is still pending. It is not a server Message and must
@@ -201,7 +211,7 @@ public sealed class MicaGoApi : IMicaGoApi
         var content = new ProgressStreamContent(file, progress);
         content.Headers.ContentType = new MediaTypeHeaderValue(MimeFor(filePath));
         multipart.Add(content, "file", Path.GetFileName(filePath));
-        using var response = await _http.PostAsync($"api/chats/{Uri.EscapeDataString(chatId)}/send-attachment", multipart, cancellationToken);
+        using var response = await Client.PostAsync($"api/chats/{Uri.EscapeDataString(chatId)}/send-attachment", multipart, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
         return new AttachmentUploadResult(GetString(document.RootElement, "filename"));
     }
@@ -209,9 +219,12 @@ public sealed class MicaGoApi : IMicaGoApi
     public async Task<byte[]> GetAttachmentBytesAsync(string attachmentId, bool preview = false, bool playable = false, CancellationToken cancellationToken = default)
     {
         var suffix = playable ? "/playable" : preview ? "/preview" : string.Empty;
-        using var response = await _http.GetAsync($"api/attachments/{Uri.EscapeDataString(attachmentId)}{suffix}", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await Client.GetAsync($"api/attachments/{Uri.EscapeDataString(attachmentId)}{suffix}", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            _credential.EnsureAllowed();
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new MicaGoApiException("The connection endpoint returned HTTP 401.", 401, code: "http_401");
             throw new MicaGoApiException($"The server returned HTTP {(int)response.StatusCode}.", (int)response.StatusCode);
         }
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
@@ -252,7 +265,7 @@ public sealed class MicaGoApi : IMicaGoApi
 
     public async Task<ServerSyncSettings> SetSyncSettingsAsync(ServerSyncSettings settings, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.PutAsJsonAsync("api/sync/settings", settings, cancellationToken);
+        using var response = await Client.PutAsJsonAsync("api/sync/settings", settings, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
         var root = document.RootElement;
         return MapSyncSettings(root.TryGetProperty("settings", out var nested) ? nested : root);
@@ -260,7 +273,7 @@ public sealed class MicaGoApi : IMicaGoApi
 
     public async Task<string> RegisterDeviceAsync(DeviceRegistration registration, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.PostAsJsonAsync("api/devices/register", registration, cancellationToken);
+        using var response = await Client.PostAsJsonAsync("api/devices/register", registration, cancellationToken);
         using var document = await ReadJsonResponseAsync(response, cancellationToken);
         var root = document.RootElement;
         var data = root.TryGetProperty("data", out var nested) && nested.ValueKind == JsonValueKind.Object ? nested : root;
@@ -269,23 +282,24 @@ public sealed class MicaGoApi : IMicaGoApi
 
     public async Task HeartbeatDeviceAsync(string deviceId, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.PostAsync($"api/devices/{Uri.EscapeDataString(deviceId)}/heartbeat", null, cancellationToken);
+        using var response = await Client.PostAsync($"api/devices/{Uri.EscapeDataString(deviceId)}/heartbeat", null, cancellationToken);
         using var _ = await ReadJsonResponseAsync(response, cancellationToken);
     }
 
     public async IAsyncEnumerable<RealtimeEvent> ListenRealtimeAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         Uri uri;
-        CancellationToken routeChanged;
+        string? pin;
+        CancellationTokenSource linked;
         lock (_routeGate)
         {
             uri = _webSocketUri;
-            routeChanged = _routeChanged.Token;
+            pin = _fingerprint;
+            linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _routeChanged.Token);
         }
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, routeChanged);
+        using var _ = linked;
         using var socket = new ClientWebSocket();
         if (uri.Scheme != "wss") throw new ConnectionException("WebSocket requires WSS.");
-        var pin = _fingerprint;
         socket.Options.RemoteCertificateValidationCallback = (_, cert, _, errors) => SecureTransport.ValidateCertificate(cert, errors, pin);
         socket.Options.SetRequestHeader("Authorization", $"Bearer {_token}");
         _credential.EnsureAllowed();
@@ -348,13 +362,13 @@ public sealed class MicaGoApi : IMicaGoApi
     {
         using var request = new HttpRequestMessage(method, path);
         if (payload is not null) request.Content = JsonContent.Create(payload);
-        using var response = await _http.SendAsync(request, cancellationToken);
+        using var response = await Client.SendAsync(request, cancellationToken);
         using var _ = await ReadJsonResponseAsync(response, cancellationToken);
     }
 
     private async Task<JsonDocument> GetJsonAsync(string path, CancellationToken cancellationToken)
     {
-        using var response = await _http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await Client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         return await ReadJsonResponseAsync(response, cancellationToken);
     }
 
@@ -362,8 +376,10 @@ public sealed class MicaGoApi : IMicaGoApi
     {
         if (!response.IsSuccessStatusCode)
         {
-            var message = response.StatusCode == System.Net.HttpStatusCode.Unauthorized ? "The server rejected the saved token. Pair again." : $"The server returned HTTP {(int)response.StatusCode}.";
-            throw new MicaGoApiException(message, (int)response.StatusCode);
+            _credential.EnsureAllowed();
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                throw new MicaGoApiException("The connection endpoint returned HTTP 401.", 401, code: "http_401");
+            throw new MicaGoApiException($"The server returned HTTP {(int)response.StatusCode}.", (int)response.StatusCode);
         }
         try
         {
@@ -457,6 +473,8 @@ public sealed class MicaGoApi : IMicaGoApi
             _http.Dispose();
             foreach (var client in _retiredClients) client.Dispose();
             _retiredClients.Clear();
+            foreach (var cts in _retiredRouteTokens) cts.Dispose();
+            _retiredRouteTokens.Clear();
             _routeChanged.Dispose();
         }
     }

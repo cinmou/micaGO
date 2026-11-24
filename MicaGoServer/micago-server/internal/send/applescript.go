@@ -109,17 +109,31 @@ func (s AppleScriptSender) SendAttachments(ctx context.Context, chatGUID string,
 	if len(filePaths) == 1 {
 		return s.SendAttachment(ctx, chatGUID, filePaths[0])
 	}
-	script := BuildSendAttachmentsScript(chatGUID, filePaths)
-	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(output))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("%s", msg)
+	err := runOsascript(ctx, BuildSendAttachmentsScript(chatGUID, filePaths))
+	if err == nil {
+		return nil
 	}
-	return nil
+	if handle, service, ok := DirectHandleFromChatGUID(chatGUID); ok {
+		if fallbackErr := runOsascript(ctx, BuildSendAttachmentsToParticipantScript(service, handle, filePaths)); fallbackErr == nil {
+			return nil
+		}
+	}
+	return err
+}
+
+func BuildSendAttachmentsToParticipantScript(service, handle string, filePaths []string) string {
+	serviceType := "iMessage"
+	if strings.EqualFold(service, "SMS") {
+		serviceType = "SMS"
+	}
+	parts := make([]string, 0, len(filePaths))
+	for _, path := range filePaths {
+		parts = append(parts, fmt.Sprintf(`POSIX file "%s"`, escapeAppleScriptString(path)))
+	}
+	return fmt.Sprintf(`tell application "Messages"
+  set targetAccount to 1st account whose service type = %s
+  send {%s} to participant "%s" of targetAccount
+end tell`, serviceType, strings.Join(parts, ", "), escapeAppleScriptString(handle))
 }
 
 func BuildSendAttachmentScript(chatGUID, filePath string) string {

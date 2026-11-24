@@ -87,17 +87,36 @@ class VoiceRecorder {
   Future<void> cancel() async {
     _ticker?.cancel();
     _ampTicker?.cancel();
+    final oldPath = _path;
+    _path = null;
     try {
       await _rec.cancel();
     } catch (_) {
       /* ignore */
     }
-    _path = null;
+    if (oldPath != null) {
+      try {
+        final file = File(oldPath);
+        if (await file.exists()) await file.delete();
+      } catch (_) {
+        /* best-effort cleanup */
+      }
+    }
   }
 
   void dispose() {
     _ticker?.cancel();
     _ampTicker?.cancel();
+    final oldPath = _path;
+    _path = null;
+    if (oldPath != null) {
+      try {
+        final file = File(oldPath);
+        if (file.existsSync()) file.deleteSync();
+      } catch (_) {
+        /* best-effort cleanup */
+      }
+    }
     _rec.dispose();
     elapsed.dispose();
     levels.dispose();

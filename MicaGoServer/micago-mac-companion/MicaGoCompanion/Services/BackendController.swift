@@ -56,6 +56,7 @@ final class BackendController: ObservableObject {
     @Published var bindAddress: String { didSet { defaults.set(bindAddress, forKey: K.bindAddress) } }
 
     private var process: Process?
+    private var outputHandle: FileHandle?
     private var intentionalStop = false
     private var restartAfterStop = false
     private var restartAttempt = 0
@@ -263,9 +264,14 @@ final class BackendController: ObservableObject {
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = pipe
+        outputHandle = pipe.fileHandleForReading
         pipe.fileHandleForReading.readabilityHandler = { [weak self, weak proc] handle in
             let data = handle.availableData
-            guard let proc, !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            guard let proc, let text = String(data: data, encoding: .utf8) else { return }
             Task { @MainActor in
                 guard let self, self.process === proc else { return }
                 for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -289,6 +295,8 @@ final class BackendController: ObservableObject {
             appendLog("started backend (\(resolved.source)): \(resolved.path) --addr \(addr)")
             scheduleHealthyReset()
         } catch {
+            outputHandle?.readabilityHandler = nil
+            outputHandle = nil
             process = nil
             processState = .failed("could not launch: \(error.localizedDescription)")
             appendLog("error: failed to start backend: \(error.localizedDescription)")
@@ -312,6 +320,7 @@ final class BackendController: ObservableObject {
     func stop() {
         restartAfterStop = false
         restartWork?.cancel(); restartWork = nil
+        healthyResetWork?.cancel(); healthyResetWork = nil
         nextRestartInfo = nil
         guard let proc = process else { return }
         intentionalStop = true
@@ -370,7 +379,8 @@ final class BackendController: ObservableObject {
     /// management. Never affects external processes.
     func shutdownForQuitIfNeeded() {
         restartAfterStop = false
-        restartWork?.cancel()
+        restartWork?.cancel(); restartWork = nil
+        healthyResetWork?.cancel(); healthyResetWork = nil
         guard manageLifecycleWithApp else { return }
         intentionalStop = true
         process?.terminate()
@@ -379,7 +389,8 @@ final class BackendController: ObservableObject {
     /// Force-stop our child on explicit user commands such as Stop Server.
     func shutdownForQuit() {
         restartAfterStop = false
-        restartWork?.cancel()
+        restartWork?.cancel(); restartWork = nil
+        healthyResetWork?.cancel(); healthyResetWork = nil
         intentionalStop = true
         process?.terminate()
     }
@@ -387,6 +398,8 @@ final class BackendController: ObservableObject {
     // MARK: - Termination handling + auto-restart backoff
 
     private func handleTermination(code: Int32) {
+        outputHandle?.readabilityHandler = nil
+        outputHandle = nil
         process = nil
         launchedBindAddress = nil
         lastExitCode = code

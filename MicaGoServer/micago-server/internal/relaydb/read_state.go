@@ -93,6 +93,13 @@ func (db *DB) AdvanceReadState(ctx context.Context, request store.ReadStateMutat
    ON CONFLICT(chat_guid) DO UPDATE SET read_through=excluded.read_through,marked_unread=excluded.marked_unread,unread_revision=excluded.unread_revision`, row.ChatGUID, at, marked, revision); err != nil {
 			return result, err
 		}
+		markedCopy := marked
+		current[row.ChatGUID] = store.ReadPosition{
+			ChatGUID:       row.ChatGUID,
+			ReadThrough:    at,
+			MarkedUnread:   &markedCopy,
+			UnreadRevision: revision,
+		}
 		changed = true
 	}
 	if changed {

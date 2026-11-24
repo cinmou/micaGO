@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -44,7 +45,7 @@ func openOnce(path string) (*DB, error) {
 		}
 	}
 
-	sqlDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_busy_timeout=5000", path))
+	sqlDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_busy_timeout=5000&_cache_size=-1024", path))
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +60,10 @@ func openOnce(path string) (*DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
+
+	sqlDB.SetMaxOpenConns(4)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxIdleTime(2 * time.Minute)
 
 	return db, nil
 }

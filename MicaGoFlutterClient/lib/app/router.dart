@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/app_controller.dart';
@@ -6,6 +7,9 @@ import '../features/home/home_screen.dart';
 import '../features/home/connection_notice_host.dart';
 import '../features/pairing/qr_pairing_screen.dart';
 import '../features/settings/settings_screen.dart';
+
+final RouteObserver<PageRoute<dynamic>> appRouteObserver =
+    RouteObserver<PageRoute<dynamic>>();
 
 /// Route names/paths for the app.
 class Routes {
@@ -20,6 +24,7 @@ class Routes {
 /// screens until a complete profile exists; both stay reachable for editing.
 GoRouter createRouter(AppController app, {bool settingsOnly = false}) {
   return GoRouter(
+    observers: [appRouteObserver],
     initialLocation: settingsOnly
         ? Routes.settings
         : app.hasProfile

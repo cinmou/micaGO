@@ -1,14 +1,47 @@
 package relaydb
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 
 	"micagoserver/internal/send"
 	"micagoserver/internal/store"
 )
+
+const sqlVariableChunkSize = 500
+
+func dedupeStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+func compareNullableInt64Asc(a, b *int64) int {
+	if a == nil && b == nil {
+		return 0
+	}
+	if a == nil {
+		return -1
+	}
+	if b == nil {
+		return 1
+	}
+	return cmp.Compare(*a, *b)
+}
 
 func serviceNamesForSettings(settings SyncSettings) []string {
 	var out []string
@@ -64,7 +97,7 @@ SELECT c.guid, c.chat_identifier, c.service_name, c.display_name, c.is_archived,
   (SELECT m.is_from_me FROM messages m WHERE m.chat_guid = c.guid AND COALESCE(m.is_debug_only, 0) = 0 AND COALESCE(m.is_reaction, 0) = 0 ORDER BY m.date_created DESC, m.source_rowid DESC LIMIT 1) AS latest_from_me,
   (SELECT COUNT(*) FROM messages m WHERE m.chat_guid = c.guid AND m.service IN ('iMessage','iMessageLite')) AS imessage_count
 FROM chats c
-WHERE (? = 1 OR c.is_archived = 0)
+WHERE (? = 1 OR COALESCE(c.is_archived, 0) = 0)
   AND (? = 'all' OR c.service_name = ?)
 ORDER BY COALESCE(latest_at, 0) DESC, c.updated_at DESC;
 `
@@ -83,6 +116,7 @@ ORDER BY COALESCE(latest_at, 0) DESC, c.updated_at DESC;
 	var all []store.ChatJSON
 	for rows.Next() {
 		var chat store.ChatJSON
+		var isArchived sql.NullInt64
 		var total, renderable int64
 		var latestAt *int64
 		var latestGUID *string
@@ -98,7 +132,7 @@ ORDER BY COALESCE(latest_at, 0) DESC, c.updated_at DESC;
 			&chat.ChatIdentifier,
 			&chat.ServiceName,
 			&chat.DisplayName,
-			&chat.IsArchived,
+			&isArchived,
 			&style,
 			&participantCount,
 			&participants,
@@ -113,6 +147,7 @@ ORDER BY COALESCE(latest_at, 0) DESC, c.updated_at DESC;
 		); err != nil {
 			return nil, err
 		}
+		chat.IsArchived = isArchived.Valid && isArchived.Int64 != 0
 		chat.IsGroup = isGroupChat(chat.GUID, style, participantCount)
 		chat.Participants = splitParticipants(participants)
 		chat.HasRenderableMessages = renderable > 0
@@ -476,7 +511,7 @@ func (db *DB) FindOutgoingMessageMatch(ctx context.Context, guid string, normali
 WHERE m.chat_guid = ?
   AND m.is_from_me = 1
   AND m.date_created >= ?
-ORDER BY m.source_rowid DESC, m.date_created DESC
+ORDER BY COALESCE(m.date_created, 0) ASC, COALESCE(m.source_rowid, 0) ASC
 LIMIT 100;
 `, guid, sentAtUnixMilli)
 	if err != nil {
@@ -502,34 +537,53 @@ LIMIT 100;
 }
 
 func (db *DB) GetMessagesByGUIDs(ctx context.Context, guids []string) ([]store.MessageJSON, error) {
-	if len(guids) == 0 {
+	uniqueGUIDs := dedupeStrings(guids)
+	if len(uniqueGUIDs) == 0 {
 		return nil, nil
 	}
 
-	placeholders := make([]string, len(guids))
-	args := make([]any, len(guids))
-	for i, guid := range guids {
-		placeholders[i] = "?"
-		args[i] = guid
-	}
+	var messages []store.MessageJSON
+	for start := 0; start < len(uniqueGUIDs); start += sqlVariableChunkSize {
+		end := start + sqlVariableChunkSize
+		if end > len(uniqueGUIDs) {
+			end = len(uniqueGUIDs)
+		}
+		chunk := uniqueGUIDs[start:end]
+		placeholders := make([]string, len(chunk))
+		args := make([]any, len(chunk))
+		for i, guid := range chunk {
+			placeholders[i] = "?"
+			args[i] = guid
+		}
 
-	rows, err := db.sqlDB.QueryContext(ctx, relayMessageSelect+`
+		rows, err := db.sqlDB.QueryContext(ctx, relayMessageSelect+`
 WHERE m.guid IN (`+strings.Join(placeholders, ", ")+`)
 ORDER BY m.source_rowid ASC, m.date_created ASC;
 `, args...)
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+		batch, scanErr := scanRelayMessages(rows)
+		_ = rows.Close()
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		messages = append(messages, batch...)
 	}
-	defer rows.Close()
 
-	return db.scanRelayMessagesWithAttachments(ctx, rows)
+	slices.SortStableFunc(messages, func(a, b store.MessageJSON) int {
+		if c := compareNullableInt64Asc(a.SourceRowID, b.SourceRowID); c != 0 {
+			return c
+		}
+		return compareNullableInt64Asc(a.DateCreated, b.DateCreated)
+	})
+	return db.attachMessageAttachments(ctx, messages)
 }
 
 func (db *DB) GetAttachmentByGUID(ctx context.Context, guid string) (*store.AttachmentMeta, error) {
 	var meta store.AttachmentMeta
 	var filename, mimeType, transferName, localPath, uti *string
-	var isOutgoing, hideAttachment int64
-	var isSticker sql.NullInt64
+	var totalBytes, isOutgoing, hideAttachment, isSticker sql.NullInt64
 	err := db.sqlDB.QueryRowContext(ctx, `
 SELECT guid, message_guid, filename, mime_type, transfer_name, total_bytes, local_path, is_outgoing, hide_attachment, created_at, uti, is_sticker
 FROM attachments
@@ -541,7 +595,7 @@ LIMIT 1;
 		&filename,
 		&mimeType,
 		&transferName,
-		&meta.TotalBytes,
+		&totalBytes,
 		&localPath,
 		&isOutgoing,
 		&hideAttachment,
@@ -559,9 +613,10 @@ LIMIT 1;
 	meta.Filename = filename
 	meta.MimeType = mimeType
 	meta.TransferName = transferName
+	meta.TotalBytes = totalBytes.Int64
 	meta.LocalPath = localPath
-	meta.IsOutgoing = isOutgoing != 0
-	meta.HideAttachment = hideAttachment != 0
+	meta.IsOutgoing = isOutgoing.Valid && isOutgoing.Int64 != 0
+	meta.HideAttachment = hideAttachment.Valid && hideAttachment.Int64 != 0
 	meta.Uti = uti
 	meta.IsSticker = isSticker.Valid && isSticker.Int64 != 0
 	return &meta, nil
@@ -659,6 +714,7 @@ func (db *DB) scanRelayMessagesWithAttachments(ctx context.Context, rows *sql.Ro
 	if err != nil {
 		return nil, err
 	}
+	_ = rows.Close()
 	return db.attachMessageAttachments(ctx, messages)
 }
 
@@ -688,25 +744,12 @@ func (db *DB) attachMessageAttachments(ctx context.Context, messages []store.Mes
 }
 
 func (db *DB) loadAttachmentsByMessageGUID(ctx context.Context, guids []string) (map[string][]store.AttachmentJSON, error) {
-	placeholders := make([]string, len(guids))
-	args := make([]any, len(guids))
-	for i, guid := range guids {
-		placeholders[i] = "?"
-		args[i] = guid
+	uniqueGUIDs := dedupeStrings(guids)
+	grouped := make(map[string][]store.AttachmentJSON, len(uniqueGUIDs))
+	if len(uniqueGUIDs) == 0 {
+		return grouped, nil
 	}
 
-	rows, err := db.sqlDB.QueryContext(ctx, `
-SELECT guid, message_guid, filename, mime_type, transfer_name, total_bytes, uti, is_sticker, hide_attachment
-FROM attachments
-WHERE message_guid IN (`+strings.Join(placeholders, ", ")+`)
-ORDER BY created_at ASC, guid ASC;
-`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	grouped := make(map[string][]store.AttachmentJSON, len(guids))
 	// C49: collapse duplicate attachment records that point at the same underlying
 	// file within a message. A real chat.db routinely carries several attachment
 	// rows (distinct guids) for one file — via duplicate message_attachment_join
@@ -714,61 +757,92 @@ ORDER BY created_at ASC, guid ASC;
 	// so the client rendered the same photo / file / sticker / voice clip twice.
 	// Dedupe by the file's identity (name + size + type), keeping the first (the
 	// query orders by created_at, then guid, so the choice is deterministic).
-	seenByMessage := make(map[string]map[string]struct{}, len(guids))
-	for rows.Next() {
-		var attachment store.AttachmentJSON
-		var messageGUID string
-		var isSticker, hideAttachment sql.NullInt64
-		if err := rows.Scan(
-			&attachment.GUID,
-			&messageGUID,
-			&attachment.Filename,
-			&attachment.MimeType,
-			&attachment.TransferName,
-			&attachment.TotalBytes,
-			&attachment.Uti,
-			&isSticker,
-			&hideAttachment,
-		); err != nil {
+	seenByMessage := make(map[string]map[string]struct{}, len(uniqueGUIDs))
+	for start := 0; start < len(uniqueGUIDs); start += sqlVariableChunkSize {
+		end := start + sqlVariableChunkSize
+		if end > len(uniqueGUIDs) {
+			end = len(uniqueGUIDs)
+		}
+		chunk := uniqueGUIDs[start:end]
+		placeholders := make([]string, len(chunk))
+		args := make([]any, len(chunk))
+		for i, guid := range chunk {
+			placeholders[i] = "?"
+			args[i] = guid
+		}
+
+		rows, err := db.sqlDB.QueryContext(ctx, `
+SELECT guid, message_guid, filename, mime_type, transfer_name, total_bytes, uti, is_sticker, hide_attachment
+FROM attachments
+WHERE message_guid IN (`+strings.Join(placeholders, ", ")+`)
+ORDER BY created_at ASC, guid ASC;
+`, args...)
+		if err != nil {
 			return nil, err
 		}
-		// Apple marks a rich link's internal preview parts (the site thumbnail,
-		// favicon, and LinkPresentation payload) with hide_attachment=1 so they
-		// never show as standalone attachments in Messages. They were leaking into
-		// the client as 2–4 small "file" cards above the link; the server's debug
-		// view already hid them. Skip them here too (BlueBubbles excludes hidden
-		// attachments from a message's real attachments).
-		if hideAttachment.Valid && hideAttachment.Int64 != 0 {
-			continue
-		}
-		attachment.IsSticker = isSticker.Valid && isSticker.Int64 != 0
-		attachment.DownloadURL = "/api/attachments/" + attachment.GUID
-		store.DecorateAttachmentJSON(&attachment)
-		if store.IsAttachmentPreviewPayload(attachment) {
-			continue
-		}
-		// Images that need conversion, stickers, and videos (poster frame) all
-		// expose a /preview thumbnail the client renders instead of raw bytes.
-		if attachment.NeedsPreviewConversion ||
-			attachment.IsSticker ||
-			attachment.AttachmentKind == store.AttachmentKindVideo {
-			attachment.PreviewURL = "/api/attachments/" + attachment.GUID + "/preview"
-		}
-		if key := attachmentIdentityKey(attachment); key != "" {
-			seen := seenByMessage[messageGUID]
-			if seen == nil {
-				seen = make(map[string]struct{})
-				seenByMessage[messageGUID] = seen
+
+		for rows.Next() {
+			var attachment store.AttachmentJSON
+			var messageGUID string
+			var totalBytes, isSticker, hideAttachment sql.NullInt64
+			if err := rows.Scan(
+				&attachment.GUID,
+				&messageGUID,
+				&attachment.Filename,
+				&attachment.MimeType,
+				&attachment.TransferName,
+				&totalBytes,
+				&attachment.Uti,
+				&isSticker,
+				&hideAttachment,
+			); err != nil {
+				_ = rows.Close()
+				return nil, err
 			}
-			if _, dup := seen[key]; dup {
+			// Apple marks a rich link's internal preview parts (the site thumbnail,
+			// favicon, and LinkPresentation payload) with hide_attachment=1 so they
+			// never show as standalone attachments in Messages. They were leaking into
+			// the client as 2–4 small "file" cards above the link; the server's debug
+			// view already hid them. Skip them here too (BlueBubbles excludes hidden
+			// attachments from a message's real attachments).
+			if hideAttachment.Valid && hideAttachment.Int64 != 0 {
 				continue
 			}
-			seen[key] = struct{}{}
+			attachment.TotalBytes = totalBytes.Int64
+			attachment.IsSticker = isSticker.Valid && isSticker.Int64 != 0
+			attachment.DownloadURL = "/api/attachments/" + attachment.GUID
+			store.DecorateAttachmentJSON(&attachment)
+			if store.IsAttachmentPreviewPayload(attachment) {
+				continue
+			}
+			// Images that need conversion, stickers, and videos (poster frame) all
+			// expose a /preview thumbnail the client renders instead of raw bytes.
+			if attachment.NeedsPreviewConversion ||
+				attachment.IsSticker ||
+				attachment.AttachmentKind == store.AttachmentKindVideo {
+				attachment.PreviewURL = "/api/attachments/" + attachment.GUID + "/preview"
+			}
+			if key := attachmentIdentityKey(attachment); key != "" {
+				seen := seenByMessage[messageGUID]
+				if seen == nil {
+					seen = make(map[string]struct{})
+					seenByMessage[messageGUID] = seen
+				}
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+			}
+			grouped[messageGUID] = append(grouped[messageGUID], attachment)
 		}
-		grouped[messageGUID] = append(grouped[messageGUID], attachment)
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
 	}
 
-	return grouped, rows.Err()
+	return grouped, nil
 }
 
 // attachmentIdentityKey identifies the underlying file an attachment row points

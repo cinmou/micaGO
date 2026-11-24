@@ -6,10 +6,12 @@ import FoundationXML
 import CryptoKit
 
 final class AppcastReader: NSObject, XMLParserDelegate {
+    var itemCount = 0
     var enclosures: [[String: String]] = []
     var fields: [String: String] = [:]
     private var field: String?
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
+        if name == "item" { itemCount += 1 }
         if name == "enclosure" { enclosures.append(attributes) }
         if ["sparkle:version", "sparkle:shortVersionString"].contains(name) { field = name; fields[name] = "" }
     }
@@ -21,13 +23,24 @@ final class AppcastReader: NSObject, XMLParserDelegate {
     }
 }
 
+func resolveVersionField(_ key: String, fields: [String: String], enclosure: [String: String]) throws -> String? {
+    let elementValue = fields[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let attrValue = enclosure[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedElement = (elementValue?.isEmpty == false) ? elementValue : nil
+    let normalizedAttr = (attrValue?.isEmpty == false) ? attrValue : nil
+    if let e = normalizedElement, let a = normalizedAttr, e != a {
+        throw NSError(domain: "UpdateValidation", code: 6, userInfo: [NSLocalizedDescriptionKey: "Conflicting \(key) values between item element and enclosure attribute"])
+    }
+    return normalizedElement ?? normalizedAttr
+}
+
 func validate(appcast: URL, archive: URL, info: URL, version: String) throws {
     let xml = try Data(contentsOf: appcast)
     let reader = AppcastReader()
     let parser = XMLParser(data: xml)
     parser.delegate = reader
-    guard parser.parse(), reader.enclosures.count == 1 else {
-        throw NSError(domain: "UpdateValidation", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected one valid update enclosure"])
+    guard parser.parse(), reader.itemCount == 1, reader.enclosures.count == 1 else {
+        throw NSError(domain: "UpdateValidation", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected one valid update item and enclosure"])
     }
     let enclosure = reader.enclosures[0]
     let expected = "https://github.com/cinmou/MicaGo/releases/download/v\(version)/\(archive.lastPathComponent)"
@@ -39,8 +52,8 @@ func validate(appcast: URL, archive: URL, info: URL, version: String) throws {
         throw NSError(domain: "UpdateValidation", code: 3, userInfo: [NSLocalizedDescriptionKey: "Archive length mismatch"])
     }
     let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: info), format: nil) as? [String: Any]
-    let build = (reader.fields["sparkle:version"] ?? enclosure["sparkle:version"])?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let shortVersion = (reader.fields["sparkle:shortVersionString"] ?? enclosure["sparkle:shortVersionString"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let build = try resolveVersionField("sparkle:version", fields: reader.fields, enclosure: enclosure)
+    let shortVersion = try resolveVersionField("sparkle:shortVersionString", fields: reader.fields, enclosure: enclosure)
     guard let build, let bundledBuild = plist?["CFBundleVersion"] as? String,
           build == bundledBuild, shortVersion == version,
           plist?["CFBundleShortVersionString"] as? String == version else {

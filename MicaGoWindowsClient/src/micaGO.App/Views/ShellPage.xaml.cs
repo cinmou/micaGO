@@ -48,6 +48,20 @@ public sealed partial class ShellPage : Page
     private DateTimeOffset _voiceStartedAt;
     private bool _selectMode;
     private bool _shutDown;
+    private bool _windowActive = true;
+    private bool _shellReady;
+    internal bool IsShellReady => _shellReady && _viewModel is not null && !_shutDown;
+
+    internal void SetWindowActive(bool active)
+    {
+        _windowActive = active;
+        UpdateConversationViewed();
+    }
+
+    private void UpdateConversationViewed()
+    {
+        _viewModel?.SetConversationViewed(_windowActive && ConversationPane.Visibility == Visibility.Visible);
+    }
     private readonly Controls.SidebarSelectionAnimation _chatSelectionAnimation;
     private readonly Controls.SidebarSelectionAnimation _settingsSelectionAnimation;
     private readonly DispatcherTimer _hideUndoTimer = new() { Interval = TimeSpan.FromSeconds(5) };
@@ -138,8 +152,14 @@ public sealed partial class ShellPage : Page
         try
         {
             await _viewModel.InitializeAsync();
+            _shellReady = true;
+            UpdateConversationViewed();
             UpdateTrayContacts();
-            if (_viewModel.Chats.Count > 0) { ChatList.SelectedIndex = 0; await SelectChatAsync(_viewModel.Chats[0]); }
+            if (!await App.TryConsumePendingNotificationActivationAsync(this) && _viewModel.Chats.Count > 0)
+            {
+                ChatList.SelectedIndex = 0;
+                await SelectChatAsync(_viewModel.Chats[0]);
+            }
         }
         catch (Exception exception) { ConnectionStatusText.Text = string.Format(AppServices.Current.Localization["initFailed"], exception.Message); }
     }
@@ -323,6 +343,7 @@ public sealed partial class ShellPage : Page
             // Clicking the already-open row must not restart cache + REST loading;
             // doing so replaced the complete timeline twice and recycled every
             // visible bubble even though the conversation had not changed.
+            await _viewModel.MarkCurrentChatReadAsync(notificationRoute, notificationThrough);
             return;
         }
         var selection = ++_chatSelectionGeneration;
@@ -376,6 +397,7 @@ public sealed partial class ShellPage : Page
         ConversationPane.Visibility = Visibility.Collapsed;
         DetailFrame.Visibility = Visibility.Visible;
         SettingsNavigationList.SelectedIndex = 0;
+        UpdateConversationViewed();
     }
 
     private void SettingsBackButton_Click(object sender, RoutedEventArgs e) => ExitDetailMode();
@@ -595,6 +617,7 @@ public sealed partial class ShellPage : Page
     {
         if (_viewModel?.SelectedChat is not { } chat) return;
         ConversationPane.Visibility = Visibility.Collapsed;
+        UpdateConversationViewed();
         DetailFrame.Visibility = Visibility.Visible;
         DetailFrame.Navigate(typeof(ConversationDetailsPage), new ShellNavigationContext(this, chat), ForwardTransition());
     }
@@ -602,7 +625,8 @@ public sealed partial class ShellPage : Page
     public async Task OpenChatAsync(string chatId, long? notificationThrough = null)
     {
         if(_viewModel is null)return;
-        var chat=_viewModel.Chats.FirstOrDefault(item=>item.Id==chatId||(item.RouteIds?.Contains(chatId)??false));
+        ExitDetailMode();
+        var chat=_viewModel.Chats.FirstOrDefault(item=>string.Equals(item.Id,chatId,StringComparison.OrdinalIgnoreCase)||(item.RouteIds?.Contains(chatId,StringComparer.OrdinalIgnoreCase)??false));
         if(chat is null)return;
         ChatList.SelectedItem=chat;
         await SelectChatAsync(chat, notificationThrough.HasValue ? chatId : null, notificationThrough);
@@ -617,6 +641,7 @@ public sealed partial class ShellPage : Page
         SettingsSidebar.Visibility = Visibility.Collapsed;
         ChatSidebar.Visibility = Visibility.Visible;
         SettingsNavigationList.SelectedItem = null;
+        UpdateConversationViewed();
     }
 
     public void NavigateToConnection()
@@ -769,6 +794,7 @@ public sealed partial class ShellPage : Page
         DetailFrame.Content = null;
         DetailFrame.Visibility = Visibility.Collapsed;
         ConversationPane.Visibility = Visibility.Visible;
+        UpdateConversationViewed();
     }
 
     public async Task RefreshAppearanceAsync()

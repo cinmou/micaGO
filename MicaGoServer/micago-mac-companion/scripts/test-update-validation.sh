@@ -37,5 +37,8 @@ rejects('wrong release version',original.replace('>0.87.0<','>0.88.0<'))
 rejects('archive length mismatch',data=payload+b'x')
 rejects('same-size modified archive',data=b'X'+payload[1:])
 rejects('missing signature',original.replace('sparkle:edSignature','ignoredSignature'))
+rejects('conflicting element and enclosure build',original.replace('<enclosure ','<enclosure sparkle:version="88" '))
+rejects('conflicting element and enclosure shortVersion',original.replace('<enclosure ','<enclosure sparkle:shortVersionString="0.88.0" '))
+rejects('multiple items',original.replace('</channel>','<item><sparkle:version>87</sparkle:version><sparkle:shortVersionString>0.87.0</sparkle:shortVersionString></item></channel>'))
 rejects('malformed feed','<rss>')
 PY

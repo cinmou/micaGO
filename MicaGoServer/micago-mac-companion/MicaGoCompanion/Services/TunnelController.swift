@@ -283,7 +283,11 @@ final class TunnelController: ObservableObject {
         outputHandle = pipe.fileHandleForReading
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            guard let text = String(data: data, encoding: .utf8) else { return }
             Task { @MainActor in
                 guard let self, self.processGeneration == generation, !self.intentionalStop else { return }
                 self.processOutput += text

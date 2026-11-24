@@ -842,4 +842,12 @@ void main() {
       isTrue,
     );
   });
+
+  test('hiddenChatCount respects accessAllowed gate', () async {
+    await store.applyChatVisibility({'c1', 'c2'});
+    expect(await store.hiddenChatCount(), 2);
+    store.accessAllowed = false;
+    expect(await store.hiddenChatCount(), 0);
+    store.accessAllowed = true;
+  });
 }

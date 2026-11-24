@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app/mica_go_app.dart';
 import 'app/linux_window_host.dart';
 import 'core/platform/linux_desktop.dart';
 import 'core/app_controller.dart';
+import 'core/ui/glass_theme_widgets.dart';
 import 'core/ui/keyboard_insets.dart';
 import 'core/network/push_service.dart';
 import 'core/network/unified_push.dart';
@@ -35,11 +35,6 @@ Future<void> main() async {
     debugPrintStack(stackTrace: stack);
     return true;
   };
-  await _startupStep(
-    'LiquidGlassWidgets.initialize',
-    () => LiquidGlassWidgets.initialize(),
-    timeout: const Duration(seconds: 2),
-  );
 
   final store = SecureStore();
   final controller = AppController(store: store);
@@ -62,6 +57,13 @@ Future<void> main() async {
     theme.bootstrap,
     timeout: const Duration(seconds: 2),
   );
+  if (theme.useLiquidGlass && canUseShaderGlass) {
+    await _startupStep(
+      'LiquidGlassWidgets.initialize',
+      ensureLiquidGlassInitialized,
+      timeout: const Duration(seconds: 2),
+    );
+  }
   await _startupStep(
     'MessageDisplayController.bootstrap',
     messageDisplay.bootstrap,

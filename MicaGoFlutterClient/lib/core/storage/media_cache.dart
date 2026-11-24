@@ -200,6 +200,13 @@ class MediaCache {
             return bytes;
           }, null);
     if (cached != null) {
+      if (!accessAllowed) {
+        throw const ApiException(
+          code: 'unauthorized',
+          message: 'Device access rejected.',
+          statusCode: 401,
+        );
+      }
       _memoryCache[key] = cached;
       return cached;
     }
@@ -209,6 +216,13 @@ class MediaCache {
       bytes = await fetch();
     } finally {
       _releaseFetchSlot();
+    }
+    if (!accessAllowed) {
+      throw const ApiException(
+        code: 'unauthorized',
+        message: 'Device access rejected.',
+        statusCode: 401,
+      );
     }
     _memoryCache[key] = bytes;
     unawaited(_writeDisk(key, bytes));
@@ -302,6 +316,26 @@ class MediaCache {
 
   /// Waits for queued disk writes, then removes expired and least-used entries.
   Future<void> prune() => _disk(_pruneDisk, null);
+
+  /// Clears all in-memory media immediately and removes cached disk files.
+  Future<void> clear() {
+    _memoryCache.clear();
+    _pinned.clear();
+    _localPreviews.clear();
+    _localOriginals.clear();
+    _aspectRatios.clear();
+    return _disk(() async {
+      final dir = _dir;
+      if (dir == null || !await dir.exists()) return;
+      await for (final entry in dir.list(followLinks: false)) {
+        if (entry is File) {
+          try {
+            await entry.delete();
+          } catch (_) {}
+        }
+      }
+    }, null);
+  }
 
   Future<void> _pruneDisk() async {
     final dir = _dir;

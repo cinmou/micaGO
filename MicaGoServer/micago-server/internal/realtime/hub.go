@@ -81,15 +81,25 @@ func (h *Hub) Broadcast(ctx context.Context, event Event) error {
 	}
 	h.mu.Unlock()
 
-	for _, conn := range clients {
-		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		err := conn.Write(writeCtx, websocket.MessageText, payload)
-		cancel()
-		if err != nil {
-			h.remove(conn)
-			_ = conn.Close(websocket.StatusInternalError, "write failed")
-		}
+	if len(clients) == 0 {
+		return nil
 	}
+
+	var wg sync.WaitGroup
+	for _, conn := range clients {
+		wg.Add(1)
+		go func(c *websocket.Conn) {
+			defer wg.Done()
+			writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			err := c.Write(writeCtx, websocket.MessageText, payload)
+			cancel()
+			if err != nil {
+				h.remove(c)
+				_ = c.Close(websocket.StatusInternalError, "write failed")
+			}
+		}(conn)
+	}
+	wg.Wait()
 
 	return nil
 }

@@ -30,6 +30,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
+#import <math.h>
 
 // ---- Forward decls (resolved at runtime; no private headers/link needed) ----
 @interface NSObject (MicaGoIMCore)
@@ -148,18 +149,18 @@ static id findMessageItem(id chat, NSString *messageGuid) {
             [inv invoke];
         } @catch (__unused NSException *e) {}
     }
-    SEL itemsSel = @selector(chatItems);
     for (int attempt = 0; attempt < 20; attempt++) {
-        NSArray *items = [chat respondsToSelector:itemsSel] ? [chat performSelector:itemsSel] : nil;
+        NSArray *items = [chat respondsToSelector:@selector(chatItems)] ? [chat performSelector:@selector(chatItems)] : nil;
+        if (![items isKindOfClass:[NSArray class]]) items = nil;
         for (id item in items) {
-            NSString *guid = nil;
+            id guid = nil;
             id message = [item respondsToSelector:@selector(message)] ? [item performSelector:@selector(message)] : nil;
             if (message && [message respondsToSelector:@selector(guid)]) {
                 guid = [message performSelector:@selector(guid)];
             } else if ([item respondsToSelector:@selector(guid)]) {
                 guid = [item performSelector:@selector(guid)];
             }
-            if ([guid isEqualToString:messageGuid]) return item;
+            if ([guid isKindOfClass:[NSString class]] && [guid isEqualToString:messageGuid]) return item;
         }
         [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
     }
@@ -175,7 +176,8 @@ static NSAttributedString *buildAttributed(NSString *text, NSInteger partIndex) 
 }
 
 static NSDictionary *doEdit(NSString *chatGuid, NSString *messageGuid, NSString *text, NSInteger partIndex) {
-    if (text.length == 0) return fail(@"bad_request", @"edited text is required");
+    if (![text isKindOfClass:[NSString class]] || text.length == 0) return fail(@"bad_request", @"edited text is required");
+    if (partIndex < 0) return fail(@"bad_request", @"partIndex must be non-negative");
     if (!gHasEditItem && !gHasEditLegacy) return fail(@"unsupported", @"editing is not available on this macOS");
     id chat = resolveChat(chatGuid);
     if (!chat) return fail(@"not_found", [NSString stringWithFormat:@"chat not found: %@", chatGuid]);
@@ -265,6 +267,8 @@ static NSDictionary *doDelete(NSString *chatGuid, NSString *messageGuid) {
 }
 
 int main(int argc, const char *argv[]) {
+    (void)argc;
+    (void)argv;
     @autoreleasepool {
         NSData *input = [[NSFileHandle fileHandleWithStandardInput] readDataToEndOfFile];
         NSDictionary *req = nil;
@@ -274,10 +278,60 @@ int main(int argc, const char *argv[]) {
         if (![req isKindOfClass:[NSDictionary class]]) {
             writeJSONAndExit(fail(@"bad_request", @"expected a JSON request object on stdin"));
         }
-        NSString *action = req[@"action"];
+        id rawAction = req[@"action"];
+        if (![rawAction isKindOfClass:[NSString class]] || [(NSString *)rawAction length] == 0) {
+            writeJSONAndExit(fail(@"bad_request", @"action must be a non-empty string"));
+        }
+        NSString *action = (NSString *)rawAction;
+        BOOL isStatus = [action isEqualToString:@"status"];
+        BOOL isEdit = [action isEqualToString:@"edit"];
+        BOOL isRetract = [action isEqualToString:@"retract"];
+        BOOL isDelete = [action isEqualToString:@"delete"];
+        if (!isStatus && !isEdit && !isRetract && !isDelete) {
+            writeJSONAndExit(fail(@"bad_request", [NSString stringWithFormat:@"unknown action: %@", action]));
+        }
+
+        NSString *chatGuid = nil;
+        NSString *messageGuid = nil;
+        NSString *text = nil;
+        NSInteger partIndex = 0;
+        if (!isStatus) {
+            id rawChatGuid = req[@"chatGuid"];
+            if (![rawChatGuid isKindOfClass:[NSString class]] || [(NSString *)rawChatGuid length] == 0) {
+                writeJSONAndExit(fail(@"bad_request", @"chatGuid must be a non-empty string"));
+            }
+            chatGuid = (NSString *)rawChatGuid;
+
+            id rawMessageGuid = req[@"messageGuid"];
+            if (![rawMessageGuid isKindOfClass:[NSString class]] || [(NSString *)rawMessageGuid length] == 0) {
+                writeJSONAndExit(fail(@"bad_request", @"messageGuid must be a non-empty string"));
+            }
+            messageGuid = (NSString *)rawMessageGuid;
+
+            id rawPartIndex = req[@"partIndex"];
+            if (rawPartIndex != nil) {
+                if (![rawPartIndex isKindOfClass:[NSNumber class]] ||
+                    CFGetTypeID((__bridge CFTypeRef)rawPartIndex) == CFBooleanGetTypeID()) {
+                    writeJSONAndExit(fail(@"bad_request", @"partIndex must be a non-negative integer"));
+                }
+                double d = [(NSNumber *)rawPartIndex doubleValue];
+                if (!isfinite(d) || floor(d) != d || d < 0 || d > (double)NSIntegerMax) {
+                    writeJSONAndExit(fail(@"bad_request", @"partIndex must be a non-negative integer"));
+                }
+                partIndex = (NSInteger)d;
+            }
+
+            if (isEdit) {
+                id rawText = req[@"text"];
+                if (![rawText isKindOfClass:[NSString class]] || [(NSString *)rawText length] == 0) {
+                    writeJSONAndExit(fail(@"bad_request", @"edited text is required"));
+                }
+                text = (NSString *)rawText;
+            }
+        }
 
         if (!loadIMCore()) {
-            if ([action isEqualToString:@"status"]) {
+            if (isStatus) {
                 writeJSONAndExit(@{ @"capabilities": @{} }); // ⇒ unsupported_selectors
             }
             writeJSONAndExit(fail(@"unsupported", @"IMCore is not available on this Mac"));
@@ -285,7 +339,7 @@ int main(int argc, const char *argv[]) {
         BOOL connected = connectDaemon();
         probeSelectors();
 
-        if ([action isEqualToString:@"status"]) {
+        if (isStatus) {
             // Capabilities reflect real selector availability AND a live daemon
             // connection — without the daemon the actions can't run, so we report
             // them unavailable rather than promising an action that would fail.
@@ -300,18 +354,14 @@ int main(int argc, const char *argv[]) {
                 @"could not connect to the Messages daemon — grant Full Disk Access / Automation to the helper"));
         }
 
-        NSString *chatGuid = req[@"chatGuid"];
-        NSString *messageGuid = req[@"messageGuid"];
-        NSInteger partIndex = [req[@"partIndex"] respondsToSelector:@selector(integerValue)] ? [req[@"partIndex"] integerValue] : 0;
-
-        if ([action isEqualToString:@"edit"]) {
-            writeJSONAndExit(doEdit(chatGuid, messageGuid, req[@"text"], partIndex));
-        } else if ([action isEqualToString:@"retract"]) {
+        if (isEdit) {
+            writeJSONAndExit(doEdit(chatGuid, messageGuid, text, partIndex));
+        } else if (isRetract) {
             writeJSONAndExit(doRetract(chatGuid, messageGuid, partIndex));
-        } else if ([action isEqualToString:@"delete"]) {
+        } else if (isDelete) {
             writeJSONAndExit(doDelete(chatGuid, messageGuid));
         }
-        writeJSONAndExit(fail(@"bad_request", [NSString stringWithFormat:@"unknown action: %@", action ?: @"(none)"]));
+        writeJSONAndExit(fail(@"bad_request", [NSString stringWithFormat:@"unknown action: %@", action]));
     }
     return 0;
 }

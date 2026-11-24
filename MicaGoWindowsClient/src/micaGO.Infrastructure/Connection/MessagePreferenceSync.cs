@@ -110,10 +110,14 @@ public sealed class MessagePreferenceSync(LocalCacheStore cache, Func<IMicaGoApi
                     foreach (var row in reply.Data)
                     {
                         if (!_state.Rows.TryGetValue(row.MessageKey, out var current) || current.Revision <= row.Revision) _state.Rows[row.MessageKey] = row;
-                        var before = request.Changes.First(change => change.MessageKey == row.MessageKey).BaseRevision;
-                        for (var i = 0; i < _state.Queue.Count; i++)
-                            _state.Queue[i] = _state.Queue[i] with { Changes = _state.Queue[i].Changes.Select(change =>
-                                change.MessageKey == row.MessageKey && change.BaseRevision == before ? change with { BaseRevision = row.Revision } : change).ToArray() };
+                        var matched = request.Changes.FirstOrDefault(change => change.MessageKey == row.MessageKey);
+                        if (matched is not null)
+                        {
+                            var before = matched.BaseRevision;
+                            for (var i = 0; i < _state.Queue.Count; i++)
+                                _state.Queue[i] = _state.Queue[i] with { Changes = _state.Queue[i].Changes.Select(change =>
+                                    change.MessageKey == row.MessageKey && change.BaseRevision == before ? change with { BaseRevision = row.Revision } : change).ToArray() };
+                        }
                     }
                 }
                 catch (MicaGoApiException ex) when (ex.StatusCode == 409)

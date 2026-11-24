@@ -79,11 +79,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final theme = context.watch<ThemeController>();
     final strings = MicaLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final glassBg = liquidGlassPageColor(context);
     final headerBg = theme.useLiquidGlass
-        ? glassBg
+        ? liquidGlassHeaderColor(context)
         : _settingsAccent1_100(scheme);
-    final pageBg = theme.useLiquidGlass ? glassBg : _settingsAccent1_50(scheme);
+    final pageDecoration = theme.useLiquidGlass
+        ? liquidGlassPageDecoration(context)
+        : BoxDecoration(color: _settingsAccent1_50(scheme));
 
     return Scaffold(
       appBar: AppBar(
@@ -96,7 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           child: DecoratedBox(
-            decoration: BoxDecoration(color: pageBg),
+            decoration: pageDecoration,
             child: SafeArea(
               top: false,
               bottom: false,
@@ -281,6 +282,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDesktopSettings(AppController app) {
     final strings = MicaLocalizations.of(context);
+    final theme = context.watch<ThemeController>();
+    final glass = theme.useLiquidGlass;
     final sections = _DesktopSettingsSection.values
         .where(
           (section) =>
@@ -302,9 +305,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     return Scaffold(
+      backgroundColor: glass ? liquidGlassPageColor(context) : null,
       appBar: widget.separateWindow
           ? null
-          : AppBar(title: Text(strings.t('nav.settings'))),
+          : AppBar(
+              title: Text(strings.t('nav.settings')),
+              backgroundColor: glass ? liquidGlassHeaderColor(context) : null,
+              surfaceTintColor: glass ? Colors.transparent : null,
+            ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -1272,17 +1280,18 @@ class _SettingsSubPage extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final theme = context.watch<ThemeController>();
     final glass = theme.useLiquidGlass;
-    final glassBg = liquidGlassPageColor(context);
     final headerBg = glass
-        ? glassBg
+        ? liquidGlassHeaderColor(context)
         : theme.useLinuxTheme
         ? scheme.surface
         : _settingsAccent1_100(scheme);
-    final pageBg = glass
-        ? glassBg
-        : theme.useLinuxTheme
-        ? scheme.surface
-        : _settingsAccent1_50(scheme);
+    final pageDecoration = glass
+        ? liquidGlassPageDecoration(context)
+        : BoxDecoration(
+            color: theme.useLinuxTheme
+                ? scheme.surface
+                : _settingsAccent1_50(scheme),
+          );
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
@@ -1295,7 +1304,7 @@ class _SettingsSubPage extends StatelessWidget {
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           child: DecoratedBox(
-            decoration: BoxDecoration(color: pageBg),
+            decoration: pageDecoration,
             child: SafeArea(
               top: false,
               bottom: false,
@@ -2045,6 +2054,16 @@ class _AppearanceCard extends StatelessWidget {
                     )
                   : null,
               onSelectionChanged: (s) => theme.setThemeMode(s.first),
+            ),
+            const Divider(height: 28),
+
+            // --- Liquid glass surface ---
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(strings.t('settings.liquidGlass')),
+              subtitle: Text(strings.t('settings.liquidGlassBody')),
+              value: theme.useLiquidGlass,
+              onChanged: theme.setLiquidGlassEnabled,
             ),
             const Divider(height: 28),
 

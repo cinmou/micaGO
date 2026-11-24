@@ -282,6 +282,7 @@ public sealed class ConnectionManager : IDisposable
             ? null
             : RouteSelection.DisplayOrder(profile.Endpoints, profile.Mode).FirstOrDefault(route =>
                 string.Equals(route.BaseUrl, profile.SelectedBaseUrl, StringComparison.OrdinalIgnoreCase));
+        var chosenRejected = false;
         if (chosen is not null)
         {
             MarkProbing(chosen.BaseUrl);
@@ -289,18 +290,25 @@ public sealed class ConnectionManager : IDisposable
             try { result = await _selector.ProbeAsync(chosen, token, cancellationToken); }
             finally { ClearProbing(chosen.BaseUrl); }
             Record(result);
-            if (result.CredentialRejected) throw new CredentialRejectedException();
             if (result.IsAvailable) return (result, profile);
+            chosenRejected = result.CredentialRejected;
         }
 
-        var fallback = await _selector.SelectAsync(
-            profile.Endpoints,
-            profile.Mode,
-            token,
-            cancellationToken,
-            excludeBaseUrl: chosen?.BaseUrl,
-            observe: Record);
-        return (fallback, chosen is null ? profile : profile with { SelectedBaseUrl = null });
+        try
+        {
+            var fallback = await _selector.SelectAsync(
+                profile.Endpoints,
+                profile.Mode,
+                token,
+                cancellationToken,
+                excludeBaseUrl: chosen?.BaseUrl,
+                observe: Record);
+            return (fallback, chosen is null ? profile : profile with { SelectedBaseUrl = null });
+        }
+        catch (ConnectionException) when (chosenRejected)
+        {
+            throw new CredentialRejectedException();
+        }
     }
 
     private async Task ActivateAsync(
@@ -384,8 +392,8 @@ public sealed class ConnectionManager : IDisposable
                 return;
             }
             Profile = next;
-            var activePin = next.Endpoints.FirstOrDefault(e => e.BaseUrl == next.ActiveBaseUrl)?.TlsFingerprint
-                ?? profile.Endpoints.FirstOrDefault(e => e.BaseUrl == next.ActiveBaseUrl)?.TlsFingerprint;
+            var activePin = next.Endpoints.FirstOrDefault(e => string.Equals(e.BaseUrl, next.ActiveBaseUrl, StringComparison.OrdinalIgnoreCase))?.TlsFingerprint
+                ?? profile.Endpoints.FirstOrDefault(e => string.Equals(e.BaseUrl, next.ActiveBaseUrl, StringComparison.OrdinalIgnoreCase))?.TlsFingerprint;
             client.Rebase(next.ActiveBaseUrl, next.ActiveWebSocketUrl, activePin);
             RoutesChanged?.Invoke(this, EventArgs.Empty);
             if (next.Endpoints.Count > 0 && !next.Endpoints.Any(endpoint => endpoint.BaseUrl.Equals(next.ActiveBaseUrl, StringComparison.OrdinalIgnoreCase)))

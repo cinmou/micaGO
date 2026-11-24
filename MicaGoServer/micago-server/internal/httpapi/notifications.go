@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -11,6 +13,19 @@ import (
 	"micagoserver/internal/notify"
 	"micagoserver/internal/store"
 )
+
+func expandHomePath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(value, "~/") {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, strings.TrimPrefix(value, "~/"))
+		}
+	}
+	return value
+}
 
 type notificationsConfigRequest struct {
 	Enabled             bool   `json:"enabled"`
@@ -70,73 +85,96 @@ func (h *Handlers) PutNotificationsConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// An empty editor means "keep the saved files", including when disabling
-	// delivery. Removing configuration is a separate, explicit operation.
-	if req.ClearFirebaseConfig {
-		req.FCMEnabled = false
-		req.Enabled = false
-		req.Provider = "none"
-		req.FCMProjectID = ""
-		req.ServiceAccountPath = ""
-		req.GoogleServicesPath = ""
-		req.PublicURLSync = false
-	} else {
-		if req.ServiceAccountPath == "" {
-			req.ServiceAccountPath = h.cfg.FCM.ServiceAccountPath
-		}
-		if req.GoogleServicesPath == "" {
-			req.GoogleServicesPath = h.cfg.FCM.GoogleServicesPath
-		}
-	}
-	// Validate the service account up front so the user gets a clear error.
-	if req.FCMEnabled {
-		if req.ServiceAccountPath == "" {
-			writeBadRequest(w, "serviceAccountPath is required when fcmEnabled is true")
-			return
-		}
-		if _, err := notify.LoadServiceAccount(req.ServiceAccountPath); err != nil {
-			writeBadRequest(w, "service account JSON could not be read or is invalid")
-			return
-		}
-		if req.GoogleServicesPath == "" {
-			writeBadRequest(w, "googleServicesPath is required when fcmEnabled is true")
-			return
-		}
-		if _, err := notify.LoadFirebaseClientConfig(req.GoogleServicesPath); err != nil {
-			writeBadRequest(w, "google-services.json could not be read or is invalid")
-			return
-		}
-	}
+	var (
+		serviceAccountSet bool
+		googleServicesSet bool
+		badRequestMsg     string
+	)
+	func() {
+		h.cfgMu.Lock()
+		defer h.cfgMu.Unlock()
 
-	if err := config.UpdateNotificationsConfig(h.cfg.ConfigPath, config.NotificationsUpdate{
-		Enabled:            req.Enabled,
-		Provider:           req.Provider,
-		Preview:            req.Preview,
-		FCMEnabled:         req.FCMEnabled,
-		FCMProjectID:       req.FCMProjectID,
-		ServiceAccountPath: req.ServiceAccountPath,
-		GoogleServicesPath: req.GoogleServicesPath,
-		PublicURLSync:      req.PublicURLSync,
-	}); err != nil {
-		writeBadRequest(w, err.Error())
+		// An empty editor means "keep the saved files", including when disabling
+		// delivery. Removing configuration is a separate, explicit operation.
+		if req.ClearFirebaseConfig {
+			req.FCMEnabled = false
+			req.Enabled = false
+			req.Provider = "none"
+			req.FCMProjectID = ""
+			req.ServiceAccountPath = ""
+			req.GoogleServicesPath = ""
+			req.PublicURLSync = false
+		} else {
+			if req.ServiceAccountPath == "" {
+				req.ServiceAccountPath = h.cfg.FCM.ServiceAccountPath
+			}
+			if req.GoogleServicesPath == "" {
+				req.GoogleServicesPath = h.cfg.FCM.GoogleServicesPath
+			}
+		}
+
+		expandedServiceAccountPath := expandHomePath(req.ServiceAccountPath)
+		expandedGoogleServicesPath := expandHomePath(req.GoogleServicesPath)
+
+		// Validate the service account up front so the user gets a clear error.
+		if req.FCMEnabled {
+			if expandedServiceAccountPath == "" {
+				badRequestMsg = "serviceAccountPath is required when fcmEnabled is true"
+				return
+			}
+			if _, err := notify.LoadServiceAccount(expandedServiceAccountPath); err != nil {
+				badRequestMsg = "service account JSON could not be read or is invalid"
+				return
+			}
+			if expandedGoogleServicesPath == "" {
+				badRequestMsg = "googleServicesPath is required when fcmEnabled is true"
+				return
+			}
+			if _, err := notify.LoadFirebaseClientConfig(expandedGoogleServicesPath); err != nil {
+				badRequestMsg = "google-services.json could not be read or is invalid"
+				return
+			}
+		}
+
+		if err := config.UpdateNotificationsConfig(h.cfg.ConfigPath, config.NotificationsUpdate{
+			Enabled:            req.Enabled,
+			Provider:           req.Provider,
+			Preview:            req.Preview,
+			FCMEnabled:         req.FCMEnabled,
+			FCMProjectID:       req.FCMProjectID,
+			ServiceAccountPath: req.ServiceAccountPath,
+			GoogleServicesPath: req.GoogleServicesPath,
+			PublicURLSync:      req.PublicURLSync,
+		}); err != nil {
+			badRequestMsg = err.Error()
+			return
+		}
+
+		// Update only notification/FCM/Firebase fields in memory so runtime CLI
+		// overrides (HTTPAddr, DisableSyncLoop, ConfigPath, etc.) are preserved.
+		h.cfg.NotificationsEnabled = req.Enabled
+		h.cfg.NotificationProvider = req.Provider
+		h.cfg.NotificationPreview = req.Preview
+		h.cfg.FCM.Enabled = req.FCMEnabled
+		h.cfg.FCM.ProjectID = strings.TrimSpace(req.FCMProjectID)
+		h.cfg.FCM.ServiceAccountPath = expandedServiceAccountPath
+		h.cfg.FCM.GoogleServicesPath = expandedGoogleServicesPath
+		h.cfg.Firebase.PublicURLSync = req.PublicURLSync
+
+		updated := h.cfg
+		serviceAccountSet = expandedServiceAccountPath != ""
+		googleServicesSet = expandedGoogleServicesPath != ""
+		h.notifyConfig.Reload(updated)
+	}()
+	if badRequestMsg != "" {
+		writeBadRequest(w, badRequestMsg)
 		return
 	}
-
-	// Reload from the freshly-written config so the dispatcher (and status)
-	// reflect the change without a restart.
-	fresh, err := config.Load(config.Options{})
-	if err != nil {
-		h.logInternal("reload config after notifications update", err)
-		writeInternalError(w)
-		return
-	}
-	h.cfg = fresh
-	h.notifyConfig.Reload(fresh)
 
 	writeJSON(w, http.StatusOK, notificationsConfigResponse{
 		ServerNotificationStatus: h.notificationStatus(),
-		ServiceAccountPathSet:    req.ServiceAccountPath != "",
-		GoogleServicesPathSet:    req.GoogleServicesPath != "",
+		ServiceAccountPathSet:    serviceAccountSet,
+		GoogleServicesPathSet:    googleServicesSet,
 		FirestoreSyncEnabled:     h.notifyConfig.FirestoreSyncEnabled(),
 	})
 }
@@ -160,33 +198,44 @@ func (h *Handlers) PatchNotificationsPreview(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := config.UpdateNotificationsConfig(h.cfg.ConfigPath, config.NotificationsUpdate{
-		Enabled:            h.cfg.NotificationsEnabled,
-		Provider:           h.cfg.NotificationProvider,
-		Preview:            req.Preview,
-		FCMEnabled:         h.cfg.FCM.Enabled,
-		FCMProjectID:       h.cfg.FCM.ProjectID,
-		ServiceAccountPath: h.cfg.FCM.ServiceAccountPath,
-		GoogleServicesPath: h.cfg.FCM.GoogleServicesPath,
-		PublicURLSync:      h.cfg.Firebase.PublicURLSync,
-	}); err != nil {
-		writeBadRequest(w, err.Error())
-		return
-	}
+	var (
+		serviceAccountSet bool
+		googleServicesSet bool
+		badRequestMsg     string
+	)
+	func() {
+		h.cfgMu.Lock()
+		defer h.cfgMu.Unlock()
 
-	fresh, err := config.Load(config.Options{})
-	if err != nil {
-		h.logInternal("reload config after notification preview update", err)
-		writeInternalError(w)
+		if err := config.UpdateNotificationsConfig(h.cfg.ConfigPath, config.NotificationsUpdate{
+			Enabled:            h.cfg.NotificationsEnabled,
+			Provider:           h.cfg.NotificationProvider,
+			Preview:            req.Preview,
+			FCMEnabled:         h.cfg.FCM.Enabled,
+			FCMProjectID:       h.cfg.FCM.ProjectID,
+			ServiceAccountPath: h.cfg.FCM.ServiceAccountPath,
+			GoogleServicesPath: h.cfg.FCM.GoogleServicesPath,
+			PublicURLSync:      h.cfg.Firebase.PublicURLSync,
+		}); err != nil {
+			badRequestMsg = err.Error()
+			return
+		}
+
+		h.cfg.NotificationPreview = req.Preview
+		updated := h.cfg
+		serviceAccountSet = strings.TrimSpace(h.cfg.FCM.ServiceAccountPath) != ""
+		googleServicesSet = strings.TrimSpace(h.cfg.FCM.GoogleServicesPath) != ""
+		h.notifyConfig.Reload(updated)
+	}()
+	if badRequestMsg != "" {
+		writeBadRequest(w, badRequestMsg)
 		return
 	}
-	h.cfg = fresh
-	h.notifyConfig.Reload(fresh)
 
 	writeJSON(w, http.StatusOK, notificationsConfigResponse{
 		ServerNotificationStatus: h.notificationStatus(),
-		ServiceAccountPathSet:    strings.TrimSpace(h.cfg.FCM.ServiceAccountPath) != "",
-		GoogleServicesPathSet:    strings.TrimSpace(h.cfg.FCM.GoogleServicesPath) != "",
+		ServiceAccountPathSet:    serviceAccountSet,
+		GoogleServicesPathSet:    googleServicesSet,
 		FirestoreSyncEnabled:     h.notifyConfig.FirestoreSyncEnabled(),
 	})
 }

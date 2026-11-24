@@ -73,6 +73,7 @@ final class AppModel: ObservableObject {
     @Published var syncNowBusy = false
     @Published var lastSyncDiagnostics: SyncDiagnostics?
     private var lastSyncedContactCacheSignature: Int?
+    private var latestContactEntries: [ServerContactEntry] = []
 
     /// Prefer the newest completed pass so manual snapshots cannot freeze the
     /// monitor once background polling has newer results.
@@ -223,6 +224,7 @@ final class AppModel: ObservableObject {
 
     /// 等待后端完成配置创建或迁移，并刷新连接地址。
     func refreshAfterBackendStart() {
+        lastSyncedContactCacheSignature = nil
         startupRefreshTask?.cancel()
         startupRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -281,6 +283,9 @@ final class AppModel: ObservableObject {
             await refreshPairingStatus(client: client)
         }
         await chatPreferences.sync(client: client)
+        if !latestContactEntries.isEmpty {
+            await syncContactCache(latestContactEntries)
+        }
 
         // 各接口独立处理错误，避免单次失败阻断地址发现。
         var pollError: String?
@@ -325,6 +330,7 @@ final class AppModel: ObservableObject {
         activeConnections = []
         urls = nil
         lastSyncDiagnostics = nil
+        lastSyncedContactCacheSignature = nil
     }
 
     // Mirror server changes without overwriting unsaved edits. File paths are
@@ -395,6 +401,7 @@ final class AppModel: ObservableObject {
     }
 
     func syncContactCache(_ contacts: [ServerContactEntry]) async {
+        latestContactEntries = contacts
         guard let baseURL else { return }
         var hasher = Hasher()
         hasher.combine(contacts.count)

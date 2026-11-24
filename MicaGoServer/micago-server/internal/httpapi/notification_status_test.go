@@ -7,10 +7,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"micagoserver/internal/config"
 	"micagoserver/internal/notify"
+	"micagoserver/internal/store"
 )
 
 func TestFCMStatusTracksClientFileAvailability(t *testing.T) {
@@ -146,5 +148,87 @@ func TestUnifiedPushConfigServesGeneratedVAPIDKey(t *testing.T) {
 	dispatcher.Reload(cfg)
 	if dispatcher.UnifiedPushVAPIDPublicKey() != response.Data.VAPIDPublicKey {
 		t.Fatal("reload rotated the VAPID key")
+	}
+}
+
+func TestNotificationConfigUpdatePreservesRuntimeOverridesAndIsRaceFree(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.Load(config.Options{
+		Addr:            "127.0.0.1:4321",
+		DisableSyncLoop: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := notify.NewDispatcher(cfg)
+	h := &Handlers{
+		cfg:    cfg,
+		notify: dispatcher,
+	}
+	h.SetNotificationConfigurator(dispatcher)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(2)
+		go func(idx int) {
+			defer wg.Done()
+			previews := []string{"none", "sender", "sender_and_text"}
+			for j := 0; j < 10; j++ {
+				preview := previews[(idx+j)%len(previews)]
+				if j%2 == 0 {
+					body, _ := json.Marshal(notificationsConfigRequest{
+						Enabled:  true,
+						Provider: "none",
+						Preview:  preview,
+					})
+					rec := httptest.NewRecorder()
+					h.PutNotificationsConfig(rec, httptest.NewRequest(http.MethodPost, "/api/server/notifications", bytes.NewReader(body)))
+					if rec.Code != http.StatusOK {
+						t.Errorf("PutNotificationsConfig returned %d: %s", rec.Code, rec.Body.String())
+					}
+				} else {
+					body, _ := json.Marshal(notificationPreviewRequest{Preview: preview})
+					rec := httptest.NewRecorder()
+					h.PatchNotificationsPreview(rec, httptest.NewRequest(http.MethodPatch, "/api/server/notifications/preview", bytes.NewReader(body)))
+					if rec.Code != http.StatusOK {
+						t.Errorf("PatchNotificationsPreview returned %d: %s", rec.Code, rec.Body.String())
+					}
+				}
+			}
+		}(i)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 15; j++ {
+				recStatus := httptest.NewRecorder()
+				h.GetServerStatus(recStatus, httptest.NewRequest(http.MethodGet, "/api/server/status", nil))
+				if recStatus.Code != http.StatusOK {
+					t.Errorf("GetServerStatus returned %d", recStatus.Code)
+				}
+				recURLs := httptest.NewRecorder()
+				h.GetServerURLs(recURLs, httptest.NewRequest(http.MethodGet, "/api/server/urls", nil))
+				if recURLs.Code != http.StatusOK {
+					t.Errorf("GetServerURLs returned %d", recURLs.Code)
+				}
+				recFCM := httptest.NewRecorder()
+				h.GetFCMClientConfig(recFCM, httptest.NewRequest(http.MethodGet, "/api/fcm/client", nil))
+				if recFCM.Code != http.StatusOK {
+					t.Errorf("GetFCMClientConfig returned %d", recFCM.Code)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	rec := httptest.NewRecorder()
+	h.GetServerStatus(rec, httptest.NewRequest(http.MethodGet, "/api/server/status", nil))
+	var status store.ServerStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Address.Listen != "127.0.0.1:4321" {
+		t.Fatalf("HTTPAddr overwritten after notification update: got %q", status.Address.Listen)
+	}
+	if status.Sync.LoopEnabled {
+		t.Fatalf("DisableSyncLoop overwritten after notification update: LoopEnabled=%v", status.Sync.LoopEnabled)
 	}
 }

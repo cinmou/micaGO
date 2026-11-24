@@ -226,4 +226,49 @@ void main() {
     await a.sync();
     expect(server.rows['private-route']!['hidden'], true);
   });
+
+  test('PATCH response with extra server rows does not stall queue', () async {
+    final serverId = 'c' * 32;
+    final api = ApiClient(
+      baseUrl: 'http://test',
+      token: 'test',
+      httpClient: MockClient((request) async {
+        if (request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'serverId': serverId,
+              'revision': 1,
+              'data': [
+                {'chatGuid': 'other-route', 'hidden': true, 'revision': 1},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'serverId': serverId,
+            'revision': 2,
+            'data': [
+              {'chatGuid': 'other-route', 'hidden': true, 'revision': 1},
+              {'chatGuid': 'route-a', 'hidden': true, 'revision': 2},
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+    addTearDown(api.close);
+    final sync = ChatPreferenceSync(
+      cache: MemoryCache(),
+      api: () => api,
+      onChanged: () {},
+    );
+    addTearDown(sync.dispose);
+    await sync.sync();
+    await sync.setHidden(['route-a'], true);
+    expect(sync.pending, isFalse);
+    expect(sync.errorKey, isNull);
+    expect(sync.hidden, {'other-route', 'route-a'});
+  });
 }

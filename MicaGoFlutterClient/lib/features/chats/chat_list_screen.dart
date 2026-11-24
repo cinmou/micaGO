@@ -27,18 +27,20 @@ import 'models/merged_chat.dart';
 /// Selection is delegated to [onOpen] so the same widget works single-pane
 /// (push a thread) and two-pane (select into the detail pane).
 class ChatListScreen extends StatefulWidget {
-  final void Function(MergedChat merged) onOpen;
+  final void Function(MergedChat merged)? onOpen;
+  final void Function(MergedChat merged, String? initialRouteGuid)? onOpenRoute;
   final ValueListenable<int>? searchRequests;
   final bool compact;
   final bool sidebar;
 
   const ChatListScreen({
     super.key,
-    required this.onOpen,
+    this.onOpen,
+    this.onOpenRoute,
     this.searchRequests,
     this.compact = false,
     this.sidebar = false,
-  });
+  }) : assert(onOpen != null || onOpenRoute != null);
 
   @override
   State<ChatListScreen> createState() => _ChatListScreenState();
@@ -150,7 +152,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final target = match;
     app.clearPendingOpenChat();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _openMerged(target);
+      if (mounted) _openMerged(target, initialRouteGuid: guid);
     });
   }
 
@@ -209,9 +211,28 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
   }
 
-  void _openMerged(MergedChat merged) {
-    _markRoutesRead(merged.routes.map((r) => r.guid));
-    widget.onOpen(merged);
+  void _openMerged(MergedChat merged, {String? initialRouteGuid}) {
+    final app = _controller.app;
+    final activeRoute =
+        initialRouteGuid != null && initialRouteGuid.trim().isNotEmpty
+        ? merged.routes.where((r) => r.guid == initialRouteGuid).firstOrNull ??
+              merged.primary
+        : merged.primary;
+    final visibleRouteGuids = <String>{
+      activeRoute.guid,
+      if (activeRoute.service == ChatService.imessage &&
+          app.isMergedDisplayEnabled(merged.localCustomizationKey))
+        ...merged.routes
+            .where((r) => r.service == ChatService.imessage)
+            .map((r) => r.guid),
+    };
+    _markRoutesRead(visibleRouteGuids);
+    final openRoute = widget.onOpenRoute;
+    if (openRoute != null) {
+      openRoute(merged, initialRouteGuid);
+    } else {
+      widget.onOpen!(merged);
+    }
   }
 
   Future<void> _hideWithUndo(MergedChat chat) async {
@@ -371,7 +392,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       context.watch<MessageDisplayController>().prefs.showDebugChats,
     );
     final content = ListenableBuilder(
-      listenable: _controller,
+      listenable: Listenable.merge([
+        _controller,
+        context.read<AppController>().pendingOpenChat,
+      ]),
       builder: (context, _) {
         switch (_controller.state) {
           case ChatListState.idle:
