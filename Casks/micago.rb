@@ -1,6 +1,6 @@
 cask "micago" do
-  version "0.94.1"
-  sha256 "6fce22caac2dddc6c83e121aabf59e77492dbe2fe1bf57731086de9632b1d232"
+  version "0.96.0"
+  sha256 "f1a4505d155a6d7ff855283bdc98916fb7d51e114122842d7731aae01bb102ac"
 
   url "https://github.com/cinmou/micaGO/releases/download/v#{version}/micaGO-#{version}-Mac.dmg"
   name "micaGO Companion"
