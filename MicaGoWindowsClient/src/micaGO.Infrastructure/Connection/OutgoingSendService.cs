@@ -173,7 +173,7 @@ public sealed class OutgoingSendService(IMicaGoApi api, LocalCacheStore cache, M
             if(_disposed)return MessageDeliveryState.Failed;
             transfer=CancellationTokenSource.CreateLinkedTokenSource(ct,_lifetime.Token);
         }
-        using var _=transfer;
+        using var transferLifetime=transfer;
         if(!_active.TryAdd(send.TempId,transfer))return MessageDeliveryState.Sending;
         var entered=false;var dispatched=false;Message? confirmed=null;
         var delivery=MessageDeliveryState.Sent;string? error=null;

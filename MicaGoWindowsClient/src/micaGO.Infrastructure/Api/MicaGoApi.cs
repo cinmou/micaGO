@@ -297,7 +297,7 @@ public sealed class MicaGoApi : IMicaGoApi
             pin = _fingerprint;
             linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _routeChanged.Token);
         }
-        using var _ = linked;
+        using var connectionLifetime = linked;
         using var socket = new ClientWebSocket();
         if (uri.Scheme != "wss") throw new ConnectionException("WebSocket requires WSS.");
         socket.Options.RemoteCertificateValidationCallback = (_, cert, _, errors) => SecureTransport.ValidateCertificate(cert, errors, pin);
