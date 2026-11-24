@@ -52,7 +52,13 @@ func startTestKqueueWatcher(
 
 func countOpenFDs(t *testing.T) int {
 	t.Helper()
-	entries, err := os.ReadDir("/dev/fd")
+	directory, err := os.Open("/dev/fd")
+	if err != nil {
+		t.Fatalf("open /dev/fd: %v", err)
+	}
+	defer directory.Close()
+	// Read names only. Statting each descriptor can race with its closure.
+	entries, err := directory.Readdirnames(-1)
 	if err != nil {
 		t.Fatalf("read /dev/fd: %v", err)
 	}
