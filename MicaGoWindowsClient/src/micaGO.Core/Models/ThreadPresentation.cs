@@ -28,10 +28,10 @@ public static class ThreadPresentation
         var byId=raw.Where(row=>!row.IsReaction).GroupBy(row=>(row.ChatId,row.Id)).ToDictionary(group=>group.Key,group=>group.Last());
         var consumed=new HashSet<(string ChatId,string Id)>();
         var reactionSenders = new Dictionary<(string ChatId, string Id), Dictionary<string, string>>();
-        foreach(var associated in raw.Where(row=>row.AssociatedMessageType>0&&!string.IsNullOrWhiteSpace(row.AssociatedMessageGuid)))
+        foreach(var associated in raw.Where(row=>!row.IsRetracted&&row.AssociatedMessageType>0&&!string.IsNullOrWhiteSpace(row.AssociatedMessageGuid)))
         {
             var targetId=Target(associated.AssociatedMessageGuid);var targetKey=(associated.ChatId,targetId??string.Empty);if(targetId is null||!byId.TryGetValue(targetKey,out var target))continue;
-            if(associated.AssociatedMessageType==1000&&associated.Media.Count>0)
+            if(associated.AssociatedMessageType==1000&&!target.IsRetracted&&associated.Media.Count>0)
             {
                 byId[targetKey]=target with{Attachments=target.Media.Concat(associated.Media).DistinctBy(item=>item.Id).ToArray()};consumed.Add((associated.ChatId,associated.Id));continue;
             }
@@ -59,7 +59,7 @@ public static class ThreadPresentation
                 var targetId=Target(row.ReplyToGuid);var preview=targetId is not null&&byId.TryGetValue((row.ChatId,targetId),out var reply)?ReplyLabel(reply):"Original message unavailable";
                 row=row with{ReplyPreview=preview};
             }
-            if(system)row=row with{GroupTitle=SystemLabel(row),IsPresentationSystem=true};
+            if(system)row=row with{GroupTitle=SystemLabel(row),IsPresentationSystem=true,Attachments=row.IsRetracted?Array.Empty<Attachment>():row.Attachments};
             if(system&&visible.Count>0&&visible[^1].IsPresentationSystem)
             {
                 visible[^1]=row with{MergedSystemCount=visible[^1].MergedSystemCount+1};continue;

@@ -66,6 +66,7 @@ public sealed partial class ConversationDetailsPage : Page
         var messages = (await Task.WhenAll(routes.Select(route => AppServices.Current.Cache.GetMessagesAsync(route, 500))))
             .SelectMany(page => page).OrderByDescending(message => message.DateCreated).ToArray();
         var items = messages
+            .Where(message => !message.IsRetracted && !string.Equals(message.SemanticKind, "retracted", StringComparison.OrdinalIgnoreCase))
             .SelectMany(message => message.Media)
             .Where(item => (item.IsImage || item.IsVideo) && !item.IsStickerLike)
             .Take(12)

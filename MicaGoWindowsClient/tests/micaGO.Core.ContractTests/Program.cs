@@ -42,6 +42,9 @@ var tests = new (string Name, Action Run)[]
     ("update check version compare", ComparesReleaseVersions),
     ("snapshot drops server-side deletes", MergeSnapshotDropsDeletedRows),
     ("route card status, in-use row and order", RouteSelectionTests.Run),
+    ("emoji variation selector reconciliation", ReconcilesEmojiVariationSelectors),
+    ("balanced chat image sizing", ComputesBalancedChatImageSizes),
+    ("retracted messages drop attachments in presentation", ExcludesRetractedMediaFromPresentation),
 };
 
 var failures = 0;
@@ -425,6 +428,44 @@ static void ComparesReleaseVersions()
     Equal(UpdateCheckStatus.UpToDate, UpdateCheck.FromReleaseJson(@"{""tag_name"":""v0.64.0""}", "0.64.0").Status);
     Equal(UpdateCheckStatus.Unknown, UpdateCheck.FromReleaseJson(@"{""tag_name"":""v9.9.9"",""draft"":true}", "0.64.0").Status);
     Equal(UpdateCheckStatus.Unknown, UpdateCheck.FromReleaseJson("not json", "0.64.0").Status);
+}
+
+static void ReconcilesEmojiVariationSelectors()
+{
+    var local = new Message("local-emoji", "chat", "❤️ ✌️ 1️⃣", "", true, MessageDeliveryState.Sending, DateCreated: 1000, IsPending: true);
+    var server = new Message("server-emoji", "chat", "\u2764 \u270c 1\u20e3", "", true, MessageDeliveryState.Sent, DateCreated: 1200);
+    True(MessageSemantics.ShouldReconcile(local, server));
+}
+
+static void ComputesBalancedChatImageSizes()
+{
+    var portrait = MessageSemantics.ComputeChatImageSize(500, 1000);
+    True(Math.Abs(portrait.Width - 153) < 0.2 && Math.Abs(portrait.Height - 306) < 0.2 && !portrait.IsLongImage);
+
+    var square = MessageSemantics.ComputeChatImageSize(1000, 1000);
+    True(Math.Abs(square.Width - 228) < 0.2 && Math.Abs(square.Height - 228) < 0.2 && !square.IsLongImage);
+
+    var wide = MessageSemantics.ComputeChatImageSize(1600, 900);
+    True(Math.Abs(wide.Width - 276) < 0.2 && Math.Abs(wide.Height - 276.0 / (16.0 / 9.0)) < 0.2 && !wide.IsLongImage);
+
+    var tall = MessageSemantics.ComputeChatImageSize(200, 1000);
+    True(Math.Abs(tall.Width - 306 * 0.45) < 0.2 && Math.Abs(tall.Height - 306) < 0.2 && tall.IsLongImage);
+}
+
+static void ExcludesRetractedMediaFromPresentation()
+{
+    var photo = new Attachment("att-1", "photo.jpg", "image/jpeg", 2048);
+    var retracted = new Message("m-unsent", "chat", "", "", true, MessageDeliveryState.Sent, DateCreated: 1000, Attachments: [photo], IsRetracted: true);
+    var sticker = new Attachment("stk-1", "sticker.png", "image/png", 512, IsSticker: true);
+    var retractedSticker = new Message("s-unsent", "chat", "", "", false, MessageDeliveryState.Read, DateCreated: 1100, Attachments: [sticker], AssociatedMessageGuid: "p:0/live", AssociatedMessageType: 1000, IsRetracted: true);
+    var live = new Message("live", "chat", "hi", "", false, MessageDeliveryState.Read, DateCreated: 900);
+
+    var rows = ThreadPresentation.Build([live, retracted, retractedSticker], false, "en").Where(row => !row.IsSeparator).ToArray();
+    var liveRow = rows.Single(row => row.Id == "live");
+    Equal(0, liveRow.Media.Count);
+    var retractedRow = rows.Single(row => row.IsPresentationSystem);
+    Equal(0, retractedRow.Media.Count);
+    Equal("Message unsent", MessageSemantics.PreviewText(retracted));
 }
 
 static void Equal<T>(T expected, T actual) where T : notnull

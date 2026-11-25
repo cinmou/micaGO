@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -19,12 +20,14 @@ class MediaGalleryViewer extends StatefulWidget {
   final ApiClient api;
   final List<AttachmentModel> images;
   final int initialIndex;
+  final Object? heroTag;
 
   const MediaGalleryViewer({
     super.key,
     required this.api,
     required this.images,
     this.initialIndex = 0,
+    this.heroTag,
   });
 
   static Future<void> open(
@@ -32,17 +35,19 @@ class MediaGalleryViewer extends StatefulWidget {
     required ApiClient api,
     required List<AttachmentModel> images,
     int initialIndex = 0,
+    Object? heroTag,
   }) {
     return Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
-        barrierColor: Colors.black,
+        barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 220),
         reverseTransitionDuration: const Duration(milliseconds: 180),
         pageBuilder: (_, _, _) => MediaGalleryViewer(
           api: api,
           images: images,
           initialIndex: initialIndex,
+          heroTag: heroTag,
         ),
         transitionsBuilder: (_, animation, _, child) {
           final curved = CurvedAnimation(
@@ -50,13 +55,7 @@ class MediaGalleryViewer extends StatefulWidget {
             curve: Curves.easeOutCubic,
             reverseCurve: Curves.easeInCubic,
           );
-          return FadeTransition(
-            opacity: curved,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-              child: child,
-            ),
-          );
+          return FadeTransition(opacity: curved, child: child);
         },
       ),
     );
@@ -72,6 +71,25 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
   );
   late int _index = widget.initialIndex;
   bool _imageZoomed = false;
+  double _dragOffsetY = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _prewarmAdjacent(_index);
+  }
+
+  void _prewarmAdjacent(int center) {
+    for (final delta in const [-1, 1]) {
+      final i = center + delta;
+      if (i < 0 || i >= widget.images.length) continue;
+      unawaited(
+        MediaCache.instance
+            .attachmentDisplay(widget.api, widget.images[i])
+            .then((_) {}, onError: (_, _) {}),
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -93,29 +111,69 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
   @override
   Widget build(BuildContext context) {
     final multi = widget.images.length > 1;
+    final dragFraction = (_dragOffsetY.abs() / 260).clamp(0.0, 1.0);
+    final bgOpacity = (1.0 - dragFraction * 0.72).clamp(0.25, 1.0);
+    final scale = (1.0 - dragFraction * 0.16).clamp(0.84, 1.0);
     final content = Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _page,
-            physics: _imageZoomed
-                ? const NeverScrollableScrollPhysics()
-                : const PageScrollPhysics(parent: ClampingScrollPhysics()),
-            itemCount: widget.images.length,
-            onPageChanged: (i) => setState(() {
-              _index = i;
-              _imageZoomed = false;
-            }),
-            itemBuilder: (context, i) => _ZoomableImage(
-              api: widget.api,
-              attachment: widget.images[i],
-              onZoomChanged: (zoomed) {
-                if (_imageZoomed == zoomed || !mounted) return;
-                setState(() => _imageZoomed = zoomed);
+      backgroundColor: Colors.black.withValues(alpha: bgOpacity),
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onVerticalDragUpdate: _imageZoomed
+            ? null
+            : (details) {
+                setState(() {
+                  _dragOffsetY = (_dragOffsetY + details.delta.dy).clamp(
+                    -260.0,
+                    360.0,
+                  );
+                });
               },
+        onVerticalDragEnd: _imageZoomed
+            ? null
+            : (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (_dragOffsetY.abs() > 120 || velocity.abs() > 650) {
+                  Navigator.of(context).pop();
+                } else {
+                  setState(() => _dragOffsetY = 0);
+                }
+              },
+        onVerticalDragCancel: () {
+          if (_dragOffsetY != 0) setState(() => _dragOffsetY = 0);
+        },
+        child: Stack(
+          children: [
+            Transform.translate(
+              offset: Offset(0, _dragOffsetY),
+              child: Transform.scale(
+                scale: scale,
+                child: PageView.builder(
+                  controller: _page,
+                  physics: _imageZoomed || _dragOffsetY != 0
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(
+                          parent: ClampingScrollPhysics(),
+                        ),
+                  itemCount: widget.images.length,
+                  onPageChanged: (i) {
+                    setState(() {
+                      _index = i;
+                      _imageZoomed = false;
+                    });
+                    _prewarmAdjacent(i);
+                  },
+                  itemBuilder: (context, i) => _ZoomableImage(
+                    api: widget.api,
+                    attachment: widget.images[i],
+                    heroTag: i == widget.initialIndex ? widget.heroTag : null,
+                    onZoomChanged: (zoomed) {
+                      if (_imageZoomed == zoomed || !mounted) return;
+                      setState(() => _imageZoomed = zoomed);
+                    },
+                  ),
+                ),
+              ),
             ),
-          ),
           if (isLinuxDesktop && multi)
             Positioned.fill(
               child: Padding(
@@ -200,6 +258,7 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
           ),
         ],
       ),
+      ),
     );
     if (!isLinuxDesktop) return content;
     return CallbackShortcuts(
@@ -219,10 +278,12 @@ class _MediaGalleryViewerState extends State<MediaGalleryViewer> {
 class _ZoomableImage extends StatefulWidget {
   final ApiClient api;
   final AttachmentModel attachment;
+  final Object? heroTag;
   final ValueChanged<bool>? onZoomChanged;
   const _ZoomableImage({
     required this.api,
     required this.attachment,
+    this.heroTag,
     this.onZoomChanged,
   });
 
@@ -294,6 +355,28 @@ class _ZoomableImageState extends State<_ZoomableImage>
     _anim.forward(from: 0);
   }
 
+  void _handlePointerScroll(PointerScrollEvent event) {
+    if (!isLinuxDesktop) return;
+    final currentScale = _tc.value.getMaxScaleOnAxis();
+    final factor = event.scrollDelta.dy < 0 ? 1.18 : (1 / 1.18);
+    final nextScale = (currentScale * factor).clamp(1.0, 6.0);
+    if ((nextScale - currentScale).abs() < 0.001) return;
+    if (nextScale <= 1.01) {
+      _tc.value = Matrix4.identity();
+      return;
+    }
+    final ratio = nextScale / currentScale;
+    final focal = event.localPosition;
+    final cur = _tc.value;
+    final nextTx = focal.dx - (focal.dx - cur.entry(0, 3)) * ratio;
+    final nextTy = focal.dy - (focal.dy - cur.entry(1, 3)) * ratio;
+    _tc.value = Matrix4.identity()
+      ..setEntry(0, 0, nextScale)
+      ..setEntry(1, 1, nextScale)
+      ..setEntry(0, 3, nextTx)
+      ..setEntry(1, 3, nextTy);
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Uint8List>(
@@ -313,39 +396,68 @@ class _ZoomableImageState extends State<_ZoomableImage>
             onRetry: () => setState(() => _future = _load()),
           );
         }
-        return GestureDetector(
-          onDoubleTapDown: (d) => _doubleTapDetails = d,
-          onDoubleTap: _handleDoubleTap,
-          onLongPress: () => showAttachmentActions(
-            context,
-            api: widget.api,
-            attachment: widget.attachment,
-          ),
-          child: InteractiveViewer(
-            transformationController: _tc,
-            minScale: 1,
-            maxScale: 6,
-            child: Center(
-              child: Image.memory(
-                snap.data!,
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-                cacheWidth:
-                    (MediaQuery.sizeOf(context).width *
-                            MediaQuery.devicePixelRatioOf(context) *
-                            2)
-                        .ceil()
-                        .clamp(1, 4096),
-                errorBuilder: (_, _, _) {
-                  return _ErrorBody(
-                    name: widget.attachment.displayName,
-                    onRetry: () => setState(() {
-                      _future = _load();
-                    }),
-                  );
-                },
+        final loadingHd = snap.connectionState != ConnectionState.done;
+        Widget imageWidget = Image.memory(
+          snap.data!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.medium,
+          cacheWidth:
+              (MediaQuery.sizeOf(context).width *
+                      MediaQuery.devicePixelRatioOf(context) *
+                      2)
+                  .ceil()
+                  .clamp(1, 4096),
+          errorBuilder: (_, _, _) {
+            return _ErrorBody(
+              name: widget.attachment.displayName,
+              onRetry: () => setState(() {
+                _future = _load();
+              }),
+            );
+          },
+        );
+        if (widget.heroTag != null) {
+          imageWidget = Hero(tag: widget.heroTag!, child: imageWidget);
+        }
+        return Listener(
+          onPointerSignal: (signal) {
+            if (signal is PointerScrollEvent) _handlePointerScroll(signal);
+          },
+          child: Stack(
+            children: [
+              GestureDetector(
+                onDoubleTapDown: (d) => _doubleTapDetails = d,
+                onDoubleTap: _handleDoubleTap,
+                onLongPress: () => showAttachmentActions(
+                  context,
+                  api: widget.api,
+                  attachment: widget.attachment,
+                ),
+                child: InteractiveViewer(
+                  transformationController: _tc,
+                  minScale: 1,
+                  maxScale: 6,
+                  child: Center(child: imageWidget),
+                ),
               ),
-            ),
+              if (loadingHd)
+                const Positioned(
+                  right: 16,
+                  bottom: 20,
+                  child: SafeArea(
+                    top: false,
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },

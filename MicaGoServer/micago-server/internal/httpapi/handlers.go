@@ -812,7 +812,7 @@ func (h *Handlers) SendText(w http.ResponseWriter, r *http.Request) {
 		OriginalMessage:   req.Message,
 		NormalizedMessage: micasend.NormalizeText(req.Message),
 		// Backdate slightly so clock skew / rounding never excludes the row.
-		SentAtUnixMilli: now.UnixMilli(),
+		SentAtUnixMilli: now.Add(-2 * time.Second).UnixMilli(),
 		CreatedAt:       now,
 		Timeout:         confirmationTimeout,
 	}

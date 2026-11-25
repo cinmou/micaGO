@@ -292,7 +292,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CODE_SIGN_ENTITLEMENTS = MicaGoCompanion/Automation.entitlements;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -304,7 +304,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.96.0;
+				MARKETING_VERSION = 0.97.0;
 				EXECUTABLE_NAME = "micago-server-ui";
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -322,7 +322,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CODE_SIGN_ENTITLEMENTS = MicaGoCompanion/Automation.entitlements;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -334,7 +334,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.96.0;
+				MARKETING_VERSION = 0.97.0;
 				EXECUTABLE_NAME = "micago-server-ui";
 				PRODUCT_BUNDLE_IDENTIFIER = com.micago.companion;
 				PRODUCT_NAME = "$(TARGET_NAME)";

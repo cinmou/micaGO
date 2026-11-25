@@ -983,10 +983,32 @@ public sealed partial class ShellPage : Page
     private async Task SendComposerAttachmentsAsync(IReadOnlyList<string> paths)
     {
         if(_viewModel?.SelectedChat is null||paths.Count==0)return;
+        var valid=new List<string>(paths.Count);
+        var rejected=new List<string>();
+        foreach(var path in paths)
+        {
+            try
+            {
+                if(new FileInfo(path).Length>MessageSemantics.MaxOutgoingAttachmentBytes)
+                {
+                    rejected.Add(Path.GetFileName(path));
+                    continue;
+                }
+            }
+            catch(IOException){}
+            catch(UnauthorizedAccessException){}
+            valid.Add(path);
+        }
+        if(rejected.Count>0)
+        {
+            var l=AppServices.Current.Localization;
+            await ShowSendErrorAsync(string.Format(CultureInfo.CurrentCulture,l["attachmentTooLarge"],rejected[0]));
+        }
+        if(valid.Count==0)return;
         _keepingMessageBottom=true;
         try
         {
-            await _viewModel.SendAttachmentsAsync(paths);
+            await _viewModel.SendAttachmentsAsync(valid);
             UpdateThreadSubtitle();
         }
         finally{_keepingMessageBottom=false;}

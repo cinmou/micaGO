@@ -10,8 +10,9 @@ import (
 // fakeSemanticSource feeds one chat + one reaction message carrying the
 // BlueBubbles-compatible semantic fields through SyncOnce.
 type fakeSemanticSource struct {
-	chats    []store.SyncChatRow
-	messages []store.SyncMessageRow
+	chats       []store.SyncChatRow
+	messages    []store.SyncMessageRow
+	attachments []store.SyncAttachmentRow
 }
 
 func (f fakeSemanticSource) ListSyncChats(context.Context) ([]store.SyncChatRow, error) {
@@ -24,7 +25,7 @@ func (f fakeSemanticSource) ListSyncRecentMessagesSince(context.Context, int64, 
 	return f.messages, nil
 }
 func (f fakeSemanticSource) ListSyncAttachmentsForMessages(context.Context, []string) ([]store.SyncAttachmentRow, error) {
-	return nil, nil
+	return f.attachments, nil
 }
 
 func strp(s string) *string { return &s }
@@ -202,5 +203,56 @@ ON CONFLICT(guid) DO UPDATE SET date_retracted = excluded.date_retracted;`); err
 	m := msgs[0]
 	if !m.IsRetracted || m.DateRetracted == nil || *m.DateRetracted != 1234 {
 		t.Fatalf("retracted state not surfaced: isRetracted=%v dateRetracted=%v", m.IsRetracted, m.DateRetracted)
+	}
+}
+
+func TestRetractedMessageStripsAttachments(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	src := fakeSemanticSource{
+		chats: []store.SyncChatRow{{GUID: "chatB", ServiceName: strp("iMessage")}},
+		messages: []store.SyncMessageRow{{
+			ChatGUID:            "chatB",
+			SourceRowID:         1,
+			GUID:                "m-unsent-img",
+			DateCreated:         intp(500),
+			CacheHasAttachments: true,
+		}},
+		attachments: []store.SyncAttachmentRow{{
+			GUID:        "att-1",
+			MessageGUID: "m-unsent-img",
+			Filename:    strp("/tmp/photo.jpg"),
+			MimeType:    strp("image/jpeg"),
+			TotalBytes:  2048,
+		}},
+	}
+	if _, err := SyncOnce(ctx, src, db, 100, 0); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if _, err := db.sqlDB.ExecContext(ctx, `
+INSERT INTO message_state (guid, date_retracted, fingerprint, updated_at)
+VALUES ('m-unsent-img', 1234, 'fp', 1)
+ON CONFLICT(guid) DO UPDATE SET date_retracted = excluded.date_retracted;`); err != nil {
+		t.Fatalf("seed message_state: %v", err)
+	}
+
+	msgs, err := db.ListChatMessages(ctx, "chatB", 50, 0, false)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	m := msgs[0]
+	if !m.IsRetracted {
+		t.Fatalf("expected retracted message, got isRetracted=%v", m.IsRetracted)
+	}
+	if len(m.Attachments) != 0 || m.CacheHasAttachments {
+		t.Fatalf("expected retracted message attachments stripped, got len=%d cacheHasAttachments=%v", len(m.Attachments), m.CacheHasAttachments)
+	}
+	if m.SemanticKind != store.SemanticKindRetracted {
+		t.Fatalf("expected semanticKind=retracted, got %q", m.SemanticKind)
 	}
 }

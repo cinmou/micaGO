@@ -119,10 +119,13 @@ class ChatComposerInput extends StatelessWidget {
             !keyboard.isMetaPressed &&
             (event is KeyDownEvent || event is KeyRepeatEvent)) {
           if (event is KeyDownEvent) {
-            Actions.invoke(
-              focusNode.context!,
-              const PasteTextIntent(SelectionChangedCause.keyboard),
-            );
+            final pasteContext = focusNode.context;
+            if (pasteContext != null) {
+              Actions.invoke(
+                pasteContext,
+                const PasteTextIntent(SelectionChangedCause.keyboard),
+              );
+            }
           }
           return KeyEventResult.handled;
         }

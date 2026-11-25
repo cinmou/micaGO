@@ -67,6 +67,47 @@ class LinuxDesktop {
 
   static Future<String?> pickContactFile(String title) =>
       _channel.invokeMethod<String>('pickContactFile', title);
+
+  /// Reads files or raw image bytes from the Linux clipboard asynchronously
+  /// via GTK3 (with Wayland `wl-paste` fallback). Returns `null` when the
+  /// clipboard has no file/image payload or when the runner does not implement
+  /// the method (e.g. in unit tests).
+  static Future<LinuxClipboardAttachments?> readClipboardAttachments() async {
+    try {
+      final raw = await _channel.invokeMethod<Object?>(
+        'readClipboardAttachments',
+      );
+      if (raw is! Map) return null;
+      final paths = (raw['paths'] as List?)
+          ?.whereType<String>()
+          .toList(growable: false);
+      if (paths != null && paths.isNotEmpty) {
+        return LinuxClipboardAttachments(paths: paths);
+      }
+      final bytes = raw['bytes'];
+      if (bytes is Uint8List && bytes.isNotEmpty) {
+        return LinuxClipboardAttachments(
+          imageBytes: bytes,
+          mimeType: raw['mimeType'] as String?,
+        );
+      }
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+}
+
+class LinuxClipboardAttachments {
+  final List<String> paths;
+  final Uint8List? imageBytes;
+  final String? mimeType;
+
+  const LinuxClipboardAttachments({
+    this.paths = const [],
+    this.imageBytes,
+    this.mimeType,
+  });
 }
 
 /// Apply the app preference without discarding the system accessibility scaler.

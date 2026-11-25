@@ -725,6 +725,9 @@ func (db *DB) attachMessageAttachments(ctx context.Context, messages []store.Mes
 
 	guids := make([]string, 0, len(messages))
 	for _, message := range messages {
+		if message.IsRetracted || message.DateRetracted != nil {
+			continue
+		}
 		guids = append(guids, message.GUID)
 	}
 
@@ -734,9 +737,14 @@ func (db *DB) attachMessageAttachments(ctx context.Context, messages []store.Mes
 	}
 
 	for i := range messages {
-		messages[i].Attachments = grouped[messages[i].GUID]
-		if messages[i].Attachments == nil {
+		if messages[i].IsRetracted || messages[i].DateRetracted != nil {
 			messages[i].Attachments = []store.AttachmentJSON{}
+			messages[i].CacheHasAttachments = false
+		} else {
+			messages[i].Attachments = grouped[messages[i].GUID]
+			if messages[i].Attachments == nil {
+				messages[i].Attachments = []store.AttachmentJSON{}
+			}
 		}
 		store.AnnotateMessageJSON(&messages[i])
 	}

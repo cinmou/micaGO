@@ -471,6 +471,7 @@ class MessageModel {
     int? dateDelivered,
     bool? isRead,
     bool? isDelivered,
+    bool? cacheHasAttachments,
     List<AttachmentModel>? attachments,
     LocalSendState? localState,
     int? dateCreated,
@@ -480,6 +481,9 @@ class MessageModel {
     bool? isRetracted,
     bool? isEdited,
   }) {
+    final effectiveDateRetracted = dateRetracted ?? this.dateRetracted;
+    final effectiveIsRetracted =
+        (isRetracted ?? this.isRetracted) || effectiveDateRetracted != null;
     return MessageModel(
       guid: guid ?? this.guid,
       text: text ?? this.text,
@@ -494,8 +498,12 @@ class MessageModel {
       isDelivered: isDelivered ?? this.isDelivered,
       handleId: handleId,
       handleService: handleService,
-      cacheHasAttachments: cacheHasAttachments,
-      attachments: attachments ?? this.attachments,
+      cacheHasAttachments: effectiveIsRetracted
+          ? false
+          : (cacheHasAttachments ?? this.cacheHasAttachments),
+      attachments: effectiveIsRetracted
+          ? const <AttachmentModel>[]
+          : (attachments ?? this.attachments),
       hasAttributedBody: hasAttributedBody,
       semanticKind: semanticKind,
       renderRecommendation: renderRecommendation,
@@ -515,9 +523,9 @@ class MessageModel {
       expressiveSendStyleId: expressiveSendStyleId,
       payloadDataPresent: payloadDataPresent,
       errorCode: errorCode ?? this.errorCode,
-      dateRetracted: dateRetracted ?? this.dateRetracted,
+      dateRetracted: effectiveDateRetracted,
       dateEdited: dateEdited ?? this.dateEdited,
-      isRetracted: isRetracted ?? this.isRetracted,
+      isRetracted: effectiveIsRetracted,
       isEdited: isEdited ?? this.isEdited,
       raw: raw,
       tempId: tempId ?? this.tempId,
@@ -528,21 +536,32 @@ class MessageModel {
   factory MessageModel.fromJson(Map<String, dynamic> json) {
     int? asInt(Object? v) => v is num ? v.toInt() : null;
     final handle = json['handle'];
+    final dateRetracted = asInt(json['dateRetracted']);
+    final semanticKind = json['semanticKind'] as String?;
+    final isRetracted =
+        ((json['isRetracted'] as bool?) ?? false) ||
+        dateRetracted != null ||
+        semanticKind == 'retracted';
     // Dedup attachments (C49). A real chat.db can hold several attachment records
     // (distinct guids) for one underlying file, so deduping by guid alone isn't
     // enough — the same photo / file / sticker / voice clip would still render
     // twice. Collapse by file identity (name + size + type) when a name exists,
     // else fall back to guid. The server dedupes the same way; this is the safety
     // net for history already cached before that fix.
+    // Retracted messages must never expose stale attachment rows that would
+    // trigger failed loads in the gallery, media prewarm, or chat details.
     final seenAttachmentKeys = <String>{};
-    final atts =
-        (json['attachments'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .map(AttachmentModel.fromJson)
-            .where((a) => !a.isOpaquePreviewPayload)
-            .where((a) => seenAttachmentKeys.add(_attachmentIdentityKey(a)))
-            .toList(growable: false) ??
-        const <AttachmentModel>[];
+    final atts = isRetracted
+        ? const <AttachmentModel>[]
+        : (json['attachments'] as List?)
+                  ?.whereType<Map<String, dynamic>>()
+                  .map(AttachmentModel.fromJson)
+                  .where((a) => !a.isOpaquePreviewPayload)
+                  .where(
+                    (a) => seenAttachmentKeys.add(_attachmentIdentityKey(a)),
+                  )
+                  .toList(growable: false) ??
+              const <AttachmentModel>[];
     return MessageModel(
       guid: (json['guid'] as String?) ?? '',
       text: json['text'] as String?,
@@ -559,10 +578,11 @@ class MessageModel {
       handleService: handle is Map<String, dynamic>
           ? handle['service'] as String?
           : null,
-      cacheHasAttachments: (json['cacheHasAttachments'] as bool?) ?? false,
+      cacheHasAttachments:
+          !isRetracted && ((json['cacheHasAttachments'] as bool?) ?? false),
       attachments: atts,
       hasAttributedBody: (json['hasAttributedBody'] as bool?) ?? false,
-      semanticKind: json['semanticKind'] as String?,
+      semanticKind: semanticKind,
       renderRecommendation: json['renderRecommendation'] as String?,
       isDebugOnly: (json['isDebugOnly'] as bool?) ?? false,
       unsupportedReason: json['unsupportedReason'] as String?,
@@ -580,9 +600,9 @@ class MessageModel {
       expressiveSendStyleId: json['expressiveSendStyleId'] as String?,
       payloadDataPresent: (json['payloadDataPresent'] as bool?) ?? false,
       errorCode: asInt(json['error']) ?? 0,
-      dateRetracted: asInt(json['dateRetracted']),
+      dateRetracted: dateRetracted,
       dateEdited: asInt(json['dateEdited']),
-      isRetracted: (json['isRetracted'] as bool?) ?? false,
+      isRetracted: isRetracted,
       isEdited: (json['isEdited'] as bool?) ?? false,
       raw: json,
       tempId: json['tempId'] as String?,

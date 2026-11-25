@@ -9,12 +9,62 @@ public static partial class MessageSemantics
         "message", "attachment", "file", "obj", "object", "null",
     };
 
+    public const long MaxOutgoingAttachmentBytes = 100L * 1024 * 1024;
+
     public static string VisibleText(string? value)
     {
         var text=Whitespace().Replace((value??string.Empty).Replace('\uFFFC',' ').Replace('\uFFFD',' ').Trim()," ");
         if(text.Length==0)return string.Empty;
         var real=text.Any(character=>char.IsLetterOrDigit(character)||character>0x7f);
         return real?text:string.Empty;
+    }
+
+    /// <summary>
+    /// Comparable text for send reconciliation: also strips BOM and emoji
+    /// variation selectors (U+FE0E/U+FE0F) so keyboard vs macOS Messages
+    /// presentation differences (e.g. "❤️" vs "❤") still reconcile cleanly.
+    /// </summary>
+    public static string ComparableText(string? value)
+    {
+        var stripped = (value ?? string.Empty)
+            .Replace("\uFEFF", string.Empty, StringComparison.Ordinal)
+            .Replace("\uFE0E", string.Empty, StringComparison.Ordinal)
+            .Replace("\uFE0F", string.Empty, StringComparison.Ordinal);
+        return VisibleText(stripped);
+    }
+
+    /// <summary>
+    /// Visual-area-balanced chat image sizing matching the Flutter client:
+    /// 1:2 portrait stays 153x306, 1:1 square narrows to 228x228, wide images
+    /// cap at 276 px, and ultra-tall screenshots clamp to 0.45 with a badge.
+    /// </summary>
+    public static (double Width, double Height, bool IsLongImage) ComputeChatImageSize(
+        double pixelWidth,
+        double pixelHeight,
+        double maxWidth = 276,
+        double maxHeight = 306)
+    {
+        const double maxSquareArea = 228.0 * 228.0;
+        const double minAspect = 0.45;
+        const double maxAspect = 2.6;
+        const double longImageRatioThreshold = 0.42;
+        if (pixelWidth <= 0 || pixelHeight <= 0)
+        {
+            return (240, 170, false);
+        }
+        var rawAspect = pixelWidth / pixelHeight;
+        var isLongImage = rawAspect < longImageRatioThreshold;
+        var aspect = Math.Clamp(rawAspect, minAspect, maxAspect);
+        var width = Math.Min(maxWidth, maxHeight * aspect);
+        var height = width / aspect;
+        var area = width * height;
+        if (area > maxSquareArea)
+        {
+            var scale = Math.Sqrt(maxSquareArea / area);
+            width *= scale;
+            height *= scale;
+        }
+        return (Math.Max(44, width), Math.Max(44, height), isLongImage);
     }
 
     /// <summary>Flutter-compatible text for a conversation-list preview.</summary>
@@ -28,10 +78,11 @@ public static partial class MessageSemantics
 
     public static string PreviewText(Message message)
     {
+        if (message.IsRetracted) return "Message unsent";
         var text = VisibleText(message.Text);
         if (text.Length > 0 && !AttachmentPlaceholders.Contains(text)) return text;
         if (message.Media.Count > 0 || !string.IsNullOrWhiteSpace(message.AttachmentLabel)) return "[Attachment]";
-        return message.IsRetracted ? "Message unsent" : PreviewText(text);
+        return PreviewText(text);
     }
 
     public static bool AttachmentSendMatches(Message local, Message server)
@@ -55,7 +106,7 @@ public static partial class MessageSemantics
         if (local.Id == server.Id) return true;
         if (local.DateCreated <= 0 || server.DateCreated <= 0) return false;
         var distance = Math.Abs(local.DateCreated - server.DateCreated);
-        var localText = VisibleText(local.Text); var serverText = VisibleText(server.Text);
+        var localText = ComparableText(local.Text); var serverText = ComparableText(server.Text);
         if (local.Media.Count > 0 && localText.Length == 0)
             return distance <= TimeSpan.FromMinutes(5).TotalMilliseconds && serverText.Length == 0 && AttachmentSendMatches(local, server);
         return localText.Length > 0 && string.Equals(localText, serverText, StringComparison.OrdinalIgnoreCase) && distance <= TimeSpan.FromMinutes(2).TotalMilliseconds;
@@ -67,8 +118,8 @@ public static partial class MessageSemantics
         var pending = rows.Where(row => row.IsPending && row.ChatId.Equals(server.ChatId,StringComparison.OrdinalIgnoreCase)).ToArray();
         var exact = pending.Where(row => ShouldReconcile(row, server)).OrderBy(row => Math.Abs(row.DateCreated - server.DateCreated)).ToArray();
         if (exact.Length > 0) return exact[0];
-        if (!server.IsOutgoing || VisibleText(server.Text).Length > 0 || server.Media.Count == 0 || server.DateCreated <= 0) return null;
-        var fallback = pending.Where(row => row.DeliveryState != MessageDeliveryState.Failed && row.IsOutgoing && row.Media.Count > 0 && VisibleText(row.Text).Length == 0 && row.DateCreated > 0 && Math.Abs(row.DateCreated - server.DateCreated) <= TimeSpan.FromMinutes(5).TotalMilliseconds).ToArray();
+        if (!server.IsOutgoing || ComparableText(server.Text).Length > 0 || server.Media.Count == 0 || server.DateCreated <= 0) return null;
+        var fallback = pending.Where(row => row.DeliveryState != MessageDeliveryState.Failed && row.IsOutgoing && row.Media.Count > 0 && ComparableText(row.Text).Length == 0 && row.DateCreated > 0 && Math.Abs(row.DateCreated - server.DateCreated) <= TimeSpan.FromMinutes(5).TotalMilliseconds).ToArray();
         return fallback.Length == 1 ? fallback[0] : null;
     }
 

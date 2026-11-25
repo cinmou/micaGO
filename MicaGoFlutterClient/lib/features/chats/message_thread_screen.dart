@@ -7,7 +7,7 @@ import 'dart:math' as math;
 
 import 'package:confetti/confetti.dart';
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, visibleForTesting;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +21,7 @@ import '../../core/app_controller.dart';
 import '../../core/l10n/app_localizations.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/websocket_client.dart';
+import '../../core/platform/android_emoji_font.dart';
 import '../../core/platform/scroll_capture_service.dart';
 import 'realtime_event_helpers.dart' as rt;
 import '../../core/theme_controller.dart';
@@ -40,6 +41,7 @@ import 'avatar_crop_screen.dart';
 import 'chat_service.dart';
 import '../settings/message_display_controller.dart';
 import 'emoji_text.dart';
+import 'image_input_helpers.dart';
 import 'message_debug_sheet.dart';
 import 'message_display.dart';
 import 'message_render.dart';
@@ -509,6 +511,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   // C24: the emoji panel is now a bottom panel (below the composer), mutually
   // exclusive with the attachment panel.
   bool _emojiOpen = false;
+  bool _draggingFiles = false;
   final List<StagedAttachment> _staged = [];
 
   void _toggleAttachPanel() {
@@ -586,9 +589,39 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     );
   }
 
+  bool _pastingAttachments = false;
+
   Future<bool> _pasteAttachments() async {
+    if (_pastingAttachments) return true;
+    _pastingAttachments = true;
     final chatGuid = _active.guid;
     try {
+      if (isLinuxDesktop) {
+        final native = await LinuxDesktop.readClipboardAttachments();
+        if (!mounted || _active.guid != chatGuid) return true;
+        if (native != null) {
+          if (native.paths.isNotEmpty) {
+            if (!_canSendAttachments) {
+              TopBanner.show(
+                context,
+                MicaLocalizations.of(context).t('chat.attachmentsNotAllowed'),
+              );
+            } else {
+              await _stageAttachmentPaths(native.paths, chatGuid);
+            }
+            return true;
+          }
+          final bytes = native.imageBytes;
+          if (bytes != null && bytes.isNotEmpty) {
+            final mime =
+                detectImageMimeType(bytes) ?? native.mimeType ?? 'image/png';
+            _onKeyboardContentInserted(
+              KeyboardInsertedContent(mimeType: mime, uri: '', data: bytes),
+            );
+            return true;
+          }
+        }
+      }
       // Android clipboard file URIs need ContentResolver access. The existing
       // share channel copies them to the app cache without loading them in RAM.
       final paths = Platform.isAndroid
@@ -612,8 +645,9 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       final bytes = await Pasteboard.image;
       if (!mounted || _active.guid != chatGuid) return true;
       if (bytes == null || bytes.isEmpty) return false;
+      final mime = detectImageMimeType(bytes) ?? 'image/png';
       _onKeyboardContentInserted(
-        KeyboardInsertedContent(mimeType: 'image/png', uri: '', data: bytes),
+        KeyboardInsertedContent(mimeType: mime, uri: '', data: bytes),
       );
       return true;
     } on MissingPluginException {
@@ -623,6 +657,8 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
         _showAttachmentImportError(error);
       }
       return true;
+    } finally {
+      _pastingAttachments = false;
     }
   }
 
@@ -682,9 +718,58 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
   }
 
   void _onPicked(List<StagedAttachment> picked) {
+    _stageValidatedAttachments(picked, collapsePanel: true);
+  }
+
+  void _stageValidatedAttachments(
+    List<StagedAttachment> incoming, {
+    required bool collapsePanel,
+    bool closeEmoji = false,
+  }) {
+    final accepted = <StagedAttachment>[];
+    var rejectedOversized = false;
+    for (final item in incoming) {
+      if (item.size > maxOutgoingAttachmentBytes) {
+        rejectedOversized = true;
+        continue;
+      }
+      accepted.add(item);
+    }
+    if (accepted.isNotEmpty) {
+      setState(() {
+        _staged.addAll(accepted);
+        if (collapsePanel) _attachOpen = false;
+        if (closeEmoji) _emojiOpen = false;
+      });
+      final chatGuid = _active.guid;
+      for (final item in accepted) {
+        if (item.isImage && item.previewAspectRatio == null) {
+          unawaited(_populateStagedAspectRatio(item, chatGuid));
+        }
+      }
+    }
+    if (rejectedOversized && mounted) {
+      TopBanner.show(
+        context,
+        MicaLocalizations.of(context).t('chat.attachmentTooLarge'),
+        kind: TopBannerKind.error,
+      );
+    }
+  }
+
+  Future<void> _populateStagedAspectRatio(
+    StagedAttachment item,
+    String chatGuid,
+  ) async {
+    final ratio = await probeImageAspectRatio(
+      bytes: item.bytes,
+      path: item.path,
+    );
+    if (ratio == null || !mounted || _active.guid != chatGuid) return;
+    final index = _staged.indexWhere((s) => identical(s, item));
+    if (index < 0) return;
     setState(() {
-      _staged.addAll(picked);
-      _attachOpen = false; // collapse the panel; show the staged strip
+      _staged[index] = _staged[index].withAspectRatio(ratio);
     });
   }
 
@@ -705,25 +790,15 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       );
       return;
     }
+    final detectedMime = detectImageMimeType(bytes);
+    final effectiveMime = detectedMime ?? content.mimeType;
     final filename =
-        'keyboard_${DateTime.now().millisecondsSinceEpoch}${_extensionForMime(content.mimeType)}';
-    setState(() {
-      _staged.add(StagedAttachment(bytes: bytes, filename: filename));
-      _attachOpen = false;
-      _emojiOpen = false;
-    });
-  }
-
-  String _extensionForMime(String mimeType) {
-    final mime = mimeType.toLowerCase();
-    if (mime == 'image/gif') return '.gif';
-    if (mime == 'image/jpeg' || mime == 'image/jpg') return '.jpg';
-    if (mime == 'image/bmp') return '.bmp';
-    if (mime == 'image/tiff') return '.tiff';
-    if (mime == 'image/webp') return '.webp';
-    if (mime == 'image/heic') return '.heic';
-    if (mime == 'image/heif') return '.heif';
-    return '.png';
+        'keyboard_${DateTime.now().millisecondsSinceEpoch}${extensionForImageMime(effectiveMime)}';
+    _stageValidatedAttachments(
+      [StagedAttachment(bytes: bytes, filename: filename)],
+      collapsePanel: true,
+      closeEmoji: true,
+    );
   }
 
   // Toggle a gallery asset in/out of the staged selection (multi-select), like
@@ -741,7 +816,19 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       final file = await asset.originFile;
       if (file == null) return;
       final size = await file.length();
-      final aspect = asset.width / asset.height;
+      if (size > maxOutgoingAttachmentBytes) {
+        if (mounted) {
+          TopBanner.show(
+            context,
+            MicaLocalizations.of(context).t('chat.attachmentTooLarge'),
+            kind: TopBannerKind.error,
+          );
+        }
+        return;
+      }
+      final aspect = asset.width > 0 && asset.height > 0
+          ? asset.width / asset.height
+          : 1.0;
       final thumbnail = await asset.thumbnailDataWithSize(
         ThumbnailSize(360, (360 / aspect).round().clamp(1, 1440)),
       );
@@ -784,7 +871,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
     final text = _composer.text.trim();
     final staged = List<StagedAttachment>.from(_staged);
     final controller = _controller;
-    if (controller.attachmentSending && staged.isNotEmpty) return;
     if (text.isNotEmpty && _canSendText) {
       _composer.clear();
       unawaited(controller.send(text));
@@ -1004,7 +1090,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
                   // Send is enabled when there's text OR staged attachments.
                   canSend: _composerHasText.value || _staged.isNotEmpty,
                   onSend: _send,
-                  attachmentSending: _controller.attachmentSending,
                   attachOpen: _attachOpen,
                   onAttach: _toggleAttachPanel,
                   onVoice: _startVoice,
@@ -1027,7 +1112,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
                   selectedAssetIds: _staged
                       .map((s) => s.sourceId)
                       .whereType<String>()
-                      .toSet(),
+                      .toList(growable: false),
                   onToggleAsset: _toggleAsset,
                   onPicked: _onPicked,
                   onError: (msg) {
@@ -1141,21 +1226,72 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
       ),
     );
     final themedContent = isLinuxDesktop
-        ? DropTarget(
-            enable:
-                _canSendAttachments &&
-                !_selectMode &&
-                (ModalRoute.of(context)?.isCurrent ?? true),
-            onDragDone: (details) {
-              if (ModalRoute.of(context)?.isCurrent == false) return;
-              unawaited(
-                _stageAttachmentPaths(
-                  details.files.map((file) => file.path),
-                  _active.guid,
-                ),
-              );
+        ? CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.keyV, control: true):
+                  () {
+                    if (_composerFocused ||
+                        !_canSendAttachments ||
+                        _selectMode ||
+                        ModalRoute.of(context)?.isCurrent == false) {
+                      return;
+                    }
+                    unawaited(_pasteAttachments());
+                  },
             },
-            child: decoratedContent,
+            child: DropTarget(
+              enable:
+                  _canSendAttachments &&
+                  !_selectMode &&
+                  (ModalRoute.of(context)?.isCurrent ?? true),
+              onDragEntered: (_) {
+                if (mounted && !_draggingFiles) {
+                  setState(() => _draggingFiles = true);
+                }
+              },
+              onDragExited: (_) {
+                if (mounted && _draggingFiles) {
+                  setState(() => _draggingFiles = false);
+                }
+              },
+              onDragDone: (details) {
+                if (mounted && _draggingFiles) {
+                  setState(() => _draggingFiles = false);
+                }
+                if (ModalRoute.of(context)?.isCurrent == false) return;
+                unawaited(
+                  _stageAttachmentPaths(
+                    details.files.map((file) => file.path),
+                    _active.guid,
+                  ),
+                );
+              },
+              child: Stack(
+                children: [
+                  decoratedContent,
+                  if (_draggingFiles)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Container(
+                          margin: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.65),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           )
         : decoratedContent;
 
@@ -1430,10 +1566,14 @@ class _MessageThreadScreenState extends State<MessageThreadScreen>
             localeTag: localeTag,
             resolvePresentationKey: _controller.presentationKeyFor,
           );
-          _threadImages = _controller.messages
-              .expand((m) => m.attachments)
-              .where((a) => a.canRenderInlineImage)
-              .toList(growable: false);
+          _threadImages = [
+            for (final item in _presentationItems)
+              if (item is MessageViewItem &&
+                  !item.isSystem &&
+                  !item.message.isRetracted &&
+                  item.message.dateRetracted == null)
+                ...item.message.attachments.where((a) => a.canRenderInlineImage),
+          ];
           _rowIndices = {
             for (var i = 0; i < _presentationItems.length; i++)
               _presentationItems[i].key: _presentationItems.length - 1 - i,
@@ -3216,7 +3356,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final liquidGlass = _isLiquidGlassTheme(context);
     final fromMe = message.isFromMe;
     final showGroupSender = !fromMe && widget.senderName != null;
-    final hasMedia = message.hasAttachments && api != null;
+    final hasMedia =
+        !message.isRetracted &&
+        message.dateRetracted == null &&
+        message.hasAttachments &&
+        api != null;
     // C24: emoji-only messages render larger and without the colored bubble
     // (BlueBubbles-style). Mixed text + emoji stays a normal text bubble.
     final body = widget.body;
@@ -3291,22 +3435,47 @@ class _MessageBubbleState extends State<_MessageBubble> {
         ? CrossAxisAlignment.end
         : CrossAxisAlignment.start;
 
+    final albumImages = hasMedia
+        ? message.attachments
+              .where(
+                (a) =>
+                    a.canRenderInlineImage && !a.isStickerLike && !a.isVideo,
+              )
+              .toList(growable: false)
+        : const <AttachmentModel>[];
+    final useAlbumGrid = albumImages.length >= 2;
     final mediaWidgets = <Widget>[
+      if (hasMedia && useAlbumGrid)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: MediaAlbumGrid(
+            api: api,
+            images: albumImages,
+            galleryImages: galleryImages,
+            galleryIndexFor: (a) => _imageGalleryIndex(a, galleryImages),
+            onLongPress: (position, attachment) =>
+                widget.onActions(position, attachment),
+          ),
+        ),
       if (hasMedia)
         for (final a in message.attachments)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: AttachmentView(
-              api: api,
-              attachment: a,
-              imageSiblings: galleryImages,
-              imageIndex: a.canRenderInlineImage
-                  ? _imageGalleryIndex(a, galleryImages)
-                  : 0,
-              onLongPress: (position, attachment) =>
-                  widget.onActions(position, attachment),
+          if (!useAlbumGrid ||
+              !a.canRenderInlineImage ||
+              a.isStickerLike ||
+              a.isVideo)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: AttachmentView(
+                api: api,
+                attachment: a,
+                imageSiblings: galleryImages,
+                imageIndex: a.canRenderInlineImage
+                    ? _imageGalleryIndex(a, galleryImages)
+                    : 0,
+                onLongPress: (position, attachment) =>
+                    widget.onActions(position, attachment),
+              ),
             ),
-          ),
     ];
     final textWidgets = <Widget>[
       if (interactiveOnly) _InteractiveAppCard(message: message),
@@ -4073,8 +4242,9 @@ class _AssociatedStickerStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final attachments = [
       for (final message in stickers)
-        for (final attachment in message.attachments)
-          if (attachment.isStickerLike) attachment,
+        if (!message.isRetracted && message.dateRetracted == null)
+          for (final attachment in message.attachments)
+            if (attachment.isStickerLike) attachment,
     ];
     if (attachments.isEmpty) return const SizedBox.shrink();
     return ConstrainedBox(
@@ -4454,18 +4624,25 @@ class _LinkedMessageTextState extends State<_LinkedMessageText> {
 
   @override
   Widget build(BuildContext context) {
-    final textStyle = _withCompatSymbolFallback(widget.style);
+    final inheritedFallback = DefaultTextStyle.of(
+      context,
+    ).style.fontFamilyFallback;
+    final textStyle = withCompatSymbolFallback(
+      widget.style,
+      inheritedFallback: inheritedFallback,
+    );
     final hasLinks = urlPreviewRegex.hasMatch(widget.text);
     final hasShibuya = _shibuyaEmoji.hasMatch(widget.text);
     Widget content(BuildContext textContext) {
       if (!hasLinks && !hasShibuya) {
         return Text(widget.text, style: textStyle);
       }
+      final richStyle = DefaultTextStyle.of(textContext).style.merge(textStyle);
       return RichText(
         textScaler: isLinuxDesktop
             ? MediaQuery.textScalerOf(textContext)
             : TextScaler.noScaling,
-        text: TextSpan(style: textStyle, children: _spans ?? const []),
+        text: TextSpan(style: richStyle, children: _spans ?? const []),
         selectionRegistrar: isLinuxDesktop
             ? SelectionContainer.maybeOf(textContext)
             : null,
@@ -4553,9 +4730,19 @@ class _LinkedMessageTextState extends State<_LinkedMessageText> {
   }
 }
 
-TextStyle _withCompatSymbolFallback(TextStyle? style) {
+@visibleForTesting
+TextStyle withCompatSymbolFallback(
+  TextStyle? style, {
+  List<String>? inheritedFallback,
+  String? extraEmojiFont,
+}) {
   const compatFamily = 'MicaGoCompatSymbols';
-  final fallback = style?.fontFamilyFallback ?? const <String>[];
+  final updatedEmoji =
+      extraEmojiFont ?? AndroidUpdatedEmojiFont.loadedFamily.value;
+  final fallback = <String>[
+    ...?style?.fontFamilyFallback,
+    ...?inheritedFallback,
+  ];
   if (isLinuxDesktop) {
     return (style ?? const TextStyle()).copyWith(
       fontFamily: style?.fontFamily ?? 'sans-serif',
@@ -4563,12 +4750,15 @@ TextStyle _withCompatSymbolFallback(TextStyle? style) {
         'Noto Color Emoji',
         compatFamily,
         ...fallback,
-      }.toList(),
+      }.toList(growable: false),
     );
   }
-  if (fallback.contains(compatFamily)) return style ?? const TextStyle();
   return (style ?? const TextStyle()).copyWith(
-    fontFamilyFallback: <String>[compatFamily, ...fallback],
+    fontFamilyFallback: <String>{
+      compatFamily,
+      if (updatedEmoji != null && updatedEmoji.isNotEmpty) updatedEmoji,
+      ...fallback,
+    }.toList(growable: false),
   );
 }
 
@@ -5102,7 +5292,6 @@ class _Composer extends StatefulWidget {
   final bool serviceCanSend;
   final bool canSend;
   final VoidCallback onSend;
-  final bool attachmentSending;
   final bool attachOpen;
   final VoidCallback onAttach;
   final VoidCallback onVoice;
@@ -5121,7 +5310,6 @@ class _Composer extends StatefulWidget {
     required this.serviceCanSend,
     required this.canSend,
     required this.onSend,
-    required this.attachmentSending,
     required this.attachOpen,
     required this.onAttach,
     required this.onVoice,
@@ -5280,28 +5468,19 @@ class _ComposerState extends State<_Composer> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  widget.attachmentSending
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : IconButton(
-                          key: _attachButtonKey,
-                          onPressed: _openAttachmentMenu,
-                          tooltip: MicaLocalizations.of(
-                            context,
-                          ).t('chat.attachments'),
-                          color: attachIconColor,
-                          icon: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 150),
-                            transitionBuilder: (child, anim) =>
-                                ScaleTransition(scale: anim, child: child),
-                            child: Icon(
-                              widget.attachOpen ? Icons.close : Icons.add,
+                  IconButton(
+                    key: _attachButtonKey,
+                    onPressed: _openAttachmentMenu,
+                    tooltip: MicaLocalizations.of(
+                      context,
+                    ).t('chat.attachments'),
+                    color: attachIconColor,
+                    icon: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 150),
+                      transitionBuilder: (child, anim) =>
+                          ScaleTransition(scale: anim, child: child),
+                      child: Icon(
+                        widget.attachOpen ? Icons.close : Icons.add,
                               key: ValueKey(widget.attachOpen),
                             ),
                           ),
@@ -5422,26 +5601,14 @@ class _ComposerState extends State<_Composer> {
     final attachAndInput = Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        widget.attachmentSending
-            ? const SizedBox(
-                width: 52,
-                height: 52,
-                child: Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              )
-            : MicaGlassCircleButton(
-                key: _attachButtonKey,
-                useOwnLayer: !sharedGlass,
-                tooltip: MicaLocalizations.of(context).t('chat.attachments'),
-                onPressed: _openAttachmentMenu,
-                color: scheme.surface.withValues(alpha: 0.68),
-                icon: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
+        MicaGlassCircleButton(
+          key: _attachButtonKey,
+          useOwnLayer: !sharedGlass,
+          tooltip: MicaLocalizations.of(context).t('chat.attachments'),
+          onPressed: _openAttachmentMenu,
+          color: scheme.surface.withValues(alpha: 0.68),
+          icon: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
                   transitionBuilder: (child, anim) =>
                       ScaleTransition(scale: anim, child: child),
                   child: Icon(
@@ -6070,8 +6237,18 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
     final routeGuids = widget.merged.routes.map((r) => r.guid).toList();
     final muted = app.areChatsMuted(routeGuids);
     final detailMessages = _detailMessages;
+    final visibleDetailMessages = detailMessages
+        .where((message) {
+          if (message.isRetracted || message.dateRetracted != null) {
+            return false;
+          }
+          final kind = renderableKindFor(message);
+          return kind != MessageRenderableKind.retracted &&
+              kind != MessageRenderableKind.unknown;
+        })
+        .toList(growable: false);
     final attachmentsByKey = <String, AttachmentModel>{};
-    for (final message in detailMessages) {
+    for (final message in visibleDetailMessages) {
       for (var i = 0; i < message.attachments.length; i++) {
         final attachment = message.attachments[i];
         if (attachment.isOpaquePreviewPayload) continue;
@@ -6096,7 +6273,7 @@ class _ThreadDetailsSheetState extends State<_ThreadDetailsSheet> {
         .take(18)
         .toList(growable: false);
     final linkSet = <String>{};
-    for (final m in detailMessages) {
+    for (final m in visibleDetailMessages) {
       final text = displayText(m);
       final url = text == null ? null : firstUrlInText(text);
       if (url != null) linkSet.add(url);

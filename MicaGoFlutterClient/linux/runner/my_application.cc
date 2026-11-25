@@ -1,5 +1,9 @@
 #include "my_application.h"
 
+#include <cstring>
+#include <string>
+#include <vector>
+
 #include <flutter_linux/flutter_linux.h>
 #ifdef USE_AYATANA_APPINDICATOR
 #include <libayatana-appindicator/app-indicator.h>
@@ -97,6 +101,398 @@ static FlValue* pick_files(GtkWindow* parent, const gchar* title) {
     }
   }
   return g_steal_pointer(&result);
+}
+
+static constexpr size_t kMaxClipboardImageBytes = 50 * 1024 * 1024;
+
+static FlValue* parse_clipboard_uri_paths(const gchar* raw, gsize length) {
+  if (raw == nullptr || length == 0) return nullptr;
+  g_autofree gchar* copy = g_strndup(raw, length);
+  g_auto(GStrv) lines = g_strsplit(copy, "\n", -1);
+  g_autoptr(FlValue) paths = fl_value_new_list();
+  size_t count = 0;
+  for (gchar** it = lines; it != nullptr && *it != nullptr; ++it) {
+    gchar* line = g_strstrip(*it);
+    if (*line == '\0' || line[0] == '#' || g_strcmp0(line, "copy") == 0 ||
+        g_strcmp0(line, "cut") == 0) {
+      continue;
+    }
+    g_autofree gchar* decoded = nullptr;
+    if (g_str_has_prefix(line, "file://")) {
+      decoded = g_filename_from_uri(line, nullptr, nullptr);
+    } else if (line[0] == '/') {
+      decoded = g_strdup(line);
+    }
+    if (decoded != nullptr && g_file_test(decoded, G_FILE_TEST_IS_REGULAR)) {
+      fl_value_append_take(paths, fl_value_new_string(decoded));
+      count++;
+    }
+  }
+  if (count == 0) return nullptr;
+  FlValue* map = fl_value_new_map();
+  fl_value_set_string_take(map, "paths", g_steal_pointer(&paths));
+  return map;
+}
+
+static FlValue* make_clipboard_image_result(const uint8_t* data, size_t length,
+                                            const char* mime_type) {
+  if (data == nullptr || length == 0 || length > kMaxClipboardImageBytes) {
+    return nullptr;
+  }
+  FlValue* map = fl_value_new_map();
+  fl_value_set_string_take(map, "bytes", fl_value_new_uint8_list(data, length));
+  fl_value_set_string_take(
+      map, "mimeType",
+      fl_value_new_string(mime_type != nullptr ? mime_type : "image/png"));
+  return map;
+}
+
+struct ClipboardAttachmentRequest {
+  FlMethodCall* call = nullptr;
+  GtkClipboard* clipboard = nullptr;
+  GCancellable* cancellable = nullptr;
+  guint timeout_id = 0;
+  int inflight = 0;
+  gboolean completed = FALSE;
+  GdkAtom uri_atom = GDK_NONE;
+  std::vector<std::string> image_mimes;
+  size_t next_mime_index = 0;
+  gboolean has_any_image = FALSE;
+  gboolean allow_wl_paste_fallback = FALSE;
+  std::string wl_paste_mime;
+  gboolean wl_paste_is_uri = FALSE;
+};
+
+static void clipboard_release(ClipboardAttachmentRequest* req) {
+  req->inflight--;
+  if (req->completed && req->inflight <= 0) {
+    g_clear_object(&req->call);
+    g_clear_object(&req->cancellable);
+    delete req;
+  }
+}
+
+static void clipboard_finish(ClipboardAttachmentRequest* req, FlValue* result) {
+  if (req->completed) {
+    if (result != nullptr) fl_value_unref(result);
+    return;
+  }
+  req->completed = TRUE;
+  if (req->timeout_id != 0) {
+    g_source_remove(req->timeout_id);
+    req->timeout_id = 0;
+  }
+  if (req->cancellable != nullptr) {
+    g_cancellable_cancel(req->cancellable);
+  }
+  g_autoptr(FlValue) owned = result;
+  fl_method_call_respond_success(req->call, owned, nullptr);
+}
+
+static gboolean clipboard_request_timeout(gpointer user_data) {
+  auto* req = static_cast<ClipboardAttachmentRequest*>(user_data);
+  req->timeout_id = 0;
+  clipboard_finish(req, nullptr);
+  if (req->inflight <= 0) {
+    g_clear_object(&req->call);
+    g_clear_object(&req->cancellable);
+    delete req;
+  }
+  return G_SOURCE_REMOVE;
+}
+
+static void clipboard_try_next_image(ClipboardAttachmentRequest* req);
+
+static void on_wl_paste_data(GObject* source, GAsyncResult* result,
+                             gpointer user_data) {
+  auto* req = static_cast<ClipboardAttachmentRequest*>(user_data);
+  g_autoptr(GBytes) stdout_bytes = nullptr;
+  g_autoptr(GError) error = nullptr;
+  gboolean ok = g_subprocess_communicate_finish(G_SUBPROCESS(source), result,
+                                                &stdout_bytes, nullptr, &error);
+  if (!req->completed && ok && stdout_bytes != nullptr &&
+      g_subprocess_get_successful(G_SUBPROCESS(source))) {
+    gsize size = 0;
+    const auto* raw = static_cast<const uint8_t*>(
+        g_bytes_get_data(stdout_bytes, &size));
+    if (req->wl_paste_is_uri) {
+      FlValue* parsed =
+          parse_clipboard_uri_paths(reinterpret_cast<const gchar*>(raw), size);
+      clipboard_finish(req, parsed);
+    } else {
+      clipboard_finish(
+          req, make_clipboard_image_result(raw, size,
+                                           req->wl_paste_mime.c_str()));
+    }
+  } else if (!req->completed) {
+    clipboard_finish(req, nullptr);
+  }
+  clipboard_release(req);
+}
+
+static void on_wl_paste_types(GObject* source, GAsyncResult* result,
+                              gpointer user_data) {
+  auto* req = static_cast<ClipboardAttachmentRequest*>(user_data);
+  g_autoptr(GBytes) stdout_bytes = nullptr;
+  g_autoptr(GError) error = nullptr;
+  gboolean ok = g_subprocess_communicate_finish(G_SUBPROCESS(source), result,
+                                                &stdout_bytes, nullptr, &error);
+  if (req->completed) {
+    clipboard_release(req);
+    return;
+  }
+  if (!ok || stdout_bytes == nullptr ||
+      !g_subprocess_get_successful(G_SUBPROCESS(source))) {
+    clipboard_finish(req, nullptr);
+    clipboard_release(req);
+    return;
+  }
+
+  gsize size = 0;
+  const auto* raw = static_cast<const gchar*>(
+      g_bytes_get_data(stdout_bytes, &size));
+  g_autofree gchar* text = g_strndup(raw, size);
+  g_auto(GStrv) lines = g_strsplit(text, "\n", -1);
+
+  std::string chosen;
+  gboolean is_uri = FALSE;
+  static const char* kPreferredImages[] = {
+      "image/png", "image/jpeg", "image/webp",
+      "image/gif", "image/bmp",  "image/tiff",
+  };
+  for (gchar** it = lines; it != nullptr && *it != nullptr; ++it) {
+    gchar* line = g_strstrip(*it);
+    if (g_strcmp0(line, "x-special/gnome-copied-files") == 0 ||
+        g_strcmp0(line, "text/uri-list") == 0) {
+      chosen = line;
+      is_uri = TRUE;
+      break;
+    }
+  }
+  if (chosen.empty()) {
+    for (const char* preferred : kPreferredImages) {
+      for (gchar** it = lines; it != nullptr && *it != nullptr; ++it) {
+        if (g_strcmp0(g_strstrip(*it), preferred) == 0) {
+          chosen = preferred;
+          break;
+        }
+      }
+      if (!chosen.empty()) break;
+    }
+  }
+
+  if (chosen.empty()) {
+    clipboard_finish(req, nullptr);
+    clipboard_release(req);
+    return;
+  }
+
+  g_autofree gchar* wl_paste = g_find_program_in_path("wl-paste");
+  if (wl_paste == nullptr) {
+    clipboard_finish(req, nullptr);
+    clipboard_release(req);
+    return;
+  }
+
+  req->wl_paste_mime = chosen;
+  req->wl_paste_is_uri = is_uri;
+  g_autoptr(GError) spawn_error = nullptr;
+  g_autoptr(GSubprocess) proc = g_subprocess_new(
+      static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_PIPE |
+                                    G_SUBPROCESS_FLAGS_STDERR_SILENCE),
+      &spawn_error, wl_paste, "--no-newline", "--type", chosen.c_str(),
+      nullptr);
+  if (proc == nullptr) {
+    clipboard_finish(req, nullptr);
+    clipboard_release(req);
+    return;
+  }
+  req->inflight++;
+  g_subprocess_communicate_async(proc, nullptr, req->cancellable,
+                                 on_wl_paste_data, req);
+  clipboard_release(req);
+}
+
+static void clipboard_try_wl_paste(ClipboardAttachmentRequest* req) {
+  if (req->completed) return;
+  if (!req->allow_wl_paste_fallback || g_getenv("WAYLAND_DISPLAY") == nullptr) {
+    clipboard_finish(req, nullptr);
+    return;
+  }
+  g_autofree gchar* wl_paste = g_find_program_in_path("wl-paste");
+  if (wl_paste == nullptr) {
+    clipboard_finish(req, nullptr);
+    return;
+  }
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GSubprocess) proc = g_subprocess_new(
+      static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_PIPE |
+                                    G_SUBPROCESS_FLAGS_STDERR_SILENCE),
+      &error, wl_paste, "--list-types", nullptr);
+  if (proc == nullptr) {
+    clipboard_finish(req, nullptr);
+    return;
+  }
+  req->inflight++;
+  g_subprocess_communicate_async(proc, nullptr, req->cancellable,
+                                 on_wl_paste_types, req);
+}
+
+static void on_clipboard_pixbuf(GtkClipboard*, GdkPixbuf* pixbuf,
+                                gpointer user_data) {
+  auto* req = static_cast<ClipboardAttachmentRequest*>(user_data);
+  if (!req->completed) {
+    if (pixbuf != nullptr) {
+      g_autofree gchar* buffer = nullptr;
+      gsize size = 0;
+      g_autoptr(GError) error = nullptr;
+      if (gdk_pixbuf_save_to_buffer(pixbuf, &buffer, &size, "png", &error,
+                                    nullptr) &&
+          size > 0 && size <= kMaxClipboardImageBytes) {
+        clipboard_finish(
+            req, make_clipboard_image_result(
+                     reinterpret_cast<const uint8_t*>(buffer), size,
+                     "image/png"));
+        clipboard_release(req);
+        return;
+      }
+    }
+    clipboard_try_wl_paste(req);
+  }
+  clipboard_release(req);
+}
+
+static void on_clipboard_image_contents(GtkClipboard*,
+                                        GtkSelectionData* selection,
+                                        gpointer user_data) {
+  auto* req = static_cast<ClipboardAttachmentRequest*>(user_data);
+  if (!req->completed) {
+    gint length = 0;
+    const guchar* data =
+        selection != nullptr
+            ? gtk_selection_data_get_data_with_length(selection, &length)
+            : nullptr;
+    if (data != nullptr && length > 0 &&
+        static_cast<size_t>(length) <= kMaxClipboardImageBytes) {
+      const std::string& mime = req->image_mimes[req->next_mime_index - 1];
+      clipboard_finish(req, make_clipboard_image_result(
+                                data, static_cast<size_t>(length),
+                                mime.c_str()));
+      clipboard_release(req);
+      return;
+    }
+    clipboard_try_next_image(req);
+  }
+  clipboard_release(req);
+}
+
+static void clipboard_try_next_image(ClipboardAttachmentRequest* req) {
+  if (req->completed) return;
+  if (req->next_mime_index < req->image_mimes.size()) {
+    const std::string& mime = req->image_mimes[req->next_mime_index++];
+    req->inflight++;
+    gtk_clipboard_request_contents(
+        req->clipboard, gdk_atom_intern(mime.c_str(), FALSE),
+        on_clipboard_image_contents, req);
+    return;
+  }
+  if (req->has_any_image) {
+    req->inflight++;
+    gtk_clipboard_request_image(req->clipboard, on_clipboard_pixbuf, req);
+    return;
+  }
+  clipboard_try_wl_paste(req);
+}
+
+static void on_clipboard_uri_contents(GtkClipboard*,
+                                      GtkSelectionData* selection,
+                                      gpointer user_data) {
+  auto* req = static_cast<ClipboardAttachmentRequest*>(user_data);
+  if (!req->completed) {
+    gint length = 0;
+    const guchar* data =
+        selection != nullptr
+            ? gtk_selection_data_get_data_with_length(selection, &length)
+            : nullptr;
+    if (data != nullptr && length > 0) {
+      FlValue* parsed = parse_clipboard_uri_paths(
+          reinterpret_cast<const gchar*>(data), static_cast<gsize>(length));
+      if (parsed != nullptr) {
+        clipboard_finish(req, parsed);
+        clipboard_release(req);
+        return;
+      }
+    }
+    clipboard_try_next_image(req);
+  }
+  clipboard_release(req);
+}
+
+static void on_clipboard_targets(GtkClipboard*, GdkAtom* atoms, gint n_atoms,
+                                 gpointer user_data) {
+  auto* req = static_cast<ClipboardAttachmentRequest*>(user_data);
+  if (req->completed) {
+    clipboard_release(req);
+    return;
+  }
+  static const char* kPreferredImages[] = {
+      "image/png", "image/jpeg", "image/webp",
+      "image/gif", "image/bmp",  "image/tiff",
+  };
+  std::vector<std::string> offered;
+  offered.reserve(n_atoms > 0 ? static_cast<size_t>(n_atoms) : 0);
+  GdkAtom gnome_files = GDK_NONE;
+  GdkAtom uri_list = GDK_NONE;
+  for (gint i = 0; i < n_atoms; ++i) {
+    g_autofree gchar* name = gdk_atom_name(atoms[i]);
+    if (name == nullptr) continue;
+    if (g_strcmp0(name, "x-special/gnome-copied-files") == 0) {
+      gnome_files = atoms[i];
+    } else if (g_strcmp0(name, "text/uri-list") == 0) {
+      uri_list = atoms[i];
+    } else if (g_str_has_prefix(name, "image/")) {
+      req->has_any_image = TRUE;
+      offered.emplace_back(name);
+    }
+  }
+  for (const char* preferred : kPreferredImages) {
+    for (const auto& item : offered) {
+      if (item == preferred) {
+        req->image_mimes.push_back(item);
+        break;
+      }
+    }
+  }
+  req->uri_atom = gnome_files != GDK_NONE ? gnome_files : uri_list;
+  // Only fall back to wl-paste when GTK got no targets at all (common on
+  // Wayland-only screenshot tools) or when an advertised file/image target
+  // failed to deliver data. Plain-text pastes return immediately without
+  // spawning a helper process.
+  req->allow_wl_paste_fallback =
+      (n_atoms <= 0 || req->uri_atom != GDK_NONE || req->has_any_image);
+  if (req->uri_atom != GDK_NONE) {
+    req->inflight++;
+    gtk_clipboard_request_contents(req->clipboard, req->uri_atom,
+                                   on_clipboard_uri_contents, req);
+  } else {
+    clipboard_try_next_image(req);
+  }
+  clipboard_release(req);
+}
+
+static void read_clipboard_attachments_async(FlMethodCall* call) {
+  GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+  if (clipboard == nullptr) {
+    fl_method_call_respond_success(call, nullptr, nullptr);
+    return;
+  }
+  auto* req = new ClipboardAttachmentRequest();
+  req->call = FL_METHOD_CALL(g_object_ref(call));
+  req->clipboard = clipboard;
+  req->cancellable = g_cancellable_new();
+  req->timeout_id = g_timeout_add(2500, clipboard_request_timeout, req);
+  req->inflight = 1;
+  gtk_clipboard_request_targets(clipboard, on_clipboard_targets, req);
 }
 
 static void show_main_window(MyApplication* self) {
@@ -265,6 +661,8 @@ static void desktop_method_call(FlMethodChannel*, FlMethodCall* call,
                              : "Choose files";
     g_autoptr(FlValue) result = pick_files(self->main_window, title);
     fl_method_call_respond_success(call, result, nullptr);
+  } else if (g_strcmp0(method, "readClipboardAttachments") == 0) {
+    read_clipboard_attachments_async(call);
   } else if (g_strcmp0(method, "closeSettings") == 0) {
     if (self->settings_window != nullptr) {
       gtk_widget_destroy(GTK_WIDGET(self->settings_window));

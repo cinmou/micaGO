@@ -333,12 +333,16 @@ bool shouldReconcileLocalWithServer(MessageModel local, MessageModel server) {
 }
 
 /// Visible-text semantics shared by every reconciliation check: strips the
-/// attachment placeholder (U+FFFC) and replacement char (U+FFFD) before
-/// trimming, so an attachment-only row is recognized as such even though its
-/// raw text column is non-empty.
+/// attachment placeholder (U+FFFC), replacement char (U+FFFD), BOM (U+FEFF),
+/// and emoji presentation variation selectors (U+FE0E/U+FE0F) before trimming,
+/// so an attachment-only row is recognized as such and emoji presentation
+/// differences between keyboards and macOS Messages still reconcile cleanly.
 String _normaliseComparableText(String? text) => (text ?? '')
     .replaceAll('\uFFFC', ' ')
     .replaceAll('\uFFFD', ' ')
+    .replaceAll('\uFEFF', '')
+    .replaceAll('\uFE0E', '')
+    .replaceAll('\uFE0F', '')
     .trim()
     .replaceAll(RegExp(r'\s+'), ' ')
     .toLowerCase();

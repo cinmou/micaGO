@@ -398,24 +398,22 @@ class ThreadController extends ChangeNotifier {
   ValueNotifier<double>? uploadProgressOf(String tempId) =>
       _uploadProgress[tempId];
 
+  final List<({String tempId, StagedAttachment item, MessageModel optimistic})>
+  _attachmentUploadQueue = [];
+  bool _drainingAttachments = false;
+
   /// C21c: BlueBubbles-style multi-select, conservative send path — each staged
-  /// attachment is sent as its own request. The grouped AppleScript send path is
-  /// fragile on some Messages setups, so the UI may stage several files while
-  /// the transport stays one-file-at-a-time. One catch-up after the sequence
-  /// pulls the real rows (they also arrive via message:new).
+  /// attachment is sent as its own request. Additional batches queued while an
+  /// upload is in progress appear immediately as pending bubbles and upload
+  /// sequentially without dropping user taps.
   Future<void> sendAttachments(List<StagedAttachment> items) async {
     final api = app.api;
-    if (api == null || attachmentSending || items.isEmpty) return;
+    if (api == null || items.isEmpty) return;
     attachmentSending = true;
     attachmentError = null;
-    _notify();
 
     // C71: stage EVERY bubble up front — a multi-file batch shows all its
-    // pending bubbles (with progress rings) immediately. Uploads still run
-    // one at a time below; previously the next bubble only appeared after
-    // the previous upload finished, so "only the first image showed".
-    final queue =
-        <({String tempId, StagedAttachment item, MessageModel optimistic})>[];
+    // pending bubbles (with progress rings) immediately.
     final baseMs = DateTime.now().millisecondsSinceEpoch;
     final baseMicro = DateTime.now().microsecondsSinceEpoch;
     for (var i = 0; i < items.length; i++) {
@@ -447,81 +445,97 @@ class ThreadController extends ChangeNotifier {
         );
       }
       _col.addPending(optimistic);
-      queue.add((tempId: tempId, item: item, optimistic: optimistic));
+      _attachmentUploadQueue.add((
+        tempId: tempId,
+        item: item,
+        optimistic: optimistic,
+      ));
     }
     state = ThreadState.loaded;
     _notify();
 
+    if (_drainingAttachments) return;
+    _drainingAttachments = true;
     var anySent = false;
-    for (final staged in queue) {
-      final tempId = staged.tempId;
-      final item = staged.item;
-      final optimistic = staged.optimistic;
-      // The user may have deleted this pending while it was queued.
-      if (_col.pendingByTempId(tempId) == null) continue;
-      final progress = _uploadProgress[tempId];
+    try {
+      while (_attachmentUploadQueue.isNotEmpty) {
+        final staged = _attachmentUploadQueue.removeAt(0);
+        final tempId = staged.tempId;
+        final item = staged.item;
+        final optimistic = staged.optimistic;
+        // The user may have deleted this pending while it was queued.
+        if (_col.pendingByTempId(tempId) == null) continue;
+        final activeApi = app.api;
+        if (activeApi == null) {
+          _col.setPendingState(tempId, LocalSendState.failed);
+          _notify();
+          continue;
+        }
+        final progress = _uploadProgress[tempId];
 
-      try {
-        final sentFilename = await api.sendAttachment(
-          chatGuid: chatGuid,
-          tempGuid: tempId,
-          bytes: item.bytes,
-          filePath: item.path,
-          filename: item.filename,
-          isAudioMessage: item.isAudioMessage,
-          onSendProgress: (sent, total) {
-            if (!_disposed &&
-                identical(_uploadProgress[tempId], progress) &&
-                total > 0) {
-              progress?.value = sent / total;
-            }
-          },
-        );
-        anySent = true;
-        // Upload done; the row is now "sent, awaiting the server row". If the
-        // server renamed the file (voice conversion), match on the new name.
-        var updated = optimistic.copyWith(
-          localState: LocalSendState.sentUnconfirmed,
-        );
-        if (sentFilename != null &&
-            sentFilename.isNotEmpty &&
-            sentFilename != item.filename) {
-          updated = updated.copyWith(
-            attachments: [
-              for (final a in updated.attachments)
-                AttachmentModel(
-                  guid: a.guid,
-                  downloadUrl: a.downloadUrl,
-                  filename: sentFilename,
-                  transferName: sentFilename,
-                  totalBytes: a.totalBytes,
-                  attachmentKind: a.attachmentKind,
-                  displayKind: a.displayKind,
-                  isPreviewableImage: a.isPreviewableImage,
-                ),
-            ],
+        try {
+          final sentFilename = await activeApi.sendAttachment(
+            chatGuid: chatGuid,
+            tempGuid: tempId,
+            bytes: item.bytes,
+            filePath: item.path,
+            filename: item.filename,
+            isAudioMessage: item.isAudioMessage,
+            onSendProgress: (sent, total) {
+              if (!_disposed &&
+                  identical(_uploadProgress[tempId], progress) &&
+                  total > 0) {
+                progress?.value = sent / total;
+              }
+            },
           );
+          anySent = true;
+          // Upload done; the row is now "sent, awaiting the server row". If the
+          // server renamed the file (voice conversion), match on the new name.
+          var updated = optimistic.copyWith(
+            localState: LocalSendState.sentUnconfirmed,
+          );
+          if (sentFilename != null &&
+              sentFilename.isNotEmpty &&
+              sentFilename != item.filename) {
+            updated = updated.copyWith(
+              attachments: [
+                for (final a in updated.attachments)
+                  AttachmentModel(
+                    guid: a.guid,
+                    downloadUrl: a.downloadUrl,
+                    filename: sentFilename,
+                    transferName: sentFilename,
+                    totalBytes: a.totalBytes,
+                    attachmentKind: a.attachmentKind,
+                    displayKind: a.displayKind,
+                    isPreviewableImage: a.isPreviewableImage,
+                  ),
+              ],
+            );
+          }
+          _col.replacePending(tempId, updated);
+          _notify();
+        } on ApiException catch (e) {
+          if (_col.pendingByTempId(tempId) != null) {
+            attachmentError = e.sendState == LocalSendState.failed
+                ? e.friendly
+                : null;
+            _col.setPendingState(tempId, e.sendState);
+          }
+          _scheduleReload();
+          _notify();
+        } catch (e) {
+          attachmentError = '$e';
+          _col.setPendingState(tempId, LocalSendState.failed);
+          _notify();
         }
-        _col.replacePending(tempId, updated);
-        _notify();
-      } on ApiException catch (e) {
-        if (_col.pendingByTempId(tempId) != null) {
-          attachmentError = e.sendState == LocalSendState.failed
-              ? e.friendly
-              : null;
-          _col.setPendingState(tempId, e.sendState);
-        }
-        _scheduleReload();
-        _notify();
-      } catch (e) {
-        attachmentError = '$e';
-        _col.setPendingState(tempId, LocalSendState.failed);
-        _notify();
       }
+    } finally {
+      _drainingAttachments = false;
+      attachmentSending = false;
+      _notify();
     }
-
-    attachmentSending = false;
-    _notify();
     if (anySent) {
       // One catch-up after the sequence; the rows also arrive via message:new.
       await app.catchUp(reason: 'attachment_sent', minInterval: Duration.zero);
@@ -601,6 +615,9 @@ class ThreadController extends ChangeNotifier {
                   : LocalSendState.failed,
             ),
           );
+          if (recoverable) {
+            _scheduleReload();
+          }
           _notify();
         }
         break;

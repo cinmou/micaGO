@@ -23,7 +23,11 @@ public static class MediaViewerService
         EnsureAccess();
         var messages = await AppServices.Current.Cache.GetMessagesAsync(message.ChatId, 1000);
         EnsureAccess();
-        var media = messages.SelectMany(row => row.Media).Where(item => item.IsImage || item.IsVideo || item.IsAudio).ToList();
+        var media = messages
+            .Where(row => !row.IsRetracted && !string.Equals(row.SemanticKind, "retracted", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(row => row.Media)
+            .Where(item => item.IsImage || item.IsVideo || item.IsAudio)
+            .ToList();
         if (media.Count == 0) media.Add(selected);
         var index = Math.Max(0, media.FindIndex(item => item.Id == selected.Id));
         var host = new Grid { MinWidth = 480, Height = 420 };

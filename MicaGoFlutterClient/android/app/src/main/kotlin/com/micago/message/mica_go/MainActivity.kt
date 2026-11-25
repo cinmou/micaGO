@@ -13,9 +13,11 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Icon
+import android.graphics.fonts.SystemFonts
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import android.view.View
 import android.view.ViewGroup
 import io.flutter.embedding.android.FlutterActivity
@@ -51,6 +53,13 @@ class MainActivity : FlutterActivity() {
                     result.error("launcher_icon_failed", "Unable to change launcher icon", null)
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "micago/system_fonts")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getUpdatedEmojiFontPath" -> result.success(findUpdatedEmojiFontPath())
+                    else -> result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -83,6 +92,13 @@ class MainActivity : FlutterActivity() {
                                         }
                                     }
                                     name = File(name).name.takeUnless { it.isBlank() || it == "." || it == ".." } ?: "attachment"
+                                    if (!name.contains('.')) {
+                                        val mime = contentResolver.getType(uri)
+                                        val ext = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+                                        if (!ext.isNullOrBlank()) {
+                                            name = "$name.$ext"
+                                        }
+                                    }
                                     val targetDirectory = File(directory, "$index").apply { check(mkdir()) }
                                     val target = File(targetDirectory, name)
                                     contentResolver.openInputStream(uri).use { input ->
@@ -114,7 +130,21 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             scrollCaptureChannelName,
         )
+        cleanupStalePasteCache()
         handleShareIntent(intent, emit = false)
+    }
+
+    private fun cleanupStalePasteCache() {
+        Thread {
+            try {
+                val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
+                cacheDir.listFiles { file ->
+                    file.isDirectory && file.name.startsWith("micago-paste-") && file.lastModified() < cutoff
+                }?.forEach { it.deleteRecursively() }
+            } catch (_: Exception) {
+                // Best-effort cleanup of stale paste temp folders.
+            }
+        }.start()
     }
 
     override fun onStart() {
@@ -146,6 +176,35 @@ class MainActivity : FlutterActivity() {
             }
         }
         return null
+    }
+
+    private fun findUpdatedEmojiFontPath(): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        return try {
+            SystemFonts.getAvailableFonts()
+                .mapNotNull { it.file }
+                .filter { file ->
+                    val path = file.absolutePath
+                    val name = file.name.lowercase()
+                    val isUpdatedSystemFont = path.startsWith("/data/fonts/")
+                    val isAlternate3dFont = name.contains("3d") && !path.startsWith("/system/fonts/")
+                    (isUpdatedSystemFont || isAlternate3dFont) &&
+                        file.isFile &&
+                        file.canRead() &&
+                        name.contains("emoji") &&
+                        !name.contains("flag") &&
+                        (name.endsWith(".ttf") || name.endsWith(".otf") || name.endsWith(".ttc"))
+                }
+                .sortedWith(
+                    compareByDescending<File> { it.name.lowercase().contains("3d") }
+                        .thenByDescending { it.name.lowercase().contains("notocoloremoji") }
+                        .thenByDescending { it.length() },
+                )
+                .firstOrNull()
+                ?.absolutePath
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun startKeepAlive() {

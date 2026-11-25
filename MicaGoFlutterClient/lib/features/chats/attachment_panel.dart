@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:photo_manager/photo_manager.dart';
 import '../../core/l10n/app_localizations.dart';
+import 'image_input_helpers.dart';
 
 /// One attachment staged for sending (selected but not yet sent). [sourceId] is
 /// the gallery asset id when picked from the media grid, so the grid can show a
@@ -23,12 +24,12 @@ class StagedAttachment {
   StagedAttachment({
     required Uint8List bytes,
     required this.filename,
+    this.previewAspectRatio,
     this.sourceId,
     this.isAudioMessage = false,
   }) : bytes = bytes,
        path = null,
        size = bytes.length,
-       previewAspectRatio = null,
        thumbnail = null;
 
   const StagedAttachment.file({
@@ -40,6 +41,28 @@ class StagedAttachment {
     this.sourceId,
     this.isAudioMessage = false,
   }) : bytes = null;
+
+  StagedAttachment withAspectRatio(double? ratio) {
+    if (ratio == null || !ratio.isFinite || ratio <= 0) return this;
+    if (path != null) {
+      return StagedAttachment.file(
+        path: path,
+        size: size,
+        filename: filename,
+        thumbnail: thumbnail,
+        previewAspectRatio: ratio,
+        sourceId: sourceId,
+        isAudioMessage: isAudioMessage,
+      );
+    }
+    return StagedAttachment(
+      bytes: bytes!,
+      filename: filename,
+      previewAspectRatio: ratio,
+      sourceId: sourceId,
+      isAudioMessage: isAudioMessage,
+    );
+  }
 
   Future<Uint8List> readBytes() =>
       path == null ? Future.value(bytes!) : File(path!).readAsBytes();
@@ -81,12 +104,18 @@ class StagedAttachment {
 
   bool get isImage {
     final n = filename.toLowerCase();
-    return n.endsWith('.jpg') ||
+    if (n.endsWith('.jpg') ||
         n.endsWith('.jpeg') ||
         n.endsWith('.png') ||
         n.endsWith('.gif') ||
         n.endsWith('.heic') ||
-        n.endsWith('.webp');
+        n.endsWith('.heif') ||
+        n.endsWith('.bmp') ||
+        n.endsWith('.webp')) {
+      return true;
+    }
+    final raw = bytes;
+    return raw != null && detectImageMimeType(raw) != null;
   }
 }
 
@@ -98,8 +127,8 @@ class StagedAttachment {
 /// Permission states (granted / limited / denied / permanently denied) are
 /// handled; the generic file picker is always available as a fallback.
 class AttachmentPanel extends StatefulWidget {
-  /// Currently-staged asset ids (to render check overlays).
-  final Set<String> selectedAssetIds;
+  /// Currently-staged asset ids in selection order (to render numbered badges).
+  final Iterable<String> selectedAssetIds;
 
   /// Toggle a gallery asset in/out of the staged selection.
   final Future<void> Function(AssetEntity asset) onToggleAsset;
@@ -360,19 +389,29 @@ class _AttachmentPanelState extends State<AttachmentPanel> {
                                     onTap: _pickMoreImages,
                                   );
                                 }
+                                final asset = _recent[i];
+                                final selectedList = widget.selectedAssetIds
+                                    .toList(growable: false);
+                                final orderIndex = selectedList.indexOf(
+                                  asset.id,
+                                );
                                 return _MediaTile(
-                                  asset: _recent[i],
-                                  selected: widget.selectedAssetIds.contains(
-                                    _recent[i].id,
-                                  ),
-                                  onTap: () => widget.onToggleAsset(_recent[i]),
+                                  asset: asset,
+                                  selected: orderIndex >= 0,
+                                  selectionOrder: orderIndex >= 0
+                                      ? orderIndex + 1
+                                      : null,
+                                  onTap: () => widget.onToggleAsset(asset),
                                 );
                               }, childCount: _recent.length + 1),
                             ),
                           )
                         else if (_hasNativeGallery)
                           SliverToBoxAdapter(
-                            child: _PermissionPrompt(state: _permission),
+                            child: _PermissionPrompt(
+                              state: _permission,
+                              onPickPhotos: _pickMoreImages,
+                            ),
                           ),
                       ],
                     ),
@@ -429,10 +468,12 @@ class _ActionTile extends StatelessWidget {
 class _MediaTile extends StatefulWidget {
   final AssetEntity asset;
   final bool selected;
+  final int? selectionOrder;
   final VoidCallback onTap;
   const _MediaTile({
     required this.asset,
     required this.selected,
+    this.selectionOrder,
     required this.onTap,
   });
 
@@ -493,7 +534,16 @@ class _MediaTileState extends State<_MediaTile> {
                 child: CircleAvatar(
                   radius: 11,
                   backgroundColor: scheme.primary,
-                  child: Icon(Icons.check, size: 14, color: scheme.onPrimary),
+                  child: widget.selectionOrder != null
+                      ? Text(
+                          '${widget.selectionOrder}',
+                          style: TextStyle(
+                            color: scheme.onPrimary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        )
+                      : Icon(Icons.check, size: 14, color: scheme.onPrimary),
                 ),
               ),
           ],
@@ -541,14 +591,15 @@ class _MorePhotosTile extends StatelessWidget {
 
 class _PermissionPrompt extends StatelessWidget {
   final PermissionState? state;
-  const _PermissionPrompt({required this.state});
+  final VoidCallback? onPickPhotos;
+  const _PermissionPrompt({required this.state, this.onPickPhotos});
 
   @override
   Widget build(BuildContext context) {
     final denied =
         state == PermissionState.denied || state == PermissionState.restricted;
     return SizedBox(
-      width: 220,
+      width: 240,
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -565,12 +616,23 @@ class _PermissionPrompt extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-            const SizedBox(height: 6),
-            TextButton(
-              onPressed: () => PhotoManager.openSetting(),
-              child: Text(
-                MicaLocalizations.of(context).t('common.openSettings'),
-              ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                if (onPickPhotos != null)
+                  FilledButton.tonal(
+                    onPressed: onPickPhotos,
+                    child: Text(MicaLocalizations.of(context).t('chat.photos')),
+                  ),
+                TextButton(
+                  onPressed: () => PhotoManager.openSetting(),
+                  child: Text(
+                    MicaLocalizations.of(context).t('common.openSettings'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -592,59 +654,66 @@ class StagedAttachmentStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final totalBytes = items.fold<int>(0, (sum, item) => sum + item.size);
     return SizedBox(
-      height: 72,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
-        itemBuilder: (context, i) {
+      height: 76,
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 6),
+              itemBuilder: (context, i) {
           final item = items[i];
+          final preview = ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child:
+                item.isImage && (item.thumbnail != null || item.bytes != null)
+                ? Image.memory(
+                    item.thumbnail ?? item.bytes!,
+                    width: 60,
+                    height: 60,
+                    cacheWidth:
+                        (60 * MediaQuery.devicePixelRatioOf(context)).ceil(),
+                    errorBuilder: (_, _, _) => const SizedBox(
+                      width: 60,
+                      height: 60,
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                    fit: BoxFit.cover,
+                  )
+                : item.isImage && item.path != null
+                ? Image.file(
+                    File(item.path!),
+                    width: 60,
+                    height: 60,
+                    cacheWidth:
+                        (60 * MediaQuery.devicePixelRatioOf(context)).ceil(),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox(
+                      width: 60,
+                      height: 60,
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                  )
+                : Container(
+                    width: 60,
+                    height: 60,
+                    color: scheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.insert_drive_file_outlined),
+                  ),
+          );
           return Stack(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child:
-                    item.isImage &&
-                        (item.thumbnail != null || item.bytes != null)
-                    ? Image.memory(
-                        item.thumbnail ?? item.bytes!,
-                        width: 60,
-                        height: 60,
-                        cacheWidth:
-                            (60 * MediaQuery.devicePixelRatioOf(context))
-                                .ceil(),
-                        errorBuilder: (_, _, _) => const SizedBox(
-                          width: 60,
-                          height: 60,
-                          child: Icon(Icons.broken_image_outlined),
-                        ),
-                        fit: BoxFit.cover,
-                      )
-                    : item.isImage && item.path != null
-                    ? Image.file(
-                        File(item.path!),
-                        width: 60,
-                        height: 60,
-                        cacheWidth:
-                            (60 * MediaQuery.devicePixelRatioOf(context))
-                                .ceil(),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const SizedBox(
-                          width: 60,
-                          height: 60,
-                          child: Icon(Icons.broken_image_outlined),
-                        ),
-                      )
-                    : Container(
-                        width: 60,
-                        height: 60,
-                        color: scheme.surfaceContainerHighest,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.insert_drive_file_outlined),
-                      ),
-              ),
+              item.isImage
+                  ? GestureDetector(
+                      onTap: () => _previewStagedImage(context, item),
+                      child: preview,
+                    )
+                  : preview,
               Positioned(
                 top: -6,
                 right: -6,
@@ -659,7 +728,101 @@ class StagedAttachmentStrip extends StatelessWidget {
             ],
           );
         },
+            ),
+          ),
+          if (items.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${items.length}',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onSurface,
+                            ),
+                      ),
+                      Text(
+                        formatCompactBytes(totalBytes),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
+}
+
+Future<void> _previewStagedImage(
+  BuildContext context,
+  StagedAttachment item,
+) {
+  final Widget image = item.path != null
+      ? Image.file(File(item.path!), fit: BoxFit.contain)
+      : item.bytes != null
+      ? Image.memory(item.bytes!, fit: BoxFit.contain)
+      : item.thumbnail != null
+      ? Image.memory(item.thumbnail!, fit: BoxFit.contain)
+      : const Icon(Icons.broken_image_outlined, color: Colors.white70);
+  return showDialog<void>(
+    context: context,
+    barrierColor: Colors.black87,
+    builder: (dialogContext) => Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 5,
+              child: Center(child: image),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                  Expanded(
+                    child: Text(
+                      item.filename,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

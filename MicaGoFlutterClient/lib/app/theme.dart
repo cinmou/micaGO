@@ -108,7 +108,7 @@ class MicaGoTheme {
 
   /// Builds a theme from a ready-made [ColorScheme] (used for Android 12+
   /// dynamic / Material You colors).
-  static ThemeData fromScheme(ColorScheme scheme) {
+  static ThemeData fromScheme(ColorScheme scheme, {String? extraEmojiFont}) {
     final inkWash =
         (scheme.primary == const Color(0xFF111111) &&
             scheme.brightness == Brightness.light) ||
@@ -120,6 +120,7 @@ class MicaGoTheme {
       fontFamily: isLinuxDesktop ? 'sans-serif' : null,
       fontFamilyFallback: [
         'MicaGoCompatSymbols',
+        if (extraEmojiFont != null && extraEmojiFont.isNotEmpty) extraEmojiFont,
         if (isLinuxDesktop) 'Noto Color Emoji',
       ],
       appBarTheme: const AppBarTheme(centerTitle: false),

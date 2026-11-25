@@ -25,7 +25,7 @@ namespace MicaGo.App.Controls;
 /// </summary>
 public sealed partial class MessageBubble : UserControl
 {
-    private const double MediaMaxWidth = 320;
+    private const double MediaMaxWidth = 276;
     private const double MediaMaxHeight = 306;
     private const double StickerMaxSize = 180;
     private const int ThumbnailCacheLimit = 96;
@@ -96,7 +96,7 @@ public sealed partial class MessageBubble : UserControl
         if (_message is not { } message || message.IsSeparator || message.IsPresentationSystem) return;
         var body = MessageSemantics.VisibleText(message.Text);
         ApplyReply(message);
-        ApplyBubble(message, body, body.Length > 0, message.Media.Count > 0, message.IsOutgoing);
+        ApplyBubble(message, body, body.Length > 0, !message.IsRetracted && message.Media.Count > 0, message.IsOutgoing);
     }
 
     private void OnDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
@@ -157,7 +157,7 @@ public sealed partial class MessageBubble : UserControl
         var outgoing = message.IsOutgoing;
         var body = MessageSemantics.VisibleText(message.Text);
         var hasBody = body.Length > 0;
-        var hasMedia = message.Media.Count > 0;
+        var hasMedia = !message.IsRetracted && message.Media.Count > 0;
 
         // A same-key assignment is an in-place state update (delivery, reaction,
         // grouping, etc.), not a recycled container. Resetting its visual state
@@ -408,6 +408,7 @@ public sealed partial class MessageBubble : UserControl
         host.Children.Add(surface);
         host.Children.Add(placeholderIcon);
 
+        Border? longBadge = null;
         if (attachment.IsVideo)
         {
             var playBadge = new Border
@@ -430,16 +431,43 @@ public sealed partial class MessageBubble : UserControl
             };
             host.Children.Add(playBadge);
         }
+        else
+        {
+            longBadge = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(6, 2, 6, 2),
+                Margin = new Thickness(8),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xB3, 0x00, 0x00, 0x00)),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed,
+                Child = new TextBlock
+                {
+                    Text = AppServices.Current.Localization["longImage"],
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                },
+            };
+            host.Children.Add(longBadge);
+        }
 
         _ = LoadTileImageAsync(message, attachment, (bitmap, fromCache) =>
         {
             placeholderIcon.Visibility = Visibility.Collapsed;
             var width = bitmap.PixelWidth > 0 ? bitmap.PixelWidth : 4;
             var height = bitmap.PixelHeight > 0 ? bitmap.PixelHeight : 3;
-            var scale = Math.Min(1, Math.Min(MediaMaxWidth / width, MediaMaxHeight / height));
-            surface.Width = Math.Max(44, width * scale);
-            surface.Height = Math.Max(44, height * scale);
+            var (tileWidth, tileHeight, isLongImage) = MessageSemantics.ComputeChatImageSize(
+                width, height, MediaMaxWidth, MediaMaxHeight);
+            surface.Width = tileWidth;
+            surface.Height = tileHeight;
             surface.Fill = new ImageBrush { ImageSource = bitmap, Stretch = Stretch.UniformToFill };
+            if (longBadge is not null)
+            {
+                longBadge.Visibility = isLongImage ? Visibility.Visible : Visibility.Collapsed;
+            }
         });
 
         host.Tapped += async (_, _) => await OpenInViewerAsync(message, attachment);

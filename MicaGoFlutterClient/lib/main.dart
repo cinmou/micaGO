@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'app/mica_go_app.dart';
 import 'app/linux_window_host.dart';
+import 'core/platform/android_emoji_font.dart';
 import 'core/platform/linux_desktop.dart';
 import 'core/app_controller.dart';
 import 'core/ui/glass_theme_widgets.dart';
@@ -80,6 +81,7 @@ Future<void> main() async {
   // C77: one global observer that keeps IME focus/insets honest across
   // lock/unlock (see keyboard_insets.dart).
   KeyboardLifecycle.instance.install();
+  unawaited(AndroidUpdatedEmojiFont.loadIfAvailable());
 
   final app = MicaGoApp(
     controller: controller,

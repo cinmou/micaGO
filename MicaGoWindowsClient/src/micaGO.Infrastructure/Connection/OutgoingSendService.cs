@@ -148,6 +148,8 @@ public sealed class OutgoingSendService(IMicaGoApi api, LocalCacheStore cache, M
     private async Task<PendingSend> SnapshotAsync(PendingSend send,CancellationToken ct)
     {
         if(!File.Exists(send.FilePath))throw new FileNotFoundException("The attachment file is no longer available.");
+        if(new FileInfo(send.FilePath).Length>MessageSemantics.MaxOutgoingAttachmentBytes)
+            throw new InvalidOperationException($"\"{SafeFileName(send.FileName)}\" exceeds the 100 MB limit.");
         var directory=Path.Combine(_fileRoot,send.TempId);
         Directory.CreateDirectory(directory);
         var destination=Path.Combine(directory,SafeFileName(send.FileName));

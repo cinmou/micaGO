@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../core/app_controller.dart';
 import '../core/l10n/app_localizations.dart';
 import '../core/theme_controller.dart';
+import '../core/platform/android_emoji_font.dart';
 import '../core/platform/linux_desktop.dart';
 import '../core/ui/glass_theme_widgets.dart';
 import '../features/contacts/contacts_service.dart';
@@ -91,8 +92,10 @@ class _MicaGoAppState extends State<MicaGoApp> {
           value: widget.messageDisplay,
         ),
       ],
-      child: Consumer<ThemeController>(
-        builder: (context, theme, _) {
+      child: ValueListenableBuilder<String?>(
+        valueListenable: AndroidUpdatedEmojiFont.loadedFamily,
+        builder: (context, updatedEmojiFont, _) => Consumer<ThemeController>(
+          builder: (context, theme, _) {
           return DynamicColorBuilder(
             builder: (lightDynamic, darkDynamic) {
               final dynamicAvailable = lightDynamic != null;
@@ -164,10 +167,16 @@ class _MicaGoAppState extends State<MicaGoApp> {
                 debugShowCheckedModeBanner: false,
                 theme: theme.useLinuxTheme
                     ? MicaGoTheme.linux(Brightness.light)
-                    : MicaGoTheme.fromScheme(lightScheme),
+                    : MicaGoTheme.fromScheme(
+                        lightScheme,
+                        extraEmojiFont: updatedEmojiFont,
+                      ),
                 darkTheme: theme.useLinuxTheme
                     ? MicaGoTheme.linux(Brightness.dark)
-                    : MicaGoTheme.fromScheme(darkScheme),
+                    : MicaGoTheme.fromScheme(
+                        darkScheme,
+                        extraEmojiFont: updatedEmojiFont,
+                      ),
                 themeMode: theme.themeMode,
                 locale: theme.locale,
                 supportedLocales: const [
@@ -203,6 +212,7 @@ class _MicaGoAppState extends State<MicaGoApp> {
             },
           );
         },
+        ),
       ),
     );
   }

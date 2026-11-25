@@ -943,7 +943,33 @@ class _ImageAttachment extends StatefulWidget {
   State<_ImageAttachment> createState() => _ImageAttachmentState();
 }
 
+/// Computes a visually balanced bubble size for a chat image across portrait,
+/// square, landscape, and extreme aspect ratios.
+///
+/// Tall portraits keep the 306px ceiling (e.g. 1:2 -> 153x306), while square
+/// images shrink to a 228x228 cap and wide images cap at 276px width so no
+/// orientation dominates the timeline.
+Size computeChatImageSize({
+  required double? rawAspect,
+  required double availableWidth,
+}) {
+  final bubbleMaxWidth = availableWidth.clamp(0.0, 276.0);
+  if (rawAspect == null || !rawAspect.isFinite || rawAspect <= 0) {
+    final width = (200.0 * (4 / 3)).clamp(0.0, bubbleMaxWidth);
+    return Size(width, width / (4 / 3));
+  }
+  final aspect = rawAspect.clamp(0.45, 2.2);
+  // Smoothly reduce max height from 306 (portrait <= 0.5) to 228 (square >= 1.0)
+  // so 1:1 images match the visual area of portrait photos instead of becoming
+  // oversized 306x306 blocks.
+  final squareBlend = ((aspect - 0.5) / 0.5).clamp(0.0, 1.0);
+  final maxHeight = 306.0 - 78.0 * squareBlend;
+  final width = (maxHeight * aspect).clamp(0.0, bubbleMaxWidth);
+  return Size(width, width / aspect);
+}
+
 class _ImageAttachmentState extends State<_ImageAttachment> {
+  final Object _heroTag = UniqueKey();
   Uint8List? _bytes;
   double? _aspect;
   bool _failed = false;
@@ -1025,16 +1051,76 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
           0.0,
           constraints.maxWidth,
         );
-        final aspect = _aspect ?? 4 / 3;
-        final width = ((_aspect == null ? 200 : 306) * aspect).clamp(
-          0.0,
-          maxWidth,
+        final isLongImage = _aspect != null && _aspect! < 0.40;
+        final size = computeChatImageSize(
+          rawAspect: _aspect,
+          availableWidth: maxWidth,
         );
-        final height = width / aspect;
+        final width = size.width;
+        final height = size.height;
         final bytes = _bytes;
         final placeholder = _MediaLoadingPlaceholder(
           width: width,
           height: height,
+        );
+        final imageBox = SizedBox(
+          width: width,
+          height: height,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (_failed)
+                  const Center(child: Icon(Icons.broken_image_outlined))
+                else if (bytes == null)
+                  placeholder
+                else
+                  Image.memory(
+                    bytes,
+                    width: width,
+                    height: height,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    cacheWidth:
+                        (width * MediaQuery.devicePixelRatioOf(context))
+                            .round()
+                            .clamp(1, 1280),
+                    filterQuality: FilterQuality.medium,
+                    frameBuilder: (context, child, frame, synchronous) =>
+                        frame != null || synchronous ? child : placeholder,
+                    errorBuilder: (_, _, _) => const Center(
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                  ),
+                if (isLongImage && !_failed && bytes != null)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.56),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        child: Text(
+                          MicaLocalizations.of(context).t('chat.longImage'),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         );
         return GestureDetector(
           onTap: _failed
@@ -1048,6 +1134,7 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
                   api: widget.api,
                   images: widget.siblings,
                   initialIndex: widget.index,
+                  heroTag: _heroTag,
                 ),
           onLongPressStart: (details) => _tileLongPress(
             context,
@@ -1056,36 +1143,307 @@ class _ImageAttachmentState extends State<_ImageAttachment> {
             api: widget.api,
             attachment: widget.attachment,
           ),
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: _failed
-                  ? const Center(child: Icon(Icons.broken_image_outlined))
-                  : bytes == null
-                  ? placeholder
-                  : Image.memory(
-                      bytes,
-                      width: width,
-                      height: height,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                      cacheWidth:
-                          (width * MediaQuery.devicePixelRatioOf(context))
-                              .round()
-                              .clamp(1, 900),
-                      filterQuality: FilterQuality.low,
-                      frameBuilder: (context, child, frame, synchronous) =>
-                          frame != null || synchronous ? child : placeholder,
-                      errorBuilder: (_, _, _) => const Center(
-                        child: Icon(Icons.broken_image_outlined),
-                      ),
-                    ),
-            ),
-          ),
+          child: Hero(tag: _heroTag, child: imageBox),
         );
       },
+    );
+  }
+}
+
+/// Compact multi-image album grid (2/3/4/5-9+ photos) matching Telegram/WeChat
+/// chat timelines instead of stacking photos vertically.
+class MediaAlbumGrid extends StatelessWidget {
+  final ApiClient api;
+  final List<AttachmentModel> images;
+  final List<AttachmentModel> galleryImages;
+  final int Function(AttachmentModel) galleryIndexFor;
+  final void Function(Offset globalPosition, AttachmentModel attachment)?
+  onLongPress;
+
+  const MediaAlbumGrid({
+    super.key,
+    required this.api,
+    required this.images,
+    required this.galleryImages,
+    required this.galleryIndexFor,
+    this.onLongPress,
+  });
+
+  static const double _gap = 2;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = (MediaQuery.sizeOf(context).width * 0.738)
+            .clamp(0.0, constraints.maxWidth)
+            .clamp(0.0, 276.0);
+        if (maxWidth <= 0) return const SizedBox.shrink();
+        final visibleCount = images.length > 9 ? 9 : images.length;
+        final overflow = images.length - visibleCount;
+
+        Widget tile(
+          int index, {
+          required double width,
+          required double height,
+          int extraBadge = 0,
+        }) {
+          final attachment = images[index];
+          return _AlbumImageTile(
+            key: ValueKey((api, MediaCache.previewMediaKey(attachment))),
+            api: api,
+            attachment: attachment,
+            siblings: galleryImages.isEmpty ? images : galleryImages,
+            galleryIndex: galleryIndexFor(attachment),
+            width: width,
+            height: height,
+            extraBadge: extraBadge,
+            onLongPress: onLongPress == null
+                ? null
+                : (pos) => onLongPress!(pos, attachment),
+          );
+        }
+
+        Widget grid;
+        if (visibleCount == 2) {
+          final tileW = (maxWidth - _gap) / 2;
+          final tileH = tileW * 0.96;
+          grid = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              tile(0, width: tileW, height: tileH),
+              const SizedBox(width: _gap),
+              tile(1, width: tileW, height: tileH),
+            ],
+          );
+        } else if (visibleCount == 3) {
+          final topH = (maxWidth * 9 / 16).clamp(110.0, 172.0);
+          final bottomW = (maxWidth - _gap) / 2;
+          grid = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              tile(0, width: maxWidth, height: topH),
+              const SizedBox(height: _gap),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  tile(1, width: bottomW, height: bottomW * 0.85),
+                  const SizedBox(width: _gap),
+                  tile(2, width: bottomW, height: bottomW * 0.85),
+                ],
+              ),
+            ],
+          );
+        } else if (visibleCount == 4) {
+          final tileSize = (maxWidth - _gap) / 2;
+          grid = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  tile(0, width: tileSize, height: tileSize),
+                  const SizedBox(width: _gap),
+                  tile(1, width: tileSize, height: tileSize),
+                ],
+              ),
+              const SizedBox(height: _gap),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  tile(2, width: tileSize, height: tileSize),
+                  const SizedBox(width: _gap),
+                  tile(3, width: tileSize, height: tileSize),
+                ],
+              ),
+            ],
+          );
+        } else {
+          final cols = 3;
+          final tileSize = (maxWidth - _gap * (cols - 1)) / cols;
+          final rows = <Widget>[];
+          for (var rowStart = 0; rowStart < visibleCount; rowStart += cols) {
+            final rowEnd = (rowStart + cols).clamp(0, visibleCount);
+            if (rows.isNotEmpty) rows.add(const SizedBox(height: _gap));
+            rows.add(
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = rowStart; i < rowEnd; i++) ...[
+                    if (i > rowStart) const SizedBox(width: _gap),
+                    tile(
+                      i,
+                      width: tileSize,
+                      height: tileSize,
+                      extraBadge: i == visibleCount - 1 ? overflow : 0,
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+          grid = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: rows,
+          );
+        }
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(width: maxWidth, child: grid),
+        );
+      },
+    );
+  }
+}
+
+class _AlbumImageTile extends StatefulWidget {
+  final ApiClient api;
+  final AttachmentModel attachment;
+  final List<AttachmentModel> siblings;
+  final int galleryIndex;
+  final double width;
+  final double height;
+  final int extraBadge;
+  final void Function(Offset)? onLongPress;
+
+  const _AlbumImageTile({
+    super.key,
+    required this.api,
+    required this.attachment,
+    required this.siblings,
+    required this.galleryIndex,
+    required this.width,
+    required this.height,
+    this.extraBadge = 0,
+    this.onLongPress,
+  });
+
+  @override
+  State<_AlbumImageTile> createState() => _AlbumImageTileState();
+}
+
+class _AlbumImageTileState extends State<_AlbumImageTile> {
+  final Object _heroTag = UniqueKey();
+  Uint8List? _bytes;
+  bool _failed = false;
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    final key = MediaCache.previewMediaKey(widget.attachment);
+    final cached = MediaCache.instance.memoryHit(key);
+    _failed = false;
+    if (cached != null) {
+      _bytes = cached;
+      return;
+    }
+    try {
+      final bytes = await MediaCache.instance.attachmentPreview(
+        widget.api,
+        widget.attachment,
+      );
+      if (!mounted || generation != _generation) return;
+      setState(() => _bytes = bytes);
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _bytes;
+    final placeholder = _MediaLoadingPlaceholder(
+      width: widget.width,
+      height: widget.height,
+      radius: 0,
+    );
+    final tile = SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_failed)
+            const ColoredBox(
+              color: Color(0x22808080),
+              child: Center(child: Icon(Icons.broken_image_outlined)),
+            )
+          else if (bytes == null)
+            placeholder
+          else
+            Image.memory(
+              bytes,
+              width: widget.width,
+              height: widget.height,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              cacheWidth: (widget.width * MediaQuery.devicePixelRatioOf(context))
+                  .round()
+                  .clamp(1, 720),
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                color: Color(0x22808080),
+                child: Center(child: Icon(Icons.broken_image_outlined)),
+              ),
+            ),
+          if (widget.extraBadge > 0)
+            ColoredBox(
+              color: Colors.black.withValues(alpha: 0.48),
+              child: Center(
+                child: Text(
+                  '+${widget.extraBadge}',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    return LinuxContextActions(
+      onOpen: (position) => _tileLongPress(
+        context,
+        widget.onLongPress,
+        position,
+        api: widget.api,
+        attachment: widget.attachment,
+      ),
+      child: GestureDetector(
+        onTap: _failed
+            ? () => setState(_load)
+            : () => MediaGalleryViewer.open(
+                context,
+                api: widget.api,
+                images: widget.siblings,
+                initialIndex: widget.galleryIndex,
+                heroTag: _heroTag,
+              ),
+        onLongPressStart: (details) => _tileLongPress(
+          context,
+          widget.onLongPress,
+          details.globalPosition,
+          api: widget.api,
+          attachment: widget.attachment,
+        ),
+        child: Hero(tag: _heroTag, child: tile),
+      ),
     );
   }
 }
