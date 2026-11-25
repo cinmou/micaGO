@@ -199,6 +199,8 @@ public sealed class LocalizationService
         values["updateAvailable"] = traditional ? "有新版本 {0}" : chinese ? "有新版本 {0}" : "Version {0} is available";
         values["updateUnknown"] = traditional ? "檢查失敗，請稍後再試" : chinese ? "检查失败，请稍后重试" : "Check failed. Try again later.";
         values["updateOpen"] = traditional ? "開啟發行頁" : chinese ? "打开发布页" : "Open release";
+        values["autoCheckUpdates"] = traditional ? "自動檢查更新" : chinese ? "自动检查更新" : "Auto check for updates";
+        values["autoCheckUpdatesDescription"] = traditional ? "每天靜默檢查一次 GitHub 新版本" : chinese ? "每天静默检查一次 GitHub 新版本" : "Quietly check GitHub releases once a day";
         values["longImage"] = traditional ? "長圖" : chinese ? "长图" : "Long";
         values["attachmentTooLarge"] = traditional ? "「{0}」超過 100 MB 大小限制。" : chinese ? "“{0}”超过 100 MB 大小限制。" : "\"{0}\" exceeds the 100 MB limit.";
         return values;

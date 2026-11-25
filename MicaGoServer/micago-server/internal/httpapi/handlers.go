@@ -393,6 +393,40 @@ func (h *Handlers) PutSyncSettings(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "sync_settings_unavailable", "sync settings are not available")
 		return
 	}
+	// Paired client devices may toggle allowSmsSend only; all other global sync
+	// settings (service scope, backfill depth, debug visibility) remain Mac
+	// local-admin only.
+	if deviceIdentity(r) != "" {
+		var req struct {
+			AllowSMSSend *bool `json:"allowSmsSend"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeBadRequest(w, "invalid JSON body")
+			return
+		}
+		if req.AllowSMSSend == nil {
+			writeBadRequest(w, "allowSmsSend is required")
+			return
+		}
+		current, err := h.syncSettings.GetSyncSettings(r.Context())
+		if err != nil {
+			h.logInternal("get sync settings", err)
+			writeInternalError(w)
+			return
+		}
+		current.AllowSMSSend = *req.AllowSMSSend
+		settings, err := h.syncSettings.SetSyncSettings(r.Context(), current)
+		if err != nil {
+			h.logInternal("put sync settings", err)
+			writeInternalError(w)
+			return
+		}
+		if h.send != nil && h.send.Events != nil {
+			_ = h.send.Events.Broadcast(context.WithoutCancel(r.Context()), realtime.Event{Type: "sync:settings", Data: settings})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "diagnostics": nil})
+		return
+	}
 	var req relaydb.SyncSettings
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeBadRequest(w, "invalid JSON body")
@@ -409,6 +443,9 @@ func (h *Handlers) PutSyncSettings(w http.ResponseWriter, r *http.Request) {
 		if d, err := h.syncNow(r.Context()); err == nil {
 			diagnostics = &d
 		}
+	}
+	if h.send != nil && h.send.Events != nil {
+		_ = h.send.Events.Broadcast(context.WithoutCancel(r.Context()), realtime.Event{Type: "sync:settings", Data: settings})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "diagnostics": diagnostics})
 }

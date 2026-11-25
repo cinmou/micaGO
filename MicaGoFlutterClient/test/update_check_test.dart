@@ -1,5 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mica_go/core/app_controller.dart';
 import 'package:mica_go/core/network/update_check.dart';
+import 'package:mica_go/core/storage/secure_store.dart';
+
+class _MemorySecureStore implements SecureStore {
+  final Map<String, String> values = {};
+
+  @override
+  Future<String?> readValue(String key) async => values[key];
+
+  @override
+  Future<void> writeValue(String key, String value) async {
+    values[key] = value;
+  }
+
+  @override
+  Future<void> deleteValue(String key) async {
+    values.remove(key);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   group('version comparison (C74)', () {
@@ -56,6 +78,74 @@ void main() {
         resultFromReleaseJson('{"message":"rate limited"}', '0.64.0').status,
         UpdateCheckStatus.unknown,
       );
+    });
+  });
+
+  group('AppController auto update checks', () {
+    test('defaults enabled, respects toggle and 24h cooldown, manual always runs', () async {
+      final store = _MemorySecureStore();
+      final app = AppController(store: store);
+      expect(app.autoCheckUpdatesEnabled, isTrue);
+
+      var calls = 0;
+      var fakeNow = DateTime.utc(2026, 11, 25, 10, 0);
+      Future<UpdateCheckResult> fakeChecker(String current) async {
+        calls++;
+        return const UpdateCheckResult(
+          status: UpdateCheckStatus.updateAvailable,
+          latestVersion: '0.98.0',
+          releaseUrl: 'https://example.com/r/0.98.0',
+        );
+      }
+
+      // First automatic check runs and records timestamp.
+      final first = await app.checkForUpdates(
+        manual: false,
+        checker: fakeChecker,
+        now: () => fakeNow,
+      );
+      expect(calls, 1);
+      expect(first.status, UpdateCheckStatus.updateAvailable);
+      expect(app.latestUpdateCheck?.latestVersion, '0.98.0');
+
+      // Second automatic check within 24h is throttled.
+      fakeNow = fakeNow.add(const Duration(hours: 6));
+      await app.checkForUpdates(
+        manual: false,
+        checker: fakeChecker,
+        now: () => fakeNow,
+      );
+      expect(calls, 1);
+
+      // Manual check bypasses the 24h cooldown.
+      await app.checkForUpdates(
+        manual: true,
+        checker: fakeChecker,
+        now: () => fakeNow,
+      );
+      expect(calls, 2);
+
+      // Turning auto-check off persists and skips automatic checks even after 24h.
+      await app.setAutoCheckUpdatesEnabled(false);
+      expect(app.autoCheckUpdatesEnabled, isFalse);
+      expect(store.values[AppController.autoCheckUpdatesStorageKey], '0');
+
+      fakeNow = fakeNow.add(const Duration(hours: 30));
+      await app.checkForUpdates(
+        manual: false,
+        checker: fakeChecker,
+        now: () => fakeNow,
+      );
+      expect(calls, 2);
+
+      // Re-enabling lets the next automatic check run once cooldown elapsed.
+      await app.setAutoCheckUpdatesEnabled(true);
+      await app.checkForUpdates(
+        manual: false,
+        checker: fakeChecker,
+        now: () => fakeNow,
+      );
+      expect(calls, 3);
     });
   });
 }

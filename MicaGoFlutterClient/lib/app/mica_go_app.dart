@@ -52,18 +52,18 @@ class _MicaGoAppState extends State<MicaGoApp> {
     if (!widget.settingsOnly) {
       widget.contacts.addListener(_refreshNotificationContacts);
       _refreshNotificationContacts();
-      if (isLinuxDesktop) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            unawaited(
-              widget.controller.setLinuxTrayEnabled(
-                widget.controller.linuxTrayEnabled,
-                save: false,
-              ),
-            );
-          }
-        });
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(widget.controller.checkForUpdates(manual: false));
+        if (isLinuxDesktop) {
+          unawaited(
+            widget.controller.setLinuxTrayEnabled(
+              widget.controller.linuxTrayEnabled,
+              save: false,
+            ),
+          );
+        }
+      });
     }
   }
 

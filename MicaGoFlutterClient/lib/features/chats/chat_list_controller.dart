@@ -165,6 +165,10 @@ class ChatListController extends ChangeNotifier {
       case 'message:unsend':
         unawaited(_patchUnsendEvent(e));
         break;
+      case 'sync:settings':
+        unawaited(app.refreshSyncSettings());
+        _scheduleServerReload();
+        break;
       default:
         break;
     }

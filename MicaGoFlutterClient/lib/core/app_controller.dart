@@ -26,6 +26,7 @@ import 'l10n/app_localizations.dart';
 import 'network/push_logic.dart';
 import 'network/unified_push.dart';
 import 'network/refresh_coordinator.dart';
+import 'network/update_check.dart';
 import 'network/websocket_client.dart';
 import 'storage/local_cache_store.dart';
 import 'storage/media_cache.dart';
@@ -159,6 +160,9 @@ class AppController extends ChangeNotifier {
   static const inAppNotificationsStorageKey =
       'micago.in_app_notifications_enabled.v1';
   static const developerModeStorageKey = 'micago.developer_mode.v1';
+  static const autoCheckUpdatesStorageKey = 'micago.auto_check_updates.v1';
+  static const lastUpdateCheckAtStorageKey = 'micago.last_update_check_at.v1';
+  static const Duration autoUpdateCheckInterval = Duration(hours: 24);
   static const mergedDisplayStorageKey = 'micago.merged_display.v1';
   final Map<String, String> _customAvatarPaths = {};
 
@@ -473,6 +477,68 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _autoCheckUpdatesEnabled = true;
+  bool get autoCheckUpdatesEnabled => _autoCheckUpdatesEnabled;
+
+  bool _checkingUpdate = false;
+  bool get checkingUpdate => _checkingUpdate;
+
+  UpdateCheckResult? _latestUpdateCheck;
+  UpdateCheckResult? get latestUpdateCheck => _latestUpdateCheck;
+
+  Future<UpdateCheckResult>? _updateCheckInFlight;
+
+  Future<void> setAutoCheckUpdatesEnabled(bool enabled) async {
+    if (_autoCheckUpdatesEnabled == enabled) return;
+    _autoCheckUpdatesEnabled = enabled;
+    await store.writeValue(autoCheckUpdatesStorageKey, enabled ? '1' : '0');
+    notifyListeners();
+  }
+
+  /// Checks GitHub releases for a newer build. Automatic checks honor the
+  /// About-screen toggle and a 24-hour cooldown; manual taps always run now.
+  Future<UpdateCheckResult> checkForUpdates({
+    bool manual = false,
+    Future<UpdateCheckResult> Function(String currentVersion)? checker,
+    DateTime Function()? now,
+  }) async {
+    final clock = now ?? DateTime.now;
+    if (!manual) {
+      if (!_autoCheckUpdatesEnabled) {
+        return _latestUpdateCheck ?? UpdateCheckResult.unknown;
+      }
+      final rawLast = await store.readValue(lastUpdateCheckAtStorageKey);
+      final lastMs = rawLast == null ? null : int.tryParse(rawLast);
+      if (lastMs != null &&
+          clock().millisecondsSinceEpoch - lastMs <
+              autoUpdateCheckInterval.inMilliseconds) {
+        return _latestUpdateCheck ?? UpdateCheckResult.unknown;
+      }
+    }
+    if (_updateCheckInFlight != null) return _updateCheckInFlight!;
+    _checkingUpdate = true;
+    notifyListeners();
+    final future = () async {
+      try {
+        final result = await (checker ?? checkForUpdate)(kAppVersion);
+        _latestUpdateCheck = result;
+        if (result.status != UpdateCheckStatus.unknown) {
+          await store.writeValue(
+            lastUpdateCheckAtStorageKey,
+            clock().millisecondsSinceEpoch.toString(),
+          );
+        }
+        return result;
+      } finally {
+        _checkingUpdate = false;
+        _updateCheckInFlight = null;
+        notifyListeners();
+      }
+    }();
+    _updateCheckInFlight = future;
+    return future;
+  }
+
   final StreamController<ForegroundMessageAlert> _foregroundAlertController =
       StreamController<ForegroundMessageAlert>.broadcast();
 
@@ -742,6 +808,8 @@ class AppController extends ChangeNotifier {
     // Piggybacks on this small-prefs load step (bootstrap + restore-reload).
     _developerModeEnabled =
         await store.readValue(developerModeStorageKey) == '1';
+    _autoCheckUpdatesEnabled =
+        await store.readValue(autoCheckUpdatesStorageKey) != '0';
     _mergedDisplayKeys.clear();
     try {
       final raw = await store.readValue(mergedDisplayStorageKey);

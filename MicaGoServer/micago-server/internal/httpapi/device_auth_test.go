@@ -272,3 +272,56 @@ func TestAuthorizationFailuresKeepTheirMeaning(t *testing.T) {
 		})
 	}
 }
+
+func TestPairedDevicePutSyncSettingsOnlyTogglesAllowSMSSend(t *testing.T) {
+	ctx := context.Background()
+	db, err := relaydb.Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	hub := realtime.NewHub()
+	defer hub.Close()
+
+	code, _, err := db.CreatePairingCode(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := db.RedeemPairingCode(ctx, code)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Handlers{syncSettings: db}
+	auth := NewDeviceAuth(db, hub, "test-admin", "pin")
+	handler := auth.Wrap(http.HandlerFunc(h.PutSyncSettings))
+
+	// Paired device attempts to enable SMS sending while also tampering with admin fields.
+	req := httptest.NewRequest(http.MethodPut, "/api/sync/settings", strings.NewReader(`{"allowSmsSend":true,"includeSMS":false,"recentMessagesPerChat":9999,"includeDebugInNormal":true}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("paired device PUT /api/sync/settings: got %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+
+	got, err := db.GetSyncSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.AllowSMSSend {
+		t.Fatal("expected AllowSMSSend to be true")
+	}
+	if !got.IncludeSMS || got.RecentMessagesPerChat != 100 || got.IncludeDebugInNormal {
+		t.Fatalf("paired device altered admin sync settings: %+v", got)
+	}
+
+	// Missing allowSmsSend field is rejected with 400.
+	badReq := httptest.NewRequest(http.MethodPut, "/api/sync/settings", strings.NewReader(`{"includeSMS":false}`))
+	badReq.Header.Set("Authorization", "Bearer "+token)
+	badRec := httptest.NewRecorder()
+	handler.ServeHTTP(badRec, badReq)
+	if badRec.Code != http.StatusBadRequest {
+		t.Fatalf("missing allowSmsSend: got %d, want 400", badRec.Code)
+	}
+}

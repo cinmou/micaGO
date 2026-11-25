@@ -161,6 +161,7 @@ private struct BackfillSettingsCard: View {
 
             Toggle("Show iMessage conversations", isOn: binding(\.includeIMessage))
             Toggle("Show SMS conversations", isOn: binding(\.includeSMS))
+            Toggle("Allow SMS sending", isOn: binding(\.allowSmsSend))
             Toggle("Show RCS conversations", isOn: binding(\.includeRCS))
             Toggle("Show unknown-service conversations in debug mode", isOn: binding(\.includeUnknown))
             Toggle("Include debug-only/noise in normal client", isOn: binding(\.includeDebugInNormal))

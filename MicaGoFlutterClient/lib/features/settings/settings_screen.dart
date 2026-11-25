@@ -2227,13 +2227,11 @@ class _AboutBodyState extends State<_AboutBody> {
   static const int _debugUnlockTaps = 7;
 
   int _versionTapCount = 0;
-  bool _checkingUpdate = false;
-  UpdateCheckResult? _updateResult;
 
   /// Shows the outcome of the last check; tapping runs a new one.
-  String _updateValueLabel(MicaLocalizations strings) {
-    if (_checkingUpdate) return strings.t('settings.updateChecking');
-    final result = _updateResult;
+  String _updateValueLabel(AppController app, MicaLocalizations strings) {
+    if (app.checkingUpdate) return strings.t('settings.updateChecking');
+    final result = app.latestUpdateCheck;
     if (result == null) return strings.t('settings.updateCheckNow');
     switch (result.status) {
       case UpdateCheckStatus.updateAvailable:
@@ -2248,13 +2246,9 @@ class _AboutBodyState extends State<_AboutBody> {
   }
 
   Future<void> _runUpdateCheck() async {
-    setState(() => _checkingUpdate = true);
-    final result = await checkForUpdate(kAppVersion);
+    final app = context.read<AppController>();
+    final result = await app.checkForUpdates(manual: true);
     if (!mounted) return;
-    setState(() {
-      _checkingUpdate = false;
-      _updateResult = result;
-    });
     // A newer build is the only outcome worth interrupting for.
     if (result.status == UpdateCheckStatus.updateAvailable) {
       await _openExternal(result.releaseUrl);
@@ -2268,8 +2262,8 @@ class _AboutBodyState extends State<_AboutBody> {
   @override
   Widget build(BuildContext context) {
     final strings = MicaLocalizations.of(context);
-    // Rebuild when developer mode flips (the status tile reflects it).
-    context.watch<AppController>();
+    // Rebuild when developer mode or update check state changes.
+    final app = context.watch<AppController>();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -2327,8 +2321,17 @@ class _AboutBodyState extends State<_AboutBody> {
               _AboutInfoTile(
                 icon: Icons.system_update_alt_outlined,
                 title: strings.t('settings.checkUpdates'),
-                value: _updateValueLabel(strings),
-                onTap: _checkingUpdate ? null : _runUpdateCheck,
+                value: _updateValueLabel(app, strings),
+                onTap: app.checkingUpdate ? null : _runUpdateCheck,
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
+                secondary: _leadingIcon(Icons.autorenew_rounded),
+                title: Text(strings.t('settings.autoCheckUpdates')),
+                subtitle: Text(strings.t('settings.autoCheckUpdatesSubtitle')),
+                value: app.autoCheckUpdatesEnabled,
+                onChanged: (enabled) =>
+                    unawaited(app.setAutoCheckUpdatesEnabled(enabled)),
               ),
             ],
           ),
@@ -2405,115 +2408,186 @@ class _FloatingMicaGoLogo extends StatefulWidget {
 class _FloatingMicaGoLogoState extends State<_FloatingMicaGoLogo>
     with SingleTickerProviderStateMixin {
   static const double _logoSize = 104;
+  static const double _scrollCancelDistance = 14;
 
-  late final AnimationController _tiltController;
+  late final AnimationController _animController;
+  ValueNotifier<bool>? _scrollingNotifier;
+
   bool _pressed = false;
-  double _rawTiltX = 0;
-  double _rawTiltY = 0;
+  int? _activePointer;
+  Offset? _pointerDownPosition;
+
+  Offset _fromTilt = Offset.zero;
+  Offset _targetTilt = Offset.zero;
+  double _fromPress = 0;
+  double _targetPress = 0;
 
   @override
   void initState() {
     super.initState();
-    _tiltController = AnimationController(
+    _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 180),
+      value: 1,
     );
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextNotifier = Scrollable.maybeOf(context)?.position.isScrollingNotifier;
+    if (!identical(_scrollingNotifier, nextNotifier)) {
+      _scrollingNotifier?.removeListener(_onScrollStateChanged);
+      _scrollingNotifier = nextNotifier;
+      _scrollingNotifier?.addListener(_onScrollStateChanged);
+    }
+  }
+
+  @override
   void dispose() {
-    _tiltController.dispose();
+    _scrollingNotifier?.removeListener(_onScrollStateChanged);
+    _animController.dispose();
     super.dispose();
   }
 
-  void _onPanDown(DragDownDetails details) {
-    _updateTiltValues(details.localPosition);
-    _tiltController.forward();
-    setState(() => _pressed = true);
+  double get _curvedT => Curves.easeOutCubic.transform(_animController.value);
+
+  Offset get _currentTilt =>
+      Offset.lerp(_fromTilt, _targetTilt, _curvedT) ?? _targetTilt;
+
+  double get _currentPress =>
+      _fromPress + (_targetPress - _fromPress) * _curvedT;
+
+  void _onScrollStateChanged() {
+    if (_scrollingNotifier?.value == true && _pressed) {
+      _deactivate();
+    }
   }
 
-  void _onPanUpdate(DragUpdateDetails details) {
-    _updateTiltValues(details.localPosition);
+  Offset _tiltFor(Offset localPosition) {
+    final dx = (localPosition.dx - (_logoSize / 2)) / (_logoSize / 2);
+    final dy = (localPosition.dy - (_logoSize / 2)) / (_logoSize / 2);
+    return Offset(dy.clamp(-1.1, 1.1) * 0.16, -dx.clamp(-1.1, 1.1) * 0.16);
   }
 
-  void _updateTiltValues(Offset localPosition) {
-    setState(() {
-      final dx = (localPosition.dx - (_logoSize / 2)) / (_logoSize / 2);
-      final dy = (localPosition.dy - (_logoSize / 2)) / (_logoSize / 2);
-      _rawTiltX = dy.clamp(-1.2, 1.2) * 0.18;
-      _rawTiltY = -dx.clamp(-1.2, 1.2) * 0.18;
-    });
+  void _animateTo({
+    required Offset tilt,
+    required double press,
+    required Duration duration,
+  }) {
+    _fromTilt = _currentTilt;
+    _targetTilt = tilt;
+    _fromPress = _currentPress;
+    _targetPress = press;
+    _animController.duration = duration;
+    _animController.forward(from: 0);
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_scrollingNotifier?.value == true) return;
+    _activePointer = event.pointer;
+    _pointerDownPosition = event.position;
+    _pressed = true;
+    _animateTo(
+      tilt: _tiltFor(event.localPosition),
+      press: 1,
+      duration: const Duration(milliseconds: 140),
+    );
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!_pressed || event.pointer != _activePointer) return;
+    if (_scrollingNotifier?.value == true) {
+      _deactivate();
+      return;
+    }
+    final down = _pointerDownPosition;
+    if (down != null) {
+      final delta = event.position - down;
+      // Yield cleanly when the user starts dragging vertically to scroll the
+      // About page instead of fighting the ListView.
+      if (delta.dy.abs() > _scrollCancelDistance &&
+          delta.dy.abs() > delta.dx.abs() * 1.2) {
+        _deactivate();
+        return;
+      }
+    }
+    _animateTo(
+      tilt: _tiltFor(event.localPosition),
+      press: 1,
+      duration: const Duration(milliseconds: 90),
+    );
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _activePointer) return;
+    _deactivate();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _activePointer) return;
+    _deactivate();
   }
 
   void _deactivate() {
-    if (!_pressed) return;
-    _tiltController.reverse().then((_) {
-      if (mounted && !_pressed) {
-        setState(() {
-          _rawTiltX = 0;
-          _rawTiltY = 0;
-        });
-      }
-    });
-    setState(() => _pressed = false);
+    _activePointer = null;
+    _pointerDownPosition = null;
+    if (!_pressed && _targetPress == 0 && _targetTilt == Offset.zero) return;
+    _pressed = false;
+    _animateTo(
+      tilt: Offset.zero,
+      press: 0,
+      duration: const Duration(milliseconds: 220),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onPanDown: _onPanDown,
-      onPanUpdate: _onPanUpdate,
-      onPanEnd: (_) => _deactivate(),
-      onPanCancel: _deactivate,
+    final logoChild = ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Image.asset(
+        'lib/Assets/launcher_icons/default.png',
+        width: _logoSize,
+        height: _logoSize,
+        fit: BoxFit.cover,
+      ),
+    );
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
       child: AnimatedBuilder(
-        animation: _tiltController,
+        animation: _animController,
+        child: logoChild,
         builder: (context, child) {
-          return TweenAnimationBuilder<Offset>(
-            tween: Tween<Offset>(
-              begin: Offset.zero,
-              end: Offset(_rawTiltX, _rawTiltY),
-            ),
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOutCubic,
-            builder: (context, smoothedTilt, child) {
-              final tiltX = smoothedTilt.dx * _tiltController.value;
-              final tiltY = smoothedTilt.dy * _tiltController.value;
-              final scale = 1.0 + (0.05 * _tiltController.value);
-              return Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.001)
-                  ..rotateX(tiltX)
-                  ..rotateY(tiltY)
-                  ..scaleByDouble(scale, scale, scale, 1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: scheme.primary.withValues(
-                          alpha: _pressed ? 0.24 : 0.14,
-                        ),
-                        blurRadius: _pressed ? 28 : 18,
-                        offset: Offset(0, _pressed ? 14 : 10),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.asset(
-                      'lib/Assets/launcher_icons/default.png',
-                      width: _logoSize,
-                      height: _logoSize,
-                      fit: BoxFit.cover,
+          final tilt = _currentTilt;
+          final press = _currentPress;
+          final scale = 1.0 - (0.03 * press);
+          return Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001)
+              ..rotateX(tilt.dx)
+              ..rotateY(tilt.dy)
+              ..scaleByDouble(scale, scale, scale, 1),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.primary.withValues(
+                      alpha: 0.14 + (0.08 * press),
                     ),
+                    blurRadius: 18 - (4 * press),
+                    offset: Offset(0, 10 - (4 * press)),
                   ),
-                ),
-              );
-            },
+                ],
+              ),
+              child: child,
+            ),
           );
         },
       ),

@@ -117,6 +117,7 @@ public sealed partial class ShellPage : Page
         await RefreshConnectionStatusVisibilityAsync();
         if(_viewModel is not null)return;
         await AppServices.Current.Cache.InitializeAsync();
+        _ = SettingsPage.CheckForUpdatesQuietlyAsync();
         await AppServices.Current.RemoveLegacyGoogleContactsAsync();
         await AppServices.Current.Appearance.InitializeAsync();
         AppServices.Current.Appearance.AppearanceChanged += Appearance_AppearanceChanged;

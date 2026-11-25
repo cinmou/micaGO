@@ -139,7 +139,7 @@ func clientRouteAllowed(r *http.Request, id string) bool {
 			return true
 		}
 	case http.MethodPut:
-		return p == "/api/chats/mute"
+		return p == "/api/chats/mute" || p == "/api/sync/settings"
 	case http.MethodPatch:
 		switch p {
 		case "/api/read-state", "/api/message-preferences", "/api/chat-preferences":

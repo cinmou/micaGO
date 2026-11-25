@@ -12,6 +12,9 @@ public sealed partial class SettingsPage : Page
     private bool _loading = true;
     private ShellNavigationContext? _context;
     private static readonly HttpClient UpdateHttpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private static readonly TimeSpan AutoUpdateCheckInterval = TimeSpan.FromHours(24);
+    private static UpdateCheckResult? _lastUpdateResult;
+    private static int _quietUpdateStarted;
     private bool _checkingUpdate;
     private string? _updateUrl;
     private ServerSyncSettings? _syncSettings;
@@ -43,6 +46,7 @@ public sealed partial class SettingsPage : Page
         BackgroundStretchPicker.SelectedIndex = (int)services.Appearance.ChatBackgroundStretch;
         UpdateBackgroundStatus();
         DeveloperPanel.Visibility=(await services.Cache.GetSettingAsync("settings.developerMode"))=="true"?Visibility.Visible:Visibility.Collapsed;
+        AboutAutoUpdateToggle.IsOn=(await services.Cache.GetSettingAsync("settings.autoCheckUpdates"))!="false";
         ApplyText();
         await LoadSmsStateAsync();
         _loading=false;services.Notifications.Enabled=NotificationToggle.IsOn;services.Notifications.ShowMessageText=NotificationPreviewToggle.IsOn;ApplyText();ApplySection(_context?.Section??"general");
@@ -194,7 +198,7 @@ public sealed partial class SettingsPage : Page
         NotificationsHeader.Text=l["notifications"];NotificationLabel.Text=l["notify"];NotificationDescription.Text=l["notificationDescription"];NotificationPreviewLabel.Text=l["notificationPreview"];NotificationPreviewDescription.Text=l["notificationPreviewDescription"];
         ContactsHeader.Text=l["contacts"];ContactsHint.Text=l["contactsHint"];ImportVcfLabel.Text=l["importVcf"];ImportVcfButton.Content=l["chooseVcf"];ClearVcfButton.Content=l["clearContacts"];HiddenMessagesLabel.Text=l["hiddenMessages"];HiddenContactsLabel.Text=l["hiddenContacts"];StorageHeader.Text=l["cache"];CacheLabel.Text=l["cacheLabel"];ClearCacheHint.Text=l["clearCache"];ClearCacheButton.Content=l["clearCacheButton"];
         TestingHeader.Text=l["developer"];TestContactLabel.Text=l["testContact"];TestContactHint.Text=l["testContactHint"];BackupHeader.Text=l["backupRestore"];BackupLabel.Text=l["backupLabel"];ExportBackupButton.Content=l["exportBackup"];ImportBackupButton.Content=l["importBackup"];
-        AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutUpdateLabel.Text=l["checkUpdates"];if(!_checkingUpdate&&_updateUrl is null)AboutUpdateStatus.Text=l["updateCheckNow"];if(_updateUrl is null&&!_checkingUpdate)AboutUpdateButton.Content=l["updateCheckButton"];AboutOpenSourceLabel.Text=l["openSource"];
+        AboutHeader.Text=l["about"];AboutSubtitleText.Text=l["aboutSubtitle"];AboutVersionText.Text=string.Format(l["version"],typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)??"?");AboutGitHubLabel.Text=l["viewOnGitHub"];AboutUpdateLabel.Text=l["checkUpdates"];AboutAutoUpdateLabel.Text=l["autoCheckUpdates"];AboutAutoUpdateDescription.Text=l["autoCheckUpdatesDescription"];ApplyCachedUpdateStatus(l);AboutOpenSourceLabel.Text=l["openSource"];
         UpdateBackgroundStatus();UpdateHiddenContactsStatus();UpdateHiddenMessagesStatus();
     }
     private async void NotificationToggle_Toggled(object sender,RoutedEventArgs e){if(_loading)return;await AppServices.Current.Cache.SetSettingAsync("settings.notifications",NotificationToggle.IsOn?"true":"false");ApplySettings();}
@@ -334,6 +338,51 @@ public sealed partial class SettingsPage : Page
         if(++_aboutTapCount<7)return;
         _aboutTapCount=0;DeveloperPanel.Visibility=Visibility.Visible;await AppServices.Current.Cache.SetSettingAsync("settings.developerMode","true");await LoadTestContactStateAsync();
     }
+    public static async Task CheckForUpdatesQuietlyAsync()
+    {
+        if (Interlocked.Exchange(ref _quietUpdateStarted, 1) != 0) return;
+        try
+        {
+            var cache = AppServices.Current.Cache;
+            if (await cache.GetSettingAsync("settings.autoCheckUpdates") == "false") return;
+            var rawLast = await cache.GetSettingAsync("settings.lastUpdateCheckAt");
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (long.TryParse(rawLast, out var lastMs) && nowMs - lastMs < (long)AutoUpdateCheckInterval.TotalMilliseconds)
+                return;
+            var current = typeof(SettingsPage).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+            var result = await UpdateCheck.FetchAsync(UpdateHttpClient, current);
+            _lastUpdateResult = result;
+            if (result.Status != UpdateCheckStatus.Unknown)
+                await cache.SetSettingAsync("settings.lastUpdateCheckAt", nowMs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch { }
+    }
+
+    private void ApplyCachedUpdateStatus(LocalizationService l)
+    {
+        if (_checkingUpdate) return;
+        if (_updateUrl is null && _lastUpdateResult is { Status: UpdateCheckStatus.UpdateAvailable } cached)
+        {
+            _updateUrl = cached.ReleaseUrl;
+            AboutUpdateStatus.Text = string.Format(l["updateAvailable"], cached.LatestVersion);
+            AboutUpdateButton.Content = l["updateOpen"];
+            return;
+        }
+        if (_updateUrl is null)
+        {
+            AboutUpdateStatus.Text = _lastUpdateResult?.Status == UpdateCheckStatus.UpToDate
+                ? l["updateUpToDate"]
+                : l["updateCheckNow"];
+            AboutUpdateButton.Content = l["updateCheckButton"];
+        }
+    }
+
+    private async void AboutAutoUpdateToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        await AppServices.Current.Cache.SetSettingAsync("settings.autoCheckUpdates", AboutAutoUpdateToggle.IsOn ? "true" : "false");
+    }
+
     /// <summary>
     /// C74: asks GitHub whether a newer release exists. When one does, the
     /// button turns into "Open release" and links to it — nothing is downloaded
@@ -355,6 +404,9 @@ public sealed partial class SettingsPage : Page
         {
             var current = typeof(SettingsPage).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
             var result = await UpdateCheck.FetchAsync(UpdateHttpClient, current);
+            _lastUpdateResult = result;
+            if (result.Status != UpdateCheckStatus.Unknown)
+                await AppServices.Current.Cache.SetSettingAsync("settings.lastUpdateCheckAt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
             switch (result.Status)
             {
                 case UpdateCheckStatus.UpdateAvailable:
